@@ -1,0 +1,92 @@
+//////////////////////////////////////////////////////////////////////
+// This file is part of Remere's Map Editor
+//////////////////////////////////////////////////////////////////////
+// Remere's Map Editor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Remere's Map Editor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+//////////////////////////////////////////////////////////////////////
+
+#ifndef RME_PALETTE_H_
+#define RME_PALETTE_H_
+
+#include "game/material_database.h"
+#include "palette/palette_common.h"
+
+#include <string_view>
+#include <vector>
+
+class BrushPalettePanel;
+struct HardcodedPaletteProvider;
+class HousePalette;
+class WaypointPalettePanel;
+class ZonePalettePanel;
+class TownPalettePanel;
+
+class PaletteWindow : public wxPanel {
+public:
+	PaletteWindow(wxWindow* parent, const PaletteCatalog& catalog);
+	~PaletteWindow();
+
+	// Interface
+	// Reloads layout g_settings from g_settings (and using map)
+	void ReloadSettings(Map* from);
+	// Flushes all pages and forces them to be reloaded from the palette data again
+	void InvalidateContents();
+	// (Re)Loads all currently displayed data, called from InvalidateContents implicitly
+	void LoadCurrentContents();
+	void ReloadDynamicPages();
+	void SetBrushIndicators(bool dogEar);
+	void SetGridSpacing(int spacing);
+	bool SelectTilesetInCurrentPalette(std::string_view tilesetName);
+	// Goes to the selected page and selects any brush there
+	void SelectPage(std::string_view paletteName);
+	// The currently selected brush in this palette
+	Brush* GetSelectedBrush() const;
+	Brush* GetSelectedCreatureBrush() const;
+	// The currently selected brush size in this palette
+	int GetSelectedBrushSize() const;
+	// Custom Event handlers (something has changed?)
+	// Finds the brush pointed to by whatbrush and selects it as the current brush (also changes page)
+	// Returns if the brush was found in this palette
+	virtual bool OnSelectBrush(const Brush* whatbrush);
+	// Finds the brush, jumps to its dynamic palette and tileset, and selects it
+	bool JumpToBrush(const Brush* brush, std::string_view preferredPalette = {});
+	// Updates the palette window to use the current brush size
+	virtual void OnUpdateBrushSize(BrushShape shape, int size);
+	// Updates the content of the palette (eg. houses, creatures)
+	virtual void OnUpdate(Map* map);
+
+	// wxWidgets Event Handlers
+	void OnSwitchingPage(wxChoicebookEvent& event);
+	void OnPageChanged(wxChoicebookEvent& event);
+	// Forward key events to the parent window (The Map Window)
+	void OnKey(wxKeyEvent& event);
+	void OnClose(wxCloseEvent&);
+
+protected:
+	struct HardcodedPage {
+		PalettePanel* panel = nullptr;
+		const HardcodedPaletteProvider* provider = nullptr;
+	};
+
+	wxChoicebook* choicebook;
+	std::vector<PalettePanel*> palette_pages;
+	std::vector<HardcodedPage> hardcoded_pages;
+	HousePalette* house_palette;
+	WaypointPalettePanel* waypoint_palette;
+	ZonePalettePanel* zone_palette = nullptr;
+	TownPalettePanel* town_palette = nullptr;
+
+	void updateZonePage(Map* map);
+};
+
+#endif

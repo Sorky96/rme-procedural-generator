@@ -1,0 +1,218 @@
+#include "game/material_database.h"
+
+#include "brushes/brush.h"
+#include "brushes/creature/creature_brush.h"
+#include "util/common.h"
+
+#include <algorithm>
+
+namespace {
+	constexpr std::string_view CREATURE_PALETTE_NAME = "Creature";
+	constexpr std::string_view IMPORTED_TILESET_NAME = "Imported";
+}
+
+bool DynamicTilesetDefinition::containsBrush(const Brush* brush) const {
+	return brush && std::ranges::find(brushes, brush) != brushes.end();
+}
+
+bool DynamicPaletteDefinition::containsBrush(const Brush* brush) const {
+	return brush && std::ranges::any_of(tilesets, [brush](const auto& tileset) {
+		return tileset.containsBrush(brush);
+	});
+}
+
+void PaletteCatalog::clear() {
+	palettes.clear();
+}
+
+void PaletteCatalog::addDynamicPalette(DynamicPaletteDefinition palette) {
+	auto it = std::ranges::find_if(palettes, [&palette](const auto& existing) {
+		return existing.name == palette.name;
+	});
+	if (it != palettes.end()) {
+		for (auto& newTileset : palette.tilesets) {
+			auto tilesetIt = std::ranges::find_if(it->tilesets, [&newTileset](const auto& existingTileset) {
+				return existingTileset.name == newTileset.name;
+			});
+			if (tilesetIt != it->tilesets.end()) {
+				for (Brush* b : newTileset.brushes) {
+					if (!tilesetIt->containsBrush(b)) {
+						tilesetIt->brushes.push_back(b);
+					}
+				}
+				if (!tilesetIt->is_import_target) {
+					tilesetIt->is_import_target = newTileset.is_import_target;
+				}
+			} else {
+				it->tilesets.push_back(std::move(newTileset));
+			}
+		}
+	} else {
+		palettes.push_back(std::move(palette));
+	}
+}
+
+void PaletteCatalog::setTilesetBrushes(std::string_view paletteName, std::string_view tilesetName, std::vector<Brush*> brushes) {
+	auto it = std::ranges::find_if(palettes, [paletteName](const auto& existing) {
+		return as_lower_str(existing.name) == as_lower_str(std::string(paletteName));
+	});
+
+	if (it == palettes.end()) {
+		DynamicPaletteDefinition newPal;
+		newPal.name = std::string(paletteName);
+		DynamicTilesetDefinition newTileset;
+		newTileset.name = std::string(tilesetName);
+		newTileset.brushes = std::move(brushes);
+		newPal.tilesets.push_back(std::move(newTileset));
+		palettes.push_back(std::move(newPal));
+		return;
+	}
+
+	auto tilesetIt = std::ranges::find_if(it->tilesets, [tilesetName](const auto& existingTileset) {
+		return as_lower_str(existingTileset.name) == as_lower_str(std::string(tilesetName));
+	});
+
+	if (tilesetIt != it->tilesets.end()) {
+		tilesetIt->brushes = std::move(brushes);
+	} else {
+		DynamicTilesetDefinition newTileset;
+		newTileset.name = std::string(tilesetName);
+		newTileset.brushes = std::move(brushes);
+		it->tilesets.push_back(std::move(newTileset));
+	}
+}
+
+void PaletteCatalog::prepareCreatureImportTargets() {
+	auto paletteIt = std::ranges::find_if(palettes, [](const auto& palette) {
+		return as_lower_str(palette.name) == as_lower_str(std::string(CREATURE_PALETTE_NAME));
+	});
+	if (paletteIt == palettes.end()) {
+		return;
+	}
+
+	auto tilesetIt = std::ranges::find_if(paletteIt->tilesets, [](const auto& tileset) {
+		return tileset.name == IMPORTED_TILESET_NAME;
+	});
+	if (tilesetIt == paletteIt->tilesets.end()) {
+		DynamicTilesetDefinition tileset;
+		tileset.name = IMPORTED_TILESET_NAME;
+		tileset.is_import_target = true;
+		paletteIt->tilesets.push_back(std::move(tileset));
+	} else {
+		tilesetIt->is_import_target = true;
+	}
+}
+
+PaletteBrushRegistrationResult PaletteCatalog::registerImportedCreatureBrush(Brush* brush, bool isNpc) {
+	if (!brush) {
+		return PaletteBrushRegistrationResult::TargetUnavailable;
+	}
+	if (findPaletteContainingBrush(brush)) {
+		return PaletteBrushRegistrationResult::AlreadyRegistered;
+	}
+
+	auto paletteIt = std::ranges::find_if(palettes, [](const auto& palette) {
+		return as_lower_str(palette.name) == as_lower_str(std::string(CREATURE_PALETTE_NAME));
+	});
+	if (paletteIt == palettes.end()) {
+		return PaletteBrushRegistrationResult::TargetUnavailable;
+	}
+
+	auto tilesetIt = std::ranges::find_if(paletteIt->tilesets, [](const auto& tileset) {
+		return tileset.name == IMPORTED_TILESET_NAME;
+	});
+	if (tilesetIt == paletteIt->tilesets.end()) {
+		DynamicTilesetDefinition tileset;
+		tileset.name = IMPORTED_TILESET_NAME;
+		tileset.is_import_target = true;
+		paletteIt->tilesets.push_back(std::move(tileset));
+		tilesetIt = std::prev(paletteIt->tilesets.end());
+	}
+
+	if (tilesetIt->containsBrush(brush)) {
+		return PaletteBrushRegistrationResult::AlreadyRegistered;
+	}
+	tilesetIt->brushes.push_back(brush);
+	return PaletteBrushRegistrationResult::Added;
+}
+
+const DynamicPaletteDefinition* PaletteCatalog::findPalette(std::string_view name) const {
+	auto it = std::ranges::find_if(palettes, [name](const auto& palette) {
+		return palette.name == name;
+	});
+	return it == palettes.end() ? nullptr : &*it;
+}
+
+const DynamicPaletteDefinition* PaletteCatalog::findPaletteContainingBrush(const Brush* brush, std::string_view preferredPalette) const {
+	if (!brush) {
+		return nullptr;
+	}
+	if (!preferredPalette.empty()) {
+		if (const auto* palette = findPalette(preferredPalette); palette && palette->containsBrush(brush)) {
+			return palette;
+		}
+	}
+	auto it = std::ranges::find_if(palettes, [brush](const auto& palette) {
+		return palette.containsBrush(brush);
+	});
+	return it == palettes.end() ? nullptr : &*it;
+}
+
+void MaterialDatabase::clear() {
+	palettes.clear();
+	brush_registry = nullptr;
+	item_registry = nullptr;
+	creature_registry = nullptr;
+	tileset_sources.clear();
+}
+
+void MaterialDatabase::bindSourceTruth(Brushes& brushRegistry, ItemDefinitionStore& itemRegistry, CreatureDatabase& creatureRegistry) {
+	brush_registry = &brushRegistry;
+	item_registry = &itemRegistry;
+	creature_registry = &creatureRegistry;
+}
+
+void MaterialDatabase::setTilesetSources(std::vector<std::string> sources) {
+	tileset_sources = std::move(sources);
+	for (auto& s : tileset_sources) {
+		std::ranges::transform(s, s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		std::replace(s.begin(), s.end(), '\\', '/');
+	}
+	std::ranges::sort(tileset_sources);
+	tileset_sources.erase(std::ranges::unique(tileset_sources).begin(), tileset_sources.end());
+}
+
+void MaterialDatabase::addTilesetSource(std::string key) {
+	std::ranges::transform(key, key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	std::replace(key.begin(), key.end(), '\\', '/');
+	auto it = std::ranges::lower_bound(tileset_sources, key);
+	if (it == tileset_sources.end() || *it != key) {
+		tileset_sources.insert(it, std::move(key));
+	}
+}
+
+Brushes& MaterialDatabase::brushes() const {
+	ASSERT(brush_registry != nullptr);
+	return *brush_registry;
+}
+
+ItemDefinitionStore& MaterialDatabase::items() const {
+	ASSERT(item_registry != nullptr);
+	return *item_registry;
+}
+
+CreatureDatabase& MaterialDatabase::creatures() const {
+	ASSERT(creature_registry != nullptr);
+	return *creature_registry;
+}
+
+bool MaterialDatabase::hasSourceTruth() const {
+	return brush_registry && item_registry && creature_registry;
+}
+
+bool MaterialDatabase::isKnownTilesetSource(std::string_view source) const {
+	std::string key(source);
+	std::ranges::transform(key, key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	std::replace(key.begin(), key.end(), '\\', '/');
+	return std::ranges::binary_search(tileset_sources, key);
+}

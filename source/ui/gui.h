@@ -1,0 +1,492 @@
+#ifndef RME_GUI_H_
+#define RME_GUI_H_
+
+#include "rendering/core/graphics.h"
+#include "map/position.h"
+
+#include "editor/copybuffer.h"
+#include "ui/dcbutton.h"
+#include "brushes/brush_enums.h"
+#include "ui/gui_ids.h"
+#include "editor/editor_tabs.h"
+#include "editor/persistence/map_load_options.h"
+#include "ui/map_tab.h"
+#include "palette/palette_window.h"
+#include "app/client_version.h"
+#include "app/managers/version_manager.h"
+#include "ui/managers/loading_manager.h"
+#include "ui/managers/layout_manager.h"
+#include "ui/managers/minimap_manager.h"
+#include "brushes/managers/doodad_preview_manager.h"
+#include "brushes/managers/autoborder_preview_manager.h"
+#include "brushes/brush_footprint.h"
+#include "ui/managers/status_manager.h"
+#include "ui/managers/search_manager.h"
+#include "ui/managers/welcome_manager.h"
+#include "ui/managers/gl_context_manager.h"
+
+#include <wx/utils.h>
+
+class BaseMap;
+class Map;
+
+class Editor;
+class Brush;
+class HouseBrush;
+class HouseExitBrush;
+class WaypointBrush;
+class OptionalBorderBrush;
+class EraserBrush;
+class SpawnBrush;
+class DoorBrush;
+class FlagBrush;
+
+class MainFrame;
+class WelcomeDialog;
+class MapWindow;
+class MapCanvas;
+class LiveClient;
+class SearchResultWindow;
+class MinimapWindow;
+class PaletteWindow;
+class ItemPropertiesWindow;
+class ItemButton;
+class HousePalette;
+class ZonePalettePanel;
+class TownPalettePanel;
+
+class LiveSocket;
+
+class SidebarWindow;
+class ToolOptionsWindow;
+class TilePropertiesPanel;
+class BrushItemsWindow;
+
+wxDECLARE_EVENT(EVT_UPDATE_MENUS, wxCommandEvent);
+
+#define EVT_ON_UPDATE_MENUS(id, fn)                                                             \
+	DECLARE_EVENT_TABLE_ENTRY(                                                                  \
+		EVT_UPDATE_MENUS, id, wxID_ANY,                                                         \
+		(wxObjectEventFunction)(wxEventFunction)wxStaticCastEvent(wxCommandEventFunction, &fn), \
+		(wxObject*)nullptr                                                                      \
+	),
+
+#include <mutex>
+#include <string_view>
+#include "brushes/managers/brush_manager.h"
+#include "palette/managers/palette_manager.h"
+#include "editor/managers/editor_manager.h"
+#include "editor/hotkey_manager.h"
+
+class GUI {
+public: // dtor and ctor
+	GUI();
+	~GUI();
+
+private:
+	GUI(const GUI& g_gui); // Don't copy me
+	GUI& operator=(const GUI& g_gui); // Don't assign me
+	bool operator==(const GUI& g_gui); // Don't compare me
+
+public:
+	/**
+	 * Saves the perspective to the configuration file
+	 * This is the position of all windows etc. in the editor
+	 */
+	void SavePerspective() {
+		g_layout.SavePerspective();
+	}
+
+	/**
+	 * Loads the stored perspective from the configuration file
+	 */
+	void LoadPerspective() {
+		g_layout.LoadPerspective();
+	}
+
+	void CreateLoadBar(wxString message, bool canCancel = false, const wxString& title = "Loading") {
+		g_loading.CreateLoadBar(message, canCancel, title);
+	}
+	void SetLoadScale(int32_t from, int32_t to) {
+		g_loading.SetLoadScale(from, to);
+	}
+	void SetLoadText(const wxString& message) {
+		g_loading.SetLoadText(message);
+	}
+	bool PollCancellation() {
+		return g_loading.PollCancellation();
+	}
+	bool WasLoadCancelled() const {
+		return g_loading.WasCancelled();
+	}
+	bool SetLoadDone(int32_t done, const wxString& newMessage = "") {
+		return g_loading.SetLoadDone(done, newMessage);
+	}
+
+	void ShowWelcomeDialog(const wxBitmap& icon) {
+		g_welcome.ShowWelcomeDialog(icon);
+	}
+	void FinishWelcomeDialog() {
+		g_welcome.FinishWelcomeDialog();
+	}
+	bool IsWelcomeDialogShown() {
+		return g_welcome.IsWelcomeDialogShown();
+	}
+
+	/**
+	 * Destroys (hides) the current loading bar.
+	 */
+
+	void DestroyLoadBar() {
+		g_loading.DestroyLoadBar();
+	}
+	bool IsLoading() const {
+		return g_loading.IsLoading();
+	}
+
+	void UpdateMenubar();
+
+	bool IsRenderingEnabled() const {
+		return disabled_counter == 0;
+	}
+
+	// Hotkey methods removed (moved to HotkeyManager)
+
+	// This sends the event to the main window (redirecting from other controls)
+	void AddPendingCanvasEvent(wxEvent& event);
+
+protected:
+	void DisableRendering() {
+		++disabled_counter;
+	}
+	void EnableRendering() {
+		--disabled_counter;
+	}
+
+public:
+	void SetTitle(wxString newtitle) {
+		g_status.SetTitle(newtitle);
+	}
+	void UpdateTitle() {
+		g_status.UpdateTitle();
+	}
+	void UpdateMenus();
+	void ShowToolbar(ToolBarID id, bool show);
+	void SetStatusText(wxString text) {
+		g_status.SetStatusText(text);
+	}
+
+	// Get the current GL context
+	// Param is required if the context is to be created.
+	wxGLContext* GetGLContext(wxGLCanvas* win) {
+		return g_gl_context.GetGLContext(win);
+	}
+
+	// Search Results
+	SearchResultWindow* ShowSearchWindow() {
+		return g_search.ShowSearchWindow();
+	}
+	void DestroySearchWindow() {
+		g_search.DestroySearchWindow();
+	}
+
+	// Minimap
+	void CreateMinimap() {
+		g_minimap.Create();
+	}
+	void HideMinimap() {
+		g_minimap.Hide();
+	}
+	void DestroyMinimap() {
+		g_minimap.Destroy();
+	}
+	void UpdateMinimap(bool immediate = false) {
+		g_minimap.Update(immediate);
+	}
+	bool IsMinimapVisible() const {
+		return g_minimap.IsVisible();
+	}
+
+	int GetCurrentFloor();
+	void ChangeFloor(int newfloor);
+
+	double GetCurrentZoom();
+	void SetCurrentZoom(double zoom);
+
+	void SwitchMode();
+	void SetSelectionMode();
+	void SetDrawingMode();
+	bool IsSelectionMode() const;
+	bool IsDrawingMode() const;
+
+	// Brushes
+	void FillDoodadPreviewBuffer();
+	void UpdateAutoborderPreview(Position pos);
+	// Selects the currently seleceted brush in the active palette
+	void SelectBrush();
+	// Updates the palette AND selects the brush
+	// Returns true if the brush was found and selected
+	bool SelectBrush(const Brush* brush);
+	// Selects the brush selected before the current brush
+	void SelectPreviousBrush();
+	// Only selects the brush, doesn't update the palette
+	void SelectBrushInternal(Brush* brush);
+	// Get different brush parameters
+	Brush* GetCurrentBrush() const;
+	BrushShape GetBrushShape() const;
+	int GetBrushSize() const;
+	int GetBrushSizeX() const;
+	int GetBrushSizeY() const;
+	bool IsExactBrushSize() const;
+	bool IsBrushAspectRatioLocked() const;
+	BrushSizeState GetBrushSizeState() const;
+	BrushFootprint GetBrushFootprint() const;
+	int GetBrushVariation() const;
+	int GetSpawnTime() const;
+
+	// Additional brush parameters
+	void SetSpawnTime(int time);
+
+	int GetDefaultCreatureWeight() const;
+	void SetDefaultCreatureWeight(int weight);
+
+	void SetLightIntensity(int v);
+	int GetLightIntensity() const;
+
+	void SetAmbientLightLevel(float v);
+	float GetAmbientLightLevel() const;
+	void SetServerLightColor(int v);
+	int GetServerLightColor() const;
+	void SetBrushSize(int nz);
+	void SetBrushSizeInternal(int nz);
+	void SetBrushSizeX(int nz);
+	void SetBrushSizeY(int nz);
+	void SetBrushSizeAxes(int x, int y);
+	void SetExactBrushSize(bool exact);
+	void SetBrushAspectRatioLocked(bool locked);
+	void RestoreBrushSizeState(const BrushSizeState& state);
+	void SetBrushShape(BrushShape bs);
+	void SetBrushVariation(int nz);
+	void SetBrushThickness(int low, int ceil);
+	void SetBrushThickness(bool on, int low = -1, int ceil = -1);
+	// Helper functions for size
+	void DecreaseBrushSize(bool wrap = false);
+	void IncreaseBrushSize(bool wrap = false);
+	// Door brush options
+	void SetDoorLocked(bool on);
+	bool HasDoorLocked();
+
+	// Centers current view on position
+	void SetScreenCenterPosition(Position pos);
+	void SetCurrentMapSecondaryMap(BaseMap* secondary_map);
+	// Refresh the view canvas
+	void RefreshView(bool immediate = false);
+	void ReleaseAllChunkCaches();
+	void SyncCurrentMapCanvasPreviewState();
+	void FocusCurrentMapCanvas();
+	// Fit all/specified current map view to map dimensions
+	void FitViewToMap();
+	void FitViewToMap(MapTab* mt);
+
+	void DoCut();
+	void DoCopy();
+	void DoPaste();
+	void PreparePaste();
+	void StartPasting();
+	void EndPasting();
+	bool IsPasting() const {
+		return pasting;
+	}
+
+	bool CanUndo();
+	bool CanRedo();
+	bool DoUndo();
+	bool DoRedo();
+
+	// Editor interface
+	wxAuiManager* GetAuiManager() const {
+		return aui_manager;
+	}
+	EditorTab* GetCurrentTab();
+	EditorTab* GetTab(int idx);
+	int GetTabCount() const;
+	bool IsAnyEditorOpen() const;
+	bool IsEditorOpen() const;
+	void CloseCurrentEditor();
+	Editor* GetCurrentEditor();
+	MapTab* GetCurrentMapTab() const;
+	void CycleTab(bool forward = true);
+	bool CloseLiveEditors(LiveSocket* sock);
+	bool CloseAllEditors();
+	void NewMapView();
+	void AddPendingLiveClient(std::unique_ptr<LiveClient> client);
+	std::unique_ptr<LiveClient> PopPendingLiveClient(LiveClient* ptr);
+
+	// Map
+	Map& GetCurrentMap();
+	int GetOpenMapCount();
+	bool ShouldSave();
+	bool SaveCurrentMap(FileName filename, bool showdialog);
+	bool SaveCurrentMap(bool showdialog = true);
+	bool NewMap();
+	void OpenMap();
+	void SaveMap();
+	void SaveMapAs();
+	void SaveMapAsGzip();
+	bool LoadMap(const FileName& fileName, const MapLoadOptions& load_options = {});
+
+protected:
+	ClientVersion* getLoadedVersion() const {
+		return g_version.getLoadedVersion();
+	}
+
+	//=========================================================================
+	// Palette Interface
+	//=========================================================================
+public:
+	// Spawn a newd palette
+	PaletteWindow* NewPalette();
+	// Bring this palette to the front (as the 'active' palette)
+	void ActivatePalette(PaletteWindow* p);
+	// Rebuild forces palette to reload the entire contents
+	void RebuildPalettes();
+	// Refresh only updates the content (such as house/waypoint list)
+	void RefreshPalettes(Map* m = nullptr, bool usedfault = true);
+	void UpdateZonePalette(uint16_t zone_id = 0);
+	void UpdateHousePalette(uint32_t house_id = 0);
+	// Won't refresh the palette in the parameter
+	void RefreshOtherPalettes(PaletteWindow* p);
+	// If no palette is shown, this displays the primary palette
+	// else does nothing.
+	void ShowPalette();
+	// Select a particular page on the primary palette by runtime palette name
+	void SelectPalettePage(std::string_view name);
+
+	// Returns primary palette
+	PaletteWindow* GetPalette();
+	// Returns list of all palette, first in the list is primary
+	const std::list<PaletteWindow*>& GetPalettes();
+
+	void DestroyPalettes();
+	PaletteWindow* CreatePalette();
+
+protected:
+	//=========================================================================
+	// Public members
+	//=========================================================================
+public:
+	wxAuiManager* aui_manager;
+	MapTabbook* tabbook;
+	MainFrame* root; // The main frame
+	CopyBuffer copybuffer;
+
+	GraphicManager& gfx = g_graphics;
+
+	HousePalette* house_palette;
+	ZonePalettePanel* zone_palette;
+	TownPalettePanel* town_palette;
+
+	ToolOptionsWindow* tool_options;
+	TilePropertiesPanel* tile_properties_panel;
+	BrushItemsWindow* brush_items_window;
+
+	bool pasting;
+
+	Hotkey hotkeys[10];
+	bool hotkeys_enabled;
+
+protected:
+	int disabled_counter;
+
+	std::mutex pending_live_clients_mutex;
+	std::vector<std::unique_ptr<LiveClient>> pending_live_clients;
+
+	friend class RenderingLock;
+	friend class MapTab;
+};
+
+extern GUI g_gui;
+
+class RenderingLock {
+	bool acquired;
+
+public:
+	RenderingLock() :
+		acquired(true) {
+		g_gui.DisableRendering();
+	}
+	~RenderingLock() {
+		release();
+	}
+	void release() {
+		if (acquired) {
+			acquired = false;
+			g_gui.EnableRendering();
+		}
+	}
+};
+
+/**
+ * Will push a loading bar when it is constructed
+ * which will the be popped when it destructs.
+ * Look in the GUI class for documentation of what the methods mean.
+ */
+class ScopedLoadingBar {
+public:
+	ScopedLoadingBar(wxString message, bool canCancel = false, const wxString& title = "Loading") {
+		g_loading.CreateLoadBar(message, canCancel, title);
+	}
+	~ScopedLoadingBar() {
+		g_loading.DestroyLoadBar();
+	}
+
+	void SetLoadDone(int32_t done, const wxString& newmessage = wxEmptyString) {
+		g_loading.SetLoadDone(done, newmessage);
+	}
+
+	void SetLoadText(const wxString& message) {
+		g_loading.SetLoadText(message);
+	}
+
+	bool WasLoadCancelled() const {
+		return g_loading.WasCancelled();
+	}
+
+	void SetLoadScale(int32_t from, int32_t to) {
+		g_loading.SetLoadScale(from, to);
+	}
+
+	ScopedLoadingBar(const ScopedLoadingBar&) = delete;
+	ScopedLoadingBar& operator=(const ScopedLoadingBar&) = delete;
+};
+
+/**
+ * RAII wrapper for the informational, app-modal operation dialog used by
+ * operations without measurable progress, such as closing a map or shutting the
+ * editor down. It is the same kind of dialog as the progress bar (owned by the
+ * editor window, centred on it, app-modal so the editor cannot be used nor
+ * dragged around), only without a gauge.
+ */
+class ScopedInfoBar {
+public:
+	explicit ScopedInfoBar(const wxString& message, const wxString& title = "Closing") {
+		g_loading.CreateInfoBar(message, title);
+	}
+	~ScopedInfoBar() {
+		g_loading.DestroyLoadBar();
+	}
+
+	void SetText(const wxString& message) {
+		g_loading.SetLoadText(message);
+	}
+
+	ScopedInfoBar(const ScopedInfoBar&) = delete;
+	ScopedInfoBar& operator=(const ScopedInfoBar&) = delete;
+};
+
+#define UnnamedRenderingLock() RenderingLock __unnamed_rendering_lock_##__LINE__
+
+void SetWindowToolTip(wxWindow* a, const wxString& tip);
+void SetWindowToolTip(wxWindow* a, wxWindow* b, const wxString& tip);
+
+#endif

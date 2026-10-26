@@ -1,0 +1,37 @@
+#ifndef RME_RENDERING_DRAWERS_ENTITIES_CREATURE_NAME_DRAWER_H_
+#define RME_RENDERING_DRAWERS_ENTITIES_CREATURE_NAME_DRAWER_H_
+
+#include "app/definitions.h"
+#include <string>
+#include <string_view>
+#include <vector>
+
+struct RenderView;
+struct NVGcontext;
+class Creature;
+
+#include "map/position.h"
+
+struct CreatureLabel {
+	Position pos;
+	std::string_view name;
+	const Creature* creature;
+};
+
+class CreatureNameDrawer {
+public:
+	CreatureNameDrawer();
+	~CreatureNameDrawer();
+
+	void clear();
+	bool empty() const noexcept {
+		return labels.empty();
+	}
+	void addLabel(const Position& pos, std::string_view name, const Creature* c);
+	void draw(NVGcontext* vg, const RenderView& view);
+
+private:
+	std::vector<CreatureLabel> labels;
+};
+
+#endif

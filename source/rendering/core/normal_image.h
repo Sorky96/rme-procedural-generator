@@ -1,0 +1,35 @@
+#ifndef RME_RENDERING_CORE_NORMAL_IMAGE_H_
+#define RME_RENDERING_CORE_NORMAL_IMAGE_H_
+
+#include "rendering/core/image.h"
+
+class NormalImage : public Image {
+public:
+	NormalImage();
+	~NormalImage() override;
+
+	bool isNormalImage() const override {
+		return true;
+	}
+
+	const AtlasRegion* getAtlasRegion(bool allow_upload = true);
+
+	// We use the sprite id as key
+	uint32_t id;
+	const AtlasRegion* atlas_region;
+	bool is_preloading = false;
+
+	uint16_t pixel_width = TextureAtlas::BASE_SLOT_SIZE;
+	uint16_t pixel_height = TextureAtlas::BASE_SLOT_SIZE;
+
+
+	std::unique_ptr<uint8_t[]> getRGBData() override;
+	std::unique_ptr<uint8_t[]> getRGBAData() override;
+	ImageDimensions getDimensions() const override {
+		return ImageDimensions { pixel_width, pixel_height };
+	}
+
+	void fulfillPreload(std::unique_ptr<uint8_t[]> preloaded_data);
+};
+
+#endif

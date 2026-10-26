@@ -1,0 +1,131 @@
+# ============================================================
+#  Build outputs
+# ============================================================
+/build*/
+build.log
+build_script.log
+build_output*.txt
+
+# ============================================================
+#  CMake
+# ============================================================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeLists.txt.user*
+CMakeUserPresets.json
+Makefile
+
+# ============================================================
+#  vcproj (generated VS solution)
+# ============================================================
+vcproj/*
+!vcproj/generate_vcproj.bat
+
+# ============================================================
+#  vcpkg
+# ============================================================
+/vcpkg_installed/
+
+# ============================================================
+#  Visual Studio / MSBuild
+# ============================================================
+*.obj
+*.pdb
+*.ilk
+*.user
+*.aps
+*.opensdf
+*.sdf
+*.suo
+*.db
+*.opendb
+.vs/
+
+# ============================================================
+#  Binaries
+# ============================================================
+*.exe
+*.dll
+
+# ============================================================
+#  Xcode / macOS
+# ============================================================
+xcuserdata/
+.DS_Store
+
+# ============================================================
+#  JetBrains (CLion, Rider)
+# ============================================================
+.idea/
+cmake-build-*/
+
+# ============================================================
+#  VS Code
+# ============================================================
+.vscode/
+
+# ============================================================
+#  Editor temp files
+# ============================================================
+*.bak
+*.swp
+*~
+
+# ============================================================
+#  AI / agent config
+# ============================================================
+.gemini/
+.qwen/
+.agent/
+.agents/
+/.agent/rules
+.codex/local.toml
+.codex/*.local.toml
+gha-creds-*.json
+
+# ============================================================
+#  Local History (VS Code extension)
+# ============================================================
+/.history/
+
+# ============================================================
+#  Project-specific ignores
+# ============================================================
+# RME runtime config & user data
+rme
+rme.cfg
+data/user/
+
+# Tibia asset files (not shipped in repo)
+*.spr
+*.dat
+*.MAP
+
+# External / experimental directories
+/ext/nanovg/example/
+/ImguiMapEditor/
+/legacy/
+/MapViewerClient/
+/Assets Editor/
+/mappingtool/
+/test_iterator_mock/
+/test_selection_mock/
+/test_variant_logic/
+/.agents/rules
+compile_commands.json
+/.cache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+/tools/crystal_data
+/tools/cd2
+
+# Local agent runtime state (goals, loop logs): contains session ids
+/.opencode/
+
+/.codegraph/
+/.gito/
+/local-data/

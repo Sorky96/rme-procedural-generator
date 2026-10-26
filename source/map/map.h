@@ -1,0 +1,368 @@
+//////////////////////////////////////////////////////////////////////
+// This file is part of Remere's Map Editor
+//////////////////////////////////////////////////////////////////////
+// Remere's Map Editor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Remere's Map Editor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+//////////////////////////////////////////////////////////////////////
+
+#ifndef RME_MAP_H_
+#define RME_MAP_H_
+
+#include <cstdint>
+#include "map/map_storage_format.h"
+#include "map/basemap.h"
+#include "map/tile.h"
+#include "game/town.h"
+#include "game/house.h"
+#include "game/spawn.h"
+#include "game/complexitem.h"
+#include "game/waypoints.h"
+#include "map/zone_index.h"
+#include "io/templates.h"
+
+class MapConverter;
+class MapSpawnManager;
+
+class Map : public BaseMap {
+public:
+	struct Zone {
+		std::string name;
+		uint16_t id;
+	};
+
+	// ctor and dtor
+	Map();
+	~Map() override;
+
+	// Operations on the entire map
+	void cleanInvalidTiles(bool showdialog = false);
+	void cleanInvalidZones(bool showdialog = false);
+	void convertHouseTiles(uint32_t fromId, uint32_t toId);
+	void updateTownIdForHouses(uint32_t old_town_id, uint32_t new_town_id);
+
+	// Save a bmp image of the minimap
+
+	//
+	bool convert(MapVersion to, bool showdialog = false);
+	bool convert(const ConversionMap& cm, bool showdialog = false);
+
+	// Query information about the map
+
+	MapVersion getVersion() const;
+	// Returns true if any change has been done since last save
+	bool hasChanged() const;
+	// Makes a change, doesn't matter what. Just so that it asks when saving (Also adds a * to the window title)
+	bool doChange();
+	// Clears any changes
+	bool clearChanges();
+
+	// Errors/warnings
+	bool hasWarnings() const {
+		return warnings.size() != 0;
+	}
+	const std::vector<std::string>& getWarnings() const {
+		return warnings;
+	}
+	bool hasError() const {
+		return error.size() != 0;
+	}
+	wxString getError() const {
+		return error;
+	}
+
+	// Mess with spawns
+	bool addSpawn(Tile* spawn);
+	void removeSpawn(Tile* tile);
+	void removeSpawn(const Position& position) {
+		removeSpawn(getTile(position));
+	}
+
+	// Returns all possible spawns on the target tile
+	SpawnList getSpawnList(Tile* t);
+	SpawnList getSpawnList(const Position& position) {
+		return getSpawnList(getTile(position));
+	}
+	SpawnList getSpawnList(int32_t x, int32_t y, int32_t z) {
+		return getSpawnList(getTile(x, y, z));
+	}
+
+	// Returns true if the map has been saved
+	// ie. it knows which file it should be saved to
+	bool hasFile() const;
+	std::string getFilename() const {
+		return filename;
+	}
+	std::string getName() const {
+		return name;
+	}
+	void setName(const std::string& n) {
+		name = n;
+	}
+
+	// Get map data
+	int getWidth() const {
+		return width;
+	}
+	int getHeight() const {
+		return height;
+	}
+	std::string getMapDescription() const {
+		return description;
+	}
+	std::string getHouseFilename() const {
+		return housefile;
+	}
+	std::string getSpawnFilename() const {
+		return spawnfile;
+	}
+	std::string getMonsterFilename() const {
+		return monsterfile;
+	}
+	std::string getNpcFilename() const {
+		return npcfile;
+	}
+
+	// Set some map data
+	void setWidth(int new_width);
+	void setHeight(int new_height);
+	void setMapDescription(const std::string& new_description);
+	void setHouseFilename(const std::string& new_housefile);
+	void setSpawnFilename(const std::string& new_spawnfile);
+	void setMonsterFilename(const std::string& new_monsterfile);
+	void setNpcFilename(const std::string& new_npcfile);
+	void setWaypointFilename(const std::string& new_waypointfile);
+
+	std::string getWaypointFilename() const {
+		return waypointfile;
+	}
+	std::string getZoneFilename() const {
+		return zonefile;
+	}
+	void setZoneFilename(const std::string& new_zonefile) {
+		if (zonefile != new_zonefile) {
+			zonefile = new_zonefile;
+			unnamed = false;
+			doChange();
+		}
+	}
+
+	[[nodiscard]] bool supportsZones() const noexcept override {
+		return mapVersion.otbm == MAP_OTBM_5;
+	}
+
+	// OTBM 5 zone registry (Canary / Crystal Server); ids stay stable on rename because tiles reference them
+	[[nodiscard]] const Zone* findZone(uint16_t id) const;
+	[[nodiscard]] const Zone* findZone(std::string_view name) const;
+	// Returns the new zone id, or 0 when the name is empty, taken, or no id is left
+	uint16_t addZone(std::string name);
+	bool renameZone(uint16_t id, std::string name);
+	// Removes the zone and strips its id from every tile
+	void removeZone(uint16_t id);
+	[[nodiscard]] const std::vector<Position>& getZoneTilePositions(uint16_t id) const noexcept;
+	[[nodiscard]] const std::vector<ZoneCluster>& getZoneClusters(uint16_t id, bool recompute_if_dirty = true) const;
+	void addTileToZone(uint16_t id, const Position& pos);
+	void removeTileFromZone(uint16_t id, const Position& pos);
+	void updateTileZones(const Position& pos, std::span<const uint16_t> old_zones, std::span<const uint16_t> new_zones);
+	void rebuildZoneIndex();
+
+	uint64_t getGeneration() const {
+		return generation;
+	}
+
+	bool isUnnamed() const {
+		return unnamed;
+	}
+
+	void setUnnamed(bool u) {
+		unnamed = u;
+	}
+
+	void flagAsNamed() {
+		unnamed = false;
+	}
+
+	void initializeEmpty();
+
+protected:
+	// Loads a map
+	bool open(const std::string& identifier);
+
+protected:
+	std::vector<std::string> warnings;
+	wxString error;
+
+	std::string name; // The map name, NOT the same as filename
+	std::string filename; // the maps filename
+	std::string description; // The description of the map
+
+	MapVersion mapVersion;
+
+	// Map Width and Height - for info purposes
+	uint16_t width, height;
+
+	std::string spawnfile; // Standard spawnfile (<map>-spawn.xml, for TFS / classic OTBM)
+	std::string monsterfile; // Monster spawnfile (<map>-monster.xml, for OTBM 5)
+	std::string housefile; // The housefile
+	std::string npcfile; // NPC spawnfile (<map>-npc.xml, for OTBM 5)
+	std::string zonefile; // Crystal Server zone names; tiles reference them by id
+	std::string waypointfile; // The waypoints file (stores extended waypoint information such as id, preferred icon and matching town)
+
+public:
+	std::vector<Zone> zones;
+	ZoneIndex zone_index;
+	uint16_t max_assigned_zone_id = 0;
+
+	Towns towns;
+	Houses houses;
+	Spawns spawns;
+
+protected:
+	bool has_changed; // If the map has changed
+	bool unnamed; // If the map has yet to receive a name
+	OtbmCompression compression = OtbmCompression::None;
+
+public:
+	[[nodiscard]] OtbmCompression getCompression() const noexcept {
+		return compression;
+	}
+	void setCompression(OtbmCompression format) noexcept {
+		compression = format;
+	}
+
+protected:
+
+	friend class IOMapOTBM;
+	friend class Editor;
+	friend class SelectionOperations;
+	friend class MapProcessor;
+	friend class EditorPersistence;
+	friend class MapBackupService;
+	friend class MapXMLIO;
+	friend class HeaderSerializationOTBM;
+	friend class MapConverter;
+	friend class MapSpawnManager;
+
+public:
+	Waypoints waypoints;
+
+private:
+	uint64_t generation;
+};
+
+template <typename ForeachType>
+inline void foreach_ItemOnMap(Map& map, ForeachType& foreach, bool selectedTiles) {
+	long long done = 0;
+
+	std::vector<Container*> containers;
+	containers.reserve(32);
+
+	std::ranges::for_each(map.tiles(), [&map, &foreach, &done, &containers, selectedTiles](auto& tile_loc) {
+		++done;
+		Tile* tile = tile_loc.get();
+		if (selectedTiles && !tile->isSelected()) {
+			return;
+		}
+
+		if (tile->ground) {
+			foreach (map, tile, tile->ground.get(), done)
+				;
+		}
+
+		for (const auto& item : tile->items) {
+			containers.clear();
+			Container* container = item->asContainer();
+			foreach (map, tile, item.get(), done)
+				;
+
+			if (container) {
+				containers.push_back(container);
+
+				size_t index = 0;
+				while (index < containers.size()) {
+					container = containers[index++];
+
+					auto& contents = container->getVector();
+					for (const auto& i : contents) {
+						Container* c = i->asContainer();
+						foreach (map, tile, i.get(), done)
+							;
+
+						if (c) {
+							containers.push_back(c);
+						}
+					}
+				}
+			}
+		}
+	});
+}
+
+template <typename ForeachType>
+inline void foreach_TileOnMap(Map& map, ForeachType& foreach) {
+	long long done = 0;
+	std::ranges::for_each(map.tiles(), [&](auto& tile_loc) {
+		foreach (map, tile_loc.get(), ++done)
+			;
+	});
+}
+
+template <typename RemoveIfType>
+inline long long remove_if_TileOnMap(Map& map, RemoveIfType& remove_if) {
+	long long done = 0;
+	long long removed = 0;
+	long long total = map.getTileCount();
+
+	std::ranges::for_each(map.tiles(), [&](auto& tile_loc) {
+		Tile* tile = tile_loc.get();
+		if (remove_if(map, tile, removed, done, total)) {
+			(void)map.setTile(tile->getPosition(), std::unique_ptr<Tile>());
+			++removed;
+		}
+		++done;
+	});
+
+	return removed;
+}
+
+template <typename RemoveIfType>
+inline int64_t RemoveItemOnMap(Map& map, RemoveIfType& condition, bool selectedOnly) {
+	int64_t done = 0;
+	int64_t removed = 0;
+
+	std::ranges::for_each(map.tiles(), [&](auto& tile_loc) {
+		++done;
+		Tile* tile = tile_loc.get();
+		if (selectedOnly && !tile->isSelected()) {
+			return;
+		}
+
+		if (tile->ground) {
+			if (condition(map, tile->ground.get(), removed, done)) {
+				tile->ground.reset();
+				++removed;
+			}
+		}
+
+		// Use C++20's std::erase_if for a safer and more idiomatic way to remove elements.
+		std::erase_if(tile->items, [&](const auto& item) {
+			if (condition(map, item.get(), removed, done)) {
+				++removed;
+				return true;
+			}
+			return false;
+		});
+	});
+	return removed;
+}
+
+#endif

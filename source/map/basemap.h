@@ -1,0 +1,252 @@
+//////////////////////////////////////////////////////////////////////
+// This file is part of Remere's Map Editor
+//////////////////////////////////////////////////////////////////////
+// Remere's Map Editor is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Remere's Map Editor is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+//////////////////////////////////////////////////////////////////////
+
+#ifndef RME_BASE_MAP_H_
+#define RME_BASE_MAP_H_
+
+#include "app/main.h"
+#include "map/position.h"
+#include "io/filehandle.h"
+#include "map/map_allocator.h"
+#include "map/tile.h"
+#include "map/spatial_hash_grid.h"
+#include "map/spatial_change_tracker.h"
+#include <unordered_map>
+#include <memory>
+#include <iterator>
+#include <ranges>
+
+// Class declarations
+class SpatialHashGrid;
+class BaseMap;
+class MapIterator;
+class Floor;
+class MapNode;
+class TileLocation;
+
+class MapIterator {
+public:
+	using iterator_category = std::forward_iterator_tag;
+	using value_type = TileLocation;
+	using difference_type = std::ptrdiff_t;
+	using pointer = TileLocation*;
+	using reference = TileLocation&;
+
+	MapIterator(BaseMap* _map = nullptr);
+	~MapIterator() = default;
+	MapIterator(const MapIterator& other);
+
+	TileLocation& operator*() const noexcept;
+	TileLocation* operator->() noexcept {
+		return current_tile;
+	}
+	const TileLocation* operator->() const noexcept {
+		return current_tile;
+	}
+	MapIterator& operator++() noexcept;
+	MapIterator operator++(int) noexcept;
+	bool operator==(const MapIterator& other) const noexcept;
+	bool operator!=(const MapIterator& other) const noexcept {
+		return !(other == *this);
+	}
+
+private:
+	bool findNext();
+
+	using CellIterator = std::vector<SpatialHashGrid::CellEntry>::const_iterator;
+	CellIterator cell_it;
+	int node_i, floor_i, tile_i;
+
+	TileLocation* current_tile;
+	BaseMap* map;
+
+	friend class BaseMap;
+};
+
+class BaseMap {
+public:
+	BaseMap();
+	virtual ~BaseMap() = default;
+
+	// This doesn't destroy the map structure, just clears it, if param is true, delete all tiles too.
+	void clear(bool del = true);
+	[[nodiscard]] virtual bool supportsZones() const noexcept {
+		return false;
+	}
+	MapIterator begin();
+	MapIterator end();
+	auto tiles() {
+		return std::ranges::subrange(begin(), end());
+	}
+	uint64_t size() const {
+		return tilecount;
+	}
+
+	// these functions take a position and returns a tile on the map
+	Tile* createTile(int x, int y, int z);
+	Tile* createTileInCell(size_t cell_idx, int x, int y, int z);
+	Tile* getTile(int x, int y, int z);
+	Tile* getTile(const Position& pos);
+	Tile* getOrCreateTile(const Position& pos);
+	const Tile* getTile(int x, int y, int z) const;
+	const Tile* getTile(const Position& pos) const;
+	TileLocation* getTileL(int x, int y, int z);
+	TileLocation* getTileL(const Position& pos);
+	TileLocation* createTileL(int x, int y, int z);
+	TileLocation* createTileL(const Position& pos);
+	const TileLocation* getTileL(int x, int y, int z) const;
+	const TileLocation* getTileL(const Position& pos) const;
+
+	// Sequential-scan variants: reuse a caller-owned cell cursor so a row sweep
+	// performs one binary search per 64x64 cell instead of one per tile.
+	// See SpatialHashGrid::CellCursor.
+	const Tile* getTile(int x, int y, int z, SpatialHashGrid::CellCursor& cursor) const;
+	const TileLocation* getTileL(int x, int y, int z, SpatialHashGrid::CellCursor& cursor) const;
+	const Floor* getFloor(int x, int y, int z, SpatialHashGrid::CellCursor& cursor) const;
+
+	// Get a Map Node from the map
+	MapNode* getLeaf(int x, int y) {
+		return grid.getLeaf(x, y);
+	}
+	const MapNode* getLeaf(int x, int y) const {
+		return grid.getLeaf(x, y);
+	}
+	MapNode* createLeaf(int x, int y) {
+		return grid.getLeafForce(x, y);
+	}
+
+	template <typename Func>
+	void visitLeaves(int min_x, int min_y, int max_x, int max_y, Func&& func) {
+		grid.visitLeaves(min_x, min_y, max_x, max_y, std::forward<Func>(func));
+	}
+	template <typename Func>
+	void visitLeaves(int min_x, int min_y, int max_x, int max_y, Func&& func) const {
+		grid.visitLeaves(min_x, min_y, max_x, max_y, std::forward<Func>(func));
+	}
+
+	template <typename Func>
+	void visitPopulatedChunks(int min_cx, int min_cy, int max_cx, int max_cy, int map_z, Func&& func) const {
+		grid.visitPopulatedChunks(min_cx, min_cy, max_cx, max_cy, map_z, std::forward<Func>(func));
+	}
+
+	// Assigns a tile, it might seem pointless to provide position, but it is not, as the passed tile may be nullptr
+	[[nodiscard]] std::unique_ptr<Tile> setTile(int _x, int _y, int _z, std::unique_ptr<Tile> newtile);
+	[[nodiscard]] std::unique_ptr<Tile> setTile(const Position& pos, std::unique_ptr<Tile> newtile) {
+		return setTile(pos.x, pos.y, pos.z, std::move(newtile));
+	}
+	[[nodiscard]] std::unique_ptr<Tile> setTile(std::unique_ptr<Tile> newtile) {
+		ASSERT(newtile);
+		int x = newtile->getX();
+		int y = newtile->getY();
+		int z = newtile->getZ();
+		return setTile(x, y, z, std::move(newtile));
+	}
+	// Replaces a tile and returns the old one
+	[[nodiscard]] std::unique_ptr<Tile> swapTile(int _x, int _y, int _z, std::unique_ptr<Tile> newtile);
+	[[nodiscard]] std::unique_ptr<Tile> swapTile(const Position& pos, std::unique_ptr<Tile> newtile) {
+		return swapTile(pos.x, pos.y, pos.z, std::move(newtile));
+	}
+
+	SpatialHashGrid& getGrid() {
+		return grid;
+	}
+	const SpatialHashGrid& getGrid() const {
+		return grid;
+	}
+
+	// Clears the visiblity according to the mask passed
+	void clearVisible(uint32_t mask);
+
+	uint64_t getTileCount() const {
+		return tilecount;
+	}
+
+	SpatialChangeTracker& getChangeTracker() noexcept {
+		return change_tracker;
+	}
+	const SpatialChangeTracker& getChangeTracker() const noexcept {
+		return change_tracker;
+	}
+
+public:
+	MapAllocator allocator;
+
+protected:
+	uint64_t tilecount;
+
+	SpatialHashGrid grid; // The Spatial Hash Grid
+	SpatialChangeTracker change_tracker;
+
+	friend class MapNode;
+	friend class MapProcessor;
+	friend class EditorPersistence;
+	friend class MapIterator;
+};
+
+inline Tile* BaseMap::getTile(int x, int y, int z) {
+	TileLocation* l = getTileL(x, y, z);
+	return l ? l->get() : nullptr;
+}
+
+inline Tile* BaseMap::getTile(const Position& pos) {
+	TileLocation* l = getTileL(pos);
+	return l ? l->get() : nullptr;
+}
+
+inline const Tile* BaseMap::getTile(int x, int y, int z) const {
+	const TileLocation* l = getTileL(x, y, z);
+	return l ? l->get() : nullptr;
+}
+
+inline const Tile* BaseMap::getTile(const Position& pos) const {
+	const TileLocation* l = getTileL(pos);
+	return l ? l->get() : nullptr;
+}
+
+inline const Floor* BaseMap::getFloor(int x, int y, int z, SpatialHashGrid::CellCursor& cursor) const {
+	ASSERT(z < MAP_LAYERS);
+	const int nx = x >> 2;
+	const int ny = y >> 2;
+	if (cursor.node_x != nx || cursor.node_y != ny || cursor.floor_z != z) {
+		cursor.node_x = nx;
+		cursor.node_y = ny;
+		cursor.floor_z = z;
+		const MapNode* leaf = grid.getLeafCached(x, y, cursor);
+		cursor.floor = leaf ? leaf->getFloor(z) : nullptr;
+		if (!cursor.floor) {
+			if (!cursor.cell || cursor.cell->floor_chunk_mask[z] == 0) {
+				cursor.empty_span_mask = 63;
+			} else {
+				const int chunk_bit_idx = ((ny & 12) | ((nx >> 2) & 3));
+				cursor.empty_span_mask = ((cursor.cell->floor_chunk_mask[z] & static_cast<uint16_t>(1u << chunk_bit_idx)) == 0) ? 15 : 3;
+			}
+		}
+	}
+	return cursor.floor;
+}
+
+inline const TileLocation* BaseMap::getTileL(int x, int y, int z, SpatialHashGrid::CellCursor& cursor) const {
+	const Floor* floor = getFloor(x, y, z, cursor);
+	return floor ? &floor->locs[(x & 3) * 4 + (y & 3)] : nullptr;
+}
+
+inline const Tile* BaseMap::getTile(int x, int y, int z, SpatialHashGrid::CellCursor& cursor) const {
+	const TileLocation* l = getTileL(x, y, z, cursor);
+	return l ? l->get() : nullptr;
+}
+
+#endif

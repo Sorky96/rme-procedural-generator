@@ -1,0 +1,67 @@
+//////////////////////////////////////////////////////////////////////
+// This file is part of Remere's Map Editor
+//////////////////////////////////////////////////////////////////////
+
+#ifndef RME_RENDERING_BRUSH_OVERLAY_DRAWER_H_
+#define RME_RENDERING_BRUSH_OVERLAY_DRAWER_H_
+
+#include "map/position.h"
+#include <glm/glm.hpp>
+
+struct RenderFrameContext;
+class Settings;
+class BrushManager;
+struct RenderView;
+struct DrawingOptions;
+class Brush;
+class Editor;
+
+class ItemDrawer;
+class SpriteDrawer;
+class CreatureDrawer;
+class SpriteBatch;
+class AtlasManager;
+
+struct BrushOverlayDragState {
+	bool is_dragging_draw = false;
+	int last_click_map_x = 0;
+	int last_click_map_y = 0;
+};
+
+class BrushOverlayDrawer {
+public:
+	BrushOverlayDrawer();
+	~BrushOverlayDrawer();
+
+	void draw(
+		SpriteBatch& sprite_batch,
+		const BrushOverlayDragState& drag_state,
+		ItemDrawer* item_drawer,
+		SpriteDrawer* sprite_drawer,
+		CreatureDrawer* creature_drawer,
+		const RenderView& view,
+		const DrawingOptions& options,
+		Editor& editor,
+		const AtlasManager& atlas,
+		const RenderFrameContext& ctx,
+		const Settings* settings = nullptr,
+		const BrushManager* brush_manager = nullptr
+	);
+
+private:
+	enum BrushColor {
+		COLOR_BRUSH,
+		COLOR_HOUSE_BRUSH,
+		COLOR_FLAG_BRUSH,
+		COLOR_SPAWN_BRUSH,
+		COLOR_ERASER,
+		COLOR_VALID,
+		COLOR_INVALID,
+		COLOR_BLANK,
+	};
+
+	glm::vec4 get_brush_color(BrushColor color, const Settings& settings);
+	glm::vec4 get_check_color(Brush* brush, Editor& editor, const Position& pos, const Settings& settings);
+};
+
+#endif

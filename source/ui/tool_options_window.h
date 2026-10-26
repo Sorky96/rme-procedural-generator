@@ -1,0 +1,25 @@
+#ifndef RME_UI_TOOL_OPTIONS_WINDOW_H_
+#define RME_UI_TOOL_OPTIONS_WINDOW_H_
+
+#include "app/main.h"
+#include "palette/palette_common.h"
+
+class ToolOptionsSurface;
+class Brush;
+
+class ToolOptionsWindow : public wxPanel {
+public:
+	ToolOptionsWindow(wxWindow* parent);
+	~ToolOptionsWindow();
+
+	void SetActiveBrush(Brush* brush);
+	void UpdateBrushSize(BrushShape shape, int size);
+	void ReloadSettings();
+	void Clear();
+
+protected:
+	wxSizer* main_sizer;
+	ToolOptionsSurface* surface;
+};
+
+#endif

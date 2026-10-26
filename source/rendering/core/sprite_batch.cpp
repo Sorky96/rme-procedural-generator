@@ -1,0 +1,373 @@
+#include "rendering/core/sprite_batch.h"
+#include "rendering/core/shared_geometry.h"
+#include "rendering/shaders/sprite_batch_shader.h"
+#include <iostream>
+#include <cstring>
+#include <utility>
+#include <spdlog/spdlog.h>
+
+SpriteBatch::SpriteBatch() {
+	pending_sprites_.reserve(MAX_SPRITES_PER_BATCH);
+	used_sections_.reserve(RingBuffer::BUFFER_COUNT);
+}
+
+SpriteBatch::~SpriteBatch() {
+	// RAII handles cleanup
+}
+
+SpriteBatch::SpriteBatch(SpriteBatch&& other) noexcept = default;
+SpriteBatch& SpriteBatch::operator=(SpriteBatch&& other) noexcept = default;
+
+bool SpriteBatch::initialize() {
+	// Load shader
+	shader_ = std::make_unique<ShaderProgram>();
+	if (!shader_->Load(rme::rendering::shaders::SPRITE_BATCH_VERT_SHADER, rme::rendering::shaders::GetSpriteBatchFragShader())) {
+		spdlog::error("SpriteBatch: Failed to load shader");
+		return false;
+	}
+
+	// Initialize RingBuffer
+	if (!ring_buffer_.initialize(sizeof(SpriteInstance), MAX_SPRITES_PER_BATCH)) {
+		spdlog::error("SpriteBatch: Failed to initialize RingBuffer");
+		return false;
+	}
+
+	// Create VAO and static buffers
+	vao_ = std::make_unique<GLVertexArray>();
+	// Initialize Shared Geometry
+	if (!SharedGeometry::Instance().initialize()) {
+		spdlog::error("SpriteBatch: Failed to initialize SharedGeometry");
+		return false;
+	}
+
+	// Bind Quad VBO/EBO to VAO (DSA)
+	glVertexArrayVertexBuffer(vao_->GetID(), 0, SharedGeometry::Instance().getQuadVBO(), 0, 4 * sizeof(float));
+	glVertexArrayElementBuffer(vao_->GetID(), SharedGeometry::Instance().getQuadEBO());
+
+	// Loc 0: position (vec2)
+	glEnableVertexArrayAttrib(vao_->GetID(), 0);
+	glVertexArrayAttribFormat(vao_->GetID(), 0, 2, GL_FLOAT, GL_FALSE, 0);
+	glVertexArrayAttribBinding(vao_->GetID(), 0, 0);
+
+	// Loc 1: texcoord (vec2)
+	glEnableVertexArrayAttrib(vao_->GetID(), 1);
+	glVertexArrayAttribFormat(vao_->GetID(), 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float));
+	glVertexArrayAttribBinding(vao_->GetID(), 1, 0);
+
+	// Bind RingBuffer for instance data
+	// Bind RingBuffer for instance data to binding point 1 (DSA)
+	glVertexArrayVertexBuffer(vao_->GetID(), 1, ring_buffer_.getBufferId(), 0, sizeof(SpriteInstance));
+	glVertexArrayBindingDivisor(vao_->GetID(), 1, 1);
+
+	// Loc 2: rect (vec4) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 2);
+	glVertexArrayAttribFormat(vao_->GetID(), 2, 4, GL_FLOAT, GL_FALSE, offsetof(SpriteInstance, x));
+	glVertexArrayAttribBinding(vao_->GetID(), 2, 1);
+
+	// Loc 3: uv (vec4) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 3);
+	glVertexArrayAttribFormat(vao_->GetID(), 3, 4, GL_FLOAT, GL_FALSE, offsetof(SpriteInstance, u_min));
+	glVertexArrayAttribBinding(vao_->GetID(), 3, 1);
+
+	// Loc 4: tint (vec4) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 4);
+	glVertexArrayAttribFormat(vao_->GetID(), 4, 4, GL_FLOAT, GL_FALSE, offsetof(SpriteInstance, r));
+	glVertexArrayAttribBinding(vao_->GetID(), 4, 1);
+
+	// Loc 5: layer (float) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 5);
+	glVertexArrayAttribFormat(vao_->GetID(), 5, 1, GL_FLOAT, GL_FALSE, offsetof(SpriteInstance, atlas_layer));
+	glVertexArrayAttribBinding(vao_->GetID(), 5, 1);
+
+	// Loc 6: house_id (float) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 6);
+	glVertexArrayAttribFormat(vao_->GetID(), 6, 1, GL_FLOAT, GL_FALSE, offsetof(SpriteInstance, house_id));
+	glVertexArrayAttribBinding(vao_->GetID(), 6, 1);
+
+	// Loc 7: zone_flags (uint32_t) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 7);
+	glVertexArrayAttribIFormat(vao_->GetID(), 7, 1, GL_UNSIGNED_INT, offsetof(SpriteInstance, zone_flags));
+	glVertexArrayAttribBinding(vao_->GetID(), 7, 1);
+
+	// Loc 8: depth (float) - instance
+	glEnableVertexArrayAttrib(vao_->GetID(), 8);
+	glVertexArrayAttribFormat(vao_->GetID(), 8, 1, GL_FLOAT, GL_FALSE, offsetof(SpriteInstance, depth));
+	glVertexArrayAttribBinding(vao_->GetID(), 8, 1);
+
+	// Initialize MDI
+	if (mdi_renderer_.initialize()) {
+		use_mdi_ = true;
+		spdlog::info("SpriteBatch: MDI renderer initialized");
+	} else {
+		spdlog::warn("SpriteBatch: MDI renderer failed to initialize, using fallback path");
+	}
+
+	spdlog::info("SpriteBatch initialized successfully (VAO: {})", vao_->GetID());
+	return true;
+}
+
+void SpriteBatch::begin(const glm::mat4& projection, const AtlasManager& atlas_manager) {
+	projection_ = projection;
+	current_atlas_manager_ = &atlas_manager;
+	pending_sprites_.clear();
+	in_batch_ = true;
+	draw_call_count_ = 0;
+	sprite_count_ = 0;
+	global_tint_ = glm::vec4(1.0f);
+
+	// Enable Blend State (RAII)
+	// We use emplace to construct the Scoped objects in-place, which saves the previous state
+	blend_capability_.emplace(GL_BLEND);
+	blend_func_.emplace(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	current_sfactor_ = GL_SRC_ALPHA;
+	current_dfactor_ = GL_ONE_MINUS_SRC_ALPHA;
+
+	shader_->Use();
+	shader_->SetMat4("uMVP", projection_);
+	shader_->SetInt("uAtlas", 0);
+	shader_->SetVec4("uGlobalTint", global_tint_);
+}
+
+void SpriteBatch::setGlobalTint(float r, float g, float b, float a, const AtlasManager& atlas_manager) {
+	if (!in_batch_) {
+		return;
+	}
+
+	// If pending sprites exist, must flush to apply previous tint
+	if (!pending_sprites_.empty()) {
+		flush(atlas_manager);
+	}
+
+	global_tint_ = glm::vec4(r, g, b, a);
+	shader_->SetVec4("uGlobalTint", global_tint_);
+}
+
+void SpriteBatch::setBlendFunc(GLenum sfactor, GLenum dfactor, const AtlasManager& atlas_manager) {
+	if (!in_batch_) {
+		return;
+	}
+
+	if (current_sfactor_ == sfactor && current_dfactor_ == dfactor) {
+		return;
+	}
+
+	// Flush pending sprites before switching GPU blend mode
+	if (!pending_sprites_.empty()) {
+		flush(atlas_manager);
+	}
+
+	current_sfactor_ = sfactor;
+	current_dfactor_ = dfactor;
+	glBlendFunc(sfactor, dfactor);
+}
+
+void SpriteBatch::ensureCapacity(size_t capacity) {
+	if (pending_sprites_.capacity() < capacity) {
+		pending_sprites_.reserve(capacity);
+	}
+}
+
+void SpriteBatch::draw(float x, float y, float w, float h, const AtlasRegion& region, float depth) {
+	draw(x, y, w, h, region, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0u, depth);
+}
+
+void SpriteBatch::draw(float x, float y, float w, float h, const AtlasRegion& region, float r, float g, float b, float a, float house_id, uint32_t zone_flags, float depth) {
+	if (!in_batch_) {
+		return;
+	}
+
+	if (pending_sprites_.size() >= MAX_SPRITES_PER_BATCH && current_atlas_manager_) {
+		flush(*current_atlas_manager_);
+	}
+
+	SpriteInstance& inst = pending_sprites_.emplace_back();
+	inst.x = x;
+	inst.y = y;
+	inst.w = w;
+	inst.h = h;
+	inst.u_min = region.u_min;
+	inst.v_min = region.v_min;
+	inst.u_max = region.u_max;
+	inst.v_max = region.v_max;
+	inst.r = r;
+	inst.g = g;
+	inst.b = b;
+	inst.a = a;
+	inst.atlas_layer = static_cast<float>(region.atlas_index);
+	inst.house_id = house_id;
+	inst.zone_flags = zone_flags;
+	inst.depth = depth;
+}
+
+void SpriteBatch::drawRect(float x, float y, float w, float h, const glm::vec4& color, const AtlasManager& atlas_manager, float depth) {
+	const AtlasRegion* region = atlas_manager.getWhitePixel();
+	if (region) {
+		draw(x, y, w, h, *region, color.r, color.g, color.b, color.a, 0.0f, 0u, depth);
+	}
+}
+
+void SpriteBatch::drawRectLines(float x, float y, float w, float h, const glm::vec4& color, const AtlasManager& atlas_manager, float depth) {
+	const AtlasRegion* region = atlas_manager.getWhitePixel();
+	if (!region || !in_batch_) {
+		return;
+	}
+
+	if (pending_sprites_.size() + 4 > MAX_SPRITES_PER_BATCH && current_atlas_manager_) {
+		flush(*current_atlas_manager_);
+	}
+
+	// Top
+	draw(x, y, w, 1.0f, *region, color.r, color.g, color.b, color.a, 0.0f, 0u, depth);
+	// Bottom
+	draw(x, y + h - 1.0f, w, 1.0f, *region, color.r, color.g, color.b, color.a, 0.0f, 0u, depth);
+	// Left
+	draw(x, y + 1.0f, 1.0f, h - 2.0f, *region, color.r, color.g, color.b, color.a, 0.0f, 0u, depth);
+	// Right
+	draw(x + w - 1.0f, y + 1.0f, 1.0f, h - 2.0f, *region, color.r, color.g, color.b, color.a, 0.0f, 0u, depth);
+}
+
+void SpriteBatch::flush(const AtlasManager& atlas_manager) {
+	if (pending_sprites_.empty()) {
+		return;
+	}
+
+	// Ensure shader and VAO are bound to handle interleaved renderer calls
+	shader_->Use();
+	shader_->SetMat4("uMVP", projection_);
+	shader_->SetInt("uAtlas", 0);
+	shader_->SetVec4("uGlobalTint", global_tint_);
+
+	atlas_manager.bind(0);
+
+	glBindVertexArray(vao_->GetID());
+
+	glBindBuffer(GL_ARRAY_BUFFER, ring_buffer_.getBufferId());
+
+	if (use_mdi_) {
+		// MDI Path: Aggregate all batches into one draw call
+		// If we fill the entire ring buffer (3 sections), we must flush intermediate draws
+		// to avoid overwriting the beginning of the buffer before it is executed.
+
+		mdi_renderer_.clear();
+
+		// DSA handles attribute binding, so we don't need to touch glVertexAttribPointer here.
+		// baseInstance in the Indirect command handles the offset into the buffer.
+
+		size_t total = pending_sprites_.size();
+		size_t processed = 0;
+		size_t max_batch = ring_buffer_.getCapacity();
+		used_sections_.clear();
+
+		while (processed < total) {
+			// CHECK FOR OVERFLOW: If we have used all sections, we MUST flush now!
+			if (used_sections_.size() >= RingBuffer::BUFFER_COUNT) {
+				mdi_renderer_.upload();
+				mdi_renderer_.execute();
+				draw_call_count_++;
+
+				for (size_t section_idx : used_sections_) {
+					ring_buffer_.fence(section_idx);
+				}
+
+				mdi_renderer_.clear();
+				used_sections_.clear();
+			}
+
+			size_t batch_size = std::min(total - processed, max_batch);
+
+			// Wait for current section to be free
+			// (If we just flushed above, the fence was placed, and waitAndMap will block correctly if GPU is slow)
+			void* ptr = ring_buffer_.waitAndMap(batch_size);
+			if (!ptr) {
+				spdlog::error("SpriteBatch: RingBuffer mapping failed (MDI path). Aborting batch.");
+				break;
+			}
+
+			// Copy instance data
+			memcpy(ptr, pending_sprites_.data() + processed, batch_size * sizeof(SpriteInstance));
+			ring_buffer_.finishWrite();
+
+			// Calculate base instance for MDI
+			size_t offset = ring_buffer_.getCurrentSectionOffset();
+			GLuint baseInstance = static_cast<GLuint>(offset / sizeof(SpriteInstance));
+
+			// Add command
+			mdi_renderer_.addDrawCommand(6, static_cast<GLuint>(batch_size), 0, 0, baseInstance);
+
+			// Track used section and advance
+			used_sections_.push_back(ring_buffer_.getCurrentSectionIndex());
+			ring_buffer_.advance();
+
+			processed += batch_size;
+			sprite_count_ += static_cast<int>(batch_size);
+		}
+
+		// Flush remaining commands
+		if (!used_sections_.empty()) {
+			mdi_renderer_.upload();
+			mdi_renderer_.execute();
+			draw_call_count_++;
+
+			for (size_t section_idx : used_sections_) {
+				ring_buffer_.fence(section_idx);
+			}
+		}
+
+		used_sections_.clear();
+
+	} else {
+		// Fallback Path: Standard Instanced Rendering Looping
+		size_t total = pending_sprites_.size();
+		size_t processed = 0;
+		size_t max_batch = ring_buffer_.getMaxElements();
+
+		while (processed < total) {
+			size_t batch_size = std::min(total - processed, max_batch);
+			void* ptr = ring_buffer_.waitAndMap(batch_size);
+			if (!ptr) {
+				spdlog::error("SpriteBatch: RingBuffer mapping failed (Fallback path). Aborting batch.");
+				break;
+			}
+
+			memcpy(ptr, pending_sprites_.data() + processed, batch_size * sizeof(SpriteInstance));
+			ring_buffer_.finishWrite();
+
+			size_t offset = ring_buffer_.getCurrentSectionOffset();
+
+			// Fallback: update VAO binding offset (DSA)
+			// Binding point 1 is used for instance data (Attributes 2, 3, 4, 5)
+			glVertexArrayVertexBuffer(vao_->GetID(), 1, ring_buffer_.getBufferId(), offset, sizeof(SpriteInstance));
+
+			glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, static_cast<GLsizei>(batch_size));
+
+			// Standard signal: Fence current and advance
+			ring_buffer_.signalFinished();
+
+			processed += batch_size;
+			draw_call_count_++;
+			sprite_count_ += static_cast<int>(batch_size);
+		}
+	}
+
+	pending_sprites_.clear();
+}
+
+void SpriteBatch::end(const AtlasManager& atlas_manager) {
+	if (!in_batch_) {
+		return;
+	}
+
+	flush(atlas_manager);
+
+	in_batch_ = false;
+	current_atlas_manager_ = nullptr;
+	current_sfactor_ = GL_SRC_ALPHA;
+	current_dfactor_ = GL_ONE_MINUS_SRC_ALPHA;
+	glBindVertexArray(0);
+
+	// Restore state (reverse order of construction)
+	// blend_func_ was constructed second, so destroy it first
+	blend_func_.reset();
+	// blend_capability_ was constructed first, so destroy it last
+	blend_capability_.reset();
+}

@@ -1,0 +1,144 @@
+#ifndef RME_RENDERING_DRAWING_OPTIONS_H_
+#define RME_RENDERING_DRAWING_OPTIONS_H_
+
+#include <cstdint>
+#include <optional>
+#include <glm/vec4.hpp>
+#include "map/position.h"
+#include "rendering/core/floor_visibility_mode.h"
+#include "rendering/core/sprite_light.h"
+
+class Settings;
+class BrushManager;
+
+struct DrawingOptions {
+	DrawingOptions();
+
+	void SetIngame();
+	void SetDefault();
+	void Update(const Settings& settings, const BrushManager& brush_manager);
+	void UpdateIfNeeded(const Settings& settings, const BrushManager& brush_manager);
+	void Update();
+	void UpdateIfNeeded();
+
+	// Granular Dirty Tracking
+	void MarkChunkBakeDirty() noexcept { chunk_bake_dirty_ = true; dirty_ = true; }
+	[[nodiscard]] bool isChunkBakeDirty() const noexcept { return chunk_bake_dirty_; }
+	void clearChunkBakeDirty() noexcept { chunk_bake_dirty_ = false; }
+
+	void MarkLightingDirty() noexcept { lighting_dirty_ = true; dirty_ = true; }
+	[[nodiscard]] bool isLightingDirty() const noexcept { return lighting_dirty_; }
+	void clearLightingDirty() noexcept { lighting_dirty_ = false; }
+
+	void MarkVisualDirty() noexcept { visual_dirty_ = true; dirty_ = true; }
+	[[nodiscard]] bool isVisualDirty() const noexcept { return visual_dirty_; }
+	void clearVisualDirty() noexcept { visual_dirty_ = false; }
+
+	void MarkSettingDirty(uint32_t key) noexcept;
+
+	// Backward compatibility
+	void MarkDirty() noexcept {
+		chunk_bake_dirty_ = true;
+		lighting_dirty_ = true;
+		visual_dirty_ = true;
+		dirty_ = true;
+	}
+	[[nodiscard]] bool isDirty() const noexcept {
+		return chunk_bake_dirty_ || lighting_dirty_ || visual_dirty_ || dirty_;
+	}
+	void clearDirty() noexcept {
+		chunk_bake_dirty_ = false;
+		lighting_dirty_ = false;
+		visual_dirty_ = false;
+		dirty_ = false;
+	}
+	bool isDrawLight() const noexcept;
+
+	bool transparent_floors;
+	bool transparent_items;
+	bool show_ingame_box;
+	bool show_lights;
+	bool show_light_str;
+	bool show_tech_items;
+	bool show_invalid_tiles;
+	bool show_invalid_zones;
+	bool show_waypoints;
+	bool ingame;
+	bool is_drawing_mode;
+	bool is_drawing = false;
+	bool dragging;
+	bool boundbox_selection;
+
+	std::optional<MapBounds> transient_selection_bounds;
+
+	int show_grid;
+	bool show_all_floors;
+	FloorVisibilityMode floor_visibility_mode;
+	bool show_creatures;
+	bool show_spawns;
+	bool show_houses;
+	bool show_zones = false;
+	bool show_shade;
+	bool show_special_tiles;
+	bool show_items;
+
+	bool highlight_items;
+	bool highlight_locked_doors;
+	bool show_blocking;
+	bool show_tooltips;
+
+	bool show_as_minimap;
+	bool show_only_colors;
+	bool show_only_modified;
+	bool show_preview;
+	bool show_hooks;
+	bool hide_items_when_zoomed;
+	bool show_towns;
+	bool always_show_zones;
+	bool extended_house_shader;
+	bool extended_pathing_shader;
+
+	bool draw_floor_shadow;
+
+	uint32_t current_house_id;
+	uint16_t current_zone_id = 0;
+	SpriteLight server_light;
+	float minimum_ambient_light;
+
+	bool anti_aliasing;
+
+	// Zone & Overlay customizable colors, opacity, borders, and blend modes
+	bool show_zone_borders = false;
+	int cursor_blend_mode = 0;
+	int cursor_alt_blend_mode = 0;
+	int zone_border_blend_mode = 0;
+	int zone_pz_blend_mode = 0;
+	int zone_nopvp_blend_mode = 0;
+	int zone_nologout_blend_mode = 0;
+	int zone_pvp_blend_mode = 0;
+	int zone_blocking_blend_mode = 0;
+	int zone_spawn_blend_mode = 1;
+	int house_active_blend_mode = 1;
+	int house_inactive_blend_mode = 1;
+	glm::vec4 zone_border_color;
+	glm::vec4 zone_pz_color;
+	glm::vec4 zone_nopvp_color;
+	glm::vec4 zone_nologout_color;
+	glm::vec4 zone_pvp_color;
+	glm::vec4 zone_blocking_color;
+	glm::vec4 zone_spawn_color;
+	glm::vec4 house_active_color;
+	glm::vec4 house_inactive_color;
+
+	[[nodiscard]] bool hasTileColorModifiers() const noexcept {
+		return show_only_colors;
+	}
+
+private:
+	bool chunk_bake_dirty_ = true;
+	bool lighting_dirty_ = true;
+	bool visual_dirty_ = true;
+	bool dirty_ = true;
+};
+
+#endif

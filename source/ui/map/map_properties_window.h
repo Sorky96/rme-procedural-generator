@@ -1,0 +1,45 @@
+#ifndef RME_UI_MAP_MAP_PROPERTIES_WINDOW_H_
+#define RME_UI_MAP_MAP_PROPERTIES_WINDOW_H_
+
+#include "app/main.h"
+#include <wx/wx.h>
+#include <wx/spinctrl.h>
+
+class MapTab;
+class Editor;
+
+class MapPropertiesWindow : public wxDialog {
+public:
+	MapPropertiesWindow(wxWindow* parent, MapTab* tab, Editor& editor);
+	virtual ~MapPropertiesWindow();
+
+	void OnChangeVersion(wxCommandEvent&);
+
+	void OnClickOK(wxCommandEvent&);
+	void OnClickCancel(wxCommandEvent&);
+
+protected:
+	void UpdateProtocolList();
+	void UpdateSpawnControls();
+
+	MapTab* view;
+	Editor& editor;
+	wxSpinCtrl* height_spin;
+	wxSpinCtrl* width_spin;
+	wxChoice* version_choice;
+	wxChoice* protocol_choice;
+	wxChoice* compression_choice;
+	wxTextCtrl* description_ctrl;
+	wxTextCtrl* house_filename_ctrl;
+	wxStaticText* spawn_label;
+	wxTextCtrl* spawn_filename_ctrl;
+	wxStaticText* monster_label;
+	wxTextCtrl* monster_filename_ctrl;
+	wxStaticText* npc_label;
+	wxTextCtrl* npc_filename_ctrl;
+	wxTextCtrl* waypoint_filename_ctrl;
+	wxStaticText* zone_label;
+	wxTextCtrl* zone_filename_ctrl;
+};
+
+#endif
