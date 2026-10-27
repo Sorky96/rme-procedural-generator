@@ -88,6 +88,24 @@ default = true
 
 OTBM w Welcome: wersja 3, rozmiar 2048x2048, items major/minor 3/57, względne pliki `g0-smoke-house.xml` i `g0-smoke-spawn.xml`. `otbmVersions=[3]` w TOML oznacza wersję 3; loader odejmuje 1, uzyskując `MAP_OTBM_3=2`. Nie mylić numeru formatu z wartością enum.
 
+## G0-06 i częściowy G0-08 — 2026-10-27
+
+**G0-06 PASS dla badanej sekwencji**, 19:38:31. Profil `1098-BlackTek`, OTBM 3, fixture 400 ground; w konfiguracji `group_actions=true`, `use_automagic=true`, `undo_size=400`, `undo_mem_size=40`. Pierwszy ręczny `Draw` przy (101,101,7) użył gumki 1×1 i wywołał automatyczne bordery. Skrypt [`g0_manual_history.lua`](smoke/g0_manual_history.lua) zapisał stan obszaru 24×24 oraz utworzył transakcją Lua ground przy (150,150,7). Drugi ręczny `Draw` brushem `dried grass` przy (106,105,7). Historia: `Draw`, `G0 mixed history Lua`, `Draw`. Test sprawdził każdy stan po trzech Undo, trzech Redo oraz trzech Undo sprzątających; log: `G0 MIXED HISTORY PASS: Draw / Lua / Draw remained separate across Undo and Redo; fixture restored.`
+
+Pierwsza próba drugiego Draw gumką utworzyła wpis, lecz nie zmieniła migawki danych; skrypt odrzucił ją komunikatem `Second manual stroke missing`. Po cofnięciu tej próby użyto `dried grass` i ponowiono kontrolę z wynikiem PASS. Migawka obejmuje obecność tile, ground ID, kolejność ID stosu, house ID, flagi oraz obecność creature/spawn, nie komplet wszystkich atrybutów i obiektów na mapie.
+
+**G0-08 częściowo PASS**, 19:44:43. [`g0_metadata_roundtrip.lua`](smoke/g0_metadata_roundtrip.lua) utworzył tile (160,160,6) i (160,160,7): ground z AID 12006/12007 i UID 12106/12107, mapFlags 1, a na Z=7 spawn radius 3 z `Rat`, spawntime 90 s. Po Save As i ponownym otwarciu w RME z jawnym profilem `1098-BlackTek` sprawdzono te wartości, 402 tile łącznie, ground bazowego obszaru i halo. Log: `G0 METADATA ROUND-TRIP PASS: floors 6/7, UID/AID, flags, spawn, Rat and base halo preserved.` XML spawnu osobno sparsowano i potwierdzono pozycję, radius i czas. Fixture nie obejmuje domów, stref, kontenerów, pełnych atrybutów ani zewnętrznego odbiorcy.
+
+**Save As — potwierdzony problem danych:** w katalogu `g0-1098-20261026` zapis nowego `g0-metadata.otbm` zachował w nagłówku `g0-smoke-house.xml` i `g0-smoke-spawn.xml`, a istniejący spawn źródłowego syntetycznego `g0-smoke.otbm` zmienił się z pustego pliku 33 B na XML 177 B z Rat. `EditorPersistence::saveMap` przypisuje nowe nazwy XML tylko dla `map.unnamed`, a `IOMapOTBM::saveMapToDisk` używa istniejących nazw. Zestaw nowej mapy i obu XML skopiowano do `local-data/procedural-smoke/g0-metadata-20261027/`; oryginalny pusty syntetyczny spawn odtworzono, a osierocony duplikat OTBM usunięto po sprawdzeniu identycznego SHA-256 `2fe46ab222606e1f8d54e30b88a58e63e0b7b48c41888ec3b19339d97c8778c4`. Test odczytu PASS wykonano z izolowanego zestawu. Plik `g0-smoke.otbm` nie został nadpisany.
+
+**G0-07 FAIL dla atrybutu istniejącego Item**, 19:49–19:50. Na izolowanym, zapisanym `g0-metadata.otbm`, [`g0_item_attribute_rollback.lua`](smoke/g0_item_attribute_rollback.lua) zmienił `tile.ground.actionId` z 12007 na 0 wewnątrz callbacka i wywołał `error()`. Wynik: `propagated=true; action_restored=false; history_unchanged=true`. Ponadto osobna udana transakcja zmieniająca ten sam AID dała `success=true; action_changed=true; history_changed=false`. Skrypt odtworzył AID przed asercją; nie zapisywano mapy. W `source/lua/lua_api_item.cpp` setter `actionId` wywołuje `Item::setActionID` bez oznaczenia tile w `LuaTransaction`. Naprawa callbacka z `a71fe4b` rozwiązuje przechwycenie błędu, ale nie sprawia, że wszystkie mutacje Item są śledzone. Przed G1 wymagana osobna naprawa i testy śledzenia właściciela tile także dla innych setterów; nie zakładać ich zachowania bez testów.
+
+**Dalsze działanie:** osobny fix Save As musi rozwiązać także kolizje z istniejącymi plikami pomocniczymi, nazwy absolutne/względne, OTBM 5, anulowanie, rollback oraz kompatybilność odczytu. Sama zmiana warunku `unnamed || save_as` nie gwarantuje, że nowa nazwa nie wskazuje na plik źródłowy lub innej mapy. Do czasu naprawy testować wyłącznie w katalogu zawierającym odizolowane kopie wszystkich plików.
+
+Przy zamykaniu sesji po zapisie pojawił się `wxWidgets Debug Alert` z asercją `GetWindow() != nullptr` w `GetDescription()`; po zamknięciu mapy wybrano Stop. Przyczyna i związek z fixture nieustalone.
+
+W ramach kontroli istniejącego CTest zbudowano target `test_universal_rotator` w tym samym build tree przez `cmake --build build-ninja --target test_universal_rotator --parallel 2`, po załadowaniu MSVC x64. Następnie `ctest --test-dir build-ninja -R "^test_universal_rotator$" --output-on-failure`: **PASS 1/1**, 0.20 s, kod 0. Skrypt pomocniczy sesji: `local-data/procedural-smoke/g0-1098-20261026/build_rotator.cmd` (lokalny, ignorowany). Ten test nie dowodzi poprawności Lua, Save As ani round-trip.
+
 ## Warunki testu integracyjnego G0
 
 ### G0-B — naprawa callbacka i regresja, 2026-10-27
@@ -161,4 +179,4 @@ Istniejący CMake rejestruje `test_universal_rotator` w CTest; skrypt `build_nin
 
 ## Stan bramki
 
-G0 pozostaje **IN PROGRESS**. Konkretny bloker ignorowanego błędu callbacka G0-07 naprawiono i zweryfikowano dla tworzenia tile oraz historii. Build, edycja 20x20, Undo/Redo i odczyt ground-only fixture przeszły. G0-06 (rozdzielenie ręcznych edycji), multi-floor i round-trip UID/AID/domów/spawnów/stref oraz odbiorca zewnętrzny G0-09 nadal niezweryfikowane. Przed G1 dokończyć wymagany protokół i decyzje adaptera, bez rozszerzania wyniku tej regresji na pełną atomowość generatora.
+G0 pozostaje **IN PROGRESS**. Naprawiono przechwytywanie błędu callbacka; odrębny G0-07 dla bezpośredniej zmiany AID nadal **FAIL**. G0-06 przeszedł dla sekwencji Draw/Lua/Draw. Częściowo przeszedł round-trip dwóch pięter, UID/AID, flag i spawnu z potworem. Save As wymaga naprawy ochrony współdzielonych XML; domy, strefy, pełne atrybuty i odbiorca zewnętrzny G0-09 nadal niezweryfikowane. Przed G1 dokończyć protokół i decyzje adaptera, bez rozszerzania wyników na pełną atomowość generatora.

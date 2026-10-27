@@ -49,6 +49,8 @@ Potwierdzone ryzyko na poziomie biblioteki: `transaction` wywołuje `sol::functi
 
 Potwierdzenie na prawdziwej mapie RME 2026-10-27: `g0_error_probe.lua` wykonał zmianę jednego tile i `error()` w callbacku. Zewnętrzne `pcall` otrzymało sukces, tile pozostał, liczba pól wzrosła z 400 do 401. Końcowy assert diagnostyki zgłosił FAIL rollbacku. Jedno ręczne Undo cofnęło zmianę i ponowny verifier potwierdził oryginalne 400 pól. Zatem transakcja z błędem trafia do historii i nie daje wymaganego rollbacku. Naprawę obsługi wyniku zaplanować jako osobny mały PR integracyjny G0-B z testem, zamiast traktować obecny wrapper jako gotową granicę bezpieczeństwa generatora. Skrypty i dokładny zakres: [TEST_PLAN.md](TEST_PLAN.md).
 
+Nowa reprodukcja po G0-B: bezpośredni setter `Item.actionId` w `lua_api_item.cpp` nie wywołuje `markTileForUndo`, więc na istniejącym tile niepowodzenie callbacka pozostawia zmianę AID, a sukces nie dopisuje akcji. `getTileItems`, getter `Tile.ground` i `addItemToTile` udostępniają Lua wskaźniki `Item*`; powiązanie właściwego, aktualnego tile z mutacją wymaga projektu uwzględniającego kontenery, usuwanie i zmiany po Undo/Redo. Nie dodawać do `Tile` nowego układu ani pełnego skanowania mapy jako ubocznego skutku poprawki. Szczegóły próby i drugi bloker Save As: [TEST_PLAN.md](TEST_PLAN.md).
+
 ## Projektowany przepływ G1
 
 Aktualizacja G0-B (2026-10-27): wrapper przyjmuje jawnie `sol::protected_function`, sprawdza `protected_function_result::valid()` i dla błędu rzuca `std::runtime_error` z treścią Sol2. Istniejąca obsługa wyjątku wywołuje rollback i przekazuje błąd do Lua. Nie zmieniono implementacji snapshotów, commitowania ani rollbacku. Regresja w `lua_tests/test_transaction_rollback.lua` przeszła na nowym EXE: trzy błędy i sześć mutacji wycofane, komunikaty zachowane, historia bez nowych wpisów po błędach; dwie udane transakcje rozdzielone w Undo/Redo. To zamyka konkretny błąd ignorowanego callbacka, nie pozostałe ryzyka atomowości i metadanych z audytu.
@@ -76,6 +78,8 @@ Ten przepływ jest projektem, nie listą istniejących API. Przed wyborem sygnat
 |---|---|---|
 | G0-A | Ten audyt, protokół testów i identyfikacja środowiska | Kontrola dokumentów i jawny wynik próby buildu; bez deklaracji pełnego G0 |
 | G0-B | Reprodukowany smoke test na zgodnych assets i mapie syntetycznej | Build, 20x20, osobne Undo/Redo, rollback błędu Lua, zapis i ponowny odczyt kompletu plików |
+| G0-C | Bezpieczne śledzenie zmian Item w Lua | Błędy i sukces setterów na istniejącym ground, stosie i w kontenerze, rollback, Undo/Redo, cykl życia uchwytów i zgodność API |
+| G0-D | Ochrona plików pomocniczych przy Save As | Zachowanie source XML przy zapisie kopii, kolizje, ścieżki absolutne/względne, OTBM 5 i rollback błędu zapisu |
 | G1-A | Minimalny rdzeń semantyczny i walidacja konfiguracji | Determinizm, maska, granice i budżety; bez map mutation |
 | G1-B | Przygotowanie diffu przez wspólne reguły rysowania i kontrolowany RNG | Sandbox, ID, footprinty, halo, brak mutacji oryginału i równość konkretnego diffu |
 | G1-C | Commit istniejącą historią i minimalne GUI | Nieaktualne preview, błąd zastosowania, Undo/Redo i round-trip 100x100 / 500x500 |

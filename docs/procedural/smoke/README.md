@@ -7,5 +7,8 @@ Przygotowanie klienta, kolejność uruchamiania, wyniki i ograniczenia: [TEST_PL
 - `g0_smoke.lua`: wymaga pustej mapy; kolejne wywołania sprawdzają umieszczenie 400 ground, ręczne Undo i ręczne Redo. Reload Scripts resetuje stan etapów.
 - `g0_verify_saved.lua`: kontrola tylko do odczytu zapisanej mapy `g0-smoke.otbm`.
 - `g0_error_probe.lua`: celowy błąd po mutacji pustego pola (140,140,7). Na bazie `b2bc871` odtwarza **FAIL rollbacku** i pozostawia zmianę w historii; po takim FAIL wykonać jedno Undo i verifier. Po naprawie G0-B przechodzi bez mutacji; wtedy nie cofać wcześniejszych akcji. Nie zapisywać diagnostycznej zmiany.
+- `g0_manual_history.lua`: ręczny Draw, transakcja Lua, drugi ręczny Draw; skrypt sprawdza trzy oddzielne Undo/Redo oraz zawartość obszaru i jego halo. Pierwszy przebieg po pierwszym Draw, drugi po kolejnym Draw. Treści komentarza i komunikatu doprecyzowano po próbie; logika testu jest identyczna.
+- `g0_metadata_roundtrip.lua`: tworzy dwa tile z UID/AID, flagami i spawnem; po zapisie i ponownym otwarciu sprawdza ten zakres. Przed rozpoczęciem skopiować **cały** fixture OTBM i wszystkie XML do osobnego katalogu. „Save As” w tym samym katalogu zachowuje nazwy XML i może nadpisać pliki używane przez źródłową mapę.
+- `g0_item_attribute_rollback.lua`: na izolowanym `g0-metadata.otbm` sprawdza błąd i udaną transakcję zmieniającą AID istniejącego ground. W audytowanym buildzie zgłasza **FAIL**: brak rollbacku i brak wpisu historii. Skrypt przywraca AID przed końcową asercją; nie zapisywać zmian diagnostycznych.
 
 Brak assets i map binarnych w repozytorium. Nazwa fixture i liczba pól ograniczają przypadkowe uruchomienie, ale nie zastępują sprawdzenia aktywnej mapy przez operatora.

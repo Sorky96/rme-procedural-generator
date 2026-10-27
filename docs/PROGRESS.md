@@ -1,5 +1,17 @@
 # Procedural World Generator — postęp
 
+## 2026-10-27 — ręczna historia i rozszerzony round-trip
+
+Stan: **G0 IN PROGRESS**. Bazą kodu jest `a71fe4b`; wyniki poniżej z tego buildu. Powstała gałąź `docs/procedural-g0-validation` z `master`, następnie fast-forward do naprawy callbacka.
+
+- **G0-06 PASS w badanym zakresie:** ręczny Draw gumką 1×1, transakcja Lua i ręczny Draw brushem `dried grass` utworzyły oddzielne wpisy. Trzy Undo i trzy Redo sprawdziły migawki ground, stosów ID, flag, house ID i obecności encji dla obszaru 24×24 oraz osobny tile Lua; po kolejnych Undo fixture przywrócono. `group_actions=true`, `use_automagic=true`, limit historii 400, 40 MiB. Pierwsza próba drugiej edycji gumką nie zmieniła zawartości, więc asercja testu słusznie ją odrzuciła; cofnięto tę próbę i użyto innego brusha.
+- **Częściowy G0-08 PASS:** syntetyczne tile na piętrach 6 i 7 z ground UID/AID oraz flagą, spawnem radius 3 i `Rat` (90 s) utworzono, zapisano i odczytano w RME z `1098-BlackTek`. Kontrola objęła także 400 bazowych ground i halo; osobno sparsowano XML spawnu. Bez domu, stref, kontenerów i odbiorcy zewnętrznego.
+- **G0-07 FAIL dla istniejącego Item:** zmiana `ground.actionId` wewnątrz nieudanej transakcji nie została wycofana mimo propagacji błędu. Udana transakcja z tą samą zmianą również nie utworzyła wpisu historii. Diagnostyka przywróciła wartość bez zapisu. Potrzebna osobna naprawa śledzenia mutacji Item oraz testy regresyjne.
+- **Potwierdzone ryzyko utraty danych w Save As:** zapis `g0-metadata.otbm` obok `g0-smoke.otbm` zachował w nagłówku nazwy `g0-smoke-house.xml` i `g0-smoke-spawn.xml` i nadpisał istniejący XML spawnu mapy źródłowej. Dotyczyło to wyłącznie map syntetycznych. Skopiowano kompletny zestaw do osobnego katalogu; pierwotny pusty XML spawnu odtworzono na podstawie wcześniej zweryfikowanej zawartości, a osieroconą kopię OTBM usunięto po sprawdzeniu identycznego hasha. Poprawka tego workflow i regresja ochrony wszystkich plików pomocniczych pozostają zadaniem przed G1.
+- Podczas zamykania sesji testowej pojawiła się asercja wxWidgets `GetWindow() != nullptr` w `GetDescription()`; wybrano Stop po zapisaniu i zamknięciu mapy. Nie ustalono przyczyny ani związku z testem.
+- Osobny target `test_universal_rotator` zbudowano z `--parallel 2`, następnie `ctest --test-dir build-ninja -R "^test_universal_rotator$" --output-on-failure`: **PASS 1/1**, 0.20 s, kod 0. Nie jest to pełna suita projektu.
+- Szczegółowe kroki i wyniki: [TEST_PLAN.md](procedural/TEST_PLAN.md). Zachowane skrypty można uruchomić tylko na izolowanej kopii fixture.
+
 ## 2026-10-27 — G0-B: naprawa błędu callbacka Lua
 
 Aktualny stan: **G0 IN PROGRESS**, konkretny bloker ignorowanego callbacka usunięty. Gałąź `fix/lua-transaction-callback` utworzona z `master` i uzupełniona fast-forwardem audytu `b2bc871`.
@@ -81,7 +93,7 @@ Zakres sesji: przygotowanie `PROJECT_RME_PROCEDURAL_GENERATOR.md` do realizacji.
 
 | Faza | Status | Commit | Dowody/testy | Blokery lub zależności | Następne zadanie |
 |---|---|---|---|---|---|
-| 0 | IN PROGRESS | Audyt `b2bc871`, naprawa na `fix/lua-transaction-callback` | Build PASS; 400 pól, Undo/Redo i ground-only round-trip PASS; regresja rollbacku/historii PASS | Historia ręczna i złożone metadane niezweryfikowane | G0-06 i pełny round-trip |
+| 0 | IN PROGRESS | Audyt `b2bc871`, naprawa `a71fe4b` | Build, rollback tworzenia tile i mieszana historia PASS; częściowy round-trip pięter, UID/AID, flag i spawnu PASS | Bezpośrednia zmiana AID nie jest śledzona; Save As nadpisuje współdzielone XML; domy/strefy i odbiorca zewnętrzny niezweryfikowane | Naprawa obu błędów i pozostałe fixture |
 | 1 | TODO | — | — | G0 | MVP jednego piętra |
 | 2 | TODO | — | — | G1 | Teren i bordery |
 | 3 | TODO | — | — | G2 oraz referencje | Analiza referencji |
