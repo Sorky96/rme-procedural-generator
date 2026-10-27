@@ -90,6 +90,35 @@ OTBM w Welcome: wersja 3, rozmiar 2048x2048, items major/minor 3/57, względne p
 
 ## Warunki testu integracyjnego G0
 
+### G0-B — naprawa callbacka i regresja, 2026-10-27
+
+Gałąź `fix/lua-transaction-callback`, baza audytu `b2bc871`. Zmiana w
+`source/lua/lua_api_app.cpp`: jawny `sol::protected_function`, sprawdzenie wyniku
+callbacka i przekazanie błędu do istniejącej ścieżki rollbacku. Dokumentacja Sol2
+sprawdzona przez Context7 `/thephd/sol2`; składnia `result.valid()` i ekstrakcja
+`sol::error` potwierdzone kompilacją z zainstalowaną wersją.
+
+- Build: `rtk proxy cmd /c local-data\procedural-smoke\g0-1098-20261026\build_rme_limited.cmd`, kod **0**, `[2/2] Linking CXX executable rme.exe`. Po korekcie formatowania ponowiono build końcowego źródła, również kod 0. EXE 8026112 bajtów, 2026-10-27 18:52:13; ten EXE uruchomiono w GUI.
+- Regresja: [`lua_tests/test_transaction_rollback.lua`](../../lua_tests/test_transaction_rollback.lua), uruchomiona ręcznie na świeżo otwartym fixture z jawnym `1098-BlackTek` i pustą historią. **PASS**, 18:53:46. Trzy callbacki tworzą po dwa tile i zgłaszają różne błędy. Sprawdzono komunikaty, usunięcie sześciu mutacji, niezmieniony rozmiar/indeks historii, dwie udane transakcje, odrzucenie wartości zwracanych callbacka, dwa Undo, dwa Redo oraz przywrócenie 400 pól. W historii Redo pozostają dwie poprawne akcje testowe.
+- Oryginalny `g0_error_probe.lua`: **PASS**, 18:54:08 — `propagated=true`, `tile_present=false`, `tile_count=400`, komunikat `G0 ROLLBACK CONTENT PASS`. To ta sama reprodukcja, która na bazie audytu pozostawiała 401 pól.
+- `g0_verify_saved.lua` po obu testach: **PASS**, 18:54:30 — 400 dokładnych ground ID, puste stosy/encje/house ID/flagi i halo.
+- Plik OTBM nie został zapisany podczas regresji. SHA-256 przed i po: `2e0728b71bc5506db21a22be8e29920c17d418f599a7fcbf627536eb45f728ce`.
+
+Odczytany log Script Manager:
+
+```text
+[18:53:46] ROLLBACK PASS: 3 original errors propagated, 6 tile mutations restored, history unchanged.
+[18:53:46] TRANSACTION REGRESSION PASS: successful commits, separate Undo/Redo, no failed entries; fixture restored to 400 tiles.
+[18:54:08] G0 ROLLBACK CONTENT PASS; history still requires a separate check.
+[18:54:30] G0 SAVED CONTENT PASS: 400 exact ground IDs; empty stacks, entities, house IDs, flags and halo.
+```
+
+Test jest celowo poza ogólnymi runnerami Lua, wymaga dedykowanej mapy i uruchomienia
+ręcznego. Nie wykonano całej suity Lua/CTest ani testów awarii alokacji, zmiany lub
+zamknięcia edytora w callbacku, zagnieżdżonych transakcji czy rollbacku złożonych
+metadanych. G0-06 z rzeczywistą ręczną edycją przez `DrawOperations` nadal wymaga
+osobnego dowodu; dwie transakcje Lua nie zastępują tego przypadku.
+
 Wymagane: działający `build-ninja/rme.exe`, jawnie wybrany klient z kompletnymi assets, zgodny brush ground oraz mapa syntetyczna. Brak któregoś warunku oznacza niewykonanie testu, nie PASS. Map użytkownika i danych referencyjnych nie modyfikować.
 
 Testy wykonywać w `local-data/procedural-smoke/<run-id>/`, z osobnymi plikami wyjściowymi dla każdej próby. OTBM i wszystkie wskazywane pliki pomocnicze muszą znajdować się w kopii testowej; szczególnie sprawdzić bezwzględne ścieżki do XML, aby zapis nie dotknął oryginałów.
@@ -132,4 +161,4 @@ Istniejący CMake rejestruje `test_universal_rotator` w CTest; skrypt `build_nin
 
 ## Stan bramki
 
-G0 pozostaje **IN PROGRESS**, z potwierdzonym blokerem G0-07. Build, edycja 20x20, Undo/Redo i odczyt ground-only fixture przeszły; rollback callbacka zawiódł. G0-06 (rozdzielenie ręcznych edycji), multi-floor i round-trip UID/AID/domów/spawnów/stref oraz odbiorca zewnętrzny G0-09 nadal niezweryfikowane. Przed G1 naprawić obsługę wyniku callbacka w osobnym G0-B i uruchomić pełny wymagany protokół.
+G0 pozostaje **IN PROGRESS**. Konkretny bloker ignorowanego błędu callbacka G0-07 naprawiono i zweryfikowano dla tworzenia tile oraz historii. Build, edycja 20x20, Undo/Redo i odczyt ground-only fixture przeszły. G0-06 (rozdzielenie ręcznych edycji), multi-floor i round-trip UID/AID/domów/spawnów/stref oraz odbiorca zewnętrzny G0-09 nadal niezweryfikowane. Przed G1 dokończyć wymagany protokół i decyzje adaptera, bez rozszerzania wyniku tej regresji na pełną atomowość generatora.

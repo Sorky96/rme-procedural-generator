@@ -42,6 +42,7 @@
 #include <cstdio>
 #include <thread>
 #include <chrono>
+#include <stdexcept>
 
 namespace LuaAPI {
 
@@ -378,7 +379,7 @@ namespace LuaAPI {
 	}
 
 	// Transaction function with undo/redo support
-	static void transaction(const std::string& name, sol::function func) {
+	static void transaction(const std::string& name, sol::protected_function func) {
 		Editor* editor = g_gui.GetCurrentEditor();
 		if (!editor) {
 			throw sol::error("No map open");
@@ -388,7 +389,11 @@ namespace LuaAPI {
 
 		try {
 			trans.begin(editor, name);
-			func();
+			sol::protected_function_result result = func();
+			if (!result.valid()) {
+				const sol::error error = result;
+				throw std::runtime_error(error.what());
+			}
 			if (g_gui.GetCurrentEditor() == editor) {
 				trans.commit();
 			} else {

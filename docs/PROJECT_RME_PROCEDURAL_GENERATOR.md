@@ -317,7 +317,7 @@ Statusy do uzupełniania: `[ ] TODO`, `[~] IN PROGRESS`, `[x] VERIFIED`, `[!] BL
 
 **Bramka G0:** reproducible build + opis rzeczywistych punktów integracji + round-trip testowej mapy.
 
-Stan 2026-10-27: smoke pustej mapy przeszedł, lecz G0 pozostaje niezaliczone. Błąd callbacka `app.transaction` został odtworzony na mapie: `propagated=false`, `tile_present=true`, 401 zamiast 400 pól. Ręczne Undo przywróciło fixture. Naprawa i test regresyjny należą do G0-B przed G1; nie uznawać istniejącej transakcji Lua za bezpieczny kontrakt generatora. Testy metadanych i rozdzielenia historii od ręcznej edycji nadal wymagane.
+Stan 2026-10-27: smoke pustej mapy przeszedł, lecz G0 pozostaje niezaliczone. Odtworzony błąd callbacka `app.transaction` (401 zamiast 400 pól) naprawiono w G0-B przez kontrolę wyniku chronionego wywołania Sol2. Regresja na mapie potwierdziła propagację błędów, rollback sześciu mutacji i brak wpisów historii po trzech nieudanych transakcjach; udane transakcje i Undo/Redo działają. Nie jest to dowód pełnej atomowości generatora: testy metadanych i rozdzielenia historii od ręcznej edycji nadal wymagane. Dowody w `TEST_PLAN.md`.
 
 ### FAZA 1 - Rdzeń abstrakcyjny i podstawowa integracja
 

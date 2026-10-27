@@ -197,6 +197,12 @@ app.alert({
 #### Transaction (Undo/Redo)
 All map modifications **must** be wrapped in a transaction.
 
+If the callback raises a Lua error, the transaction restores its tracked tile
+snapshots and propagates the error to the caller without committing an Undo entry.
+Use `pcall` around `app.transaction` to handle the failure. Callback return values
+are ignored. This contract covers mutations tracked by the transaction; it does
+not make unrelated filesystem, UI, or other external effects reversible.
+
 ```lua
 app.transaction("My Script Action", function()
     -- Modify map here

@@ -51,6 +51,8 @@ Potwierdzenie na prawdziwej mapie RME 2026-10-27: `g0_error_probe.lua` wykonał 
 
 ## Projektowany przepływ G1
 
+Aktualizacja G0-B (2026-10-27): wrapper przyjmuje jawnie `sol::protected_function`, sprawdza `protected_function_result::valid()` i dla błędu rzuca `std::runtime_error` z treścią Sol2. Istniejąca obsługa wyjątku wywołuje rollback i przekazuje błąd do Lua. Nie zmieniono implementacji snapshotów, commitowania ani rollbacku. Regresja w `lua_tests/test_transaction_rollback.lua` przeszła na nowym EXE: trzy błędy i sześć mutacji wycofane, komunikaty zachowane, historia bez nowych wpisów po błędach; dwie udane transakcje rozdzielone w Undo/Redo. To zamyka konkretny błąd ignorowanego callbacka, nie pozostałe ryzyka atomowości i metadanych z audytu.
+
 1. Główny wątek: przypisanie konkretnego edytora, assets, maski i halo; kontrola budżetu i spójne pobranie danych.
 2. Worker: własne płaskie dane semantyczne i kontrolowane strumienie RNG; zero odwołań do GUI i żywych tile.
 3. Przygotowanie konkretnego diffu na izolowanej mapie: ponowne użycie reguł brushy i borderów. Na początku na głównym wątku, dopóki nie ma dowodu bezpieczeństwa assets/brushy w workerze. Czas i pamięć przygotowania muszą być mierzone.

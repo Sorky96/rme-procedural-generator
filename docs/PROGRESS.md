@@ -1,8 +1,22 @@
 # Procedural World Generator — postęp
 
+## 2026-10-27 — G0-B: naprawa błędu callbacka Lua
+
+Aktualny stan: **G0 IN PROGRESS**, konkretny bloker ignorowanego callbacka usunięty. Gałąź `fix/lua-transaction-callback` utworzona z `master` i uzupełniona fast-forwardem audytu `b2bc871`.
+
+- `LuaAPI::transaction` sprawdza wynik `sol::protected_function`; błąd callbacka trafia do istniejącego rollbacku i wraca do Lua. Bez zmian implementacji snapshotów, `ActionQueue` i serializacji.
+- Build końcowego źródła Windows x64 **PASS**, kod 0, przyrostowo z `--parallel 2`; EXE z 18:52:13 uruchomiono w GUI.
+- Nowy test `lua_tests/test_transaction_rollback.lua` **PASS**, 18:53:46: trzy błędy z zachowanymi komunikatami, sześć mutacji wycofanych, historia bez nowych wpisów po błędzie. Udane transakcje i ich osobne Undo/Redo poprawne; fixture przywrócone do 400 pól.
+- Oryginalna reprodukcja `g0_error_probe.lua` **PASS**, 18:54:08. Końcowy verifier **PASS**, 18:54:30. SHA-256 OTBM przed/po identyczny; test nie zapisywał mapy.
+- Dokumentację API i instrukcję uruchamiania regresji zaktualizowano. CodeGraph i Context7 posłużyły do kontroli mechanizmu; selektor `sorky-validate-change` nie ma trasy dla RME, więc zastosowano build i testy rzeczywistego edytora.
+- Kontrola diffu oraz UTF-8, bloków kodu i względnych linków dokumentacji **PASS**. Zachowane skrypty zgodne z wykonanymi po normalizacji CRLF/LF; początkowe porównanie bajtowe odrzuciło wyłącznie zmianę końców linii po przełączeniu gałęzi. Nowy skrypt regresji zgodny z kopią uruchomioną w RME.
+- Nadal niezweryfikowane: ręczna edycja obok transakcji, wiele pięter i złożone metadane, zagnieżdżone transakcje, zamknięcie/przełączenie mapy w callbacku, awarie alokacji oraz zgodność z zewnętrznym RME/OTS. Pełnej suity Lua/CTest nie uruchamiano. Szczegółowe logi: [TEST_PLAN.md](procedural/TEST_PLAN.md#g0-b--naprawa-callbacka-i-regresja-2026-10-27).
+
+Następne zadania: G0-06 z ręczną edycją; fixture z metadanymi/wieloma piętrami i round-trip; następnie zamknięcie decyzji adaptera przed G1-A.
+
 ## 2026-10-27 — wynik audytu i testów G0
 
-Aktualny stan: **G0 IN PROGRESS**, G1 nierozpoczęte. Zmiany obejmują dokumentację i ręczne skrypty diagnostyczne, bez zmian kodu produkcyjnego. Szczegółowe polecenia, wersje, hashe oraz zakres dowodów: [TEST_PLAN.md](procedural/TEST_PLAN.md).
+Wpis historyczny audytu przed naprawą G0-B powyżej: **G0 IN PROGRESS**, G1 nierozpoczęte. Ówczesne zmiany obejmowały dokumentację i ręczne skrypty diagnostyczne, bez zmian kodu produkcyjnego. Szczegółowe polecenia, wersje, hashe oraz zakres dowodów: [TEST_PLAN.md](procedural/TEST_PLAN.md).
 
 - Build Windows x64 **PASS**, kod 0: po problemie Ninja/PATH i błędzie pamięci PCH wznowiono ten sam target przez `cmake --build build-ninja --target rme --parallel 2`. EXE 8026112 bajtów, linkowanie `[382/382]`; uruchomiono GUI 4.1.2.
 - Profil `1098-BlackTek` (`dat_only`) załadowany z assets wskazanych przez użytkownika i włączoną walidacją podpisów. Zakres `grass` działa; loader zgłasza błędne zakresy i brakujące ID innych materiałów. Standardowego OTB nie zatwierdzono dla tego DAT.
@@ -67,7 +81,7 @@ Zakres sesji: przygotowanie `PROJECT_RME_PROCEDURAL_GENERATOR.md` do realizacji.
 
 | Faza | Status | Commit | Dowody/testy | Blokery lub zależności | Następne zadanie |
 |---|---|---|---|---|---|
-| 0 | IN PROGRESS | Baza `5a01a8f`, gałąź `docs/procedural-phase0-audit` | Build PASS; 400 pól, Undo/Redo i ground-only round-trip PASS; rollback FAIL; wyniki parsera powyżej | Błąd callbacka Lua; historia ręczna i metadane niezweryfikowane | G0-B: naprawa rollbacku i pełny protokół |
+| 0 | IN PROGRESS | Audyt `b2bc871`, naprawa na `fix/lua-transaction-callback` | Build PASS; 400 pól, Undo/Redo i ground-only round-trip PASS; regresja rollbacku/historii PASS | Historia ręczna i złożone metadane niezweryfikowane | G0-06 i pełny round-trip |
 | 1 | TODO | — | — | G0 | MVP jednego piętra |
 | 2 | TODO | — | — | G1 | Teren i bordery |
 | 3 | TODO | — | — | G2 oraz referencje | Analiza referencji |
