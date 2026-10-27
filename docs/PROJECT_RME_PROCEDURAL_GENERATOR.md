@@ -1,6 +1,6 @@
 # RME Procedural World Generator - Master Plan
 
-> Dokument startowy projektu dla Codex / Claude Code. Stan: PLAN po przeglądzie lokalnego kodu; G0 niezaliczone. Wersja: 1.1 (2026-10-26).
+> Dokument startowy projektu dla Codex / Claude Code. Stan: FAZA 0 w toku; G0 niezaliczone. Wersja planu: 1.1 (2026-10-26). Aktualne dowody: `docs/PROGRESS.md` oraz `docs/procedural/TEST_PLAN.md`.
 >
 > **Główny cel:** pełny, zintegrowany z Remere's Map Editor generator map Tibii, który potrafi analizować dostarczone mapy referencyjne i coraz wierniej odtwarzać **ich styl, logikę przestrzenną i grywalność**, bez kopiowania całych fragmentów 1:1.
 
@@ -29,7 +29,9 @@ Lokalny `CMakeLists.txt` wymaga CMake 3.28+, C++23 i wxWidgets 3.3; `vcpkg.json`
 
 ### 1.0 Wynik przeglądu przygotowawczego (2026-10-26)
 
-Przegląd dotyczył źródeł, nie działania programu. W lokalnym katalogu brak `.git` i `.codegraph`; istnieje `.gito`, którego nie zmieniano. `rtk git status --short --branch` zgłosił brak repozytorium. Nie ustalono SHA ani gałęzi, nie uruchomiono CodeGraph, buildu ani testów map. Nie oznacza to zaliczenia FAZY 0.
+Pierwszy przegląd dotyczył źródeł, nie działania programu. W jego trakcie brakowało `.git` i `.codegraph`; istniało `.gito`, którego nie zmieniano. Poniższa tabela zachowuje ustalenia tego przeglądu, a aktualny stan audytu znajduje się w `docs/PROGRESS.md`.
+
+Po przygotowaniu środowiska przez użytkownika rozpoczęto FAZĘ 0: Git i CodeGraph działają, baza lokalna to `5a01a8fe1c34465559701d50681cc2210ef32c67`, gałąź `docs/procedural-phase0-audit`. Powstały `docs/procedural/ARCHITECTURE.md` i `docs/procedural/TEST_PLAN.md`; wyniki buildu i testów aktualizuje raport postępu. Nie oznacza to zaliczenia G0.
 
 | Potwierdzony punkt | Lokalizacja i konsekwencja dla planu |
 |---|---|
@@ -306,14 +308,16 @@ Statusy do uzupełniania: `[ ] TODO`, `[~] IN PROGRESS`, `[x] VERIFIED`, `[!] BL
 
 ### FAZA 0 - Repozytorium i audyt
 
-- [ ] Użyj istniejącego checkoutu, sprawdź Git i gałąź z `master`, zapisz SHA oraz lokalne zmiany. Jeśli to kopia bez Git, zapisz brak SHA jako ograniczenie i ustal pochodzenie przed pracą implementacyjną. Potwierdź licencję, Windows x64, `build_ninja.bat`, wersje toolchaina i zależności.
-- [ ] Zidentyfikuj API Map/Tile/Item/Brush/Autoborder/Undo i Lua; linkuj konkretne pliki i funkcje.
+- [x] Użyj istniejącego checkoutu, sprawdź Git i gałąź z `master`, zapisz SHA oraz lokalne zmiany. Potwierdź licencję, Windows x64, `build_ninja.bat`, wersje toolchaina i zależności. Dowody w audycie: lokalny snapshot `5a01a8f`, build zakończony z `--parallel 2`; pochodzenie upstream niepotwierdzone.
+- [x] Zidentyfikuj API Map/Tile/Item/Brush/Autoborder/Undo i Lua; linkuj konkretne pliki i funkcje. Dowód: przegląd CodeGraph oraz tabela w `docs/procedural/ARCHITECTURE.md`; nie jest to walidacja runtime.
 - [ ] Sprawdź odczyt/zapis OTBM i kwestie multi-floor, house/spawn/UID/AID.
-- [ ] Zbuduj RME, otwórz testową mapę, zapisz kopię, uruchom minimalny skrypt modyfikujący 20x20 z Undo.
+- [x] Zbuduj RME, otwórz testową mapę, zapisz kopię, uruchom minimalny skrypt modyfikujący 20x20 z Undo. 2026-10-26/27: 400 ground, Undo/Redo i odczyt zapisu PASS dla syntetycznego fixture; szczegóły i ograniczenia w `TEST_PLAN.md`.
 - [ ] Oceń istniejące `noise`/`algo`/`geo`, demonstrator terenu i transakcje Lua; wybierz granicę C++/Lua na podstawie testu, nie nazwy API. Audyt obejmuje RNG brushy, snapshot, ochronę halo, granicę Undo i rollback.
-- [ ] Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` i plan małych PR. Nie nadpisuj istniejącej dokumentacji ogólnej.
+- [x] Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` i plan małych PR. Dokumenty utworzono; zawierają rzeczywiste symbole i jawne wyniki wykonanych kontroli. Nie nadpisano istniejącej dokumentacji ogólnej.
 
 **Bramka G0:** reproducible build + opis rzeczywistych punktów integracji + round-trip testowej mapy.
+
+Stan 2026-10-27: smoke pustej mapy przeszedł, lecz G0 pozostaje niezaliczone. Błąd callbacka `app.transaction` został odtworzony na mapie: `propagated=false`, `tile_present=true`, 401 zamiast 400 pól. Ręczne Undo przywróciło fixture. Naprawa i test regresyjny należą do G0-B przed G1; nie uznawać istniejącej transakcji Lua za bezpieczny kontrakt generatora. Testy metadanych i rozdzielenia historii od ręcznej edycji nadal wymagane.
 
 ### FAZA 1 - Rdzeń abstrakcyjny i podstawowa integracja
 
