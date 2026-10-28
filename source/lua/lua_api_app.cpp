@@ -126,18 +126,20 @@ namespace LuaAPI {
 				throw sol::error("Transaction already in progress");
 			}
  
-			editor = ed;
-			if (!editor || !editor->actionQueue) {
+			if (!ed || !ed->actionQueue) {
 				throw sol::error("No editor or action queue available");
 			}
- 
-			active = true;
-			batch = editor->actionQueue->createBatch(ACTION_LUA_SCRIPT);
+
+			auto newBatch = ed->actionQueue->createBatch(ACTION_LUA_SCRIPT);
 			if (!name.empty()) {
-				batch->setLabel(name);
+				newBatch->setLabel(name);
 			}
-			action = editor->actionQueue->createAction(ACTION_LUA_SCRIPT);
+			auto newAction = ed->actionQueue->createAction(ACTION_LUA_SCRIPT);
 			originalTiles.clear();
+			editor = ed;
+			batch = std::move(newBatch);
+			action = std::move(newAction);
+			active = true;
 		}
 
 		void commit() {
