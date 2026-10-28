@@ -386,6 +386,11 @@ namespace LuaAPI {
 		}
 
 		LuaTransaction& trans = LuaTransaction::getInstance();
+		// A rejected nested call must not roll back the transaction owned by
+		// its caller when the Lua callback catches the error.
+		if (trans.isActive()) {
+			throw sol::error("Transaction already in progress");
+		}
 
 		try {
 			trans.begin(editor, name);
