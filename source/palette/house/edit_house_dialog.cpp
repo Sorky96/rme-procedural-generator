@@ -119,10 +119,9 @@ void EditHouseDialog::OnFocusChange(wxFocusEvent& event) {
 
 void EditHouseDialog::OnClickOK(wxCommandEvent& WXUNUSED(event)) {
 	if (Validate() && TransferDataFromWindow()) {
-		long new_house_rent;
-		house_rent.ToLong(&new_house_rent);
-		if (new_house_rent < 0) {
-			DialogUtil::PopupDialog(this, "Error", "House rent cannot be less than 0.", wxOK);
+		long new_house_rent = 0;
+		if (!house_rent.ToLong(&new_house_rent) || new_house_rent < 0) {
+			DialogUtil::PopupDialog(this, "Error", "House rent must be a non-negative number.", wxOK);
 			return;
 		}
 
@@ -137,16 +136,23 @@ void EditHouseDialog::OnClickOK(wxCommandEvent& WXUNUSED(event)) {
 			return;
 		}
 
+		const int selection = town_id_field->GetSelection();
+		if (selection == wxNOT_FOUND || selection < 0 || static_cast<size_t>(selection) >= town_ids_.size()) {
+			DialogUtil::PopupDialog(this, "Error", "Invalid town selected.", wxOK);
+			return;
+		}
+		const uint32_t new_town_id = town_ids_[selection];
+
+		if (new_house_id != what_house->getID() && map->houses.getHouse(new_house_id)) {
+			DialogUtil::PopupDialog(this, "Error", "This house id is already in use.", wxOK);
+			return;
+		}
+
 		if (g_settings.getInteger(Config::WARN_FOR_DUPLICATE_ID)) {
 			Houses& houses = map->houses;
 			for (const auto& [house_id, house_ptr] : houses) {
 				House* house = house_ptr.get();
 				ASSERT(house);
-
-				if (house->getID() == new_house_id && new_house_id != what_house->getID()) {
-					DialogUtil::PopupDialog(this, "Error", "This house id is already in use.", wxOK);
-					return;
-				}
 
 				if (wxstr(house->name) == house_name && house->getID() != what_house->getID()) {
 					int ret = DialogUtil::PopupDialog(this, "Warning", "This house name is already in use, are you sure you want to continue?", wxYES | wxNO);
@@ -167,13 +173,6 @@ void EditHouseDialog::OnClickOK(wxCommandEvent& WXUNUSED(event)) {
 			map->convertHouseTiles(old_house_id, new_house_id);
 			map->houses.changeId(what_house, new_house_id);
 		}
-
-		int selection = town_id_field->GetSelection();
-		if (selection == wxNOT_FOUND || selection < 0 || (size_t)selection >= town_ids_.size()) {
-			DialogUtil::PopupDialog(this, "Error", "Invalid town selected.", wxOK);
-			return;
-		}
-		int new_town_id = town_ids_[selection];
 
 		what_house->name = nstr(house_name);
 		what_house->rent = new_house_rent;
