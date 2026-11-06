@@ -3,12 +3,15 @@
 //////////////////////////////////////////////////////////////////////
 
 #include "editor/persistence/map_backup_service.h"
+#include "editor/persistence/snapshot_directory.h"
+#include "editor/persistence/recovery_marker.h"
 #include "editor/editor.h"
 #include "map/map.h"
 #include "io/iomap_otbm.h"
 #include "util/file_system.h"
 #include <ctime>
 #include <fstream>
+#include <filesystem>
 #include <spdlog/spdlog.h>
 
 std::string MapBackupService::GenerateTimestampString(bool compact) {
@@ -23,17 +26,23 @@ std::string MapBackupService::GenerateTimestampString(bool compact) {
 	return std::string(time_buf);
 }
 
-void MapBackupService::WriteCrashMarker(const std::vector<std::string>& files) {
-	std::string marker_path = nstr(FileSystem::GetLocalDataDirectory()) + ".saving.txt";
-	std::ofstream f(marker_path.c_str(), std::ios::trunc | std::ios::out);
-	for (const auto& file : files) {
-		f << file << '\n';
+bool MapBackupService::WriteCrashMarker(const std::vector<std::string>& files) {
+	const auto contents = rme::persistence::serializeRecoveryMarker(files);
+	if (!contents) return false;
+	const std::filesystem::path marker_path((FileSystem::GetLocalDataDirectory() + ".saving.txt").ToStdWstring());
+	std::ofstream f(marker_path, std::ios::out | std::ios::binary | std::ios::noreplace);
+	if (!f) {
+		return false;
 	}
+	f.write(contents->data(), static_cast<std::streamsize>(contents->size()));
+	f.close();
+	return !f.fail();
 }
 
-void MapBackupService::ClearCrashMarker() {
-	std::string marker_path = nstr(FileSystem::GetLocalDataDirectory()) + ".saving.txt";
-	std::remove(marker_path.c_str());
+bool MapBackupService::ClearCrashMarker() {
+	const std::filesystem::path marker_path((FileSystem::GetLocalDataDirectory() + ".saving.txt").ToStdWstring());
+	std::error_code ec;
+	return std::filesystem::remove(marker_path, ec) && !ec;
 }
 
 bool MapBackupService::CreateSnapshot(
@@ -54,6 +63,18 @@ bool MapBackupService::CreateSnapshot(
 		target_file.Assign(wxstr(dir + "untitled_" + operation_tag + "_" + time_str + ".otbm"));
 	}
 
+	// Reserve a private directory before writing any member of the snapshot.
+	// A timestamp alone is not unique, and checking file existence before
+	// opening the files would still allow another process to win the race.
+	const std::filesystem::path parent(target_file.GetPath(wxPATH_GET_VOLUME).ToStdWstring());
+	const std::wstring directory_base = target_file.GetName().ToStdWstring() + L"_snapshot";
+	std::error_code ec;
+	const auto snapshot_directory = reserveSnapshotDirectory(parent, directory_base, ec);
+	if (snapshot_directory.empty()) {
+		out_error = "Could not reserve a snapshot directory in: " + nstr(wxString(parent.wstring())) + ": " + ec.message();
+		return false;
+	}
+	target_file.SetPath(wxString(snapshot_directory.wstring()));
 	out_backup_path = nstr(target_file.GetFullPath());
 
 	const std::string original_spawnfile = editor.map.getSpawnFilename();
@@ -89,16 +110,9 @@ bool MapBackupService::CreateSnapshot(
 	}
 
 	if (!save_ok) {
-		const std::string dir = nstr(target_file.GetPath(wxPATH_GET_SEPARATOR | wxPATH_GET_VOLUME));
-		std::remove(nstr(target_file.GetFullPath()).c_str());
-		std::remove((dir + snapshot_base + "-spawn.xml").c_str());
-		std::remove((dir + snapshot_base + "-monster.xml").c_str());
-		std::remove((dir + snapshot_base + "-npc.xml").c_str());
-		std::remove((dir + snapshot_base + "-house.xml").c_str());
-		std::remove((dir + snapshot_base + "-zones.xml").c_str());
-		std::remove((dir + snapshot_base + "-waypoint.xml").c_str());
-
-		out_error = "Failed to save backup map snapshot to: " + out_backup_path;
+		// Keep partial files for inspection; deleting by name could remove files
+		// created by another process after the directory was reserved.
+		out_error = "Failed to save backup map snapshot. Partial files may remain in: " + nstr(wxString(snapshot_directory.wstring()));
 		spdlog::error("MapBackupService::CreateSnapshot: {}", out_error);
 		return false;
 	}

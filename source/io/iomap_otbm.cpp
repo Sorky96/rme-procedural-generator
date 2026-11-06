@@ -841,6 +841,14 @@ bool IOMapOTBM::saveMap(Map& map, NodeFileWriteHandle& f) {
 				std::string serialized_path;
 				if (path.is_relative() && path_str.find("..") == std::string::npos) {
 					serialized_path = path.generic_string();
+				} else if (path.is_absolute() && !map.filename.empty()) {
+					std::error_code ec;
+					const auto relative = std::filesystem::relative(path, std::filesystem::path(map.filename).parent_path(), ec);
+					// The XML writer keeps absolute companions inside the map
+					// directory. Preserve their subdirectory in the portable link.
+					serialized_path = !ec && !relative.empty() && !relative.is_absolute() &&
+						relative.generic_string().find("..") == std::string::npos
+						? relative.generic_string() : path.filename().generic_string();
 				} else {
 					serialized_path = path.filename().generic_string();
 				}

@@ -26,10 +26,10 @@ public:
 	static std::string GenerateTimestampString(bool compact = true);
 
 	/// Writes the crash recovery marker (.saving.txt) with tracked backup files.
-	static void WriteCrashMarker(const std::vector<std::string>& files);
+	static bool WriteCrashMarker(const std::vector<std::string>& files);
 
 	/// Clears the crash recovery marker file (.saving.txt).
-	static void ClearCrashMarker();
+	static bool ClearCrashMarker();
 };
 
 #endif // RME_EDITOR_PERSISTENCE_MAP_BACKUP_SERVICE_H_

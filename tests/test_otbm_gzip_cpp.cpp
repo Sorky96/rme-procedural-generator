@@ -430,6 +430,19 @@ namespace {
 		assert(mapData->getU8(mapDataType));
 		assert(mapDataType == 2);
 
+		uint8_t attribute = 0;
+		std::string value;
+		assert(mapData->getU8(attribute) && attribute == 1);
+		assert(mapData->getString(value) && value == "Crystal Server OTBM 5 Map");
+		assert(mapData->getU8(attribute) && attribute == 11);
+		assert(mapData->getString(value) && value == "world-monster.xml");
+		assert(mapData->getU8(attribute) && attribute == 23);
+		assert(mapData->getString(value) && value == "world-npc.xml");
+		assert(mapData->getU8(attribute) && attribute == 24);
+		assert(mapData->getString(value) && value == "world-zone.xml");
+		assert(mapData->getU8(attribute) && attribute == 13);
+		assert(mapData->getString(value) && value == "world-house.xml");
+
 		std::filesystem::remove(otbm5_file);
 		std::cout << "  -> Passed: OTBM 5 map header (raw version 4, major/minor 4/4) and zone attributes parsed successfully.\n";
 	}

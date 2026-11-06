@@ -74,6 +74,7 @@ set(rme_H
     ${CMAKE_CURRENT_LIST_DIR}/editor/operations/spawn_validator.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/editor_persistence.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/map_backup_service.h
+    ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/rollback_file.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/map_load_options.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/minimap_exporter.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/minimap_exporter_internal.h
