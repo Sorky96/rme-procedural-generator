@@ -43,6 +43,8 @@ Kryterium ustalone przed pierwszym przebiegiem (2 cykle rozgrzewki, nachylenie �
 
 Przed uruchomieniem dodano pomocniczy test ograniczoności: różnica średniej pamięci prywatnej między cyklami 101–150 a 151–200 ≤ 5 MiB. **Nie jest spełniony**: 619,2 → 627,9 MiB, różnica 8,6 MiB (working set 770,5 → 779,0). Pamięć prywatna rośnie skokami (559 MiB na starcie, 585 po cyklu 20, ok. 615 po cyklu 60, ok. 626 po 130, 634 po 200), w tym samych miejscach co w seriach po 30 cykli, ale w ostatnich 100 cyklach nadal rośnie, wolniej niż w pierwszych 30. Nie wykazano więc plateau. Przyczyny skoków nie zbadano (rozrost rezerw alokatora, pojemność kontenerów lub wyciek o małym tempie: brak rozróżnienia). Seria jest jedna i nie jest oceniana statystycznie.
 
+Decyzja użytkownika z 2026-11-06: wzrost pamięci w tej serii nie jest blokerem G1, bo mapy, przy których robiłby różnicę (setki cykli Preview w jednej sesji), nie są spodziewanym użyciem. Przyczyna skoków nadal nie jest zbadana; to decyzja o priorytecie, nie wynik pomiaru.
+
 ## Logi operacji dialogu (2026-11-06)
 
 `stdout.log` przebiegu `NEW_RUN_REFUSALS_2` zawiera wpisy `Terrain generator: …` dla: gotowości do wyboru obszaru (info), pięciu odmów (warning), dwukrotnie „Preparing preview” (info) i końcowego „Preview ready” z liczbą kafli, seedem i szacunkiem pamięci (info). Wpisów Validate, Cancel i „placed N tiles” w tym przebiegu nie wykonano, więc kryterium logów było potwierdzone częściowo.

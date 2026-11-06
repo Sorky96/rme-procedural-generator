@@ -329,15 +329,17 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 **IN PROGRESS, 2026-11-02:** rozpoczęto G1-A na gałęzi `feature/procedural-g1-core`. [Rdzeń i ograniczenia](procedural/G1_CORE.md); test C++ 100×100/500×500 PASS nie zastępuje bramki integracyjnej G1 poniżej.
 
-- [~] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary. Rdzeń C++ i testy gotowe; pobranie ochrony z rzeczywistego snapshotu mapy pozostaje G1-B.
+- [x] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary. Rdzeń C++ i testy gotowe; ochrona i dokładna maska z rzeczywistego snapshotu i zaznaczenia: [snapshot](procedural/G1_SNAPSHOT.md), [maska](procedural/G1_MASK.md), a w pełnych round-tripach 100×100 i 500×500 pięć kafli fixture pozostało bez zmian.
 - [x] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3. Pierwszy semantyczny baseline v1, bez noise i oceny naturalności; rzeczywiste testy C++ 100×100/500×500 PASS.
-- [ ] Prosty resolver do właściwych brushy/items zgodnie z klientem.
-- [ ] Dry-run, commit i Undo/Redo, logi.
-- [~] Test deterministyczności i błędnych parametrów. Rdzeń C++ PASS; deterministyczność konkretnego diffu resolvera i całego workflow jeszcze niewykonana.
-- [ ] Minimalny dialog: seed, obszar, Preview, Validate, Commit, Cancel; obsługa braku klienta/assets i nieaktualnego wyniku.
-- [ ] Test konkretnego diffu, anulowania, błędu zastosowania, zmiany mapy/assets po preview, przekroczenia budżetu oraz oddzielnego wpisu Undo. Commit offline.
+- [x] Prosty resolver do właściwych brushy/items zgodnie z klientem. [Resolver](procedural/G1_RESOLVER.md); według raportu resolver odrzuca brak brusha i itemu, a brak klienta sprawdzono w natywnych odmowach ([odmowy](procedural/G1_REFUSALS.md)); testów resolvera nie uruchamiałem ponownie przy tej aktualizacji.
+- [x] Dry-run (Preview i Validate), commit i Undo/Redo, logi. [Commit](procedural/G1_COMMIT.md), [round-trip](procedural/G1_ROUNDTRIP.md); logi dialogu mają dowód runtime dla Preview, Validate, Place, Cancel i odmów ([stan bramki](procedural/G1_GATE_STATUS.md)).
+- [x] Test deterministyczności i błędnych parametrów. Rdzeń C++ PASS; fingerprinty podglądu, maski i commitu 100×100 i 500×500 są identyczne w kolejnych buildach ([regresja etapowa](procedural/G1_STAGED_CORE.md)), a trzy próby 500×500 zapisały komplet plików identyczny bajtowo ([powtarzalność](procedural/G1_PLACE_TIMING_REPEATABILITY.md)). Zakres: seed 1729 i dwa rozmiary.
+- [x] Minimalny dialog: seed, obszar, Preview, Validate, Commit, Cancel; obsługa braku klienta/assets i nieaktualnego wyniku. [Dialog](procedural/G1_DIALOG.md), [macierz](procedural/G1_DIALOG_MATRIX.md), [odmowy](procedural/G1_REFUSALS.md), [unieważnienie](procedural/G1_INVALIDATION.md).
+- [~] Test konkretnego diffu, anulowania, błędu zastosowania, zmiany mapy/assets po preview, przekroczenia budżetu oraz oddzielnego wpisu Undo. Commit offline. Wykonane: [commit](procedural/G1_COMMIT.md), [anulowanie](procedural/G1_CANCEL.md), [unieważnienie](procedural/G1_INVALIDATION.md), [budżet](procedural/G1_BUDGET.md), [zasoby](procedural/G1_ASSETS.md). Otwarte: tryb offline sprawdzono na nieuruchomionym hoście live, nie w rzeczywistej sesji sieciowej; błędy alokacji sprawdzono w opisanych miejscach, nie we wszystkich.
 
 **G1:** 100x100 i 500x500 na jednym piętrze w zmierzonym budżecie zasobów, preview zgodny z zastosowanym diffem, zapis i otwarcie kompletu plików, jedno Undo i Redo, zero zmian poza maską i w danych chronionych. Brak budżetu dla 500x500 jest ograniczeniem, nie zaliczeniem G1.
+
+**Stan 2026-11-06:** wszystkie pozycje listy mają dowód poza jednym wyjątkiem opisanym przy ostatniej pozycji. Pełny round-trip obu rozmiarów powtórzono na bieżącym binarium, progi zasobów 100×100 zatwierdzono, a wzrost pamięci w 200 cyklach uznano za niebędący blokerem (decyzja użytkownika). Bramka pozostaje **IN PROGRESS**: nie rozstrzygnięto rzeczywistych sesji sieciowych live, pozostałych miejsc awarii alokacji ani ostrzeżenia `SetFocus` poza przebiegiem odmów, a część dowodów to pojedyncze serie. Szczegóły: [stan bramki](procedural/G1_GATE_STATUS.md).
 
 ### FAZA 2 - Sensowna powierzchnia i border
 

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G1: lista Fazy 1 uzupełniona o dowody
+
+Lista Fazy 1 w `PROJECT_RME_PROCEDURAL_GENERATOR.md` pokazywała nieodhaczone pozycje, dla których istniały już dowody (resolver, commit z Undo/Redo, dialog, testy). Odhaczono je z odnośnikami do raportów; jedna pozycja (testy diffu, anulowania, budżetu, unieważnienia) zostaje częściowa: brak rzeczywistej sesji sieciowej live i nie wszystkich miejsc awarii alokacji. Użytkownik uznał wzrost pamięci w serii 200 cykli za niebędący blokerem. Bramka G1 pozostaje IN PROGRESS. Nie weryfikowano na nowo samych dowodów, tylko ich odwzorowanie na listę.
+
 ## 2026-11-06 — G1: seria 200 cykli trendu pamięci
 
 `g1-leak-200-20261106` (samosterowany, 500×500, EXE `b87d1abb…`): kryterium ustalone z góry spełnione (nachylenie WS i private 0,31 MiB/cykl, GDI/USER/uchwyty bez wzrostu po rozgrzewce, stderr pusty). Pomocniczy test ograniczoności ustalony przed uruchomieniem (różnica średnich cykli 101–150 i 151–200 ≤ 5 MiB) nie jest spełniony: +8,6 MiB. Pamięć rośnie skokami i wolniej niż w pierwszych 30 cyklach, ale plateau nie wykazano; przyczyna nie zbadana.
