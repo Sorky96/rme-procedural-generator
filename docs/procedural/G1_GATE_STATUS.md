@@ -1,6 +1,10 @@
 # G1 — stan kryteriów na 2026-11-05
 
-**G1 IN PROGRESS.** Zakres bramki wynika z [planu generatora](../PROJECT_RME_PROCEDURAL_GENERATOR.md) i [planu testów](TEST_PLAN.md#testy-do-dodania-wraz-z-g1). Poniższa macierz uwzględnia dowody późniejsze niż listy otwartych prac w raportach etapowych.
+**G1 ZAMKNIĘTE Z DŁUGIEM (decyzja użytkownika, 2026-11-06).** Pięć kryteriów bramki ma dowody, progi zasobów 500×500 i 100×100 zatwierdzono i są spełnione. Otwarte pozycje są w [TECH_DEBT.md](TECH_DEBT.md) (D1 `SetFocus` przy zamykaniu, D2 niewyjaśniony stos aktywacji, D3 nieprzetestowane miejsca awarii alokacji, D4 skokowy wzrost pamięci); dług nie jest zaliczeniem kryterium. Sesje live są poza zakresem G1.
+
+Zastrzeżenia: czasy Place 500×500 pochodzą z EXE `15c25557…`, nie z obecnego `b87d1abb…`; wiele dowodów to pojedyncze serie; PR nie ma CI, a commity pośrednie nie były budowane osobno. Treść dowodów poniżej pozostaje bez zmian i opisuje stan z chwili pomiaru.
+
+Zakres bramki wynika z [planu generatora](../PROJECT_RME_PROCEDURAL_GENERATOR.md) i [planu testów](TEST_PLAN.md#testy-do-dodania-wraz-z-g1). Poniższa macierz uwzględnia dowody późniejsze niż listy otwartych prac w raportach etapowych.
 
 | Kryterium | Aktualny dowód i jego zakres |
 | --- | --- |
