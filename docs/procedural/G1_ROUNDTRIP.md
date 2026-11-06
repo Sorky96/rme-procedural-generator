@@ -104,3 +104,16 @@ rtk proxy <PY> docs/procedural/smoke/g1_verify_dialog_probe.py local-data/proced
 `<PY>` to `C:/Users/Sorky/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -X utf8`. Po `ROUNDTRIP_FIXTURE_READY` otwórz Map → Generate terrain. Zostaw wartości domyślne i wykonaj Preview → Validate → Place on map. Poczekaj na marker po każdym następnym poleceniu: Undo, Redo, Save, Close. Następnie przez Open otwórz wyłącznie `NEW_RUN/run/generated/terrain.otbm`. Jeśli RME zapyta o import definicji kreatur, wybierz Nie. Po `ROUNDTRIP_PASS` zamknij prywatne RME przez menu File → Exit lub Alt+F4.
 
 Dla 500×500 dodaj `--roundtrip-side 500` do runnera i ustaw Width oraz Height na 500 w dialogu. Obserwator przenosi fixture poza większy prostokąt i ustawia limit historii na 512 MiB wyłącznie w prywatnej instancji. Verifier odczytuje rozmiar z wyników przebiegu.
+
+## Powtórzenie na obecnym binarium (2026-11-06)
+
+Poprzednie dowody pełnego round-tripu pochodziły z EXE `15c25557…`. Obecne drzewo daje produkcyjne EXE `b87d1abb…` (`build_ninja.bat`, kod 0); od tamtego buildu zmieniły się m.in. `terrain_preparation.cpp`, dialog i kod zapisu. Powtórzono więc pełną sekwencję Place → Undo → Redo → Save → Close → Open w natywnym RME, z operatorem:
+
+| Przebieg | Rozmiar | Wynik obserwatora | Zapis | Odczyt | Verifier |
+|---|---|---|---|---|---|
+| `g1-roundtrip-100-cur-c-20261106` | 100×100 | `ROUNDTRIP_PASS`, kod 0 | 0,1 MB w 0,0 s | 10 005 kafli w 5,1 s | `PARTIAL_G1_GUI_OTBM5_ROUNDTRIP_FOCUS_WARNING`: 10 000 wygenerowanych i 5 chronionych kafli, pięć companionów XML zgodnych i niepustych |
+| `g1-roundtrip-500-cur-20261106` | 500×500 | `ROUNDTRIP_PASS`, kod 0 | 3,6 MB w 0,1 s | 250 005 kafli w 2,1 s | `PARTIAL_G1_GUI_OTBM5_ROUNDTRIP_FOCUS_WARNING`: 250 000 wygenerowanych i 5 chronionych kafli |
+
+Oba przebiegi mają w stderr znane ostrzeżenie `SetFocus` (`0x57`), stąd status częściowy. Przebieg 100×100 miał też cztery linie rozszerzenia powłoki Google Drive, które ładuje okno Open (nie jest to wyjście RME). Weryfikator ignoruje teraz dokładnie te linie, zapisuje je w `ignored_external_stderr` i nadal wymaga, by reszta stderr spełniała dotychczasowe reguły; to poluzowanie kryterium.
+
+Dwie wcześniejsze próby 100×100 tego dnia nie zaliczyły się z powodu kolejności kroków operatora, nie produktu: w `g1-roundtrip-100-cur-20261106` zakończono aplikację zamiast zamknąć mapę (brak markerów Close i Open), w `…-cur-b-…` zamknięto mapę przed Save i obserwator zgłosił `Unexpected map tile count` na drugiej, pustej karcie. Wnioski opierają się na logach aplikacji, nie na obserwacji działań operatora. Zakres jak wcześniej: jeden scenariusz OTBM 5, klient 1098-BlackTek, odczyt w RME; inne wersje OTBM i zewnętrzni czytelnicy poza zakresem. Pełne **G1 IN PROGRESS**.

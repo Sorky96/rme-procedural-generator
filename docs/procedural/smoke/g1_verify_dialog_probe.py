@@ -50,12 +50,19 @@ def require(condition,message):
 require(args.run.is_relative_to(base),'Expected private probe output')
 run=json.loads((args.run/'verification.json').read_text())
 manifest=json.loads((args.run/'build-manifest.json').read_text())
-stderr=(args.run/'stderr.log').read_text(encoding='utf-8',errors='replace').splitlines()
+raw_stderr=(args.run/'stderr.log').read_text(encoding='utf-8',errors='replace').splitlines()
+# Lines written by the Google Drive shell extension that the native Open dialog loads into the
+# process; they are not RME output. They are ignored only if recorded, and everything else must
+# still satisfy the strict stderr rules below.
+external_markers=('InitGoogle()','GoogleDriveFSPipe','=== Source Location Trace: ===','shell_ipc_client.cc')
+ignored_external=[line for line in raw_stderr if any(marker in line for marker in external_markers)]
+stderr=[line for line in raw_stderr if line not in ignored_external]
 partial_focus_warning=((args.refusals or args.roundtrip or args.invalidation) and bool(stderr)
     and len(set(stderr))==1
     and "\\src\\msw\\window.cpp(" in stderr[0]
     and "'SetFocus' failed with error 0x00000057" in stderr[0])
-if partial_focus_warning:
+external_noise_only=bool(ignored_external) and not stderr
+if partial_focus_warning or external_noise_only:
     report=(args.run/'run/dialog-probe.log').read_text(encoding='utf-8')
     require(report==run['report'] and 'FAILED\t' not in report,'Unexpected runtime report')
     if args.refusals:
@@ -66,7 +73,7 @@ if partial_focus_warning:
             'SAVED','CLOSED','REOPEN_PASS','PASS')]
         require(report.splitlines()==expected,'Round-trip sequence incomplete')
     require(run['current_sources'] and run['input_assets_unchanged'],'Inputs changed during runtime')
-require((run['passed'] or partial_focus_warning) and run['exit_code']==0,'Native UI sequence did not pass')
+require((run['passed'] or partial_focus_warning or external_noise_only) and run['exit_code']==0,'Native UI sequence did not pass')
 require(run.get('matrix',False)==args.matrix,'Use --matrix for a matrix run')
 require(run.get('selection_only',False)==args.selection_only,'Selection-only scope mismatch')
 require(run.get('resources',False)==args.resources,'Resource baseline scope mismatch')
@@ -327,5 +334,7 @@ if args.roundtrip and not args.roundtrip_timing:
                   saved_otbm_sha256=sha(after_dir/'terrain.otbm'), companion_sha256=companion_hashes)
     if partial_focus_warning:
         result['runtime_stderr']=stderr
+if ignored_external:
+    result['ignored_external_stderr']=ignored_external
 (args.run/'current-verification.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
 print(json.dumps(result,indent=2))

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G1: pełny round-trip OTBM na obecnym binarium
+
+Powtórzono Place → Undo → Redo → Save → Close → Open dla 100×100 (`g1-roundtrip-100-cur-c-20261106`) i 500×500 (`g1-roundtrip-500-cur-20261106`) na EXE `b87d1abb…`. Oba: `ROUNDTRIP_PASS`, wczytane 10 005 i 250 005 kafli, verifier `PARTIAL…FOCUS_WARNING` (ostrzeżenie `SetFocus` w stderr). Weryfikator ignoruje cztery linie rozszerzenia Google Drive i zapisuje je w `ignored_external_stderr`. Dwie wcześniejsze próby 100×100 zakończyły się błędem kolejności kroków operatora (wniosek z logów). Inne wersje OTBM i zewnętrzni czytelnicy nie były sprawdzane.
+
 ## 2026-11-06 — G1: diagnoza SetFocus w przebiegu odmów i zatwierdzenie progów 100×100
 
 Zatwierdzono progi 100×100 (wartość Preview ≤ 250 ms zaproponowana, bez osobnego potwierdzenia). Win32 `SetFocus` daje błąd 87, gdy cel lub przodek jest wyłączony (test osobny). `ProceduralFocusTrace` zapisuje stan okien; przebieg `g1-focus-state-b-20261106` pokazał wyłączoną ramkę pod modalnym dialogiem generatora, a stos wskazał `LoadVersion` → `SelectBrushInternal` wywołane z kroku próbnika odmów (`loadClient`). Dla stosów aktywacji i usuwania karty wyłączone okno pozostaje hipotezą. Nie sprawdzono powrotu fokusu po zamknięciu dialogu ani przebiegu odmów bez kroku `loadClient`.

@@ -4,7 +4,7 @@
 
 | Kryterium | Aktualny dowód i jego zakres |
 | --- | --- |
-| 100×100 i 500×500 na jednym piętrze | Oba rozmiary przeszły funkcjonalnie w natywnym RME na EXE `15c25557…`. Status obu przebiegów OTBM pozostaje częściowy z powodu ostrzeżenia `SetFocus`. [Round-trip](G1_ROUNDTRIP.md) |
+| 100×100 i 500×500 na jednym piętrze | Oba rozmiary przeszły funkcjonalnie w natywnym RME na EXE `15c25557…`, a 2026-11-06 powtórzono pełny round-trip obu rozmiarów na obecnym EXE `b87d1abb…`. Status obu przebiegów OTBM pozostaje częściowy z powodu ostrzeżenia `SetFocus`. [Round-trip](G1_ROUNDTRIP.md) |
 | Preview zgodny z Place, jedno Undo i Redo | Obserwator porównał wszystkie wygenerowane kafle z niezależnie przygotowanym wynikiem. Place utworzył jeden wpis historii. Rdzeń ma także próby atomowości i odrębnej historii. [Round-trip](G1_ROUNDTRIP.md), [commit](G1_COMMIT.md), [regresja etapowa](G1_STAGED_CORE.md) |
 | Komplet plików po zapisie i ponownym otwarciu | OTBM 5 i pięć companionów XML dla 1098-BlackTek sprawdzono w pełnych próbach obu rozmiarów. Trzy próby czasowe 500×500 zapisały komplet identyczny bajtowo z zachowaną pełną próbą tego rozmiaru. [Round-trip](G1_ROUNDTRIP.md), [powtarzalność](G1_PLACE_TIMING_REPEATABILITY.md) |
 | Brak zmian poza maską i w danych chronionych | Pełny wynik prostokąta i fixture sprawdzono w round-tripie. Test natywnej dokładnej maski potwierdził zachowanie jednego chronionego kafla wewnątrz maski, wraz z UID 32101, tożsamością obiektów i zaznaczeniem. [Round-trip](G1_ROUNDTRIP.md), [macierz dialogu](G1_DIALOG_MATRIX.md) |
