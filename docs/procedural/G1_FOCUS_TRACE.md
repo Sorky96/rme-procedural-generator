@@ -20,3 +20,23 @@ rtk proxy <PY> docs/procedural/smoke/g1_run_dialog_probe.py local-data/procedura
 ```
 
 `<PY>` to `C:/Users/Sorky/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -X utf8`.
+
+## Stan okien przy błędzie w przebiegu odmów (2026-11-06)
+
+Win32 `SetFocus` kończy się błędem 87 (`0x57`), gdy okno docelowe albo jego przodek jest wyłączony. Sprawdzono to osobnym testem: wyłączone okno najwyższego poziomu, wyłączony panel nadrzędny i wyłączone okno docelowe dają 87, ukryty panel lub ukryte okno nie dają błędu, a zniszczone okno daje 1400.
+
+`ProceduralFocusTrace` zapisuje teraz przy błędzie także stan okien (foreground, active, focus i jego przodkowie, wszystkie okna najwyższego poziomu). Przebieg `g1-focus-state-b-20261106` (`--refusals --focus-trace`, operator: menu i dialog) dał sześć markerów `REFUSAL_CASE_PASS`, `REFUSAL_PASS` i jedno zapisane ostrzeżenie `SetFocus` (stderr wypisuje je dwukrotnie przez łańcuch logowania). W chwili błędu:
+
+| Okno | Stan |
+|---|---|
+| główna ramka (`wxFrame`) | `wx_enabled=0`, widoczna |
+| `Generate Terrain` | `modal=1`, włączone, foreground i active |
+| fokus | przycisk w dialogu generatora |
+
+Stos wskazuje źródło: `LoadVersion` → `LayoutManager::LoadPerspective` → `PaletteManager::CreatePalette` → `GUI::SelectBrushInternal` → `wxWindow::SetFocus`, wywołane z zegara próbnika podczas `ShowModal` dialogu generatora. To krok 4 próbnika odmów (`loadClient()` po `UnloadVersion`), który ładuje klienta przy wyłączonej ramce. Ostrzeżenie w tym przebiegu pochodzi więc z kroku próbnika, a nie z obsługi Preview, Validate czy Place. W normalnej pracy klient nie ładuje się, gdy otwarty jest modalny dialog generatora.
+
+Czego to **nie** pokazuje: dwa wcześniejsze stosy (aktywacja ramki przy otwartym generatorze oraz usuwanie karty przy zamykaniu) nie mają zapisanego stanu okien, więc dla nich wyłączone okno jest hipotezą zgodną z testem Win32, nie ustaleniem. Nie sprawdzono, czy bez kroku 4 przebieg odmów jest wolny od ostrzeżenia, ani czy fokus wraca poprawnie po zamknięciu dialogu. Runner zakończył się kodem 1 z powodu niepustego stderr, tak jak w poprzednich przebiegach odmów.
+
+```text
+rtk proxy <PY> docs/procedural/smoke/g1_run_dialog_probe.py local-data/procedural-smoke/NEW_RUN local-data/procedural-smoke/g0-reference-profile-20261030/data local-data/procedural-smoke/g0-reference-profile-20261030/config.toml --refusals --focus-trace
+```

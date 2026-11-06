@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G1: diagnoza SetFocus w przebiegu odmów i zatwierdzenie progów 100×100
+
+Zatwierdzono progi 100×100 (wartość Preview ≤ 250 ms zaproponowana, bez osobnego potwierdzenia). Win32 `SetFocus` daje błąd 87, gdy cel lub przodek jest wyłączony (test osobny). `ProceduralFocusTrace` zapisuje stan okien; przebieg `g1-focus-state-b-20261106` pokazał wyłączoną ramkę pod modalnym dialogiem generatora, a stos wskazał `LoadVersion` → `SelectBrushInternal` wywołane z kroku próbnika odmów (`loadClient`). Dla stosów aktywacji i usuwania karty wyłączone okno pozostaje hipotezą. Nie sprawdzono powrotu fokusu po zamknięciu dialogu ani przebiegu odmów bez kroku `loadClient`.
+
 ## 2026-11-06 — G1: pomiar Preview 100×100 na buildzie etapowym
 
 `--resources` (3 × 100×100, 3 × 500×500, natywne wejście) przeszedł i został zweryfikowany (`PASS_G1_GUI_RESOURCE_BASELINE_ONLY`). Preview 100×100: ok. 110 ms, przerwa GUI ≤ 53 ms, przyrost WS ≤ 3,6 MiB, w progach wstępnych. Zmieniono `g1_verify_dialog_probe.py`: tryb `--resources` jest traktowany jak build etapowy, a stara gałąź porównania ze starym buildem usunięta. **G1 IN PROGRESS.**

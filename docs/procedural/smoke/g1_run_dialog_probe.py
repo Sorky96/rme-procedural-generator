@@ -27,7 +27,7 @@ parser.add_argument('--roundtrip',action='store_true',help='Place, Undo, Redo, s
 parser.add_argument('--roundtrip-side',type=int,choices=(100,500),default=100)
 parser.add_argument('--roundtrip-timing',action='store_true',help='Round-trip side (100 or 500): per-operation CSV for Place/Undo/Redo/Save; no reference preview, terrain scan or reopen')
 parser.add_argument('--invalidation',action='store_true',help='Edit input and close the window during active Preview jobs')
-parser.add_argument('--focus-trace',action='store_true',help='Capture a local call stack for SetFocus errors in the invalidation probe')
+parser.add_argument('--focus-trace',action='store_true',help='Capture a local call stack and window enabled-state for SetFocus errors (invalidation or refusals probe)')
 for name in ('output','profile_data','config'):
     parser.add_argument(name,type=lambda value:Path(value).resolve())
 args=parser.parse_args()
@@ -45,8 +45,8 @@ if args.roundtrip_timing and not args.roundtrip:
     parser.error('--roundtrip-timing requires --roundtrip')
 if args.invalidation and (args.resources or args.matrix or args.refusals or args.roundtrip):
     parser.error('--invalidation runs independently')
-if args.focus_trace and not args.invalidation:
-    parser.error('--focus-trace requires --invalidation')
+if args.focus_trace and not (args.invalidation or args.refusals):
+    parser.error('--focus-trace requires --invalidation or --refusals')
 repo=Path(__file__).resolve().parents[3]
 if not args.output.is_relative_to(repo/'local-data/procedural-smoke'):
     raise ValueError('Output must be a NEW private procedural-smoke directory')

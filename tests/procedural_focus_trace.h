@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <dbghelp.h>
+#include <wx/dialog.h>
 #include <wx/log.h>
 
 #include <fstream>
@@ -55,12 +56,42 @@ protected:
 				}
 				report_ << '\n';
 			}
-			report_.flush();
+			writeWindowState();
+				report_.flush();
 		}
 		wxLogChain::DoLogRecord(level, message, info);
 	}
 
 private:
+	// Win32 SetFocus fails with ERROR_INVALID_PARAMETER (87) when the target or one of its
+	// ancestors is disabled. The failing target is not exposed, so record which windows are.
+	void writeWindowState() {
+		const auto describe = [this](const char* label, HWND hwnd) {
+			report_ << "STATE\t" << label << "\thwnd=" << hwnd;
+			if (hwnd) {
+				wchar_t cls[64]{};
+				GetClassNameW(hwnd, cls, 64);
+				report_ << "\tclass=" << wxString(cls).ToStdString() << "\tenabled=" << (IsWindowEnabled(hwnd) != 0)
+					<< "\tvisible=" << (IsWindowVisible(hwnd) != 0);
+			}
+			report_ << '\n';
+		};
+		describe("foreground", GetForegroundWindow());
+		describe("active", GetActiveWindow());
+		HWND focus = GetFocus();
+		describe("focus", focus);
+		for (HWND parent = focus ? GetParent(focus) : nullptr; parent; parent = GetParent(parent)) {
+			describe("focus-ancestor", parent);
+		}
+		for (wxWindow* window : wxTopLevelWindows) {
+			const auto* dialog = dynamic_cast<const wxDialog*>(window);
+			report_ << "STATE\ttop-level\t" << wxString(window->GetClassInfo()->GetClassName()).ToStdString()
+				<< "\ttitle=" << window->GetLabel().ToStdString()
+				<< "\twx_enabled=" << window->IsEnabled() << "\twx_shown=" << window->IsShown()
+				<< "\tmodal=" << (dialog && dialog->IsModal()) << '\n';
+		}
+	}
+
 	std::ofstream report_;
 	bool symbolsReady_ = false;
 };

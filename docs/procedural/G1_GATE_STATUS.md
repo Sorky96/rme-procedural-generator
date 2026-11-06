@@ -15,7 +15,7 @@ Rdzeń C++, resolver i sandbox mają dowody dla seedów, błędnych wejść i de
 
 Anulowanie aktywnego Preview 500×500 ma aktualny dowód. Natywne odmowy Preview, w tym jednorazowa awaria alokacji halo, oraz edycja seeda i zamknięcie dialogu w trakcie pracy mają dowód funkcjonalny na EXE `1660d46b…`. Porównanie manifestów z `15c25557…` wykazało zmiany w `terrain_preparation.cpp` i `terrain_generator_dialog.cpp`. Ponowienie `--refusals` na drzewie z 2026-11-06 (`NEW_RUN_REFUSALS_2`, EXE obserwatora `6de317d2…`, produkcyjny `b87d1abb…`) przeszło funkcjonalnie: sześć przypadków i `REFUSAL_PASS`, verifier `PARTIAL…FOCUS_WARNING` jak poprzednio. To odświeża dowód dla zmiany preflightu. Współistnienie wyników, wycieki oraz zakres testu ograniczenia wariantów i prób naprawy pozostają otwarte. [Cancel](G1_CANCEL.md), [odmowy](G1_REFUSALS.md), [unieważnienie](G1_INVALIDATION.md)
 
-Pomiar Preview 100×100 na etapowym buildzie wykonano 2026-11-06 (patrz niżej). Diagnoza `SetFocus` pozostaje odłożona.
+Pomiar Preview 100×100 na etapowym buildzie wykonano 2026-11-06 (patrz niżej). Diagnoza `SetFocus` w przebiegu odmów: [G1_FOCUS_TRACE.md](G1_FOCUS_TRACE.md#stan-okien-przy-błędzie-w-przebiegu-odmów-2026-11-06); w pozostałych przebiegach pozostaje hipotezą.
 
 ## Wstępne progi zasobów (2026-11-06)
 
@@ -23,13 +23,17 @@ Progi ustalono po obejrzeniu pomiarów z 2026-11-03…05, więc są **wstępne**
 
 | Metryka | 500×500 | 100×100 |
 | --- | --- | --- |
-| Preview do gotowości | ≤ 3 s | do pomiaru |
+| Preview do gotowości | ≤ 3 s | ≤ 250 ms (zob. zatwierdzenie niżej) |
 | Maks. przerwa timera GUI, Preview | ≤ 250 ms | ≤ 250 ms |
 | Place do zmiany historii | ≤ 1 s | ≤ 250 ms |
 | Maks. przerwa timera GUI, Place | ≤ 750 ms | ≤ 250 ms |
 | Przyrost working set, Preview | ≤ 150 MiB | ≤ 30 MiB |
 | Przyrost working set / private commit, Place+Undo+Redo+Save | ≤ 200 MiB | ≤ 30 MiB |
 | Pamięć po Cancel | bez trendu wzrostowego w 10 cyklach | j.w. |
+
+## Zatwierdzenie progów 100×100 (2026-11-06)
+
+Użytkownik zatwierdził progi 100×100 z tabeli powyżej. W tabeli pozycja „Preview do gotowości” miała wartość „do pomiaru”; wpisano w jej miejsce ≤ 250 ms (zmierzone ok. 110 ms). Tę konkretną wartość zaproponowano w rozmowie i użytkownik nie potwierdził jej osobno, więc jest ona do potwierdzenia. Zatwierdzone progi nie zmieniają wcześniejszych wyników: jedna seria 100×100 na buildzie etapowym mieści się w nich, ale seria jest pojedyncza i nie powtórzono jej.
 
 ## Logi operacji dialogu (2026-11-06)
 

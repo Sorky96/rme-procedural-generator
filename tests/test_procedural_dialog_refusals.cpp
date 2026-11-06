@@ -6,6 +6,7 @@
 #include "editor/editor.h"
 #include "procedural/adapter/generation_snapshot.h"
 #include "procedural/adapter/snapshot_equal.h"
+#include "procedural_focus_trace.h"
 #include "ui/dialogs/terrain_generator_dialog.h"
 #include "ui/gui.h"
 #include "ui/main_frame.h"
@@ -202,11 +203,14 @@ public:
 		}
 		return true;
 	}
-	void OnExit() override { probe.reset(); }
+	void OnExit() override { probe.reset(); trace.reset(); }
 
 private:
 	void idle(wxIdleEvent& event) {
 		event.Skip();
+		if (!trace && std::filesystem::is_regular_file(".g1-focus-trace")) {
+			trace = std::make_unique<ProceduralFocusTrace>();
+		}
 		if (!g_gui.root || !wxApp::IsMainLoopRunning() || !g_gui.root->IsEnabled() || probe) return;
 		try {
 			probe = std::make_unique<RefusalProbe>();
@@ -216,6 +220,7 @@ private:
 		}
 	}
 	std::unique_ptr<RefusalProbe> probe;
+	std::unique_ptr<ProceduralFocusTrace> trace;
 	wxDECLARE_DYNAMIC_CLASS(RefusalProbeModule);
 };
 wxIMPLEMENT_DYNAMIC_CLASS(RefusalProbeModule, wxModule);
