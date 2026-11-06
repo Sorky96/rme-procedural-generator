@@ -5,6 +5,8 @@
 #include "app/main.h"
 #include "palette/house/house_palette.h"
 #include "palette/house/edit_house_dialog.h"
+#include "editor/editor.h"
+#include "editor/action_queue.h"
 
 #include "map/map.h"
 #include "game/house.h"
@@ -24,7 +26,6 @@
 #include <wx/stattext.h>
 #include <wx/menu.h>
 #include <algorithm>
-#include <sstream>
 
 HousePalette::HousePalette(wxWindow* parent) :
 	PalettePanel(parent, wxID_ANY),
@@ -441,16 +442,19 @@ void HousePalette::OnGoToExit(wxCommandEvent& /*event*/) {
 }
 
 void HousePalette::OnAddHouse(wxCommandEvent& /*event*/) {
-	if (!map) {
+	Editor* editor = g_gui.GetCurrentEditor();
+	if (!map || !editor || editor->getMap() != map) {
+		return;
+	}
+	if (editor->live_manager.IsLive()) {
+		DialogUtil::PopupDialog(this, "Add House", "House metadata changes are not supported in live sessions.", wxOK);
 		return;
 	}
 
 	auto new_house = std::make_unique<House>(*map);
 	new_house->setID(map->houses.getEmptyID());
 
-	std::ostringstream os;
-	os << "Unnamed House #" << new_house->getID();
-	new_house->name = os.str();
+	new_house->name = std::format("Unnamed House #{}", new_house->getID());
 
 	const int town_idx = town_choice->GetSelection();
 	if (town_idx > 0 && town_idx < static_cast<int>(town_choice->GetCount()) - 1) {
@@ -458,9 +462,12 @@ void HousePalette::OnAddHouse(wxCommandEvent& /*event*/) {
 		new_house->townid = town ? town->getID() : 0;
 	}
 
-	House* house_ptr = new_house.get();
-	selected_house_id_ = house_ptr->getID();
-	map->houses.addHouse(std::move(new_house));
+	selected_house_id_ = new_house->getID();
+	const auto generation = new_house->getGeneration();
+	auto action = editor->actionQueue->createAction(ACTION_HOUSE_PRESENCE);
+	action->addChange(std::make_unique<Change>(HousePresenceChangeData {
+		selected_house_id_, generation, std::move(new_house) }));
+	editor->addAction(std::move(action));
 	FilterHouses();
 
 	g_gui.SelectBrush();
@@ -472,6 +479,7 @@ void HousePalette::OnEditHouse(wxCommandEvent& /*event*/) {
 		selected_house_id_ = house->getID();
 		auto* d = newd EditHouseDialog(g_gui.root, map, house);
 		if (d->ShowModal() == 1) {
+			selected_house_id_ = house->getID();
 			FilterHouses();
 			g_gui.SelectBrush();
 		}
@@ -480,14 +488,23 @@ void HousePalette::OnEditHouse(wxCommandEvent& /*event*/) {
 }
 
 void HousePalette::OnRemoveHouse(wxCommandEvent& /*event*/) {
+	Editor* editor = g_gui.GetCurrentEditor();
+	if (!map || !editor || editor->getMap() != map) return;
+	if (editor->live_manager.IsLive()) {
+		DialogUtil::PopupDialog(this, "Remove House", "House metadata changes are not supported in live sessions.", wxOK);
+		return;
+	}
 	House* house = GetSelectedHouse();
 	if (house && map) {
-		const int ret = wxMessageBox("Are you sure you want to remove this house? This cannot be undone.", "Remove House", wxYES_NO | wxICON_WARNING | wxCENTER, this);
+		const int ret = wxMessageBox("Are you sure you want to remove this house?", "Remove House", wxYES_NO | wxICON_WARNING | wxCENTER, this);
 		if (ret == wxYES) {
 			if (selected_house_id_ == house->getID()) {
 				selected_house_id_ = 0;
 			}
-			map->houses.removeHouse(house);
+			auto action = editor->actionQueue->createAction(ACTION_HOUSE_PRESENCE);
+			action->addChange(std::make_unique<Change>(HousePresenceChangeData {
+				house->getID(), house->getGeneration(), nullptr }));
+			editor->addAction(std::move(action));
 			FilterHouses();
 			g_gui.SelectBrush();
 			g_gui.RefreshView();

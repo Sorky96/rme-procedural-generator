@@ -22,6 +22,7 @@
 #include <functional>
 #include <ranges>
 #include <queue>
+#include <utility>
 
 namespace TileOperations {
 
@@ -89,7 +90,15 @@ namespace TileOperations {
 			return;
 		}
 
-		if (Editor* editor = g_gui.GetCurrentEditor()) {
+		const Position position = tile->getPosition();
+		if (!position.isValid()) {
+			return;
+		}
+
+		// Detached copies and tiles of another map must not invalidate the
+		// active editor's selection, even when their coordinates are identical.
+		if (Editor* editor = g_gui.GetCurrentEditor(); editor &&
+			std::as_const(editor->map).getTile(position) == tile) {
 			editor->selection.markChanged();
 		}
 	}

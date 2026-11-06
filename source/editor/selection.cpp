@@ -30,6 +30,7 @@
 
 #include <ranges>
 #include <algorithm>
+#include <stdexcept>
 
 Selection::Selection(Editor& editor) :
 	busy(false),
@@ -292,6 +293,42 @@ void Selection::removeInternal(Tile* tile) {
 	}
 }
 
+bool Selection::containsExact(const Tile* tile) const noexcept {
+	if (!tile) return false;
+	const auto it = std::ranges::lower_bound(tiles, tile, tilePositionLessThan);
+	return it != tiles.end() && *it == tile;
+}
+
+bool Selection::reserveExactReplacements(size_t additions, size_t maxBytes) {
+	ASSERT(!busy && !deferred);
+	if (additions > tiles.max_size() - tiles.size()) return false;
+	const auto required = tiles.size() + additions;
+	if (required <= tiles.capacity()) return true;
+	// Same conservative vector growth/allocator allowance charged by the commit estimator.
+	if (maxBytes < 32 || required > (maxBytes - 32) / (3 * sizeof(Tile*))) return false;
+	tiles.reserve(required);
+	return true;
+}
+
+void Selection::replaceExact(Tile* outgoing, Tile* incoming, bool incomingMember) noexcept {
+	ASSERT(!busy && !deferred);
+	const auto* key = outgoing ? outgoing : incoming;
+	if (!key) return;
+	const auto it = std::ranges::lower_bound(tiles, key, tilePositionLessThan);
+	const bool outgoingMember = outgoing && it != tiles.end() && *it == outgoing;
+	ASSERT(!incoming || !outgoing || incoming->getPosition() == outgoing->getPosition());
+	if (incoming && incomingMember) {
+		if (outgoingMember) *it = incoming;
+		else {
+			ASSERT(tiles.size() < tiles.capacity());
+			tiles.insert(it,incoming);
+		}
+	} else if (outgoingMember) tiles.erase(it);
+	else return;
+	bounds_dirty = true;
+	selectionChanged = true;
+}
+
 void Selection::flush() {
 	if (pending_adds.empty() && pending_removes.empty()) {
 		return;
@@ -381,6 +418,9 @@ void Selection::markChanged() {
 }
 
 void Selection::start(SessionFlags flags) {
+	if (editor.actionQueue->isApplyingTerrain()) {
+		throw std::logic_error("Terrain history transition in progress");
+	}
 	selectionChanged = false;
 	if (!(flags & INTERNAL)) {
 		if (flags & SUBTHREAD) {

@@ -21,6 +21,7 @@
 #include "editor/editor.h"
 #include "editor/managers/editor_manager.h"
 #include "live/live_tab.h"
+#include "palette/managers/palette_manager.h"
 #include "ui/managers/status_manager.h"
 
 EditorTab::EditorTab() {
@@ -65,13 +66,18 @@ void MapTabbook::CycleTab(bool forward) {
 }
 
 void MapTabbook::OnNotebookPageClose(wxAuiNotebookEvent& evt) {
-	EditorTab* editorTab = GetTab(evt.GetInt());
+	const int pageIndex = evt.GetSelection();
+	if (pageIndex < 0 || pageIndex >= GetTabCount()) {
+		evt.Veto();
+		return;
+	}
+	EditorTab* editorTab = GetTab(pageIndex);
 
 	MapTab* mapTab = dynamic_cast<MapTab*>(editorTab);
 	if (mapTab && mapTab->IsUniqueReference() && mapTab->GetMap()) {
 		bool needRefresh = true;
 		if (mapTab->GetMap()->hasChanged()) {
-			SetFocusedTab(evt.GetInt());
+			SetFocusedTab(pageIndex);
 			if (!g_gui.root->DoQuerySave(false)) {
 				needRefresh = false;
 				evt.Veto();
@@ -86,7 +92,7 @@ void MapTabbook::OnNotebookPageClose(wxAuiNotebookEvent& evt) {
 			// free the whole map right after this handler returns, with no
 			// feedback) so the Closing progress bar can cover it.
 			evt.Veto();
-			SetFocusedTab(evt.GetInt());
+			SetFocusedTab(pageIndex);
 			g_editors.CloseCurrentEditor();
 		}
 		return;
@@ -194,7 +200,11 @@ void MapTabbook::SetTabLabel(int idx, wxString label) {
 
 void MapTabbook::DeleteTab(int idx) {
 	if (notebook) {
+		// Palettes borrow map objects. The last deletion may not emit a page
+		// change event, so detach before destruction and rebind afterwards.
+		g_palettes.RefreshPalettes(nullptr, false);
 		notebook->DeletePage(idx);
+		g_palettes.RefreshPalettes();
 	}
 }
 

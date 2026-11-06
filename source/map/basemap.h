@@ -26,9 +26,12 @@
 #include "map/spatial_hash_grid.h"
 #include "map/spatial_change_tracker.h"
 #include <unordered_map>
+#include <cstdint>
 #include <memory>
 #include <iterator>
 #include <ranges>
+#include <span>
+#include <vector>
 
 // Class declarations
 class SpatialHashGrid;
@@ -81,6 +84,53 @@ class BaseMap {
 public:
 	BaseMap();
 	virtual ~BaseMap() = default;
+
+	// Reserves the grid cells, nodes, floors and TileLocations for a set of positions without
+	// installing tiles: tile count, change tracker, metadata and observers are untouched. Unless
+	// commit() is called, destruction removes exactly the cells/nodes/floors this reservation created
+	// and restores the affected floor chunk mask bits; pre-existing TileLocations are never replaced.
+	// Rollback allocates nothing and never throws. A newly created floor that is no longer pristine
+	// at rollback (a tile or location metadata was installed and not swapped back) is kept, together
+	// with its node and cell, instead of destroying that data; callers must swap tiles back first.
+	// Construction throws std::invalid_argument for a position outside the Position/layer limits
+	// (before any mutation) and rethrows allocation failures after rolling back what it created.
+	class TileReservation {
+	public:
+		TileReservation(BaseMap& map, std::span<const Position> positions);
+		~TileReservation();
+
+		TileReservation(const TileReservation&) = delete;
+		TileReservation& operator=(const TileReservation&) = delete;
+		TileReservation(TileReservation&&) = delete;
+		TileReservation& operator=(TileReservation&&) = delete;
+
+		// Keeps the reserved infrastructure (e.g. for Undo/Redo). Call only after every tile swap and
+		// history publication that can fail has succeeded.
+		void commit() noexcept {
+			armed_ = false;
+		}
+
+		// Bytes of bookkeeping per reserved position (one record each, reserved up front). Callers
+		// still budget the grid cells, nodes, floors and cell vector growth themselves.
+		[[nodiscard]] static uint64_t entryBytes() noexcept {
+			return sizeof(Record);
+		}
+
+	private:
+		struct Record {
+			Position position;
+			bool cellMissing = false;
+			bool nodeMissing = false;
+			bool floorMissing = false;
+			bool chunkBitWasSet = false;
+		};
+
+		BaseMap& map_;
+		std::vector<Record> records_;
+		bool armed_ = true;
+
+		friend class BaseMap;
+	};
 
 	// This doesn't destroy the map structure, just clears it, if param is true, delete all tiles too.
 	void clear(bool del = true);
@@ -161,6 +211,15 @@ public:
 		return swapTile(pos.x, pos.y, pos.z, std::move(newtile));
 	}
 
+	// Exchanges the tile at an already existing (e.g. reserved) location with `other`, by reference
+	// so no tile can be lost to an exception. Updates the tile count and the incoming tile's location;
+	// the outgoing tile keeps its old location pointer, as with setTile. Does NOT mark the change
+	// tracker dirty or notify anyone: only for a prepared atomic Action on plain terrain tiles that
+	// handles dirty/selection/metadata updates at batch level. Not for tiles carrying indexed
+	// entities (spawns, creatures, houses, zones, waypoints, towns) whose map indexes this bypasses.
+	// Preconditions (asserted): the location exists and an incoming tile has this position.
+	void swapReservedTile(const Position& pos, std::unique_ptr<Tile>& other) noexcept;
+
 	SpatialHashGrid& getGrid() {
 		return grid;
 	}
@@ -195,6 +254,11 @@ protected:
 	friend class MapProcessor;
 	friend class EditorPersistence;
 	friend class MapIterator;
+
+private:
+	// Reservation helpers live here because BaseMap is the friend of the grid, node and location types.
+	[[nodiscard]] TileReservation::Record probeTileReservation(const Position& position) const noexcept;
+	void rollbackTileReservation(std::span<const TileReservation::Record> records) noexcept;
 };
 
 inline Tile* BaseMap::getTile(int x, int y, int z) {
