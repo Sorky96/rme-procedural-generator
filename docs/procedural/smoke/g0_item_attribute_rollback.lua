@@ -8,6 +8,23 @@ assert(tile and tile.hasGround and tile.ground.actionId == 12007 and tile.ground
     "Expected original metadata fixture")
 local editor = app.editor
 local size, index = editor.historySize, editor.historyIndex
+-- The reference is intentionally obtained before the transaction begins.
+local preexistingGround = tile.ground
+local preOk, preErr = pcall(function()
+    app.transaction("G0 preexisting item rollback", function()
+        preexistingGround.actionId = 0
+        error("G0_PREEXISTING_ITEM_ERROR")
+    end)
+end)
+tile = map:getTile(160, 160, 7)
+local preRestored = tile and tile.ground and tile.ground.actionId == 12007
+local preHistoryUnchanged = editor.historySize == size and editor.historyIndex == index
+print("G0 PREEXISTING ITEM ROLLBACK: propagated=" .. tostring(not preOk)
+    .. "; action_restored=" .. tostring(not not preRestored)
+    .. "; history_unchanged=" .. tostring(preHistoryUnchanged))
+if not preRestored then tile.ground.actionId = 12007 end
+assert(not preOk and tostring(preErr):find("G0_PREEXISTING_ITEM_ERROR", 1, true),
+    "Expected preexisting-item error did not propagate")
 local ok, err = pcall(function()
     app.transaction("G0 item attribute rollback", function()
         tile.ground.actionId = 0
@@ -31,6 +48,7 @@ local recorded = editor.historySize ~= beforeSize or editor.historyIndex ~= befo
 print("G0 ITEM COMMIT: success=" .. tostring(success)
     .. "; action_changed=" .. tostring(changed) .. "; history_changed=" .. tostring(recorded))
 tile.ground.actionId = 12007
+assert(preRestored and preHistoryUnchanged, "G0 PREEXISTING ITEM ROLLBACK FAIL")
 assert(restored and historyUnchanged, "G0 ITEM ROLLBACK FAIL: item attribute survived the failed transaction")
 assert(success and changed and recorded, "G0 ITEM COMMIT FAIL: item attribute changed without an Undo entry")
 print("G0 ITEM ROLLBACK PASS")

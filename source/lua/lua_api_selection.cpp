@@ -17,6 +17,7 @@
 
 #include "app/main.h"
 #include "lua_api_selection.h"
+#include "lua/lua_item_reference.h"
 #include "editor/selection.h"
 #include "map/tile.h"
 #include "map/position.h"
@@ -84,7 +85,7 @@ namespace LuaAPI {
 		int idx = 1;
 		for (Tile* tile : sel->getTiles()) {
 			if (tile) {
-				result[idx++] = tile;
+				if (auto reference = tileReferenceForCurrentMap(tile)) result[idx++] = std::move(*reference);
 			}
 		}
 		return result;
@@ -187,13 +188,17 @@ namespace LuaAPI {
 				});
 			},
 
-			"add", sol::overload([](Selection* sel, Tile* tile) {
+			"add", sol::overload([](Selection* sel, const TileReference& ref) {
+				Tile* tile = ref.require();
 				if (sel && tile) {
 					withInternalSelectionSession(sel, [sel, tile] {
 						sel->add(tile);
 					});
 				}
-			}, [](Selection* sel, Tile* tile, Item* item) {
+			}, [](Selection* sel, const TileReference& ref, const ItemReference& itemRef) {
+				Tile* tile = ref.require();
+				Item* item = itemRef.require();
+				if (!itemRef.belongsTo(tile)) throw sol::error("Selection item does not belong to the specified tile");
 				if (sel && tile && item) {
 					withInternalSelectionSession(sel, [sel, tile, item] {
 						sel->add(tile, item);
@@ -201,13 +206,17 @@ namespace LuaAPI {
 				}
 			}),
 
-			"remove", sol::overload([](Selection* sel, Tile* tile) {
+			"remove", sol::overload([](Selection* sel, const TileReference& ref) {
+				Tile* tile = ref.require();
 				if (sel && tile) {
 					withInternalSelectionSession(sel, [sel, tile] {
 						sel->remove(tile);
 					});
 				}
-			}, [](Selection* sel, Tile* tile, Item* item) {
+			}, [](Selection* sel, const TileReference& ref, const ItemReference& itemRef) {
+				Tile* tile = ref.require();
+				Item* item = itemRef.require();
+				if (!itemRef.belongsTo(tile)) throw sol::error("Selection item does not belong to the specified tile");
 				if (sel && tile && item) {
 					withInternalSelectionSession(sel, [sel, tile, item] {
 						sel->remove(tile, item);

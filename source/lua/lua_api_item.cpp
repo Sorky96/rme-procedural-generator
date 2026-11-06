@@ -17,6 +17,7 @@
 
 #include "app/main.h"
 #include "lua_api_item.h"
+#include "lua/lua_item_reference.h"
 #include "game/item.h"
 #include "game/items.h"
 #include "game/complexitem.h"
@@ -46,110 +47,90 @@ namespace LuaAPI {
 		return lowerHaystack.find(lowerNeedle) != std::string::npos;
 	}
 
-	void registerItem(sol::state& lua) {
-		// Register Item usertype
-		lua.new_usertype<Item>(
-			"Item",
-			// No public constructor - items are created via Tile:addItem() or obtained from tiles
-			sol::no_constructor,
+		template <auto Method>
+		static auto readItem() {
+			return [](const ItemReference& reference) { return (reference.require()->*Method)(); };
+		}
 
-			// Read-only properties
-			"id", sol::property(&Item::getID),
-			"clientId", sol::property(&Item::getClientID),
-			"name", sol::property(&Item::getName),
-			"fullName", sol::property(&Item::getFullName),
-
-			// Read/write properties
-			"count", sol::property(&Item::getCount, [](Item& item, int count) {
-				if (count < 0 || count > 65535) {
-					throw sol::error("item.count: value must be between 0 and 65535.");
+		void registerItem(sol::state& lua) {
+			lua.new_usertype<ItemReference>("Item", sol::no_constructor,
+				"id", sol::property(readItem<&Item::getID>()),
+				"clientId", sol::property(readItem<&Item::getClientID>()),
+				"name", sol::property(readItem<&Item::getName>()),
+				"fullName", sol::property(readItem<&Item::getFullName>()),
+				"count", sol::property(readItem<&Item::getCount>(), [](const ItemReference& ref, int value) {
+					if (value < 0 || value > 65535) throw sol::error("item.count: value must be between 0 and 65535.");
+					ref.mutate([value](Item& item) { item.setSubtype(static_cast<uint16_t>(value)); });
+				}),
+				"subtype", sol::property(readItem<&Item::getSubtype>(), [](const ItemReference& ref, int value) {
+					if (value < 0 || value > 65535) throw sol::error("item.subtype: value must be between 0 and 65535.");
+					ref.mutate([value](Item& item) { item.setSubtype(static_cast<uint16_t>(value)); });
+				}),
+				"actionId", sol::property(readItem<&Item::getActionID>(), [](const ItemReference& ref, int value) {
+					if (value < 0 || value > 65535) throw sol::error("item.actionId: value must be between 0 and 65535.");
+					ref.mutate([value](Item& item) { item.setActionID(static_cast<uint16_t>(value)); });
+				}),
+				"uniqueId", sol::property(readItem<&Item::getUniqueID>(), [](const ItemReference& ref, int value) {
+					if (value < 0 || value > 65535) throw sol::error("item.uniqueId: value must be between 0 and 65535.");
+					ref.mutate([value](Item& item) { item.setUniqueID(static_cast<uint16_t>(value)); });
+				}),
+				"tier", sol::property(readItem<&Item::getTier>(), [](const ItemReference& ref, int value) {
+					if (value < 0 || value > 65535) throw sol::error("item.tier: value must be between 0 and 65535.");
+					ref.mutate([value](Item& item) { item.setTier(static_cast<uint16_t>(value)); });
+				}),
+				"text", sol::property(readItem<&Item::getText>(), [](const ItemReference& ref, const std::string& value) {
+					ref.mutate([&](Item& item) { item.setText(value); });
+				}),
+				"description", sol::property(readItem<&Item::getDescription>(), [](const ItemReference& ref, const std::string& value) {
+					ref.mutate([&](Item& item) { item.setDescription(value); });
+				}),
+				"isSelected", sol::property(readItem<&Item::isSelected>()),
+				"select", [](const ItemReference& ref) { ref.require()->select(); },
+				"deselect", [](const ItemReference& ref) { ref.require()->deselect(); },
+				"isStackable", sol::property(readItem<&Item::isStackable>()),
+				"isMoveable", sol::property(readItem<&Item::isMoveable>()),
+				"isPickupable", sol::property(readItem<&Item::isPickupable>()),
+				"isBlocking", sol::property(readItem<&Item::isBlocking>()),
+				"isGroundTile", sol::property(readItem<&Item::isGroundTile>()),
+				"isBorder", sol::property(readItem<&Item::isBorder>()),
+				"isWall", sol::property(readItem<&Item::isWall>()),
+				"isDoor", sol::property(readItem<&Item::isDoor>()),
+				"isTable", sol::property(readItem<&Item::isTable>()),
+				"isCarpet", sol::property(readItem<&Item::isCarpet>()),
+				"isHangable", sol::property(readItem<&Item::isHangable>()),
+				"isRoteable", sol::property(readItem<&Item::isRoteable>()),
+				"isFluidContainer", sol::property(readItem<&Item::isFluidContainer>()),
+				"isSplash", sol::property(readItem<&Item::isSplash>()),
+				"hasCharges", sol::property(readItem<&Item::hasCharges>()),
+				"isPodium", sol::property([](const ItemReference& ref) { return ref.require()->asPodium() != nullptr; }),
+				"setPodiumOutfit", [](const ItemReference& ref, int lookType, sol::optional<int> direction) {
+					if (!ref.require()->asPodium()) throw sol::error("setPodiumOutfit: item is not a podium");
+					if (lookType < 0) throw sol::error("setPodiumOutfit: lookType must not be negative");
+					if (direction && (*direction < 0 || *direction > 255)) throw sol::error("setPodiumOutfit: direction must be between 0 and 255");
+					ref.mutate([&](Item& item) {
+						Podium* podium = item.asPodium();
+						Outfit outfit = podium->getOutfit();
+						outfit.lookType = lookType;
+						podium->setOutfit(outfit);
+						if (direction) podium->setDirection(static_cast<uint8_t>(*direction));
+					});
+				},
+				"hasElevation", sol::property([](const ItemReference& ref) {
+					const Item& item = *ref.require();
+					return g_items.typeExists(item.getID()) && g_items[item.getID()].hasElevation;
+				}),
+				"zOrder", sol::property(readItem<&Item::getTopOrder>()),
+				"clone", [](const ItemReference& ref) -> std::optional<ItemReference> {
+					auto clone = ref.require()->deepCopy();
+					if (!clone) return std::nullopt;
+					return ItemReference(std::move(clone));
+				},
+				"rotate", [](const ItemReference& ref) { ref.mutate([](Item& item) { item.doRotate(); }); },
+				sol::meta_function::to_string, [](const ItemReference& ref) {
+					const Item& item = *ref.require();
+					return "Item(id=" + std::to_string(item.getID()) + ", name=\"" + std::string(item.getName()) + "\")";
 				}
-				item.setSubtype(static_cast<uint16_t>(count));
-			}),
-			"subtype", sol::property([](const Item& item) -> int { return item.getSubtype(); }, [](Item& item, int subtype) {
-				if (subtype < 0 || subtype > 65535) {
-					throw sol::error("item.subtype: value must be between 0 and 65535.");
-				}
-				item.setSubtype(static_cast<uint16_t>(subtype));
-			}),
-			"actionId", sol::property([](const Item& item) -> int { return item.getActionID(); }, [](Item& item, int aid) {
-				if (aid < 0 || aid > 65535) {
-					throw sol::error("item.actionId: value must be between 0 and 65535.");
-				}
-				item.setActionID(static_cast<uint16_t>(aid));
-			}),
-			"uniqueId", sol::property([](const Item& item) -> int { return item.getUniqueID(); }, [](Item& item, int uid) {
-				if (uid < 0 || uid > 65535) {
-					throw sol::error("item.uniqueId: value must be between 0 and 65535.");
-				}
-				item.setUniqueID(static_cast<uint16_t>(uid));
-			}),
-			"tier", sol::property([](const Item& item) -> int { return item.getTier(); }, [](Item& item, int tier) {
-				if (tier < 0 || tier > 65535) {
-					throw sol::error("item.tier: value must be between 0 and 65535.");
-				}
-				item.setTier(static_cast<uint16_t>(tier));
-			}),
-			"text", sol::property(&Item::getText, &Item::setText),
-			"description", sol::property(&Item::getDescription, &Item::setDescription),
-
-			// Selection
-			"isSelected", sol::property(&Item::isSelected),
-			"select", &Item::select,
-			"deselect", &Item::deselect,
-
-			// Type checks (read-only)
-			"isStackable", sol::property(&Item::isStackable),
-			"isMoveable", sol::property(&Item::isMoveable),
-			"isPickupable", sol::property(&Item::isPickupable),
-			"isBlocking", sol::property(&Item::isBlocking),
-			"isGroundTile", sol::property(&Item::isGroundTile),
-			"isBorder", sol::property(&Item::isBorder),
-			"isWall", sol::property(&Item::isWall),
-			"isDoor", sol::property(&Item::isDoor),
-			"isTable", sol::property(&Item::isTable),
-			"isCarpet", sol::property(&Item::isCarpet),
-			"isHangable", sol::property(&Item::isHangable),
-			"isRoteable", sol::property(&Item::isRoteable),
-			"isFluidContainer", sol::property(&Item::isFluidContainer),
-			"isSplash", sol::property(&Item::isSplash),
-			"hasCharges", sol::property(&Item::hasCharges),
-			"isPodium", sol::property([](const Item& item) { return item.asPodium() != nullptr; }),
-			"setPodiumOutfit", [](Item& item, int lookType, sol::optional<int> direction) {
-				Podium* podium = item.asPodium();
-				if (!podium) {
-					throw sol::error("setPodiumOutfit: item is not a podium");
-				}
-				if (lookType < 0) {
-					throw sol::error("setPodiumOutfit: lookType must not be negative");
-				}
-				if (direction && (*direction < 0 || *direction > 255)) {
-					throw sol::error("setPodiumOutfit: direction must be between 0 and 255");
-				}
-				Outfit outfit = podium->getOutfit();
-				outfit.lookType = lookType;
-				podium->setOutfit(outfit);
-				if (direction) {
-					podium->setDirection(static_cast<uint8_t>(*direction));
-				}
-			},
-			"hasElevation", sol::property([](const Item& item) {
-				if (g_items.typeExists(item.getID())) {
-					return g_items[item.getID()].hasElevation;
-				}
-				return false;
-			}),
-			"zOrder", sol::property(&Item::getTopOrder),
-
-			// Methods
-			"clone", [](const Item& item) { return item.deepCopy(); },
-			"rotate", &Item::doRotate,
-
-			// String representation
-			sol::meta_function::to_string, [](const Item& item) {
-				return "Item(id=" + std::to_string(item.getID()) + ", name=\"" + std::string(item.getName()) + "\")";
-			}
-		);
+			);
 
 		// Register Items namespace for item lookup
 		sol::table items = lua.create_named_table("Items");

@@ -452,6 +452,8 @@ set(rme_H
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_api_tile.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_dialog.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_engine.h
+    ${CMAKE_CURRENT_LIST_DIR}/lua/lua_item_reference.h
+    ${CMAKE_CURRENT_LIST_DIR}/lua/lua_object_registry.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script_manager.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_scripts_window.h
@@ -868,6 +870,7 @@ set(rme_SRC
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_api_tile.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_dialog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_engine.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/lua/lua_item_reference.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script_manager.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_scripts_window.cpp

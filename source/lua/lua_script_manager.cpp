@@ -19,6 +19,7 @@
 #include "lua_script_manager.h"
 #include "lua_api.h"
 #include "lua_api_image.h"
+#include "lua/lua_item_reference.h"
 #include "ui/gui.h"
 #include "app/settings.h"
 #include "map/tile.h"
@@ -489,10 +490,10 @@ void LuaScriptManager::updateMapOverlayHover(int map_x, int map_y, int map_z, in
 	info["pos"] = pos;
 	info["screen"] = lua.create_table_with("x", screen_x, "y", screen_y);
 	if (tile) {
-		info["tile"] = tile;
+		if (auto reference = LuaAPI::tileReferenceForCurrentMap(tile)) info["tile"] = std::move(*reference);
 	}
 	if (topItem) {
-		info["topItem"] = topItem;
+		if (auto reference = LuaAPI::itemReferenceForCurrentMap(tile, topItem)) info["topItem"] = std::move(*reference);
 	}
 
 	// Snapshot active overlays that have onhover to prevent iterator invalidation

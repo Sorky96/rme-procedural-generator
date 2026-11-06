@@ -18,6 +18,7 @@
 #include "app/main.h"
 #include "lua_api_map.h"
 #include "lua_api.h"
+#include "lua/lua_item_reference.h"
 #include "map/map.h"
 #include "map/basemap.h"
 #include "map/tile.h"
@@ -59,10 +60,10 @@ namespace LuaAPI {
 				Position pos = positions[currentIndex++];
 				Tile* tile = map->getTile(pos);
 				if (tile) {
-					return std::make_tuple(
-						sol::make_object(lua, tile),
-						sol::make_object(lua, tile)
-					);
+						if (auto reference = tileReferenceForCurrentMap(tile)) {
+							sol::object value = sol::make_object(lua, std::move(*reference));
+							return std::make_tuple(value, value);
+						}
 				}
 			}
 
@@ -91,20 +92,20 @@ namespace LuaAPI {
 			}
 		}
 
-		Tile* next() {
+		std::optional<TileReference> next() {
 			Editor* currentEditor = g_gui.GetCurrentEditor();
 			if (!currentEditor || currentEditor->getMap() != map || !map || map->getGeneration() != mapGeneration) {
-				return nullptr;
+				return std::nullopt;
 			}
 
 			while (currentIndex < positions.size()) {
 				Position pos = positions[currentIndex++];
 				Tile* tile = map->getTile(pos);
 				if (tile) {
-					return tile;
+					return tileReferenceForCurrentMap(tile);
 				}
 			}
-			return nullptr;
+			return std::nullopt;
 		}
 
 	private:
@@ -143,12 +144,12 @@ namespace LuaAPI {
 			}),
 
 			// Get tile methods
-			"getTile", sol::overload([](Map* map, int x, int y, int z) -> Tile* { return map ? map->getTile(x, y, z) : nullptr; }, [](Map* map, const Position& pos) -> Tile* { return map ? map->getTile(pos) : nullptr; }),
+			"getTile", sol::overload([](Map* map, int x, int y, int z) { return tileReferenceForCurrentMap(map ? map->getTile(x, y, z) : nullptr); }, [](Map* map, const Position& pos) { return tileReferenceForCurrentMap(map ? map->getTile(pos) : nullptr); }),
 
 			// Get or create tile (for adding content to empty positions)
-			"getOrCreateTile", [](Map* map, sol::variadic_args va) -> Tile* {
+			"getOrCreateTile", [](Map* map, sol::variadic_args va) -> std::optional<TileReference> {
 				if (!map) {
-					return nullptr;
+					return std::nullopt;
 				}
 
 				Position pos;
@@ -180,7 +181,7 @@ namespace LuaAPI {
 				if (!existing) {
 					markTileForUndo(tile, false);
 				}
-				return tile;
+				return tileReferenceForCurrentMap(tile);
 			},
 
 			// Tiles iterator - allows: for tile in map.tiles do ... end
@@ -202,7 +203,7 @@ namespace LuaAPI {
 
 				auto iterator = std::make_shared<LuaMapSpawnIterator>(map);
 
-				return sol::make_object(lua, [iterator]() -> Tile* {
+				return sol::make_object(lua, [iterator]() -> std::optional<TileReference> {
 					return iterator->next();
 				});
 			}),

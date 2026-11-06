@@ -80,7 +80,10 @@ namespace LuaAPI {
 			if (tile->getHouseID()) {
 				House* h = map->houses.getHouse(tile->getHouseID());
 				if (h) {
+						const auto houseId = tile->getHouseID();
 					h->removeTile(tile);
+						// Detach the index without changing the state retained for Undo.
+						tile->setHouseID(houseId);
 				}
 			}
 			// Also clean up selection if removing
@@ -95,6 +98,8 @@ namespace LuaAPI {
 
 	class LuaTransaction {
 		bool active;
+		bool poisoned = false;
+		bool originalDirty = false;
 		Editor* editor;
 		std::unique_ptr<BatchAction> batch;
 		std::unique_ptr<Action> action;
@@ -126,6 +131,9 @@ namespace LuaAPI {
 				throw sol::error("Transaction already in progress");
 			}
  
+			if (ed && ed->actionQueue && ed->actionQueue->isApplyingTerrain()) {
+				throw sol::error("Terrain history transition in progress");
+			}
 			if (!ed || !ed->actionQueue) {
 				throw sol::error("No editor or action queue available");
 			}
@@ -137,15 +145,18 @@ namespace LuaAPI {
 			auto newAction = ed->actionQueue->createAction(ACTION_LUA_SCRIPT);
 			originalTiles.clear();
 			editor = ed;
+			originalDirty = ed->map.hasChanged();
 			batch = std::move(newBatch);
 			action = std::move(newAction);
 			active = true;
+			poisoned = false;
 		}
 
 		void commit() {
 			if (!active) {
 				return;
 			}
+			if (poisoned) throw sol::error("Transaction contains a failed item mutation");
 
 			// Process each modified tile
 			for (auto& pair : originalTiles) {
@@ -153,10 +164,13 @@ namespace LuaAPI {
 				std::unique_ptr<Tile>& originalTile = pair.second;
 				Position pos = positionFromKey(key);
 
-				// Swap the original back into the map, or remove the tile entirely if it did not exist before
+				// Keep the rollback snapshot owned by this transaction until history
+				// accepts the complete batch. Change/batch allocation can still fail
+				// after a tile has been swapped or an action has been committed.
+				auto baseline = originalTile ? originalTile->deepCopy() : std::unique_ptr<Tile>();
 				std::unique_ptr<Tile> modifiedTile = editor->getMap()->swapTile(
 					pos,
-					originalTile ? std::move(originalTile) : std::unique_ptr<Tile>()
+					std::move(baseline)
 				);
 
 				// Swapped-out state should be cleaned up from metadata and selection
@@ -174,9 +188,6 @@ namespace LuaAPI {
 				action->addChange(std::make_unique<Change>(std::move(modifiedTile), pos));
 			}
 
-			// Clear - ownership has been transferred or tiles discarded
-			originalTiles.clear();
-
 			if (action->size() > 0) {
 				batch->addAndCommitAction(std::move(action));
 				editor->addBatch(std::move(batch));
@@ -188,6 +199,7 @@ namespace LuaAPI {
 				batch.reset();
 			}
 
+			originalTiles.clear();
 			cleanup();
 		}
 
@@ -220,6 +232,7 @@ namespace LuaAPI {
 			// Discard without committing
 			action.reset();
 			batch.reset();
+			if (!originalDirty) editor->map.clearChanges();
 
 			cleanup();
 		}
@@ -239,6 +252,9 @@ namespace LuaAPI {
 			}
 		}
 
+		void poison() { poisoned = true; }
+		bool ownsEditor(const Editor* candidate) const { return active && editor == candidate; }
+
 		bool isActive() const {
 			return active;
 		}
@@ -255,10 +271,35 @@ namespace LuaAPI {
 		}
 	};
 
+	bool isTransactionActive() noexcept {
+		return LuaTransaction::getInstance().isActive();
+	}
+
 	// Global accessor for tile modification tracking (used by lua_api_tile.cpp)
 	void markTileForUndo(Tile* tile, bool originallyExisted) {
 		if (LuaTransaction::getInstance().isActive()) {
 			LuaTransaction::getInstance().markTileModified(tile, originallyExisted);
+		}
+	}
+
+	void mutateTrackedItem(Tile* tile, const std::function<void()>& mutation) {
+		Editor* editor = g_gui.GetCurrentEditor();
+		if (!editor || !tile || editor->getMap()->getTile(tile->getPosition()) != tile) {
+			throw sol::error("Item owner is no longer on the current map");
+		}
+		auto& trans = LuaTransaction::getInstance();
+		const bool ownTransaction = !trans.isActive();
+		if (ownTransaction) trans.begin(editor, "Edit item");
+		else if (!trans.ownsEditor(editor)) throw sol::error("Editor changed during transaction");
+		try {
+			trans.markTileModified(tile, true);
+			mutation();
+			tile->modify();
+			if (ownTransaction) trans.commit();
+		} catch (...) {
+			if (ownTransaction) trans.rollback();
+			else trans.poison();
+			throw;
 		}
 	}
 
@@ -835,12 +876,12 @@ namespace LuaAPI {
 			// Undo/Redo functions
 			"undo", [](Editor* editor) {
 			if (editor && editor->actionQueue && editor->actionQueue->canUndo()) {
-				editor->actionQueue->undo();
+				if (!editor->actionQueue->undo()) throw sol::error("Cannot undo: history conflicts with the current editor state or resource limits");
 				g_gui.RefreshView();
 			} },
 			"redo", [](Editor* editor) {
 			if (editor && editor->actionQueue && editor->actionQueue->canRedo()) {
-				editor->actionQueue->redo();
+				if (!editor->actionQueue->redo()) throw sol::error("Cannot redo: history conflicts with the current editor state or resource limits");
 				g_gui.RefreshView();
 			} },
 			"canUndo", [](Editor* editor) -> bool { return editor && editor->actionQueue && editor->actionQueue->canUndo(); },
@@ -893,13 +934,19 @@ namespace LuaAPI {
 			if (diff > 0) {
 				for (int i = 0; i < diff; ++i) {
 					if (editor->actionQueue->canRedo()) {
-						editor->actionQueue->redo();
+						if (!editor->actionQueue->redo()) {
+							g_gui.RefreshView();
+							throw sol::error("Cannot redo: history conflicts with the current editor state or resource limits");
+						}
 					}
 				}
 			} else if (diff < 0) {
 				for (int i = 0; i < -diff; ++i) {
 					if (editor->actionQueue->canUndo()) {
-						editor->actionQueue->undo();
+						if (!editor->actionQueue->undo()) {
+							g_gui.RefreshView();
+							throw sol::error("Cannot undo: history conflicts with the current editor state or resource limits");
+						}
 					}
 				}
 			}

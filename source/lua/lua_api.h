@@ -19,6 +19,7 @@
 #define RME_LUA_API_H
 
 #include "lua_sol_config.h"
+#include <functional>
 
 // Forward declarations
 class Tile;
@@ -39,7 +40,9 @@ namespace LuaAPI {
 	void registerSelection(sol::state& lua);
 
 	// Called by tile modification functions to track changes
+	bool isTransactionActive() noexcept;
 	void markTileForUndo(Tile* tile, bool originallyExisted = true);
+	void mutateTrackedItem(Tile* tile, const std::function<void()>& mutation);
 
 	void registerColor(sol::state& lua);
 	void registerCreature(sol::state& lua);
