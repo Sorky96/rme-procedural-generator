@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G1: zatwierdzenie progów i dług techniczny
+
+Zatwierdzono progi 500×500 i 100×100 (w tym Preview 100×100 ≤ 250 ms) i uznano weryfikator za wystarczający. Zmierzone wartości mieszczą się w progach (ocena w `G1_GATE_STATUS.md`), z zastrzeżeniem, że czasy Place 500×500 pochodzą z EXE `15c25557…`, a nie z obecnego. Nowy `docs/procedural/TECH_DEBT.md` zapisuje jako dług: `SetFocus` przy zamykaniu (D1), niewyjaśniony stos aktywacji (D2), awarie alokacji poza przetestowanymi miejscami (D3) i niezbadane skoki pamięci (D4). Sesje live poza zakresem.
+
 ## 2026-11-06 — G1: SetFocus przy zamykaniu i błąd próbnika śladu
 
 Ślad z `--roundtrip --focus-trace` pokazał, że `SetFocus` przy File → Exit pochodzi z `MapTabbook::DeleteTab` przy ramce wyłączonej przez okno „Closing” (błąd Win32 87). Przebiegi ze śladem kończyły się `0xC0000374`, bo `ProceduralFocusTrace` był usuwany dwa razy (`unique_ptr` i wx przy zamykaniu); po zwolnieniu własności kod wyjścia to 0. Sesje live uznano za poza zakresem G1. Stos aktywacji z 2026-11-04 nadal bez wyjaśnienia. Zmiana w kodzie produkcyjnym nie była wprowadzana.

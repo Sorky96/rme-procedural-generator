@@ -8,8 +8,8 @@
 | Preview zgodny z Place, jedno Undo i Redo | Obserwator porównał wszystkie wygenerowane kafle z niezależnie przygotowanym wynikiem. Place utworzył jeden wpis historii. Rdzeń ma także próby atomowości i odrębnej historii. [Round-trip](G1_ROUNDTRIP.md), [commit](G1_COMMIT.md), [regresja etapowa](G1_STAGED_CORE.md) |
 | Komplet plików po zapisie i ponownym otwarciu | OTBM 5 i pięć companionów XML dla 1098-BlackTek sprawdzono w pełnych próbach obu rozmiarów. Trzy próby czasowe 500×500 zapisały komplet identyczny bajtowo z zachowaną pełną próbą tego rozmiaru. [Round-trip](G1_ROUNDTRIP.md), [powtarzalność](G1_PLACE_TIMING_REPEATABILITY.md) |
 | Brak zmian poza maską i w danych chronionych | Pełny wynik prostokąta i fixture sprawdzono w round-tripie. Test natywnej dokładnej maski potwierdził zachowanie jednego chronionego kafla wewnątrz maski, wraz z UID 32101, tożsamością obiektów i zaznaczeniem. [Round-trip](G1_ROUNDTRIP.md), [macierz dialogu](G1_DIALOG_MATRIX.md) |
-| Zmierzony budżet zasobów 500×500 | Aktualny build ma pomiary etapowego Preview oraz trzy próby Place, Undo, Redo i Save. Ocena pozostaje otwarta do uzgodnienia progów. [Cancel](G1_CANCEL.md), [powtarzalność](G1_PLACE_TIMING_REPEATABILITY.md) |
-| Zmierzony budżet zasobów 100×100 | Aktualny build ma jeden zweryfikowany pomiar Place, Undo, Redo i Save. Pomiar Preview, Validate i Cancel pochodzi ze starszego synchronicznego buildu. Ocena pozostaje otwarta do uzgodnienia progów. [Pomiar 100×100](G1_ROUNDTRIP.md#pomiar-place-undo-redo-i-save-dla-100100), [pomiar bazowy](G1_RESOURCES.md) |
+| Zmierzony budżet zasobów 500×500 | Aktualny build ma pomiary etapowego Preview oraz trzy próby Place, Undo, Redo i Save. Progi zatwierdzone 2026-11-06; ocena w sekcji „Ocena zatwierdzonych progów”. [Cancel](G1_CANCEL.md), [powtarzalność](G1_PLACE_TIMING_REPEATABILITY.md) |
+| Zmierzony budżet zasobów 100×100 | Aktualny build ma jeden zweryfikowany pomiar Place, Undo, Redo i Save oraz trzy cykle etapowego Preview, Validate i Cancel. Progi zatwierdzone 2026-11-06; ocena w sekcji „Ocena zatwierdzonych progów”. [Pomiar 100×100](G1_ROUNDTRIP.md#pomiar-place-undo-redo-i-save-dla-100100), [pomiar bazowy](G1_RESOURCES.md) |
 
 Rdzeń C++, resolver i sandbox mają dowody dla seedów, błędnych wejść i deterministycznego diffu. Natywny dialog pokrywa Preview, Validate, Place, Cancel i odmowę starego zaznaczenia. Logi operacji dialogu mają dowód runtime tylko dla ścieżek z przebiegu odmów (patrz niżej); Validate, Cancel i Place nie były w nim objęte. Podgląd MVP sprawdzono jako minimapę. [Rdzeń](G1_CORE.md), [resolver](G1_RESOLVER.md), [sandbox](G1_PREVIEW.md), [macierz dialogu](G1_DIALOG_MATRIX.md)
 
@@ -44,6 +44,26 @@ Kryterium ustalone przed pierwszym przebiegiem (2 cykle rozgrzewki, nachylenie �
 Przed uruchomieniem dodano pomocniczy test ograniczoności: różnica średniej pamięci prywatnej między cyklami 101–150 a 151–200 ≤ 5 MiB. **Nie jest spełniony**: 619,2 → 627,9 MiB, różnica 8,6 MiB (working set 770,5 → 779,0). Pamięć prywatna rośnie skokami (559 MiB na starcie, 585 po cyklu 20, ok. 615 po cyklu 60, ok. 626 po 130, 634 po 200), w tym samych miejscach co w seriach po 30 cykli, ale w ostatnich 100 cyklach nadal rośnie, wolniej niż w pierwszych 30. Nie wykazano więc plateau. Przyczyny skoków nie zbadano (rozrost rezerw alokatora, pojemność kontenerów lub wyciek o małym tempie: brak rozróżnienia). Seria jest jedna i nie jest oceniana statystycznie.
 
 Decyzja użytkownika z 2026-11-06: wzrost pamięci w tej serii nie jest blokerem G1, bo mapy, przy których robiłby różnicę (setki cykli Preview w jednej sesji), nie są spodziewanym użyciem. Przyczyna skoków nadal nie jest zbadana; to decyzja o priorytecie, nie wynik pomiaru.
+
+## Ocena zatwierdzonych progów (2026-11-06)
+
+Użytkownik zatwierdził 2026-11-06 progi 500×500 i 100×100 z tabeli „Wstępne progi zasobów”, w tym Preview 100×100 ≤ 250 ms (wartość wpisana w miejsce „do pomiaru”). Weryfikator w obecnej postaci (z filtrem linii rozszerzenia Google Drive i statusami `PARTIAL…FOCUS_WARNING`) użytkownik uznał za wystarczający; statusów nie przeklasyfikowano. Rozbieżności i ograniczenia ostrzeżenia opisuje [dług D1 i D2](TECH_DEBT.md).
+
+| Próg | Zmierzone | Źródło |
+| --- | --- | --- |
+| 500×500 Preview ≤ 3 s | 0,73–1,35 s (cykle 4–6) i 0,76–1,74 s w serii wcześniejszej | `g1-res-100-20261106`, [seria Preview](#anulowanie-i-seria-zasobów-preview-500500-2026-11-06) |
+| 500×500 przerwa GUI Preview ≤ 250 ms | ≤ 148 ms | j.w. |
+| 500×500 przyrost WS Preview ≤ 150 MiB | ≈ 80 MiB | j.w. |
+| 500×500 Place ≤ 1 s | 403–419 ms | trzy próby na EXE `15c25557…`, [powtarzalność](G1_PLACE_TIMING_REPEATABILITY.md) |
+| 500×500 przerwa GUI Place ≤ 750 ms | 428–544 ms | j.w. |
+| 500×500 przyrost WS Place+Undo+Redo+Save ≤ 200 MiB | Place 110 MiB, pozostałe operacje do 2,4 MiB każda | j.w. |
+| 100×100 Preview ≤ 250 ms | 109–111 ms | `g1-res-100-20261106` |
+| 100×100 przerwa GUI Preview ≤ 250 ms | 38–53 ms | j.w. |
+| 100×100 przyrost WS Preview ≤ 30 MiB | ≤ 3,6 MiB | j.w. |
+| 100×100 Place ≤ 250 ms, przerwa GUI Place ≤ 250 ms, przyrost WS ≤ 30 MiB | Place 63 ms; przyrost łączny 4,4 MiB | jedna próba, [pomiar 100×100](#pomiar-100100-na-obecnym-buildzie-2026-11-06) |
+| Pamięć po Cancel bez trendu wzrostowego | spełnione w serii 200 cykli (nachylenie 0,31 MiB/cykl, GDI/USER/uchwyty bez wzrostu); plateau nie wykazano (dług D4, nie bloker) | `g1-leak-200-20261106` |
+
+Ograniczenia tej oceny: pomiary Place, Undo, Redo i Save dla 500×500 pochodzą z EXE `15c25557…`, a nie z obecnego `b87d1abb…` (na obecnym binarium powtórzono funkcjonalny round-trip, bez pomiaru czasów); Place 100×100 to jedna próba; wartość Preview w serii 500×500 waha się szeroko. Dokument nie ocenia statystycznie żadnej z tych serii.
 
 ## Logi operacji dialogu (2026-11-06)
 
