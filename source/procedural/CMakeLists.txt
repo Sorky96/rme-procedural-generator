@@ -1,4 +1,4 @@
-add_library(rme_procedural_core STATIC core/generation.cpp)
+add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
 target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rme PRIVATE rme_procedural_core)
@@ -27,3 +27,7 @@ target_sources(rme PRIVATE
 add_executable(test_procedural_core ${PROJECT_SOURCE_DIR}/tests/test_procedural_core.cpp)
 target_link_libraries(test_procedural_core PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_core COMMAND test_procedural_core)
+
+add_executable(test_procedural_surface ${PROJECT_SOURCE_DIR}/tests/test_procedural_surface.cpp)
+target_link_libraries(test_procedural_surface PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_surface COMMAND test_procedural_surface)

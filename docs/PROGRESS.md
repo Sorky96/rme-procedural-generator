@@ -1,5 +1,13 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G2-A: rdzeń powierzchni v2
+
+Nowy generator `surface.h/.cpp` (jeziora, rzeki, skała, brzegi, pas przejściowy trawa/ziemia) obok niezmienionego v1. `test_procedural_surface` przeszedł (24 seedy 100×100, 6 seedów 250×250, 92 wstrzyknięte awarie alokacji, maska bez wpływu na inne komórki); `test_procedural_core` nadal PASS. Status **PARTIAL**: nie ma adaptera ani wyniku w RME, czytelność i borders nieocenione. Czasy to pojedyncze serie. [Raport](procedural/G2_CORE.md). G2 w toku.
+
+## 2026-11-06 — G1: zamknięte z długiem
+
+Decyzja użytkownika: G1 zamknięte z udokumentowanym długiem. Pięć kryteriów bramki ma dowody, progi zasobów 500×500 i 100×100 są zatwierdzone i spełnione; otwarte pozycje D1–D4 są w [TECH_DEBT.md](procedural/TECH_DEBT.md). Zastrzeżenia: czasy Place 500×500 pochodzą z EXE `15c25557…`, nie z obecnego `b87d1abb…`; wiele dowodów to pojedyncze serie; PR #1 nie ma CI, a commity pośrednie nie były budowane osobno. Sesje live poza zakresem. Zmieniono tylko status w `G1_GATE_STATUS.md`, liście Fazy 1 i tym pliku; wpisy poniżej z napisem „G1 IN PROGRESS” to historia z daty pomiaru. G2 nierozpoczęte.
+
 ## 2026-11-06 — G1: zatwierdzenie progów i dług techniczny
 
 Zatwierdzono progi 500×500 i 100×100 (w tym Preview 100×100 ≤ 250 ms) i uznano weryfikator za wystarczający. Zmierzone wartości mieszczą się w progach (ocena w `G1_GATE_STATUS.md`), z zastrzeżeniem, że czasy Place 500×500 pochodzą z EXE `15c25557…`, a nie z obecnego. Nowy `docs/procedural/TECH_DEBT.md` zapisuje jako dług: `SetFocus` przy zamykaniu (D1), niewyjaśniony stos aktywacji (D2), awarie alokacji poza przetestowanymi miejscami (D3) i niezbadane skoki pamięci (D4). Sesje live poza zakresem.
