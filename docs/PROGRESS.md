@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G1: seria 200 cykli trendu pamięci
+
+`g1-leak-200-20261106` (samosterowany, 500×500, EXE `b87d1abb…`): kryterium ustalone z góry spełnione (nachylenie WS i private 0,31 MiB/cykl, GDI/USER/uchwyty bez wzrostu po rozgrzewce, stderr pusty). Pomocniczy test ograniczoności ustalony przed uruchomieniem (różnica średnich cykli 101–150 i 151–200 ≤ 5 MiB) nie jest spełniony: +8,6 MiB. Pamięć rośnie skokami i wolniej niż w pierwszych 30 cyklach, ale plateau nie wykazano; przyczyna nie zbadana.
+
 ## 2026-11-06 — G1: pełny round-trip OTBM na obecnym binarium
 
 Powtórzono Place → Undo → Redo → Save → Close → Open dla 100×100 (`g1-roundtrip-100-cur-c-20261106`) i 500×500 (`g1-roundtrip-500-cur-20261106`) na EXE `b87d1abb…`. Oba: `ROUNDTRIP_PASS`, wczytane 10 005 i 250 005 kafli, verifier `PARTIAL…FOCUS_WARNING` (ostrzeżenie `SetFocus` w stderr). Weryfikator ignoruje cztery linie rozszerzenia Google Drive i zapisuje je w `ignored_external_stderr`. Dwie wcześniejsze próby 100×100 zakończyły się błędem kolejności kroków operatora (wniosek z logów). Inne wersje OTBM i zewnętrzni czytelnicy nie były sprawdzane.

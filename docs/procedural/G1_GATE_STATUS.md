@@ -35,6 +35,14 @@ Progi ustalono po obejrzeniu pomiarów z 2026-11-03…05, więc są **wstępne**
 
 Użytkownik zatwierdził progi 100×100 z tabeli powyżej. W tabeli pozycja „Preview do gotowości” miała wartość „do pomiaru”; wpisano w jej miejsce ≤ 250 ms (zmierzone ok. 110 ms). Tę konkretną wartość zaproponowano w rozmowie i użytkownik nie potwierdził jej osobno, więc jest ona do potwierdzenia. Zatwierdzone progi nie zmieniają wcześniejszych wyników: jedna seria 100×100 na buildzie etapowym mieści się w nich, ale seria jest pojedyncza i nie powtórzono jej.
 
+## Seria 200 cykli (2026-11-06)
+
+Przebieg `g1-leak-200-20261106` (`g1_run_leak_trend.py --cycles 200 --side 500`, samosterowany: zdarzenia menu i przycisków w kolejce, nie natywne wejście; EXE produkcyjny `b87d1abb…`). Runner `passed: true`, stderr pusty, `LEAK_PASS`.
+
+Kryterium ustalone przed pierwszym przebiegiem (2 cykle rozgrzewki, nachylenie ≤ 1 MiB/cykl, GDI/USER/uchwyty nie wyżej niż po cyklu 2) **jest spełnione**: nachylenie working set 0,31, private 0,31 MiB/cykl; wzrost GDI −12, USER −2, uchwytów −2. GDI przyjmuje cztery wartości (479, 480, 488, 492), USER cztery (496–501), uchwyty dwie (465, 467), bez trendu.
+
+Przed uruchomieniem dodano pomocniczy test ograniczoności: różnica średniej pamięci prywatnej między cyklami 101–150 a 151–200 ≤ 5 MiB. **Nie jest spełniony**: 619,2 → 627,9 MiB, różnica 8,6 MiB (working set 770,5 → 779,0). Pamięć prywatna rośnie skokami (559 MiB na starcie, 585 po cyklu 20, ok. 615 po cyklu 60, ok. 626 po 130, 634 po 200), w tym samych miejscach co w seriach po 30 cykli, ale w ostatnich 100 cyklach nadal rośnie, wolniej niż w pierwszych 30. Nie wykazano więc plateau. Przyczyny skoków nie zbadano (rozrost rezerw alokatora, pojemność kontenerów lub wyciek o małym tempie: brak rozróżnienia). Seria jest jedna i nie jest oceniana statystycznie.
+
 ## Logi operacji dialogu (2026-11-06)
 
 `stdout.log` przebiegu `NEW_RUN_REFUSALS_2` zawiera wpisy `Terrain generator: …` dla: gotowości do wyboru obszaru (info), pięciu odmów (warning), dwukrotnie „Preparing preview” (info) i końcowego „Preview ready” z liczbą kafli, seedem i szacunkiem pamięci (info). Wpisów Validate, Cancel i „placed N tiles” w tym przebiegu nie wykonano, więc kryterium logów było potwierdzone częściowo.
