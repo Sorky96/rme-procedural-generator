@@ -20,6 +20,10 @@ target_sources(rme PRIVATE adapter/terrain_target.cpp adapter/terrain_target.h)
 target_sources(rme PRIVATE adapter/terrain_commit.h
     ${PROJECT_SOURCE_DIR}/source/editor/operations/procedural_commit_operations.cpp)
 
+target_sources(rme PRIVATE
+    ${PROJECT_SOURCE_DIR}/source/ui/dialogs/terrain_generator_dialog.cpp
+    ${PROJECT_SOURCE_DIR}/source/ui/dialogs/terrain_generator_dialog.h)
+
 add_executable(test_procedural_core ${PROJECT_SOURCE_DIR}/tests/test_procedural_core.cpp)
 target_link_libraries(test_procedural_core PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_core COMMAND test_procedural_core)

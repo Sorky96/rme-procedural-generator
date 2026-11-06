@@ -170,6 +170,7 @@ namespace MenuBar {
 		SCRIPTS_MANAGER,
 		SCRIPTS_OPEN_FOLDER,
 		SCRIPTS_RELOAD,
+		PROCEDURAL_TERRAIN,
 	};
 }
 
@@ -274,6 +275,7 @@ public:
 
 	void OnMapStatistics(wxCommandEvent& event);
 	void OnMapValidateSpawns(wxCommandEvent& event);
+	void OnProceduralTerrain(wxCommandEvent& event);
 	void OnMapCleanup(wxCommandEvent& event);
 	void OnMapCleanInvalidZones(wxCommandEvent& event);
 	void OnMapProperties(wxCommandEvent& event);

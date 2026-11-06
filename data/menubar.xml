@@ -103,6 +103,8 @@
 		<item name="Find Everything" action="SEARCH_ON_MAP_EVERYTHING" help="Find all unique/action/text/container items."/>
 	</menu>
 	<menu name="Map">
+		<item name="Generate terrain..." action="PROCEDURAL_TERRAIN" help="Preview terrain and place it on the current map as one undoable edit."/>
+		<separator/>
 		<item name="Edit Towns..." hotkey="Ctrl+T" action="EDIT_TOWNS" help="Open towns palette."/>
 		<separator/>
 		<item name="Cleanup invalid tiles..." action="MAP_CLEANUP" help="Removes all invalid or unresolved items from the map."/>

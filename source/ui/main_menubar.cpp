@@ -59,6 +59,7 @@
 
 #include "editor/operations/search_operations.h"
 #include "editor/operations/clean_operations.h"
+#include "ui/dialogs/terrain_generator_dialog.h"
 
 MainMenuBar::MainMenuBar(MainFrame* frame) :
 	frame(frame) {
@@ -447,6 +448,13 @@ void MainMenuBar::OnMapEditMonsters(wxCommandEvent& WXUNUSED(event)) {
 
 void MainMenuBar::OnMapStatistics(wxCommandEvent& WXUNUSED(event)) {
 	MapStatisticsDialog::Show(frame);
+}
+
+void MainMenuBar::OnProceduralTerrain(wxCommandEvent&) {
+	if (!g_gui.GetCurrentEditor()) return;
+	TerrainGeneratorDialog dialog(frame);
+	dialog.ShowModal();
+	g_gui.RefreshView();
 }
 
 void MainMenuBar::OnMapValidateSpawns(wxCommandEvent& event) {
