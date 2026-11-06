@@ -308,11 +308,13 @@ Statusy do uzupełniania: `[ ] TODO`, `[~] IN PROGRESS`, `[x] VERIFIED`, `[!] BL
 
 ### FAZA 0 - Repozytorium i audyt
 
+**Końcowa ocena 2026-11-02: VERIFIED.** Wszystkie sześć pozycji audytu i G0-01…09 oceniono w [raporcie końcowym](procedural/G0_FINAL_20261102.md), z konkretnymi dowodami oraz jawną różnicą semantyki aktualnego odbiorcy spawnów. Bramka build + punkty integracji + round-trip RME została spełniona; nie oznacza to pełnej zgodności świata OTS ani gwarancji przyszłego generatora. G1 nierozpoczęte. Datowane opisy 27–28.10 poniżej pozostają historią audytu.
+
 - [x] Użyj istniejącego checkoutu, sprawdź Git i gałąź z `master`, zapisz SHA oraz lokalne zmiany. Potwierdź licencję, Windows x64, `build_ninja.bat`, wersje toolchaina i zależności. Dowody w audycie: lokalny snapshot `5a01a8f`, build zakończony z `--parallel 2`; pochodzenie upstream niepotwierdzone.
 - [x] Zidentyfikuj API Map/Tile/Item/Brush/Autoborder/Undo i Lua; linkuj konkretne pliki i funkcje. Dowód: przegląd CodeGraph oraz tabela w `docs/procedural/ARCHITECTURE.md`; nie jest to walidacja runtime.
-- [ ] Sprawdź odczyt/zapis OTBM i kwestie multi-floor, house/spawn/UID/AID.
+- [x] Sprawdź odczyt/zapis OTBM i kwestie multi-floor, house/spawn/UID/AID. Końcowe rzeczywiste RME round-trip i pełne niezależne porównania fixture OTBM 3, osobna strefa OTBM 5; aktualny odbiorca zbadany oddzielnie. Radius/direction legacy nie są zachowane przez jego konwerter, czego nie zaliczono jako pełnej zgodności spawnów. Dowody i granice: `docs/procedural/G0_FINAL_20261102.md`.
 - [x] Zbuduj RME, otwórz testową mapę, zapisz kopię, uruchom minimalny skrypt modyfikujący 20x20 z Undo. 2026-10-26/27: 400 ground, Undo/Redo i odczyt zapisu PASS dla syntetycznego fixture; szczegóły i ograniczenia w `TEST_PLAN.md`.
-- [ ] Oceń istniejące `noise`/`algo`/`geo`, demonstrator terenu i transakcje Lua; wybierz granicę C++/Lua na podstawie testu, nie nazwy API. Audyt obejmuje RNG brushy, snapshot, ochronę halo, granicę Undo i rollback.
+- [x] Oceń istniejące `noise`/`algo`/`geo`, demonstrator terenu i transakcje Lua; wybierz granicę C++/Lua na podstawie testu, nie nazwy API. Decyzja 2026-11-01: rdzeń/snapshot/resolver/commit C++, Lua opcjonalne presety/konfiguracja/demo. Dowody: próbki noise/algo/geo, Draw/Lua/Draw, reprodukcje i regresje callbacków/setterów/metod, analiza RNG i snapshotu/halo w `ARCHITECTURE.md` oraz `TEST_PLAN.md`. Wybór nie oznacza gotowości adaptera ani pełnej atomowości; pozostałe testy G0 i projekt G1 nadal otwarte.
 - [x] Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` i plan małych PR. Dokumenty utworzono; zawierają rzeczywiste symbole i jawne wyniki wykonanych kontroli. Nie nadpisano istniejącej dokumentacji ogólnej.
 
 **Bramka G0:** reproducible build + opis rzeczywistych punktów integracji + round-trip testowej mapy.
@@ -321,13 +323,17 @@ Stan 2026-10-27: smoke pustej mapy przeszedł, lecz G0 pozostaje niezaliczone. O
 
 Późniejsza próba G0-06 przeszła dla `Draw` → Lua → `Draw`, także przy włączonym grupowaniu historii. Test zapisu/odczytu objął piętra 6/7, ground UID/AID, flagi i spawn z potworem. Odkryto dwa blokery: bezpośrednia zmiana `Item.actionId` w transakcji nie jest śledzona ani cofana, a „Save As” nowej mapy w tym samym katalogu zachowało stare nazwy plików pomocniczych i nadpisało XML spawnu używany przez źródłową mapę. Dane testowe były syntetyczne, przywrócone. Naprawa obu błędów i testy regresyjne są wymagane przed zakończeniem G0. Domy, strefy i zewnętrzny odbiorca pozostają niezweryfikowane.
 
+Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ograniczone testy kolizji oraz błędu dostępu; pełna atomowość i crash recovery nie są wykazane. Osobny fixture domu zachował w RME po ponownym odczycie nazwę, miasto, ID, czynsz i rozmiar. Wykryto również utratę niezapisanej zmiany czynszu przy zamknięciu bez ostrzeżenia. Próby noise oraz wybranych operacji algo/geo przeszły dla opisanych danych, nie dowodzą deterministyczności całego generatora. Na ich podstawie pozostaje robocza granica: rdzeń, snapshot, resolver i commit w C++; Lua jako opcjonalna konfiguracja i narzędzie demonstracyjne. Ostateczna decyzja oraz G0 nadal wymagają rozwiązania rollbacku itemów i pozostałych testów z `TEST_PLAN.md`.
+
 ### FAZA 1 - Rdzeń abstrakcyjny i podstawowa integracja
 
-- [ ] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary.
-- [ ] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3.
+**IN PROGRESS, 2026-11-02:** rozpoczęto G1-A na gałęzi `feature/procedural-g1-core`. [Rdzeń i ograniczenia](procedural/G1_CORE.md); test C++ 100×100/500×500 PASS nie zastępuje bramki integracyjnej G1 poniżej.
+
+- [~] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary. Rdzeń C++ i testy gotowe; pobranie ochrony z rzeczywistego snapshotu mapy pozostaje G1-B.
+- [x] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3. Pierwszy semantyczny baseline v1, bez noise i oceny naturalności; rzeczywiste testy C++ 100×100/500×500 PASS.
 - [ ] Prosty resolver do właściwych brushy/items zgodnie z klientem.
 - [ ] Dry-run, commit i Undo/Redo, logi.
-- [ ] Test deterministyczności i błędnych parametrów.
+- [~] Test deterministyczności i błędnych parametrów. Rdzeń C++ PASS; deterministyczność konkretnego diffu resolvera i całego workflow jeszcze niewykonana.
 - [ ] Minimalny dialog: seed, obszar, Preview, Validate, Commit, Cancel; obsługa braku klienta/assets i nieaktualnego wyniku.
 - [ ] Test konkretnego diffu, anulowania, błędu zastosowania, zmiany mapy/assets po preview, przekroczenia budżetu oraz oddzielnego wpisu Undo. Commit offline.
 
