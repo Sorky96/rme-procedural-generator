@@ -69,6 +69,21 @@ This test suite provides comprehensive coverage of **every Lua API call** availa
 
 ## Running the Tests
 
+### Focused transaction regression (synthetic fixture only)
+
+`test_transaction_rollback.lua` is an opt-in integration test requiring the saved
+400-ground-tile `g0-smoke.otbm` fixture described in
+[`docs/procedural/TEST_PLAN.md`](../docs/procedural/TEST_PLAN.md#powtórzenie-ręcznego-smoke).
+It is deliberately excluded from the general test runners because it mutates a map.
+
+Copy it into `scripts/` beside the test EXE, reopen the fixture with its matching
+client profile and empty history, then run it manually in Script Manager. Never
+enable autorun or save the test's temporary edits. It checks three callback errors,
+preservation of their messages, rollback of newly created tiles, unchanged history
+on failure, successful commits, and separate Undo/Redo. On success it restores the
+fixture's 400 tiles; successful sentinel actions remain in Redo history. If an
+assertion fails, reopen the unchanged fixture before another attempt.
+
 ### Option 1: Complete Test Suite (Recommended)
 
 **File:** `run_all_tests_complete.lua`

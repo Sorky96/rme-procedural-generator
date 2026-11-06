@@ -71,10 +71,16 @@ void GroundBrush::draw(BaseMap* map, Tile* tile, void* parameter) {
 			return;
 		}
 	}
-	int chance = random(1, total_chance);
+	if (const auto id = getPlacementItemIdForRoll(random(1, total_chance))) {
+		TerrainPlacement::placeBrushItem(*tile, *id);
+	}
+}
+
+std::optional<uint16_t> GroundBrush::getPlacementItemIdForRoll(int roll) const {
+	if (border_items.empty() || roll < 1 || roll > total_chance) return std::nullopt;
 	uint16_t id = 0;
 	for (const auto& item_block : border_items) {
-		if (chance < item_block.chance) {
+		if (roll < item_block.chance) {
 			id = item_block.id;
 			break;
 		}
@@ -83,7 +89,7 @@ void GroundBrush::draw(BaseMap* map, Tile* tile, void* parameter) {
 		id = border_items.front().id;
 	}
 
-	TerrainPlacement::placeBrushItem(*tile, id);
+	return id;
 }
 
 const GroundBrush::BorderBlock* GroundBrush::getBrushTo(GroundBrush* first, GroundBrush* second) {

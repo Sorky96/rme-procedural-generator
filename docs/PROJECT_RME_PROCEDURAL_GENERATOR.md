@@ -1,6 +1,6 @@
 # RME Procedural World Generator - Master Plan
 
-> Dokument startowy projektu dla Codex / Claude Code. Stan: PLAN po przeglądzie lokalnego kodu; G0 niezaliczone. Wersja: 1.1 (2026-10-26).
+> Dokument startowy projektu dla Codex / Claude Code. Stan: FAZA 0 w toku; G0 niezaliczone. Wersja planu: 1.1 (2026-10-26). Aktualne dowody: `docs/PROGRESS.md` oraz `docs/procedural/TEST_PLAN.md`.
 >
 > **Główny cel:** pełny, zintegrowany z Remere's Map Editor generator map Tibii, który potrafi analizować dostarczone mapy referencyjne i coraz wierniej odtwarzać **ich styl, logikę przestrzenną i grywalność**, bez kopiowania całych fragmentów 1:1.
 
@@ -29,7 +29,9 @@ Lokalny `CMakeLists.txt` wymaga CMake 3.28+, C++23 i wxWidgets 3.3; `vcpkg.json`
 
 ### 1.0 Wynik przeglądu przygotowawczego (2026-10-26)
 
-Przegląd dotyczył źródeł, nie działania programu. W lokalnym katalogu brak `.git` i `.codegraph`; istnieje `.gito`, którego nie zmieniano. `rtk git status --short --branch` zgłosił brak repozytorium. Nie ustalono SHA ani gałęzi, nie uruchomiono CodeGraph, buildu ani testów map. Nie oznacza to zaliczenia FAZY 0.
+Pierwszy przegląd dotyczył źródeł, nie działania programu. W jego trakcie brakowało `.git` i `.codegraph`; istniało `.gito`, którego nie zmieniano. Poniższa tabela zachowuje ustalenia tego przeglądu, a aktualny stan audytu znajduje się w `docs/PROGRESS.md`.
+
+Po przygotowaniu środowiska przez użytkownika rozpoczęto FAZĘ 0: Git i CodeGraph działają, baza lokalna to `5a01a8fe1c34465559701d50681cc2210ef32c67`, gałąź `docs/procedural-phase0-audit`. Powstały `docs/procedural/ARCHITECTURE.md` i `docs/procedural/TEST_PLAN.md`; wyniki buildu i testów aktualizuje raport postępu. Nie oznacza to zaliczenia G0.
 
 | Potwierdzony punkt | Lokalizacja i konsekwencja dla planu |
 |---|---|
@@ -306,26 +308,38 @@ Statusy do uzupełniania: `[ ] TODO`, `[~] IN PROGRESS`, `[x] VERIFIED`, `[!] BL
 
 ### FAZA 0 - Repozytorium i audyt
 
-- [ ] Użyj istniejącego checkoutu, sprawdź Git i gałąź z `master`, zapisz SHA oraz lokalne zmiany. Jeśli to kopia bez Git, zapisz brak SHA jako ograniczenie i ustal pochodzenie przed pracą implementacyjną. Potwierdź licencję, Windows x64, `build_ninja.bat`, wersje toolchaina i zależności.
-- [ ] Zidentyfikuj API Map/Tile/Item/Brush/Autoborder/Undo i Lua; linkuj konkretne pliki i funkcje.
-- [ ] Sprawdź odczyt/zapis OTBM i kwestie multi-floor, house/spawn/UID/AID.
-- [ ] Zbuduj RME, otwórz testową mapę, zapisz kopię, uruchom minimalny skrypt modyfikujący 20x20 z Undo.
-- [ ] Oceń istniejące `noise`/`algo`/`geo`, demonstrator terenu i transakcje Lua; wybierz granicę C++/Lua na podstawie testu, nie nazwy API. Audyt obejmuje RNG brushy, snapshot, ochronę halo, granicę Undo i rollback.
-- [ ] Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` i plan małych PR. Nie nadpisuj istniejącej dokumentacji ogólnej.
+**Końcowa ocena 2026-11-02: VERIFIED.** Wszystkie sześć pozycji audytu i G0-01…09 oceniono w [raporcie końcowym](procedural/G0_FINAL_20261102.md), z konkretnymi dowodami oraz jawną różnicą semantyki aktualnego odbiorcy spawnów. Bramka build + punkty integracji + round-trip RME została spełniona; nie oznacza to pełnej zgodności świata OTS ani gwarancji przyszłego generatora. G1 nierozpoczęte. Datowane opisy 27–28.10 poniżej pozostają historią audytu.
+
+- [x] Użyj istniejącego checkoutu, sprawdź Git i gałąź z `master`, zapisz SHA oraz lokalne zmiany. Potwierdź licencję, Windows x64, `build_ninja.bat`, wersje toolchaina i zależności. Dowody w audycie: lokalny snapshot `5a01a8f`, build zakończony z `--parallel 2`; pochodzenie upstream niepotwierdzone.
+- [x] Zidentyfikuj API Map/Tile/Item/Brush/Autoborder/Undo i Lua; linkuj konkretne pliki i funkcje. Dowód: przegląd CodeGraph oraz tabela w `docs/procedural/ARCHITECTURE.md`; nie jest to walidacja runtime.
+- [x] Sprawdź odczyt/zapis OTBM i kwestie multi-floor, house/spawn/UID/AID. Końcowe rzeczywiste RME round-trip i pełne niezależne porównania fixture OTBM 3, osobna strefa OTBM 5; aktualny odbiorca zbadany oddzielnie. Radius/direction legacy nie są zachowane przez jego konwerter, czego nie zaliczono jako pełnej zgodności spawnów. Dowody i granice: `docs/procedural/G0_FINAL_20261102.md`.
+- [x] Zbuduj RME, otwórz testową mapę, zapisz kopię, uruchom minimalny skrypt modyfikujący 20x20 z Undo. 2026-10-26/27: 400 ground, Undo/Redo i odczyt zapisu PASS dla syntetycznego fixture; szczegóły i ograniczenia w `TEST_PLAN.md`.
+- [x] Oceń istniejące `noise`/`algo`/`geo`, demonstrator terenu i transakcje Lua; wybierz granicę C++/Lua na podstawie testu, nie nazwy API. Decyzja 2026-11-01: rdzeń/snapshot/resolver/commit C++, Lua opcjonalne presety/konfiguracja/demo. Dowody: próbki noise/algo/geo, Draw/Lua/Draw, reprodukcje i regresje callbacków/setterów/metod, analiza RNG i snapshotu/halo w `ARCHITECTURE.md` oraz `TEST_PLAN.md`. Wybór nie oznacza gotowości adaptera ani pełnej atomowości; pozostałe testy G0 i projekt G1 nadal otwarte.
+- [x] Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` i plan małych PR. Dokumenty utworzono; zawierają rzeczywiste symbole i jawne wyniki wykonanych kontroli. Nie nadpisano istniejącej dokumentacji ogólnej.
 
 **Bramka G0:** reproducible build + opis rzeczywistych punktów integracji + round-trip testowej mapy.
 
+Stan 2026-10-27: smoke pustej mapy przeszedł, lecz G0 pozostaje niezaliczone. Odtworzony błąd callbacka `app.transaction` (401 zamiast 400 pól) naprawiono w G0-B przez kontrolę wyniku chronionego wywołania Sol2. Regresja na mapie potwierdziła propagację błędów, rollback sześciu mutacji i brak wpisów historii po trzech nieudanych transakcjach; udane transakcje i Undo/Redo działają. Nie jest to dowód pełnej atomowości generatora: testy metadanych i rozdzielenia historii od ręcznej edycji nadal wymagane. Dowody w `TEST_PLAN.md`.
+
+Późniejsza próba G0-06 przeszła dla `Draw` → Lua → `Draw`, także przy włączonym grupowaniu historii. Test zapisu/odczytu objął piętra 6/7, ground UID/AID, flagi i spawn z potworem. Odkryto dwa blokery: bezpośrednia zmiana `Item.actionId` w transakcji nie jest śledzona ani cofana, a „Save As” nowej mapy w tym samym katalogu zachowało stare nazwy plików pomocniczych i nadpisało XML spawnu używany przez źródłową mapę. Dane testowe były syntetyczne, przywrócone. Naprawa obu błędów i testy regresyjne są wymagane przed zakończeniem G0. Domy, strefy i zewnętrzny odbiorca pozostają niezweryfikowane.
+
+Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ograniczone testy kolizji oraz błędu dostępu; pełna atomowość i crash recovery nie są wykazane. Osobny fixture domu zachował w RME po ponownym odczycie nazwę, miasto, ID, czynsz i rozmiar. Wykryto również utratę niezapisanej zmiany czynszu przy zamknięciu bez ostrzeżenia. Próby noise oraz wybranych operacji algo/geo przeszły dla opisanych danych, nie dowodzą deterministyczności całego generatora. Na ich podstawie pozostaje robocza granica: rdzeń, snapshot, resolver i commit w C++; Lua jako opcjonalna konfiguracja i narzędzie demonstracyjne. Ostateczna decyzja oraz G0 nadal wymagają rozwiązania rollbacku itemów i pozostałych testów z `TEST_PLAN.md`.
+
 ### FAZA 1 - Rdzeń abstrakcyjny i podstawowa integracja
 
-- [ ] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary.
-- [ ] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3.
-- [ ] Prosty resolver do właściwych brushy/items zgodnie z klientem.
-- [ ] Dry-run, commit i Undo/Redo, logi.
-- [ ] Test deterministyczności i błędnych parametrów.
-- [ ] Minimalny dialog: seed, obszar, Preview, Validate, Commit, Cancel; obsługa braku klienta/assets i nieaktualnego wyniku.
-- [ ] Test konkretnego diffu, anulowania, błędu zastosowania, zmiany mapy/assets po preview, przekroczenia budżetu oraz oddzielnego wpisu Undo. Commit offline.
+**IN PROGRESS, 2026-11-02:** rozpoczęto G1-A na gałęzi `feature/procedural-g1-core`. [Rdzeń i ograniczenia](procedural/G1_CORE.md); test C++ 100×100/500×500 PASS nie zastępuje bramki integracyjnej G1 poniżej.
+
+- [x] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary. Rdzeń C++ i testy gotowe; ochrona i dokładna maska z rzeczywistego snapshotu i zaznaczenia: [snapshot](procedural/G1_SNAPSHOT.md), [maska](procedural/G1_MASK.md), a w pełnych round-tripach 100×100 i 500×500 pięć kafli fixture pozostało bez zmian.
+- [x] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3. Pierwszy semantyczny baseline v1, bez noise i oceny naturalności; rzeczywiste testy C++ 100×100/500×500 PASS.
+- [x] Prosty resolver do właściwych brushy/items zgodnie z klientem. [Resolver](procedural/G1_RESOLVER.md); według raportu resolver odrzuca brak brusha i itemu, a brak klienta sprawdzono w natywnych odmowach ([odmowy](procedural/G1_REFUSALS.md)); testów resolvera nie uruchamiałem ponownie przy tej aktualizacji.
+- [x] Dry-run (Preview i Validate), commit i Undo/Redo, logi. [Commit](procedural/G1_COMMIT.md), [round-trip](procedural/G1_ROUNDTRIP.md); logi dialogu mają dowód runtime dla Preview, Validate, Place, Cancel i odmów ([stan bramki](procedural/G1_GATE_STATUS.md)).
+- [x] Test deterministyczności i błędnych parametrów. Rdzeń C++ PASS; fingerprinty podglądu, maski i commitu 100×100 i 500×500 są identyczne w kolejnych buildach ([regresja etapowa](procedural/G1_STAGED_CORE.md)), a trzy próby 500×500 zapisały komplet plików identyczny bajtowo ([powtarzalność](procedural/G1_PLACE_TIMING_REPEATABILITY.md)). Zakres: seed 1729 i dwa rozmiary.
+- [x] Minimalny dialog: seed, obszar, Preview, Validate, Commit, Cancel; obsługa braku klienta/assets i nieaktualnego wyniku. [Dialog](procedural/G1_DIALOG.md), [macierz](procedural/G1_DIALOG_MATRIX.md), [odmowy](procedural/G1_REFUSALS.md), [unieważnienie](procedural/G1_INVALIDATION.md).
+- [~] Test konkretnego diffu, anulowania, błędu zastosowania, zmiany mapy/assets po preview, przekroczenia budżetu oraz oddzielnego wpisu Undo. Commit offline. Wykonane: [commit](procedural/G1_COMMIT.md), [anulowanie](procedural/G1_CANCEL.md), [unieważnienie](procedural/G1_INVALIDATION.md), [budżet](procedural/G1_BUDGET.md), [zasoby](procedural/G1_ASSETS.md). Poza zakresem: rzeczywista sesja sieciowa live (tryb offline sprawdzono na nieuruchomionym hoście live). Otwarte: błędy alokacji sprawdzono w opisanych miejscach, nie we wszystkich.
 
 **G1:** 100x100 i 500x500 na jednym piętrze w zmierzonym budżecie zasobów, preview zgodny z zastosowanym diffem, zapis i otwarcie kompletu plików, jedno Undo i Redo, zero zmian poza maską i w danych chronionych. Brak budżetu dla 500x500 jest ograniczeniem, nie zaliczeniem G1.
+
+**Stan 2026-11-06:** wszystkie pozycje listy mają dowód poza jednym wyjątkiem opisanym przy ostatniej pozycji. Pełny round-trip obu rozmiarów powtórzono na bieżącym binarium, progi zasobów 100×100 zatwierdzono, a wzrost pamięci w 200 cyklach uznano za niebędący blokerem (decyzja użytkownika). Bramka pozostaje **IN PROGRESS**: rzeczywiste sesje sieciowe live uznano za poza zakresem G1 (decyzja użytkownika 2026-11-06). Nie rozstrzygnięto pozostałych miejsc awarii alokacji ani stosu `SetFocus` z aktywacji ramki przy otwartym generatorze (2026-11-04); `SetFocus` przy zamykaniu i w przebiegu odmów wyjaśniono. Część dowodów to pojedyncze serie. Odłożone pozycje: [dług techniczny](procedural/TECH_DEBT.md). Szczegóły: [stan bramki](procedural/G1_GATE_STATUS.md).
 
 ### FAZA 2 - Sensowna powierzchnia i border
 

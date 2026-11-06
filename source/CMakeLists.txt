@@ -74,6 +74,7 @@ set(rme_H
     ${CMAKE_CURRENT_LIST_DIR}/editor/operations/spawn_validator.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/editor_persistence.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/map_backup_service.h
+    ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/rollback_file.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/map_load_options.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/minimap_exporter.h
     ${CMAKE_CURRENT_LIST_DIR}/editor/persistence/minimap_exporter_internal.h
@@ -451,6 +452,8 @@ set(rme_H
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_api_tile.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_dialog.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_engine.h
+    ${CMAKE_CURRENT_LIST_DIR}/lua/lua_item_reference.h
+    ${CMAKE_CURRENT_LIST_DIR}/lua/lua_object_registry.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script_manager.h
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_scripts_window.h
@@ -867,6 +870,7 @@ set(rme_SRC
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_api_tile.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_dialog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_engine.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/lua/lua_item_reference.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_script_manager.cpp
     ${CMAKE_CURRENT_LIST_DIR}/lua/lua_scripts_window.cpp

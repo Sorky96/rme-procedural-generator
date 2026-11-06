@@ -45,11 +45,31 @@ enum ChangeType {
 	CHANGE_MOVE_HOUSE_EXIT,
 	CHANGE_MOVE_WAYPOINT,
 	CHANGE_MOVE_TOWN_TEMPLE,
+	CHANGE_HOUSE_PROPERTIES,
+	CHANGE_HOUSE_PRESENCE,
 };
 
 struct HouseExitChangeData {
 	uint32_t houseId;
 	Position pos;
+};
+
+struct HousePropertiesChangeData {
+	uint32_t currentId;
+	uint64_t generation;
+	uint32_t targetId;
+	std::string name;
+	int rent;
+	uint32_t townId;
+	bool guildhall;
+};
+
+struct HousePresenceChangeData {
+	uint32_t id;
+	uint64_t generation;
+	// Ownership moves between the map and history, preserving the same House
+	// identity for earlier property/exit actions when a deletion is undone.
+	std::unique_ptr<House> house;
 };
 
 struct WaypointChangeData {
@@ -64,15 +84,20 @@ struct TownTempleChangeData {
 
 class Change {
 private:
-	using Data = std::variant<std::monostate, std::unique_ptr<Tile>, HouseExitChangeData, WaypointChangeData, TownTempleChangeData>;
+	using Data = std::variant<std::monostate, std::unique_ptr<Tile>, HouseExitChangeData, HousePropertiesChangeData, HousePresenceChangeData, WaypointChangeData, TownTempleChangeData>;
 	ChangeType type;
 	Position position;
 	Data data;
+	// Generic actions restore unflagged membership; exact terrain swaps exchange actual membership.
+	bool membershipCaptured = false;
+	bool restoreUnflaggedMembership = false;
 
 	Change();
 
 public:
 	explicit Change(std::unique_ptr<Tile> tile);
+	explicit Change(HousePropertiesChangeData properties);
+	explicit Change(HousePresenceChangeData presence);
 	Change(std::unique_ptr<Tile> tile, const Position& pos);
 	static Change* Create(House* house, const Position& where);
 	static Change* Create(Waypoint* wp, const Position& where);
@@ -114,6 +139,9 @@ enum ActionIdentifier {
 	ACTION_REPLACE_ITEMS,
 	ACTION_CHANGE_PROPERTIES,
 	ACTION_LUA_SCRIPT,
+	ACTION_HOUSE_PROPERTIES,
+	ACTION_HOUSE_PRESENCE,
+	ACTION_GENERATE_TERRAIN,
 };
 
 class Action {
@@ -139,6 +167,7 @@ public:
 		return commited;
 	}
 	void undo(DirtyList* dirty_list);
+	bool canApply() const;
 	void redo(DirtyList* dirty_list) {
 		commit(dirty_list);
 	}
@@ -150,8 +179,13 @@ protected:
 	ChangeList changes;
 	Editor& editor;
 	ActionIdentifier type;
+	size_t preparedMemory = 0; // Checked terrain estimate, stable in both swap directions.
+	size_t preparedSelectionBytes = 0;
+	bool prepareExactSelection(bool* membershipChanged = nullptr);
+	void swapExactTiles() noexcept;
 
 	friend class ActionQueue;
+	friend class DrawOperations;
 };
 
 using ActionVector = std::vector<std::unique_ptr<Action>>;
@@ -182,6 +216,7 @@ public:
 	const std::string& getLabel() const {
 		return label;
 	}
+	bool canApply() const;
 
 protected:
 	BatchAction(Editor& editor, ActionIdentifier ident);
@@ -200,6 +235,7 @@ protected:
 	ActionVector batch;
 
 	friend class ActionQueue;
+	friend class DrawOperations;
 };
 
 #endif

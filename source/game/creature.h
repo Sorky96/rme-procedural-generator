@@ -53,6 +53,18 @@ public:
 	static uint16_t DirName2ID(std::string id);
 
 	std::unique_ptr<Creature> deepCopy() const;
+	// Complete value comparison for detached snapshots; does not consult assets.
+	[[nodiscard]] bool hasSameState(const Creature& other) const noexcept {
+		if (type_name != other.type_name || direction != other.direction || spawntime != other.spawntime ||
+			weight != other.weight || npc_spawn != other.npc_spawn || saved != other.saved || selected != other.selected ||
+			alternatives.size() != other.alternatives.size()) return false;
+		for (size_t i = 0; i < alternatives.size(); ++i) {
+			const auto& a = alternatives[i];
+			const auto& b = other.alternatives[i];
+			if (a.name != b.name || a.spawntime != b.spawntime || a.direction != b.direction || a.weight != b.weight) return false;
+		}
+		return true;
+	}
 
 	const Outfit& getLookType() const;
 
@@ -73,6 +85,10 @@ public:
 	bool isNpc() const;
 
 	const std::string& getName() const;
+	// Stored spelling copied by deepCopy(), independent of the loaded registry.
+	[[nodiscard]] const std::string& getTypeName() const noexcept {
+		return type_name;
+	}
 	CreatureBrush* getBrush() const;
 
 	int getSpawnTime() const {

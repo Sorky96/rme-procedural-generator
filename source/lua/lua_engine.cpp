@@ -111,6 +111,10 @@ void LuaEngine::shutdown() {
 		return;
 	}
 
+	// Invalidate handles before Lua userdata is destroyed or the state is reused.
+	itemRegistry.invalidateAll();
+	tileRegistry.invalidateAll();
+
 	// Clear the Lua state
 	lua = sol::state();
 	initialized = false;

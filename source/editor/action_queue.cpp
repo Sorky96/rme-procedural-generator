@@ -18,6 +18,9 @@
 #include "app/main.h"
 
 #include "editor/action_queue.h"
+#include "lua/lua_api.h"
+#include "ui/managers/minimap_manager.h"
+#include <limits>
 #include "lua/lua_script_manager.h"
 #include "editor/action.h"
 #include "editor/editor.h"
@@ -72,7 +75,10 @@ std::string ActionQueue::getActionName(size_t index) const {
 		case ACTION_ROTATE: return "Rotate";
 		case ACTION_REPLACE_ITEMS: return "Replace Items";
 		case ACTION_CHANGE_PROPERTIES: return "Change Properties";
+		case ACTION_HOUSE_PROPERTIES: return "Change House Properties";
+		case ACTION_HOUSE_PRESENCE: return "Add/Remove House";
 		case ACTION_LUA_SCRIPT: return "Lua Script";
+		case ACTION_GENERATE_TERRAIN: return "Generate Terrain";
 		default: return "Unknown";
 	}
 }
@@ -84,6 +90,7 @@ void ActionQueue::resetTimer() {
 }
 
 void ActionQueue::addBatch(std::unique_ptr<BatchAction> batch, int stacking_delay) {
+	if (applyingTerrain || batch->getType() == ACTION_GENERATE_TERRAIN) return;
 	ASSERT(batch);
 	ASSERT(current <= actions.size());
 
@@ -103,43 +110,56 @@ void ActionQueue::addBatch(std::unique_ptr<BatchAction> batch, int stacking_dela
 		return;
 	}
 
-	while (current != actions.size()) {
-		memory_size -= actions.back()->memsize();
-		actions.pop_back();
+	// Plan the existing Redo discard and eviction policy without changing it.
+	// Storage allocation must succeed before any old history is destroyed or
+	// its memory accounting is changed.
+	size_t retainedMemory = memory_size;
+	for (size_t index = current; index < actions.size(); ++index) {
+		retainedMemory -= actions[index]->memsize();
+	}
+	size_t firstRetained = 0;
+	const auto memoryLimit = size_t(1024) * 1024 * g_settings.getInteger(Config::UNDO_MEM_SIZE);
+	while (retainedMemory > memoryLimit && firstRetained < current) {
+		retainedMemory -= actions[firstRetained++]->memsize();
+	}
+	if (current - firstRetained > size_t(g_settings.getInteger(Config::UNDO_SIZE)) && firstRetained < current) {
+		retainedMemory -= actions[firstRetained++]->memsize();
 	}
 
-	while (memory_size > size_t(1024 * 1024 * g_settings.getInteger(Config::UNDO_MEM_SIZE)) && !actions.empty()) {
-		memory_size -= actions.front()->memsize();
+	BatchAction* predecessor = firstRetained < current ? actions[current - 1].get() : nullptr;
+	const auto publishedAt = time(nullptr);
+	const bool merging = predecessor && predecessor->getType() == batch->getType() &&
+		g_settings.getInteger(Config::GROUP_ACTIONS) && publishedAt - stacking_delay < predecessor->timestamp;
+	const auto incomingMemory = batch->memsize();
+	if (merging) {
+		predecessor->batch.reserve(predecessor->batch.size() + batch->batch.size());
+	} else {
+		// A null slot is unpublished and is filled after the no-throw erasures.
+		actions.emplace_back();
+	}
+
+	const auto redoEnd = merging ? actions.end() : actions.end() - 1;
+	actions.erase(actions.begin() + current, redoEnd);
+	for (size_t index = 0; index < firstRetained; ++index) {
 		actions.pop_front();
-		current--;
 	}
-
-	if (actions.size() > size_t(g_settings.getInteger(Config::UNDO_SIZE)) && !actions.empty()) {
-		memory_size -= actions.front()->memsize();
-		actions.pop_front();
-		current--;
+	if (merging) {
+		retainedMemory -= predecessor->memsize();
+		predecessor->merge(batch.get()); // Capacity is already available; unique_ptr moves do not throw.
+		predecessor->timestamp = publishedAt;
+		memory_size = retainedMemory + predecessor->memsize(true);
+	} else {
+		batch->timestamp = publishedAt;
+		actions.back() = std::move(batch);
+		memory_size = retainedMemory + incomingMemory;
 	}
-
-	do {
-		if (!actions.empty()) {
-			BatchAction* lastAction = actions.back().get();
-			if (lastAction->getType() == batch->getType() && g_settings.getInteger(Config::GROUP_ACTIONS) && time(nullptr) - stacking_delay < lastAction->timestamp) {
-				lastAction->merge(batch.get());
-				lastAction->timestamp = time(nullptr);
-				memory_size -= lastAction->memsize();
-				memory_size += lastAction->memsize(true);
-				break;
-			}
-		}
-		memory_size += batch->memsize();
-		batch->timestamp = time(nullptr);
-		actions.push_back(std::move(batch));
-		current++;
-	} while (false);
+	current = actions.size();
 	g_luaScripts.emit("actionChange");
 }
 
 void ActionQueue::addAction(std::unique_ptr<Action> action, int stacking_delay) {
+	if (applyingTerrain || action->getType() == ACTION_GENERATE_TERRAIN) return;
+	if (!action->canApply()) return;
 	std::unique_ptr<BatchAction> batch = createBatch(action->getType());
 	batch->addAndCommitAction(std::move(action)); // BatchAction takes ownership
 	if (batch->size() == 0) {
@@ -149,28 +169,149 @@ void ActionQueue::addAction(std::unique_ptr<Action> action, int stacking_delay) 
 	addBatch(std::move(batch), stacking_delay);
 }
 
-void ActionQueue::undo() {
-	if (current > 0) {
+namespace {
+struct TerrainTransition {
+	bool& active;
+	bool armed = true;
+	explicit TerrainTransition(bool& value) noexcept : active(value) { active = true; }
+	void release() noexcept { active = false; armed = false; }
+	~TerrainTransition() { if (armed) active = false; }
+};
+
+void emitTerrainHistoryChange(bool selectionMembershipChanged = false) noexcept {
+	if (selectionMembershipChanged) {
+		try { g_luaScripts.emit("selectionChange"); } catch (...) {}
+	}
+	try { g_luaScripts.emit("actionChange"); } catch (...) {}
+}
+}
+
+// Failures of post-publication observers cannot turn an accepted history change into a failed
+// operation. Dirty state is set before tracker listeners run; the minimap slot is preallocated.
+void ActionQueue::notifyTerrainTransition(bool selectionCountChanged) noexcept {
+	editor.map.doChange();
+	try { g_minimap.InvalidateAll(editor.map); } catch (...) {}
+	try { editor.map.getChangeTracker().markAllDirty(); } catch (...) {}
+	if (selectionCountChanged) {
+		try { editor.selection.updateSelectionCount(); } catch (...) {}
+	}
+	try { editor.notifyStateChange(); } catch (...) {}
+}
+
+bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
+	std::span<const Position> positions, std::stop_token stop) {
+	if (applyingTerrain || !batch || batch->getType() != ACTION_GENERATE_TERRAIN ||
+		batch->size() != 1 || positions.empty() || editor.live_manager.IsLive() ||
+		LuaAPI::isTransactionActive() || editor.selection.isBusy() || editor.selection.isDeferred()) return false;
+	const auto incoming = batch->memsize();
+	const auto configuredMemory = g_settings.getInteger(Config::UNDO_MEM_SIZE);
+	const auto configuredCount = g_settings.getInteger(Config::UNDO_SIZE);
+	if (configuredMemory <= 0 || configuredCount <= 0) return false;
+	const uint64_t limit = uint64_t(configuredMemory) * 1024 * 1024;
+	if (incoming > limit) return false;
+	TerrainTransition transition(applyingTerrain);
+	// Roll back newly reserved map structure if any subsequent allocation/refusal fails.
+	BaseMap::TileReservation locations(editor.map, positions);
+	g_minimap.PrepareInvalidationSlot(editor.map);
+	if (stop.stop_requested() || !batch->canApply()) return false;
+	if (!batch->batch.front()->prepareExactSelection()) return false;
+	size_t retained = memory_size;
+	for (size_t index = current; index < actions.size(); ++index) {
+		const auto bytes = actions[index]->memsize();
+		if (bytes > retained) return false;
+		retained -= bytes;
+	}
+	size_t first = 0;
+	while (first < current && (retained > limit - incoming ||
+		current - first >= size_t(configuredCount))) {
+		const auto bytes = actions[first++]->memsize();
+		if (bytes > retained) return false;
+		retained -= bytes;
+	}
+	if (retained > limit - incoming || incoming > std::numeric_limits<size_t>::max() - retained) return false;
+	// No observers can see this unpublished slot. This is the last allocation before apply.
+	actions.emplace_back();
+	batch->commit(); // Terrain Action performs only noexcept prepared tile/selection swaps.
+	actions.erase(actions.begin() + current, actions.end() - 1);
+	for (size_t index = 0; index < first; ++index) actions.pop_front();
+	batch->timestamp = time(nullptr);
+	actions.back() = std::move(batch);
+	memory_size = retained + incoming;
+	current = actions.size();
+	locations.commit();
+	notifyTerrainTransition();
+	transition.release();
+	// Script listeners may start a subsequent undoable edit only after the guard is released.
+	emitTerrainHistoryChange();
+	return true;
+}
+
+bool ActionQueue::undo() {
+	if (applyingTerrain) return false;
+	if (current > 0 && actions[current - 1]->getType() == ACTION_GENERATE_TERRAIN) {
+		if (!actions[current - 1]->canApply()) return false;
+		TerrainTransition transition(applyingTerrain);
+		bool membershipChanged = false;
+		try {
+			g_minimap.PrepareInvalidationSlot(editor.map);
+			if (!actions[current - 1]->batch.front()->prepareExactSelection(&membershipChanged)) return false;
+		}
+		catch (const std::bad_alloc&) { return false; }
+		const auto selectionCount = editor.selection.size();
+		actions[current - 1]->undo();
+		--current;
+		const bool selectionCountChanged = editor.selection.size() != selectionCount;
+		notifyTerrainTransition(selectionCountChanged);
+		transition.release();
+		emitTerrainHistoryChange(membershipChanged);
+		return true;
+	}
+	if (current > 0 && actions[current - 1]->canApply()) {
 		current--;
 		BatchAction* batch = actions[current].get();
 		batch->undo();
 		editor.notifyStateChange();
 		g_luaScripts.emit("actionChange");
+		return true;
 	}
+	return false;
 }
 
-void ActionQueue::redo() {
-	if (current < actions.size()) {
+bool ActionQueue::redo() {
+	if (applyingTerrain) return false;
+	if (current < actions.size() && actions[current]->getType() == ACTION_GENERATE_TERRAIN) {
+		if (!actions[current]->canApply()) return false;
+		TerrainTransition transition(applyingTerrain);
+		bool membershipChanged = false;
+		try {
+			g_minimap.PrepareInvalidationSlot(editor.map);
+			if (!actions[current]->batch.front()->prepareExactSelection(&membershipChanged)) return false;
+		}
+		catch (const std::bad_alloc&) { return false; }
+		const auto selectionCount = editor.selection.size();
+		actions[current]->redo();
+		++current;
+		const bool selectionCountChanged = editor.selection.size() != selectionCount;
+		notifyTerrainTransition(selectionCountChanged);
+		transition.release();
+		emitTerrainHistoryChange(membershipChanged);
+		return true;
+	}
+	if (current < actions.size() && actions[current]->canApply()) {
 		BatchAction* batch = actions[current].get();
 		batch->redo();
 		current++;
 		editor.notifyStateChange();
 		g_luaScripts.emit("actionChange");
+		return true;
 	}
+	return false;
 }
 
 void ActionQueue::clear() {
+	if (applyingTerrain) return;
 	actions.clear();
 	current = 0;
+	memory_size = 0;
 	g_luaScripts.emit("actionChange");
 }

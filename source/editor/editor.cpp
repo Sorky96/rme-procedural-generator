@@ -43,6 +43,8 @@
 #include "editor/operations/draw_operations.h"
 
 #include <spdlog/spdlog.h>
+#include <cstdio>
+#include <new>
 
 Editor::Editor(CopyBuffer& copybuffer, const MapVersion& version) :
 	live_manager(*this),
@@ -88,7 +90,13 @@ Editor::~Editor() {
 
 void Editor::notifyStateChange() {
 	if (onStateChange) {
-		onStateChange();
+		try {
+			onStateChange();
+		} catch (const std::bad_alloc&) {
+			// GUI observers run after history publication too. Their allocation
+			// failure must not turn an accepted, undoable edit into a rollback.
+			std::fputs("Editor state notification failed: out of memory.\n", stderr);
+		}
 	}
 }
 

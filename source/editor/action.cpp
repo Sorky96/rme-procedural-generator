@@ -26,7 +26,12 @@
 #include "game/town.h"
 #include "editor/editor.h"
 #include "ui/gui.h"
+#include "lua/lua_api.h"
+#include "brushes/managers/brush_manager.h"
+#include "brushes/house/house_brush.h"
+#include "brushes/house/house_exit_brush.h"
 
+#include <algorithm>
 #include <ranges>
 #include <ctime>
 
@@ -77,6 +82,12 @@ Change* Change::Create(House* house, const Position& where) {
 	c->data = HouseExitChangeData { .houseId = house->getID(), .pos = where };
 	return c;
 }
+
+Change::Change(HousePropertiesChangeData properties) :
+	type(CHANGE_HOUSE_PROPERTIES), data(std::move(properties)) {}
+
+Change::Change(HousePresenceChangeData presence) :
+	type(CHANGE_HOUSE_PRESENCE), data(std::move(presence)) {}
 
 Change* Change::Create(Waypoint* wp, const Position& where) {
 	Change* c = newd Change();
@@ -132,10 +143,107 @@ uint32_t Change::memsize() const {
 		mem += wp->name.capacity();
 	} else if (auto* house = std::get_if<HouseExitChangeData>(&data)) {
 		mem += sizeof(HouseExitChangeData);
+	} else if (auto* house = std::get_if<HousePropertiesChangeData>(&data)) {
+		mem += house->name.capacity();
+	} else if (auto* presence = std::get_if<HousePresenceChangeData>(&data); presence && presence->house) {
+		mem += sizeof(House) + presence->house->name.capacity() +
+			presence->house->getTiles().size() * sizeof(Position);
 	} else if (auto* temple = std::get_if<TownTempleChangeData>(&data)) {
 		mem += sizeof(TownTempleChangeData);
 	}
 	return mem;
+}
+
+namespace {
+bool canSwapHousePresence(const Map& map, const HousePresenceChangeData& change) {
+	const House* current = map.houses.getHouse(change.id);
+	if (!change.house) {
+		return current && current->getGeneration() == change.generation;
+	}
+	if (current || change.house->getID() != change.id || change.house->getGeneration() != change.generation) {
+		return false;
+	}
+	// Imports or other out-of-history changes must not be overwritten by Undo.
+	for (const auto& pos : change.house->getTiles()) {
+		const auto tile = map.getTile(pos);
+		if (!tile || tile->getHouseID() != 0) return false;
+	}
+	return change.house->getExit() == Position() || map.getTile(change.house->getExit());
+}
+
+void swapHousePresence(Editor& editor, HousePresenceChangeData& change) {
+	auto& map = editor.map;
+	if (editor.live_manager.IsLive() || !canSwapHousePresence(map, change)) return;
+	House* house = change.house ? change.house.get() : map.houses.getHouse(change.id);
+	const bool restoring = change.house != nullptr;
+	if (restoring) {
+		if (!map.houses.addHouse(std::move(change.house))) return;
+		for (const auto& pos : house->getTiles()) {
+			map.getTile(pos)->setHouse(house);
+		}
+		if (house->getExit() != Position()) {
+			TileOperations::addHouseExit(map.getTile(house->getExit()), house);
+		}
+	} else {
+		if (g_gui.GetCurrentEditor() == &editor) {
+			if (g_brush_manager.house_brush && g_brush_manager.house_brush->getHouseID() == change.id) {
+				g_brush_manager.house_brush->setHouse(nullptr);
+			}
+			if (g_brush_manager.house_exit_brush && g_brush_manager.house_exit_brush->getHouseID() == change.id) {
+				g_brush_manager.house_exit_brush->setHouse(nullptr);
+			}
+		}
+		house->clean();
+		auto entry = map.houses.find(change.id);
+		change.house = std::move(entry->second);
+		map.houses.erase(entry);
+	}
+	for (const auto& pos : house->getTiles()) {
+		map.getChangeTracker().markTileDirty(pos);
+		g_minimap.MarkTileDirty(map, pos);
+	}
+	if (house->getExit() != Position()) {
+		map.getChangeTracker().markTileDirty(house->getExit());
+		g_minimap.MarkTileDirty(map, house->getExit());
+	}
+	map.doChange();
+	if (g_gui.GetCurrentEditor() == &editor) {
+		g_gui.RefreshPalettes();
+		g_gui.SelectBrush();
+	}
+}
+
+bool canSwapHouseProperties(const Map& map, const HousePropertiesChangeData& change) {
+	const House* house = map.houses.getHouse(change.currentId);
+	return house && house->getGeneration() == change.generation &&
+		(change.targetId == change.currentId || !map.houses.getHouse(change.targetId));
+}
+
+void swapHouseProperties(Editor& editor, HousePropertiesChangeData& change) {
+	Map& map = editor.map;
+	if (editor.live_manager.IsLive() || !canSwapHouseProperties(map, change)) {
+		return;
+	}
+	House* house = map.houses.getHouse(change.currentId);
+
+	if (change.targetId != change.currentId) {
+		map.convertHouseTiles(change.currentId, change.targetId);
+		Tile* exitTile = house->getExit() == Position() ? nullptr : map.getTile(house->getExit());
+		if (exitTile) TileOperations::removeHouseExit(exitTile, house);
+		map.houses.changeId(house, change.targetId);
+		if (exitTile) TileOperations::addHouseExit(exitTile, house);
+		std::swap(change.currentId, change.targetId);
+		map.getChangeTracker().markAllDirty();
+	}
+	std::swap(house->name, change.name);
+	std::swap(house->rent, change.rent);
+	std::swap(house->townid, change.townId);
+	std::swap(house->guildhall, change.guildhall);
+	map.doChange();
+	if (g_gui.GetCurrentEditor() == &editor) {
+		g_gui.RefreshPalettes();
+	}
+}
 }
 
 Action::Action(Editor& editor, ActionIdentifier ident) :
@@ -148,13 +256,42 @@ Action::~Action() {
 	changes.clear();
 }
 
+bool Action::canApply() const {
+	if (type == ACTION_GENERATE_TERRAIN) {
+		if (editor.live_manager.IsLive() || editor.selection.isBusy() || editor.selection.isDeferred() ||
+			LuaAPI::isTransactionActive()) return false;
+		const auto plain = [](const Tile* tile) {
+			return !tile || (!tile->house_id && !tile->spawn && !tile->creature &&
+				!tile->mapflags && !tile->extra);
+		};
+		for (const auto& change : changes) {
+			if (change->type != CHANGE_TILE) return false;
+			const auto* location = editor.map.getTileL(change->position);
+			if (!location || location->getSpawnCount() || location->getWaypointCount() ||
+				location->getTownCount() || (location->getHouseExits() && !location->getHouseExits()->empty()) ||
+				!plain(location->get()) || !plain(change->getTile())) return false;
+		}
+		return true;
+	}
+	for (const auto& change : changes) {
+		if (const auto* properties = std::get_if<HousePropertiesChangeData>(&change->data)) {
+			if (editor.live_manager.IsLive() || !canSwapHouseProperties(editor.map, *properties)) return false;
+		} else if (const auto* presence = std::get_if<HousePresenceChangeData>(&change->data)) {
+			if (editor.live_manager.IsLive() || !canSwapHousePresence(editor.map, *presence)) return false;
+		}
+	}
+	return true;
+}
+
 size_t Action::approx_memsize() const {
+	if (type == ACTION_GENERATE_TERRAIN) return preparedMemory;
 	uint32_t mem = sizeof(*this);
 	mem += changes.size() * (sizeof(Change) + sizeof(Tile) + sizeof(Item) + 6 /* approx overhead*/);
 	return mem;
 }
 
 size_t Action::memsize() const {
+	if (type == ACTION_GENERATE_TERRAIN) return preparedMemory;
 	uint32_t mem = sizeof(*this);
 	mem += sizeof(Change*) * 3 * changes.size();
 	for (const auto& c : changes) {
@@ -163,7 +300,37 @@ size_t Action::memsize() const {
 	return mem;
 }
 
+bool Action::prepareExactSelection(bool* membershipChanged) {
+	size_t additions = 0;
+	if (membershipChanged) *membershipChanged = false;
+	for (const auto& change : changes) {
+		const bool outgoingMember = editor.selection.containsExact(editor.map.getTile(change->position));
+		const bool incomingMember = change->membershipCaptured ? change->restoreUnflaggedMembership : outgoingMember;
+		if (membershipChanged && (incomingMember && change->getTile()) != outgoingMember) *membershipChanged = true;
+		if (incomingMember && change->getTile() && !outgoingMember) ++additions;
+	}
+	return editor.selection.reserveExactReplacements(additions,preparedSelectionBytes);
+}
+
+void Action::swapExactTiles() noexcept {
+	for (const auto& change : changes) {
+		auto& tile = std::get<std::unique_ptr<Tile>>(change->data);
+		auto* outgoing = editor.map.getTile(change->position);
+		const bool outgoingMember = editor.selection.containsExact(outgoing);
+		const bool incomingMember = change->membershipCaptured ? change->restoreUnflaggedMembership : outgoingMember;
+		editor.selection.replaceExact(outgoing, tile.get(), incomingMember);
+		change->membershipCaptured = true;
+		change->restoreUnflaggedMembership = outgoingMember;
+		editor.map.swapReservedTile(change->position, tile);
+	}
+}
+
 void Action::commit(DirtyList* dirty_list) {
+	if (type == ACTION_GENERATE_TERRAIN) {
+		swapExactTiles();
+		commited = true;
+		return;
+	}
 	editor.selection.start(Selection::INTERNAL);
 	ChangeList::const_iterator it = changes.begin();
 	while (it != changes.end()) {
@@ -183,7 +350,12 @@ void Action::commit(DirtyList* dirty_list) {
 					}
 				}
 
-				std::unique_ptr<Tile> displacedTile = editor.map.swapTile(pos, std::move(uptr));
+				if (!c->membershipCaptured) {
+						const auto* original = editor.map.getTile(pos);
+						c->restoreUnflaggedMembership = original && !original->isSelected() && editor.selection.containsExact(original);
+						c->membershipCaptured = true;
+					}
+					std::unique_ptr<Tile> displacedTile = editor.map.swapTile(pos, std::move(uptr));
 				Tile* insertedTile = editor.map.getTile(pos);
 				Tile* displaced = displacedTile.get();
 
@@ -223,9 +395,7 @@ void Action::commit(DirtyList* dirty_list) {
 						editor.map.updateTileZones(pos, displaced->getZoneIds(), insertedTile->getZoneIds());
 					}
 
-					if (displaced->isSelected()) {
-						editor.selection.removeInternal(displaced);
-					}
+					editor.selection.removeInternal(displaced);
 					updateCommittedTile(insertedTile, type);
 					if (insertedTile->isSelected()) {
 						editor.selection.addInternal(insertedTile);
@@ -253,9 +423,7 @@ void Action::commit(DirtyList* dirty_list) {
 						}
 					}
 				} else if (displaced) {
-					if (displaced->isSelected()) {
-						editor.selection.removeInternal(displaced);
-					}
+					editor.selection.removeInternal(displaced);
 					if (displaced->getHouseID() != 0) {
 						House* house = editor.map.houses.getHouse(displaced->getHouseID());
 						if (house) {
@@ -308,6 +476,14 @@ void Action::commit(DirtyList* dirty_list) {
 				}
 				break;
 			}
+
+			case CHANGE_HOUSE_PROPERTIES:
+				swapHouseProperties(editor, std::get<HousePropertiesChangeData>(c->data));
+				break;
+
+			case CHANGE_HOUSE_PRESENCE:
+				swapHousePresence(editor, std::get<HousePresenceChangeData>(c->data));
+				break;
 
 			case CHANGE_MOVE_WAYPOINT: {
 				auto& p = std::get<WaypointChangeData>(c->data);
@@ -392,6 +568,11 @@ void Action::commit(DirtyList* dirty_list) {
 }
 
 void Action::undo(DirtyList* dirty_list) {
+	if (type == ACTION_GENERATE_TERRAIN) {
+		swapExactTiles();
+		commited = false;
+		return;
+	}
 	if (changes.empty()) {
 		return;
 	}
@@ -428,9 +609,7 @@ void Action::undo(DirtyList* dirty_list) {
 					}
 
 					if (newtile) {
-						if (newtile->isSelected()) {
-							editor.selection.removeInternal(newtile);
-						}
+						editor.selection.removeInternal(newtile);
 					}
 
 					if (oldtile && newtile) {
@@ -468,7 +647,7 @@ void Action::undo(DirtyList* dirty_list) {
 						}
 
 						updateUndoTile(oldtile, type);
-						if (oldtile->isSelected()) {
+						if (oldtile->isSelected() || c->restoreUnflaggedMembership) {
 							editor.selection.addInternal(oldtile);
 						}
 
@@ -489,7 +668,7 @@ void Action::undo(DirtyList* dirty_list) {
 							}
 						}
 						updateUndoTile(oldtile, type);
-						if (oldtile->isSelected()) {
+						if (oldtile->isSelected() || c->restoreUnflaggedMembership) {
 							editor.selection.addInternal(oldtile);
 						}
 						uptr = std::move(newtile_uptr);
@@ -511,9 +690,7 @@ void Action::undo(DirtyList* dirty_list) {
 					}
 
 					if (removed) {
-						if (removed->isSelected()) {
-							editor.selection.removeInternal(removed);
-						}
+						editor.selection.removeInternal(removed);
 						if (removed->getHouseID() != 0) {
 							House* house = editor.map.houses.getHouse(removed->getHouseID());
 							if (house) {
@@ -562,6 +739,14 @@ void Action::undo(DirtyList* dirty_list) {
 				}
 				break;
 			}
+
+			case CHANGE_HOUSE_PROPERTIES:
+				swapHouseProperties(editor, std::get<HousePropertiesChangeData>(c->data));
+				break;
+
+			case CHANGE_HOUSE_PRESENCE:
+				swapHousePresence(editor, std::get<HousePresenceChangeData>(c->data));
+				break;
 
 			case CHANGE_MOVE_WAYPOINT: {
 				auto& p = std::get<WaypointChangeData>(c->data);
@@ -653,6 +838,11 @@ BatchAction::BatchAction(Editor& editor, ActionIdentifier ident) :
 BatchAction::~BatchAction() {
 	// batch is vector<unique_ptr>, destruction handled automatically
 	batch.clear();
+}
+
+bool BatchAction::canApply() const {
+	if (type != ACTION_HOUSE_PROPERTIES && type != ACTION_HOUSE_PRESENCE && type != ACTION_GENERATE_TERRAIN) return true;
+	return std::ranges::all_of(batch, [](const auto& action) { return action->canApply(); });
 }
 
 size_t BatchAction::memsize(bool recalc) const {

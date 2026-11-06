@@ -59,6 +59,13 @@ public:
 	void addInternal(Tile* tile);
 	void removeInternal(Tile* tile);
 
+	// Actual membership is independent of Tile::isSelected(), including empty tiles.
+	bool containsExact(const Tile* tile) const noexcept;
+	// Terrain history prepares bounded storage, then exchanges captured membership independently
+	// of flags, without allocation. No selection session may be active.
+	bool reserveExactReplacements(size_t additions, size_t maxBytes);
+	void replaceExact(Tile* outgoing, Tile* incoming, bool incomingMember) noexcept;
+
 	// Clears the selection completely
 	void clear();
 

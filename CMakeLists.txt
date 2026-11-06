@@ -232,3 +232,32 @@ target_link_libraries(test_universal_rotator PRIVATE ${LUA_LIBRARIES})
 
 enable_testing()
 add_test(NAME test_universal_rotator COMMAND test_universal_rotator)
+
+add_executable(test_lua_object_registry tests/test_lua_object_registry.cpp)
+target_compile_features(test_lua_object_registry PRIVATE cxx_std_23)
+target_include_directories(test_lua_object_registry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
+add_test(NAME test_lua_object_registry COMMAND test_lua_object_registry)
+
+add_executable(test_lua_object_registry_sol tests/test_lua_object_registry_sol.cpp)
+target_compile_features(test_lua_object_registry_sol PRIVATE cxx_std_23)
+target_include_directories(test_lua_object_registry_sol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source ${LUA_INCLUDE_DIR})
+target_link_libraries(test_lua_object_registry_sol PRIVATE sol2::sol2 ${LUA_LIBRARIES})
+add_test(NAME test_lua_object_registry_sol COMMAND test_lua_object_registry_sol)
+
+add_executable(test_rollback_file tests/test_rollback_file.cpp)
+target_compile_features(test_rollback_file PRIVATE cxx_std_23)
+target_include_directories(test_rollback_file PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
+add_test(NAME test_rollback_file COMMAND test_rollback_file)
+
+add_executable(test_snapshot_directory tests/test_snapshot_directory.cpp)
+target_compile_features(test_snapshot_directory PRIVATE cxx_std_23)
+target_include_directories(test_snapshot_directory PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
+add_test(NAME test_snapshot_directory COMMAND test_snapshot_directory)
+
+add_executable(test_recovery_marker tests/test_recovery_marker.cpp)
+target_compile_features(test_recovery_marker PRIVATE cxx_std_23)
+target_include_directories(test_recovery_marker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
+add_test(NAME test_recovery_marker COMMAND test_recovery_marker)
+
+# Procedural G1-A: semantic core has no dependency on the editor or GUI.
+add_subdirectory(source/procedural)

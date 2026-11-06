@@ -118,6 +118,10 @@ void MinimapManager::Update(bool immediate) {
 	}
 }
 
+void MinimapManager::PrepareInvalidationSlot(const Map& map) {
+	pending_invalidations_.try_emplace(makeKey(map));
+}
+
 void MinimapManager::InvalidateAll(const Map& map) {
 	auto& pending = pending_invalidations_[makeKey(map)];
 	pending.invalidate_all = true;

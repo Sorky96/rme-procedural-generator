@@ -24,6 +24,7 @@
 #include "game/complexitem.h"
 #include "io/iomap.h"
 #include "game/item.h"
+#include "lua/lua_lifetime_observer.h"
 #include "brushes/managers/brush_manager.h"
 #include "item_definitions/core/item_definition_store.h"
 #include <unordered_map>
@@ -84,7 +85,7 @@ Item::Item(ServerItemId _type, unsigned short _count) :
 }
 
 Item::~Item() {
-	////
+	LuaAPI::LifetimeObserver<Item>::destroyed(this);
 }
 
 std::unique_ptr<Item> Item::deepCopy() const {

@@ -21,6 +21,7 @@
 #include "ui/dialog_util.h"
 #include "app/application.h"
 #include "util/file_system.h"
+#include "editor/persistence/recovery_marker.h"
 #include "util/system_specs.h"
 #include "rendering/core/hardware_profile.h"
 #include "editor/hotkey_manager.h"
@@ -57,7 +58,9 @@
 #include <timeapi.h>
 #pragma comment(lib, "winmm.lib")
 #endif
+#include <array>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 
 wxIMPLEMENT_APP_NO_MAIN(Application);
@@ -269,21 +272,33 @@ bool Application::OnInit() {
 	FileName save_failed_file = FileSystem::GetLocalDataDirectory();
 	save_failed_file.SetName(".saving.txt");
 	if (save_failed_file.FileExists()) {
-		std::ifstream f(nstr(save_failed_file.GetFullPath()).c_str(), std::ios::in);
-
-		std::string backup_otbm, backup_house, backup_spawn, backup_monster, backup_npc, backup_zone, backup_waypoint;
-
-		getline(f, backup_otbm);
-		getline(f, backup_house);
-		getline(f, backup_spawn);
-		getline(f, backup_monster);
-		getline(f, backup_npc);
-		getline(f, backup_zone);
-		getline(f, backup_waypoint);
-
-		// Remove the file
+		std::ifstream f(std::filesystem::path(save_failed_file.GetFullPath().ToStdWstring()), std::ios::in | std::ios::binary);
+		const auto recovery = rme::persistence::readRecoveryMarker(f);
 		f.close();
-		std::remove(nstr(save_failed_file.GetFullPath()).c_str());
+		if (!recovery) {
+			DialogUtil::ShowTextBox(g_gui.root, "Incomplete recovery marker",
+				"The recovery marker is incomplete, invalid, unreadable or uses an unsupported format. No files were restored or removed. Inspect it before saving another map.\n\n" + save_failed_file.GetFullPath());
+		} else {
+		const auto& backup_otbm = recovery->files[0];
+		const auto& backup_house = recovery->files[1];
+		const auto& backup_spawn = recovery->files[2];
+		const auto& backup_monster = recovery->files[3];
+		const auto& backup_npc = recovery->files[4];
+		const auto& backup_zone = recovery->files[5];
+		const auto& backup_waypoint = recovery->files[6];
+		const std::vector<std::string> new_targets(recovery->files.begin() + rme::persistence::recoveryBackupCount, recovery->files.end());
+		if (recovery->legacy) {
+			DialogUtil::ShowTextBox(g_gui.root, "Legacy recovery marker",
+				"This older marker has no record count or completion footer. Only its listed backups can be recovered; the list of new files may be incomplete. The marker and backups will be kept for manual inspection.\n\n" + save_failed_file.GetFullPath());
+		}
+		if (!new_targets.empty()) {
+			wxString message = "The interrupted save may have created incomplete files. Inspect these paths before removing the recovery marker:\n";
+			for (const auto& path : new_targets) message += "\n" + wxstr(path);
+			message += "\n\nThe marker is kept until it is resolved manually.";
+				DialogUtil::ShowTextBox(g_gui.root, "Incomplete save", message);
+		} else if (backup_otbm.empty()) {
+			DialogUtil::PopupDialog("Recovery marker found", "A recovery marker exists but does not identify a map backup or new target files. Inspect it and resolve it manually before saving another map.", wxOK | wxICON_WARNING);
+		}
 
 		// Query file retrieval if possible
 		if (!backup_otbm.empty()) {
@@ -306,26 +321,72 @@ bool Application::OnInit() {
 
 			if (ret == wxID_YES) {
 				// Recover if the user so wishes
-				auto restoreFile = [](const std::string& path) {
+				std::vector<std::string> failed_restores;
+				const std::array<std::string, 7> backups { backup_otbm, backup_house, backup_spawn, backup_monster, backup_npc, backup_zone, backup_waypoint };
+				for (const auto& path : backups) {
+					if (path.empty()) {
+						continue;
+					}
+					std::error_code ec;
+					if (path.back() != '~' || !std::filesystem::is_regular_file(std::filesystem::path(wxstr(path).ToStdWstring()), ec) || ec) {
+						failed_restores.push_back(path);
+					}
+				}
+				auto restoreFile = [&failed_restores](const std::string& path) {
 					if (!path.empty() && path.back() == '~') {
 						std::string target = path.substr(0, path.size() - 1);
-						std::remove(target.c_str());
-						std::rename(path.c_str(), target.c_str());
+						const std::filesystem::path backup_path(wxstr(path).ToStdWstring());
+						const std::filesystem::path target_path(wxstr(target).ToStdWstring());
+						std::error_code ec;
+						if (!std::filesystem::is_regular_file(backup_path, ec) || ec) {
+							failed_restores.push_back(path);
+							return;
+						}
+						std::filesystem::copy_file(backup_path, target_path, std::filesystem::copy_options::overwrite_existing, ec);
+						if (ec) {
+							spdlog::error("Failed to restore backup '{}': {}", path, ec.message());
+							failed_restores.push_back(path);
+						}
 					}
 				};
 
-				restoreFile(backup_otbm);
-				restoreFile(backup_house);
-				restoreFile(backup_spawn);
-				restoreFile(backup_monster);
-				restoreFile(backup_npc);
-				restoreFile(backup_zone);
-				restoreFile(backup_waypoint);
+				if (failed_restores.empty()) {
+					for (const auto& path : backups) {
+						restoreFile(path);
+					}
+				}
 
-				// Load the map
-				g_gui.LoadMap(wxstr(backup_otbm.substr(0, backup_otbm.size() - 1)));
-				return true;
+				if (!failed_restores.empty()) {
+					wxString message = "Some backups could not be restored. The recovery marker has been kept. Check these paths:\n";
+					for (const auto& path : failed_restores) {
+						message += "\n" + wxstr(path);
+					}
+					DialogUtil::PopupDialog("Recovery incomplete", message, wxOK | wxICON_ERROR);
+				} else {
+					std::error_code ec;
+						if (!recovery->legacy && new_targets.empty()) {
+							std::filesystem::remove(std::filesystem::path(save_failed_file.GetFullPath().ToStdWstring()), ec);
+						}
+					if (ec) {
+						spdlog::warn("Could not remove recovery marker: {}", ec.message());
+						} else if (!recovery->legacy && new_targets.empty()) {
+						for (const auto& path : backups) {
+							if (!path.empty()) {
+								std::error_code cleanup_error;
+								std::filesystem::remove(std::filesystem::path(wxstr(path).ToStdWstring()), cleanup_error);
+								if (cleanup_error) {
+									spdlog::warn("Could not remove restored backup '{}': {}", path, cleanup_error.message());
+								}
+							}
+						}
+					}
+
+						// Opening here can nest progress/warning loops before OnRun.
+						// Use the normal first-loop loading path after initialization.
+						m_file_to_open = wxstr(backup_otbm.substr(0, backup_otbm.size() - 1));
+				}
 			}
+		}
 		}
 	}
 	// Keep track of first event loop entry

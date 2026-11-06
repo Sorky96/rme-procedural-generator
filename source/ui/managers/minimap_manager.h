@@ -33,6 +33,8 @@ public:
 	bool IsVisible() const;
 	void InvalidateAll(const Map& map);
 	void MarkTileDirty(const Map& map, const Position& position);
+	// Allocate an empty slot before an atomic terrain/history transition; no invalidation yet.
+	void PrepareInvalidationSlot(const Map& map);
 	PendingMinimapInvalidation TakePendingInvalidation(const Map& map);
 
 	MinimapWindow* GetWindow() {

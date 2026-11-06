@@ -22,7 +22,9 @@
 #include <ranges>
 
 std::pair<std::string, std::string> MapXMLIO::normalizeMapFilePaths(const wxFileName& dir, const std::string& filename) {
-	wxFileName resolved(dir.GetPath(wxPATH_GET_SEPARATOR | wxPATH_GET_VOLUME), wxstr(filename));
+	// Parse a path as a path: the (directory, filename) overload accepts only
+	// a basename and asserts for a configured nested or absolute companion.
+	wxFileName resolved(wxstr(filename));
 	resolved.Normalize(wxPATH_NORM_ALL, dir.GetPath());
 
 	// Security: Prevent path traversal attacks by ensuring the resolved sidecar path

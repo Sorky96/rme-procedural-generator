@@ -523,7 +523,10 @@ bool EditorManager::CanRedo() {
 bool EditorManager::DoUndo() {
 	Editor* editor = GetCurrentEditor();
 	if (editor && editor->actionQueue->canUndo()) {
-		editor->actionQueue->undo();
+		if (!editor->actionQueue->undo()) {
+			g_status.SetStatusText("Cannot undo: the house is missing or the required ID is in use");
+			return false;
+		}
 		if (!editor->selection.empty()) {
 			g_gui.SetSelectionMode();
 		}
@@ -541,7 +544,10 @@ bool EditorManager::DoUndo() {
 bool EditorManager::DoRedo() {
 	Editor* editor = GetCurrentEditor();
 	if (editor && editor->actionQueue->canRedo()) {
-		editor->actionQueue->redo();
+		if (!editor->actionQueue->redo()) {
+			g_status.SetStatusText("Cannot redo: the house is missing or the required ID is in use");
+			return false;
+		}
 		if (!editor->selection.empty()) {
 			g_gui.SetSelectionMode();
 		}

@@ -21,6 +21,7 @@
 
 #include "editor/editor.h"
 #include "map/tile.h"
+#include "lua/lua_lifetime_observer.h"
 #include "map/tile_operations.h"
 #include "ui/gui.h"
 #include "ui/managers/minimap_manager.h"
@@ -142,6 +143,7 @@ bool Tile::hasHouseExit(uint32_t exit) const {
 }
 
 Tile::~Tile() {
+	LuaAPI::LifetimeObserver<Tile>::destroyed(this);
 	if (ownedLocation) {
 		delete ownedLocation;
 		ownedLocation = nullptr;

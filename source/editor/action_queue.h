@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <span>
+#include <stop_token>
 #include "editor/action.h"
 
 class Editor;
@@ -44,8 +46,9 @@ public:
 	void addBatch(std::unique_ptr<BatchAction> action, int stacking_delay = 0);
 	void addAction(std::unique_ptr<Action> action, int stacking_delay = 0);
 
-	void undo();
-	void redo();
+	bool isApplyingTerrain() const noexcept { return applyingTerrain; }
+	bool undo();
+	bool redo();
 	void clear();
 
 	bool canUndo() {
@@ -62,6 +65,13 @@ public:
 		return actions.size();
 	}
 	std::string getActionName(size_t index) const;
+
+private:
+	bool applyingTerrain = false;
+	// Prepared terrain only: reserve before apply, never merge, notify after publication.
+	bool commitTerrainBatch(std::unique_ptr<BatchAction> batch, std::span<const Position> positions, std::stop_token stop);
+	void notifyTerrainTransition(bool selectionCountChanged = false) noexcept;
+	friend class DrawOperations;
 
 protected:
 	size_t current;

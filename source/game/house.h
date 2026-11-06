@@ -35,6 +35,9 @@ public:
 	uint32_t getID() const {
 		return id;
 	}
+	uint64_t getGeneration() const noexcept {
+		return generation;
+	}
 	void setID(uint32_t newId) {
 		this->id = newId;
 	}
@@ -83,6 +86,7 @@ public:
 
 private:
 	uint32_t id;
+	const uint64_t generation;
 
 protected:
 	Map* map;
@@ -133,7 +137,8 @@ public:
 
 	void removeHouse(House* house_to_remove);
 	void changeId(House* house, uint32_t newID);
-	bool addHouse(std::unique_ptr<House> new_house);
+		// Ownership transfers only after successful insertion; refusal/exception preserves the caller's house.
+		bool addHouse(std::unique_ptr<House>&& new_house);
 	House* getHouse(uint32_t houseid);
 	const House* getHouse(uint32_t houseid) const;
 	uint32_t getEmptyID();

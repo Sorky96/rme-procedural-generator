@@ -26,6 +26,11 @@
 
 #include <format>
 #include <algorithm>
+#include <atomic>
+
+namespace {
+std::atomic_uint64_t nextHouseGeneration { 1 };
+}
 
 Houses::Houses(Map& map) :
 	map(map),
@@ -50,17 +55,19 @@ uint32_t Houses::getEmptyID() {
 	return ++max_house_id;
 }
 
-bool Houses::addHouse(std::unique_ptr<House> new_house) {
+bool Houses::addHouse(std::unique_ptr<House>&& new_house) {
 	ASSERT(new_house);
-	HouseMap::iterator it = houses.find(new_house->id);
-	if (it != houses.end()) {
+	// Allocate the map node before changing either ownership or house metadata.
+	// In particular, an Undo action must retain its house when allocation fails.
+	auto [it, inserted] = houses.try_emplace(new_house->id);
+	if (!inserted) {
 		return false;
 	}
 	new_house->map = &map;
 	if (new_house->id > max_house_id) {
 		max_house_id = new_house->id;
 	}
-	houses[new_house->id] = std::move(new_house);
+	it->second = std::move(new_house);
 	return true;
 }
 
@@ -75,11 +82,11 @@ void Houses::removeHouse(House* house_to_remove) {
 void Houses::changeId(House* house, uint32_t newID) {
 	ASSERT(house);
 	auto it = houses.find(house->id);
-	if (it != houses.end()) {
-		auto house_ptr = std::move(it->second);
-		houses.erase(it);
-		house_ptr->setID(newID);
-		houses[newID] = std::move(house_ptr);
+	if (it != houses.end() && (newID == house->id || houses.find(newID) == houses.end())) {
+		auto node = houses.extract(it);
+		node.key() = newID;
+		house->setID(newID);
+		houses.insert(std::move(node));
 	}
 
 	// id list structure changed, prepare search for new free slot
@@ -105,6 +112,7 @@ const House* Houses::getHouse(uint32_t houseid) const {
 
 House::House(Map& map) :
 	id(0),
+	generation(nextHouseGeneration.fetch_add(1, std::memory_order_relaxed)),
 	rent(0),
 	townid(0),
 	guildhall(false),

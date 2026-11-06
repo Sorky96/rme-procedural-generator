@@ -19,12 +19,17 @@
 #define RME_LUA_ENGINE_H
 
 #include "lua_sol_config.h"
+#include "lua_object_registry.h"
+#include "lua_lifetime_observer.h"
 
 #include <lua.hpp>
 
 #include <string>
 #include <functional>
 #include <memory>
+
+class Item;
+class Tile;
 
 class LuaEngine {
 public:
@@ -51,6 +56,9 @@ public:
 	const sol::state& getState() const {
 		return lua;
 	}
+
+	LuaAPI::ObjectRegistry<Item>& itemReferences() { return itemRegistry; }
+	LuaAPI::ObjectRegistry<Tile>& tileReferences() { return tileRegistry; }
 
 	// Error handling
 	std::string getLastError() const {
@@ -102,6 +110,10 @@ public:
 	void setPrintCallback(PrintCallback callback);
 
 private:
+	LuaAPI::ObjectRegistry<Item> itemRegistry;
+	LuaAPI::ObjectRegistry<Tile> tileRegistry;
+	LuaAPI::LifetimeObserver<Item> itemObserver { itemRegistry };
+	LuaAPI::LifetimeObserver<Tile> tileObserver { tileRegistry };
 	sol::state lua;
 	std::string lastError;
 	bool initialized;
