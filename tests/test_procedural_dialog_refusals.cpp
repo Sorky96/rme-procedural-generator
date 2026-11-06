@@ -203,7 +203,7 @@ public:
 		}
 		return true;
 	}
-	void OnExit() override { probe.reset(); trace.reset(); }
+	void OnExit() override { probe.reset(); (void)trace.release(); } // wx deletes the active log target at shutdown
 
 private:
 	void idle(wxIdleEvent& event) {

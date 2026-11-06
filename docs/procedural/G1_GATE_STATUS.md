@@ -15,7 +15,7 @@ Rdzeń C++, resolver i sandbox mają dowody dla seedów, błędnych wejść i de
 
 Anulowanie aktywnego Preview 500×500 ma aktualny dowód. Natywne odmowy Preview, w tym jednorazowa awaria alokacji halo, oraz edycja seeda i zamknięcie dialogu w trakcie pracy mają dowód funkcjonalny na EXE `1660d46b…`. Porównanie manifestów z `15c25557…` wykazało zmiany w `terrain_preparation.cpp` i `terrain_generator_dialog.cpp`. Ponowienie `--refusals` na drzewie z 2026-11-06 (`NEW_RUN_REFUSALS_2`, EXE obserwatora `6de317d2…`, produkcyjny `b87d1abb…`) przeszło funkcjonalnie: sześć przypadków i `REFUSAL_PASS`, verifier `PARTIAL…FOCUS_WARNING` jak poprzednio. To odświeża dowód dla zmiany preflightu. Współistnienie wyników, wycieki oraz zakres testu ograniczenia wariantów i prób naprawy pozostają otwarte. [Cancel](G1_CANCEL.md), [odmowy](G1_REFUSALS.md), [unieważnienie](G1_INVALIDATION.md)
 
-Pomiar Preview 100×100 na etapowym buildzie wykonano 2026-11-06 (patrz niżej). Diagnoza `SetFocus` w przebiegu odmów: [G1_FOCUS_TRACE.md](G1_FOCUS_TRACE.md#stan-okien-przy-błędzie-w-przebiegu-odmów-2026-11-06); w pozostałych przebiegach pozostaje hipotezą.
+Pomiar Preview 100×100 na etapowym buildzie wykonano 2026-11-06 (patrz niżej). Diagnoza `SetFocus` w przebiegu odmów: [G1_FOCUS_TRACE.md](G1_FOCUS_TRACE.md#stan-okien-przy-błędzie-w-przebiegu-odmów-2026-11-06); przy zamykaniu aplikacji: patrz [zamykanie](G1_FOCUS_TRACE.md#zamykanie-aplikacji-i-kod-wyjścia-próbników-2026-11-06); stos aktywacji z 2026-11-04 pozostaje niewyjaśniony.
 
 ## Wstępne progi zasobów (2026-11-06)
 

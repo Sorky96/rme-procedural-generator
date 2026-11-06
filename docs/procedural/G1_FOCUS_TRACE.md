@@ -40,3 +40,13 @@ Czego to **nie** pokazuje: dwa wcześniejsze stosy (aktywacja ramki przy otwarty
 ```text
 rtk proxy <PY> docs/procedural/smoke/g1_run_dialog_probe.py local-data/procedural-smoke/NEW_RUN local-data/procedural-smoke/g0-reference-profile-20261030/data local-data/procedural-smoke/g0-reference-profile-20261030/config.toml --refusals --focus-trace
 ```
+
+## Zamykanie aplikacji i kod wyjścia próbników (2026-11-06)
+
+Przebieg `g1-focus-rt-20261106` (`--roundtrip --focus-trace`, 100×100) zakończył się `ROUNDTRIP_PASS` i jednym ostrzeżeniem `SetFocus` (stderr wypisuje je dwukrotnie przez łańcuch logowania). Stos: File → Exit → `MainFrame::DoQuerySave` → `EditorManager::CloseCurrentEditor` → `MapTabbook::DeleteTab` → `wxAuiNotebook::DoRemovePage` → `DoModifySelection` → `wxWindow::SetFocus`. Stan okien w tej chwili: główna ramka wyłączona (`wx_enabled=0`), widoczne okno „Closing” (włączone, foreground, niemodalne w sensie `IsModal`). Zgodnie z testem Win32 z sekcji powyżej (cel lub przodek wyłączony daje błąd 87) jest to ten sam mechanizm: wx wybiera kolejną kartę po usunięciu aktywnej i ustawia fokus w ramce, którą okno „Closing” wyłączyło na czas zamykania. Aplikacja się kończy, więc fokus nie ma tu skutku; nie zbadano, czy poza zamykaniem zachowuje się inaczej.
+
+Przebieg powtórzono z dodatkowym zapisem stanu okien w `g1-focus-rt-c-20261106`: pełny `ROUNDTRIP_PASS`, to samo jedno ostrzeżenie z tym samym stosem.
+
+**Kod wyjścia próbników ze śladem.** Dwa przebiegi ze śladem (`g1-focus-state-b-20261106` i `g1-focus-rt-20261106`) kończyły się kodem `0xC0000374` (uszkodzenie sterty) po końcowym markerze, a przebiegi bez śladu kodem 0. Przyczyna po lekturze kodu wx: `ProceduralFocusTrace` jest aktywnym celem logowania, a wx przy zamykaniu wykonuje `delete wxLog::SetActiveTarget(nullptr)` (`init.cpp`), podczas gdy próbnik usuwał ten sam obiekt przez `unique_ptr` (podwójne usunięcie). Próbniki zwalniają teraz własność (`trace.release()`). Przebieg `g1-focus-rt-c-20261106` po tej zmianie ma pełny `ROUNDTRIP_PASS` i kod wyjścia 0. Wniosek opiera się na dwóch przebiegach z uszkodzeniem i jednym bez po zmianie; to był błąd próbnika diagnostycznego, produkcyjny EXE nie zawiera tego kodu. Przebiegi z kodem `0xC0000374` zachowano bez zaliczenia.
+
+Niewyjaśniony pozostaje stos z 2026-11-04 (aktywacja ramki przy otwartym generatorze w przebiegu unieważniania): nie ma dla niego zapisanego stanu okien, a dzisiejsze przebiegi go nie odtworzyły.

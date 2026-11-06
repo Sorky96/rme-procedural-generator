@@ -10,6 +10,7 @@
 #include "editor/editor.h"
 #include "editor/persistence/editor_persistence.h"
 #include "procedural/adapter/snapshot_equal.h"
+#include "procedural_focus_trace.h"
 #include "procedural/adapter/terrain_preparation.h"
 #include "ui/gui.h"
 #include "ui/gui_ids.h"
@@ -434,10 +435,11 @@ public:
 		}
 		return true;
 	}
-	void OnExit() override { probe.reset(); }
+	void OnExit() override { probe.reset(); (void)trace.release(); } // wx deletes the active log target at shutdown
 private:
 	void idle(wxIdleEvent& event) {
 		event.Skip();
+		if (!trace && fs::is_regular_file(".g1-focus-trace")) trace = std::make_unique<ProceduralFocusTrace>();
 		if (!g_gui.root || !wxApp::IsMainLoopRunning() || !g_gui.root->IsEnabled() || probe) return;
 		try {
 			probe = std::make_unique<RoundtripProbe>();
@@ -447,6 +449,7 @@ private:
 		}
 	}
 	std::unique_ptr<RoundtripProbe> probe;
+	std::unique_ptr<ProceduralFocusTrace> trace;
 	wxDECLARE_DYNAMIC_CLASS(RoundtripProbeModule);
 };
 wxIMPLEMENT_DYNAMIC_CLASS(RoundtripProbeModule, wxModule);

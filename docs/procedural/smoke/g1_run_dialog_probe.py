@@ -45,8 +45,8 @@ if args.roundtrip_timing and not args.roundtrip:
     parser.error('--roundtrip-timing requires --roundtrip')
 if args.invalidation and (args.resources or args.matrix or args.refusals or args.roundtrip):
     parser.error('--invalidation runs independently')
-if args.focus_trace and not (args.invalidation or args.refusals):
-    parser.error('--focus-trace requires --invalidation or --refusals')
+if args.focus_trace and not (args.invalidation or args.refusals or args.roundtrip):
+    parser.error('--focus-trace requires --invalidation, --refusals or --roundtrip')
 repo=Path(__file__).resolve().parents[3]
 if not args.output.is_relative_to(repo/'local-data/procedural-smoke'):
     raise ValueError('Output must be a NEW private procedural-smoke directory')

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-06 — G1: SetFocus przy zamykaniu i błąd próbnika śladu
+
+Ślad z `--roundtrip --focus-trace` pokazał, że `SetFocus` przy File → Exit pochodzi z `MapTabbook::DeleteTab` przy ramce wyłączonej przez okno „Closing” (błąd Win32 87). Przebiegi ze śladem kończyły się `0xC0000374`, bo `ProceduralFocusTrace` był usuwany dwa razy (`unique_ptr` i wx przy zamykaniu); po zwolnieniu własności kod wyjścia to 0. Sesje live uznano za poza zakresem G1. Stos aktywacji z 2026-11-04 nadal bez wyjaśnienia. Zmiana w kodzie produkcyjnym nie była wprowadzana.
+
 ## 2026-11-06 — G1: lista Fazy 1 uzupełniona o dowody
 
 Lista Fazy 1 w `PROJECT_RME_PROCEDURAL_GENERATOR.md` pokazywała nieodhaczone pozycje, dla których istniały już dowody (resolver, commit z Undo/Redo, dialog, testy). Odhaczono je z odnośnikami do raportów; jedna pozycja (testy diffu, anulowania, budżetu, unieważnienia) zostaje częściowa: brak rzeczywistej sesji sieciowej live i nie wszystkich miejsc awarii alokacji. Użytkownik uznał wzrost pamięci w serii 200 cykli za niebędący blokerem. Bramka G1 pozostaje IN PROGRESS. Nie weryfikowano na nowo samych dowodów, tylko ich odwzorowanie na listę.
