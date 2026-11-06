@@ -9,6 +9,9 @@
 #include "app/client_version.h"
 #include "item_definitions/core/missing_item_report.h"
 
+#include <cstdint>
+#include <string_view>
+
 struct MaterialManifestFiles;
 
 class VersionManager {
@@ -22,6 +25,11 @@ public:
 	// The current version loaded (returns CLIENT_VERSION_NONE if no version is loaded)
 	const ClientVersion& GetCurrentVersion() const;
 	ClientVersionID GetCurrentVersionID() const;
+	// Borrowed loaded identifier; invalidated by unload/reload. Allows byte-limit
+	// validation before copying a potentially large configured client name.
+	[[nodiscard]] std::string_view GetCurrentVersionIDView() const noexcept {
+		return loaded_version;
+	}
 
 	// If any version is loaded at all
 	bool IsVersionLoaded() const {
@@ -44,6 +52,12 @@ public:
 
 	[[nodiscard]] wxString GetModularDataPath() const;
 
+	// Advances before every unload/reload, including failed reloads. A no-op load
+	// keeps it unchanged. GUI-thread only; independent asset edits need validation too.
+	[[nodiscard]] uint64_t GetAssetRevision() const noexcept {
+		return asset_revision;
+	}
+
 private:
 	bool LoadDataFiles(wxString& error, std::vector<std::string>& warnings);
 	void FailDataLoad();
@@ -57,6 +71,7 @@ private:
 	ClientVersionID loaded_version;
 	MissingItemReport last_missing_items;
 	bool last_load_has_otb = true;
+	uint64_t asset_revision = 0;
 };
 
 extern VersionManager g_version;

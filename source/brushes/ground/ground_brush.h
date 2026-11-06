@@ -19,12 +19,16 @@
 #define RME_GROUND_BRUSH_H
 
 #include "brushes/brush.h"
+#include <optional>
+
+namespace rme::procedural { struct GenerationAssetReader; }
 
 //=============================================================================
 
 class GroundBrush : public TerrainBrush {
 	friend class GroundBrushLoader;
 	friend class GroundBorderCalculator;
+	friend struct rme::procedural::GenerationAssetReader;
 
 public:
 	struct SpecificCaseBlock {
@@ -79,6 +83,10 @@ public:
 		}
 		return 0;
 	}
+
+	// Explicit roll for the procedural resolver, without advancing global RNG.
+	// Uses the existing brush's legacy cumulative-chance and fallback rules.
+	[[nodiscard]] std::optional<uint16_t> getPlacementItemIdForRoll(int roll) const;
 
 	static void doBorders(BaseMap* map, Tile* tile);
 	static const BorderBlock* getBrushTo(GroundBrush* first, GroundBrush* second);

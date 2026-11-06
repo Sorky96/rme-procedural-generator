@@ -313,6 +313,8 @@ void VersionManager::RegisterCreaturesFromOpenMaps() {
 }
 
 void VersionManager::UnloadVersion(bool full_clear) {
+	// Invalidate captured revisions even when the following teardown/load throws.
+	++asset_revision;
 	UnnamedRenderingLock();
 	g_gui.ReleaseAllChunkCaches();
 	g_gui.gfx.clear();

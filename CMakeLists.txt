@@ -259,3 +259,5 @@ target_compile_features(test_recovery_marker PRIVATE cxx_std_23)
 target_include_directories(test_recovery_marker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/source)
 add_test(NAME test_recovery_marker COMMAND test_recovery_marker)
 
+# Procedural G1-A: semantic core has no dependency on the editor or GUI.
+add_subdirectory(source/procedural)

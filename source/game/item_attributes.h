@@ -113,6 +113,12 @@ public:
 
 	void clearAllAttributes();
 	ItemAttributeMap getAttributes() const;
+	// Borrowed read-only access for bounded snapshots; unlike getAttributes(),
+	// this does not allocate a second copy before its memory has been checked.
+	// Valid until this object is destroyed or its attributes are modified.
+	[[nodiscard]] const ItemAttributeMap* getAttributesView() const noexcept {
+		return attributes;
+	}
 
 protected:
 	ItemAttributeMap* attributes;

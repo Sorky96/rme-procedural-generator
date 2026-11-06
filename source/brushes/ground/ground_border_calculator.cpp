@@ -12,7 +12,7 @@
 #include <array>
 #include <algorithm>
 
-void GroundBorderCalculator::calculate(BaseMap* map, Tile* tile) {
+void GroundBorderCalculator::calculate(BaseMap* map, Tile* tile, bool deterministicSpecificOrder) {
 	static const auto extractGroundBrushFromTile = [](BaseMap* map, int x, int y, int z) -> GroundBrush* {
 		Tile* tile = map->getTile(x, y, z);
 		if (tile) {
@@ -281,9 +281,22 @@ void GroundBorderCalculator::calculate(BaseMap* map, Tile* tile) {
 		return a.z < b.z;
 	});
 
-	std::ranges::sort(specificList);
-	auto [first, last] = std::ranges::unique(specificList);
-	specificList.erase(first, last);
+	if (deterministicSpecificOrder) {
+		// Keep the first occurrence of each block in neighbour traversal order. The list holds at most
+		// a few entries per tile, so the quadratic scan is cheap and needs no extra container.
+		const auto kept_begin = specificList.begin();
+		auto kept_end = kept_begin;
+		for (const GroundBrush::BorderBlock* borderBlock : specificList) {
+			if (std::find(kept_begin, kept_end, borderBlock) == kept_end) {
+				*kept_end++ = borderBlock;
+			}
+		}
+		specificList.erase(kept_end, specificList.end());
+	} else {
+		std::ranges::sort(specificList);
+		auto [first, last] = std::ranges::unique(specificList);
+		specificList.erase(first, last);
+	}
 
 	TileOperations::cleanBorders(tile);
 
