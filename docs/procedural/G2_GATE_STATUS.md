@@ -54,6 +54,17 @@ Uwaga: koncepcja dobra, piasek nieregularny, miejscami trawa powinna się wcina�
 - Odcisk Seed 1729 100×100: 7666204984290374682. Test rdzenia, `--surface` (z `SURFACE_NEXT_TO_TERRAIN_PASS`) i `--commit` PASS (`g2f-surface-171132`, `g2f-commit-171132`), `pairs_without_border=0`, wiersze commitu G1 bez zmian.
 - **Niezweryfikowane:** wygląd w RME i czy to odpowiada intencji uwagi („kępy trawy w piasku” mogły oznaczać też izolowane kępy trawy wewnątrz piasku, czego ta zmiana nie robi: trawa wcina się tylko od zewnątrz); wpływ na roślinność (drzewa trzymają 2 kroki od brzegu, więc teren z szerszym piaskiem ma mniej drzew przy wodzie).
 
+## Przegląd wizualny kilku seedów (2026-11-07, zrzuty użytkownika)
+
+Zrzuty 250×250, „Natural surface”, roślinność włączona, zoom ok. 44–46%, kolejność 4242, 7, 1: [seed 4242](screenshots/g2-surface-seed-4242-20261107.webp), [seed 7](screenshots/g2-surface-seed-7-20261107.webp), [seed 1](screenshots/g2-surface-seed-1-20261107.webp). Użytkownik przesłał zrzuty bez oceny; poniżej obserwacje asystenta z samych zrzutów (nie ocena użytkownika, kryterium wizualne **nie jest zaliczone**).
+
+Widać dobrze: nieregularny, miejscami wcinający się piasek; drzewa trzymają się z dala od wody; źródła rzek przy skale (4242, 1); gładkie przejścia trawa/ziemia i bordery skały bez widocznych szczelin.
+
+Widać do poprawy:
+- **Seed 7:** mały kwadrat piasku (ok. 2×2 kafle) pośrodku dużego jeziora (wyspa z jednej komórki lądu otoczonej jeziorem dostaje pierścień brzegu); małe stawy (seed 7 i 1, lewa strona) mają pierścień piasku większy niż sama woda.
+- **Seed 1:** rzeka skręca pod kątem prostym i okrąża zieloną wyspę przy skale; szerokość zmienia się skokowo blokami (2 → 3 → 4), co wygląda prostokątnie, a nie jak koryto.
+- Rzeka na seedzie 1 wychodzi poza prawą krawędź widoku (widok nie obejmuje całego obszaru, więc jej początku nie oceniono).
+
 ## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
 
 | Próbnik | Przebieg | Wynik |

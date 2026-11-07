@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2: zrzuty kilku seedów (4242, 7, 1)
+
+Zrzuty zapisane w `docs/procedural/screenshots/`; użytkownik nie wystawił oceny. Obserwacje z zrzutów: piasek nieregularny i dobry, ale na seedzie 7 wyspa piasku w jeziorze, na seedzie 1 rzeka z kątami prostymi i skokową szerokością. Kryterium wizualne G2 nadal otwarte. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
 ## 2026-11-07 — G2: nieregularny brzeg jezior
 
 Po uwadze recenzenta (piasek równomierny, trawa powinna się wcinać): `shoreWidth` 3, pierwszy pierścień zawsze, dalsze według gładkiego szumu. Rozkład kafli piasku 1/2/3 kroki od wody 4253/3290/1273 (24 seedy 100×100). Test rdzenia, `--surface`, `--commit` PASS, odcisk Seed 1729 → 7666204984290374682. Wygląd w RME niezweryfikowany. [Szczegóły](procedural/G2_GATE_STATUS.md).
