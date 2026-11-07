@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2: poprawki wyglądu po pierwszym teście GUI
+
+Test GUI potwierdził Natural surface, Undo i Redo (po restarcie RME zniknęły nakładki „entry/spawn”, które nie pochodziły z generatora). Uwagi: ziemia „poszatkowana”, rzeki za wąskie. Zmieniono gładkie przejście trawa/ziemia z usuwaniem płatów < 24 komórek oraz poszerzenie rzek do ≥ 2 kafli; `test_procedural_surface` i `--surface` PASS, fingerprinty przepięte. Status **PARTIAL**: efekt wizualny czeka na ponowny ogląd w RME. [Raport](procedural/G2_CORE.md).
+
 ## 2026-11-07 — G2-B2: powierzchnia v2 w potoku Preview/Commit
 
 `GenerationConfig` (algorithm, surface), `GroundProfile` (count, 3 lub 6 brushy), przygotowanie, hash podglądu, resolver i dialog („Terrain style”) obsługują Surface obok niezmienionego Classic. Regresje G1 przeszły: resolver, `--preview` i `--commit` z fingerprintami zgodnymi z dokumentami G1. `--surface` end-to-end (przygotowanie, walidacja, commit jako jedno Undo, Undo, Redo) działa dla 100×100 i 250×250 po podniesieniu limitu Undo do 512 MiB; runner dał `passed: false` tylko przez dwa ostrzeżenia `SetFocus` w stderr (D1). Domyślny limit Undo 40 MiB odrzuca 250×250 (`HistoryRefused`). Dodano test-only zamykanie okna „Warnings” w próbnikach. Status **PARTIAL**: nie sprawdzono dialogu w GUI ani wyglądu w RME. [Raport](procedural/G2_PIPELINE.md).

@@ -43,3 +43,13 @@ Czasy (jedna seria, jedna maszyna, bez powtórzeń, nie wnioski o szybkości): 1
 - v2 nie jest podłączone do dialogu ani resolvera; resolver v1 indeksuje trzy brushe i nie przyjmuje nowych rodzajów.
 
 Następny krok: G2-B (adapter: mapa rodzaj → brush, brzegi przez istniejący `GroundBorderCalculator`, testy wielokierunkowych krawędzi i okolicy).
+
+## Zmiana po pierwszym teście GUI, 2026-11-07
+
+Pierwszy ogląd w RME (Natural surface 250×250, kilka seedów): jeziora z piaskiem i płaty skały wyglądały dobrze, ale ziemia wśród trawy była „poszatkowana”, a rzeki cienkie. Zmiany w `surface.cpp`:
+
+- Pas przejściowy trawa/ziemia to teraz gładkie przesunięcie progu wilgotności (szum wartościowy, krok 10), a nie szum per komórka. `transitionWidth` jest amplitudą tego przesunięcia. Płaty trawy i ziemi mniejsze niż 24 komórki (stała w kodzie, nie parametr) są wchłaniane przez otoczenie.
+- Każda trasa rzeki jest poszerzana o sąsiada wschodniego i południowego, więc rzeka nie ma odcinków o szerokości jednego kafla (jeziora zostają nietknięte).
+- Udział ziemi w otwartym terenie jest teraz przybliżony, bo przesunięcie i usuwanie płatów odchylają go od kwantyla `dirtPermille`.
+
+`test_procedural_surface` po zmianach: PASS. Udział ziemi 24,4–38,6 % (100×100, 24 seedy) i 28,0–32,0 % (250×250), krawędzie trawa–ziemia przy szerokości 0 vs 16000: 88 vs 251, punkty alokacji 150 z 150 zgłoszone. Przypięte fingerprinty zmieniły się, bo wynik algorytmu jest inny: seed 1729 100×100 = 15556827831682428334, 500×500 = 18160721199455356238 (wersja algorytmu w fingerprincie pozostaje 2, v2 nie było wydane). Ponowny przebieg `--surface` na kliencie 1098 (`g2-fix1-surface-20261107`): wszystkie znaczniki PASS (resolver, `SURFACE_E2E_PASS` 100 i 250), `passed: false` z tego samego powodu co wcześniej (stderr). Wizualnie poprawek **nie oceniono**: czeka na kolejny ogląd w RME. Rzeki nie mają testu minimalnej szerokości.

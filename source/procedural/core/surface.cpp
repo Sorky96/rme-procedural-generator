@@ -19,6 +19,8 @@ constexpr uint64_t riverStream = 0x72697665725f7332ULL;    // "river_s2"
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
 constexpr uint32_t noiseBins = 65536;
 constexpr int64_t fixedOne = 4096;
+constexpr uint32_t transitionStep = 10;  // lattice step of the grass/dirt edge wobble
+constexpr uint32_t minPatchCells = 24;   // smaller grass or dirt patches are absorbed
 
 uint64_t mix(uint64_t value) {
 	value += 0x9e3779b97f4a7c15ULL;
@@ -242,28 +244,40 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				}
 				if (route.size() >= config.tuning.minRiverLength) for (const auto cell : route) river[cell] = 1;
 			}
+			// Widen every route to at least two cells: the route is 4-connected, so adding the
+			// east and south neighbour of each cell leaves no one-cell-wide stretch. Lakes are kept.
+			const auto route2 = river;
+			for (size_t i = 0; i < count; ++i) {
+				if (!route2[i]) continue;
+				const uint32_t x = uint32_t(i % width), y = uint32_t(i / width);
+				if (x + 1 < width && !lake[i + 1]) river[i + 1] = 1;
+				if (y + 1 < height && !lake[i + width]) river[i + width] = 1;
+			}
 		}
 
 		// Final kinds. Priority: river > shore > lake > rock > dry/wet land.
+		// Dry land splits into grass and dirt by moisture. The transition band is a smooth
+		// offset (not per-cell noise), so edges wander instead of speckling, and patches
+		// smaller than minPatchCells are absorbed by the surrounding kind.
 		const uint32_t dirtLevel = lowCut(moisture, config.tuning.dirtPermille);
-		const int64_t bandStart = int64_t(dirtLevel) - config.tuning.transitionWidth;
-		const int64_t bandWidth = int64_t(config.tuning.transitionWidth) * 2;
-		std::vector<SurfaceKind> kinds(count, SurfaceKind::Grass);
+		std::vector<uint8_t> dirt(count, 0), grass(count, 0);
 		for (size_t i = 0; i < count; ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return cancelled();
-			if (lake[i]) { kinds[i] = SurfaceKind::Lake; continue; }
-			if (rock[i]) { kinds[i] = SurfaceKind::Rock; continue; }
-			bool grass;
-			if (bandWidth == 0) {
-				grass = moisture[i] >= dirtLevel;
-			} else {
-				const int64_t wet = std::clamp<int64_t>(int64_t(moisture[i]) - bandStart, 0, bandWidth);
-				const uint32_t ax = uint32_t(config.region.x) + uint32_t(i % width);
-				const uint32_t ay = uint32_t(config.region.y) + uint32_t(i / width);
-				const int64_t roll = lattice(config.seed, ditherStream, ax, ay);
-				grass = roll * bandWidth < wet * noiseBins;
-			}
-			kinds[i] = grass ? SurfaceKind::Grass : SurfaceKind::Dirt;
+			if (lake[i] || rock[i]) continue;
+			const uint32_t ax = uint32_t(config.region.x) + uint32_t(i % width);
+			const uint32_t ay = uint32_t(config.region.y) + uint32_t(i / width);
+			const int64_t offset = (int64_t(valueNoise(config.seed, ditherStream, ax, ay, transitionStep)) - noiseBins / 2) *
+				int64_t(config.tuning.transitionWidth) / (noiseBins / 2);
+			dirt[i] = int64_t(moisture[i]) + offset < int64_t(dirtLevel);
+		}
+		if (!dropSmall(dirt, width, height, minPatchCells, stop)) return cancelled();
+		for (size_t i = 0; i < count; ++i) grass[i] = !lake[i] && !rock[i] && !dirt[i];
+		if (!dropSmall(grass, width, height, minPatchCells, stop)) return cancelled();
+		std::vector<SurfaceKind> kinds(count, SurfaceKind::Grass);
+		for (size_t i = 0; i < count; ++i) {
+			if (lake[i]) kinds[i] = SurfaceKind::Lake;
+			else if (rock[i]) kinds[i] = SurfaceKind::Rock;
+			else kinds[i] = grass[i] ? SurfaceKind::Grass : SurfaceKind::Dirt;
 		}
 		if (config.tuning.shoreWidth) {
 			std::vector<uint8_t> wet = lake;
