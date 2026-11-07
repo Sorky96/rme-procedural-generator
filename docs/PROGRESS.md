@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G3-D: ekstrakcja cech i raport zbiorczy (PARTIAL)
+
+Dodano `extractFeatures` (sąsiedztwo gruntów, bloki 16/32/64, cechy per piętro, częstość cech vs odległość od gruntu nieprzechodniego) i renderery JSON/MD/CSV (liczby całkowite, bez czasu i locale), próbnik zapisuje 7 plików. `forgotten.otbm`: 100,0 % pokrycia, dwa przebiegi bajtowo identyczne we wszystkich plikach; fixture z `unknown`: 98,7 %. Test na mapie 3×2 policzonej ręcznie PASS. Nie zrobiono: rzek, jaskiń, szlaków, osad, mikrostruktur, testu podobieństwa, HTML; tylko jedna referencja. Szczegóły: [G3_FEATURES.md](procedural/G3_FEATURES.md). Następne: G3-E (powtarzalność na kilku referencjach, pamięć, anulowanie), brakujące cechy z sekcji 4.2.
+
 ## 2026-11-07 — G3-C: regiony i topologia (PARTIAL)
 
 Dodano `analyzeTopology` (rdzeń): składowe przechodnie, regiony tego samego gruntu (nieprzechodnie, zamknięte) i cechy pięter, bez ID i nazw, z anulowaniem. `forgotten.otbm`: 95 103 pola przechodnie, na piętrze 7 największa składowa 22 634 z 46 534 pól, sumy kafli zgodne, dwa przebiegi bajtowo identyczne. Nie zrobiono wąskich gardeł, rzek/jaskiń/szlaków, połączeń pięter; liczenia nie porównano z niezależną implementacją. Szczegóły: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md). Następne: G3-D (feature extraction i raport zbiorczy), wąskie gardła, kontenery.

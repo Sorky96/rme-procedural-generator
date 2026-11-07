@@ -4,6 +4,8 @@
 #include "ui/gui.h"
 #include "app/managers/version_manager.h"
 #include "procedural/adapter/reference_import.h"
+#include "procedural/core/feature_report.h"
+#include "procedural/core/features.h"
 #include "procedural/core/topology.h"
 #include <wx/module.h>
 #include <wx/log.h>
@@ -130,6 +132,17 @@ void runProbe() {
         const auto topology = analyzeTopology(normalized->map, normalized->semantic, topologyOptions, {});
         check(topology.has_value(), "Topology analysis failed");
         { std::ofstream report(root / "topology-report.json", std::ios::binary); report << renderTopology(*normalized, *topology, topologyOptions); }
+        const auto features = extractFeatures(normalized->map, *topology, FeatureOptions {}, {});
+        check(features.has_value(), "Feature extraction failed");
+        const ReportInput reportInput = makeReportInput(*normalized, *topology, *features, topologyOptions);
+        fs::create_directory(root / "analysis");
+        auto writeText = [&](const std::string& name, const std::string& text) {
+            std::ofstream file(root / "analysis" / name, std::ios::binary);
+            file << text;
+        };
+        writeText("reference-analysis.json", renderJson(reportInput));
+        writeText("reference-analysis.md", renderMarkdown(reportInput));
+        for (const CsvTable table : allCsvTables) writeText(std::string(csvTableName(table)) + ".csv", renderCsv(reportInput, table));
         log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();
         std::_Exit(0);

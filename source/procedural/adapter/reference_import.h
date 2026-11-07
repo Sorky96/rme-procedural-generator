@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "procedural/core/feature_report.h"
 #include "procedural/core/reference_header.h"
 #include "procedural/core/semantic_map.h"
 
@@ -67,5 +68,9 @@ struct NormalizedReference {
 
 [[nodiscard]] std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	const std::filesystem::path& file, const ReferenceImportLimits& limits, const SemanticBudget& budget);
+
+// Fills the consolidated report input from an import. The referenced objects must outlive it.
+[[nodiscard]] ReportInput makeReportInput(const NormalizedReference& normalized, const TopologyReport& topology,
+	const FeatureSet& features, const TopologyOptions& options);
 
 } // namespace rme::procedural

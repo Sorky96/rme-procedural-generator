@@ -236,4 +236,26 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	return result;
 }
 
+ReportInput makeReportInput(const NormalizedReference& normalized, const TopologyReport& topology,
+	const FeatureSet& features, const TopologyOptions& options) {
+	const ReferenceImportSummary& summary = normalized.summary;
+	ReportInput input;
+	input.sha256 = summary.sha256;
+	input.clientId = summary.clientId;
+	input.compatibility = compatibilityName(summary.compatibility);
+	input.header = summary.header;
+	input.tiles = summary.tileCount;
+	input.items = summary.itemCount;
+	input.unknownGround = summary.unknownGround;
+	input.unknownItems = summary.unknownItems;
+	input.loaderWarnings = summary.loaderWarnings;
+	for (const auto& [id, count] : summary.unknownIds) input.unknownIds.push_back({id, count});
+	input.topologyOptions = options;
+	input.map = &normalized.map;
+	input.semantic = &normalized.semantic;
+	input.topology = &topology;
+	input.features = &features;
+	return input;
+}
+
 } // namespace rme::procedural

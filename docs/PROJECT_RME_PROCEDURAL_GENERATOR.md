@@ -352,11 +352,11 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 3 - Import i analiza map referencyjnych
 
-- [ ] Lokalny import OTBM, wykrywanie zgodności item/asset.
-- [ ] Normalizator map do reprezentacji semantycznej + `unknown` reports.
-- [ ] Rozpoznawanie regionów, biomów, cech topologicznych, pięter.
-- [ ] Feature extraction + raport CSV/JSON/HTML lub MD.
-- [ ] Testy na minimum kilku własnych fixture i na referencjach użytkownika, bez publikacji referencji.
+- [~] Lokalny import OTBM, wykrywanie zgodności item/asset. Część wykonana 2026-11-07, jedna referencja: [G3_IMPORT.md](procedural/G3_IMPORT.md).
+- [~] Normalizator map do reprezentacji semantycznej + `unknown` reports. 2026-11-07, fixture i jedna referencja: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md).
+- [~] Rozpoznawanie regionów, biomów, cech topologicznych, pięter. 2026-11-07, bez wąskich gardeł i nazwanych biomów: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md).
+- [~] Feature extraction + raport CSV/JSON/HTML lub MD. 2026-11-07, JSON/MD/CSV, bez HTML i bez części cech z 4.2: [G3_FEATURES.md](procedural/G3_FEATURES.md).
+- [ ] Testy na minimum kilku własnych fixture i na referencjach użytkownika, bez publikacji referencji. Fixture własne są, referencja jedna (`forgotten.otbm`); brak kilku.
 
 **G3:** dla każdej mapy referencyjnej generowany jest powtarzalny raport, statystyki i mapa semantyczna.
 
