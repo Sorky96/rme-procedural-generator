@@ -232,37 +232,49 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			});
 		}
 
-		// Rivers: sources from the highest quarter of dry cells; a route shorter than
-		// minRiverLength own cells is dropped. The draw count never depends on acceptance.
+		// Rivers spring from rock: a source is a random rock cell and the route starts at the first
+		// non-rock cell downhill, so a river leaves the edge of a rock patch instead of appearing in
+		// open land. Without rock there are no rivers. A route shorter than minRiverLength own cells
+		// is dropped. The draw count never depends on acceptance.
 		std::vector<uint8_t> river(count, 0);
 		if (config.tuning.riverCount) {
-			const uint32_t highLevel = lowCut(elevation, 750);
 			std::vector<uint32_t> sources;
 			for (size_t i = 0; i < count; ++i) {
-				if (!lake[i] && elevation[i] >= highLevel) sources.push_back(uint32_t(i));
+				if (rock[i]) sources.push_back(uint32_t(i));
 			}
 			StableRandom random(config.seed, riverStream);
 			std::vector<uint32_t> route;
+			// Number of accepted routes through a cell: a tributary adds its flow to every cell
+			// downstream of the junction, so a river is thin at its source and thicker after each merge.
+			std::vector<uint16_t> flow(count, 0);
 			for (uint32_t index = 0; index < config.tuning.riverCount && !sources.empty(); ++index) {
 				if (stop.stop_requested()) return cancelled();
 				route.clear();
-				for (int64_t cell = sources[random.bounded(sources.size())];
-					cell != noParent && !lake[cell] && !river[cell]; cell = parent[cell]) {
+				int64_t cell = sources[random.bounded(sources.size())];
+				while (cell != noParent && rock[cell]) cell = parent[cell];
+				for (; cell != noParent && !lake[cell] && !river[cell]; cell = parent[cell]) {
 					route.push_back(uint32_t(cell));
 				}
-				if (route.size() >= config.tuning.minRiverLength) for (const auto cell : route) river[cell] = 1;
+				if (route.size() < config.tuning.minRiverLength) continue;
+				for (const auto routeCell : route) { river[routeCell] = 1; flow[routeCell] = 1; }
+				for (int64_t down = parent[route.back()]; down != noParent && !lake[down]; down = parent[down]) ++flow[down];
 			}
-			// Widen every route to at least two cells: each route cell becomes the corner of a full
-			// 2x2 block (east, south and south-east neighbours), so no stretch or headwater tip is
-			// one cell wide. Lakes are kept.
+			// Widen each route cell into a block of 2 (flow 1), 3 (flow 2-3) or 4 (flow 4+) cells,
+			// so no stretch or headwater tip is one cell wide. Lakes and rock are kept.
 			const auto route2 = river;
 			for (size_t i = 0; i < count; ++i) {
 				if (!route2[i]) continue;
-				const uint32_t x = uint32_t(i % width), y = uint32_t(i / width);
-				const bool east = x + 1 < width, south = y + 1 < height;
-				if (east && !lake[i + 1]) river[i + 1] = 1;
-				if (south && !lake[i + width]) river[i + width] = 1;
-				if (east && south && !lake[i + width + 1]) river[i + width + 1] = 1;
+				const int32_t blockWidth = flow[i] >= 4 ? 4 : flow[i] >= 2 ? 3 : 2;
+				const int32_t first = -((blockWidth - 2) / 2), last = first + blockWidth - 1;
+				const int32_t x = int32_t(i % width), y = int32_t(i / width);
+				for (int32_t dy = first; dy <= last; ++dy) {
+					for (int32_t dx = first; dx <= last; ++dx) {
+						const int32_t nx = x + dx, ny = y + dy;
+						if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
+						const size_t target = size_t(ny) * width + size_t(nx);
+						if (!lake[target] && !rock[target]) river[target] = 1;
+					}
+				}
 			}
 		}
 

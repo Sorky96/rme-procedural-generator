@@ -22,6 +22,17 @@
 - Nowe kontrole w teście rdzenia: szerokość rzeki i górna granica szerokości brzegu, oraz przegląd 500×500 (3 seedy).
 - Kontrola szerokości rzeki znalazła jednokaflowy ogonek na źródle rzeki (seed 1, 100×100, komórka 51,50): rozszerzenie dodawało tylko sąsiada wschodniego i południowego, więc ostatnia komórka trasy nie miała pełnego bloku 2×2. Teraz każda komórka trasy dodaje też południowo-wschodnią (lakes bez zmian). Skutek uboczny: rzeki są lekko grubsze na przekątnych. Przypięty odcisk Seed 1729 100×100 zmieniono z 4385766052247269449 na 13556304753518616142. Wersja algorytmu pozostaje 2 (niewydana).
 
+## Zmiany po teście GUI na kilku seedach (2026-11-07)
+
+Użytkownik: wygląd ok; rzeki powinny się pogrubiać po zlaniu i zwężać ku źródłu, nie wypływać „z pustych miejsc”, a brushe mają być wybierane z list, nie wpisywane.
+
+- **Źródła rzek:** tylko komórki skały. Trasa startuje od pierwszej komórki nieskalnej w dół od skały, więc rzeka wychodzi z krawędzi skały; bez skały nie ma rzek. Test: każda rzeka styka się ze skałą.
+- **Szerokość rzeki:** zależy od liczby tras przechodzących przez kafel (dopływ dodaje swój przepływ w dół od zlewu): 2 kafle (1 trasa), 3 (2–3), 4 (4+). Źródło jest najcieńsze, po zlaniu rzeka jest grubsza. Rzeka nie rozwidla się w dół (nie ma odnóg), dopływy tylko wpadają do rzeki. Przy domyślnych 3 rzekach zlewy są rzadkie: w 24 seedach 100×100 tylko 78 z 3756 kafli rzeki leży w pełnym bloku 3×3 (250×250: 4 z 1376, 500×500: 38 z 578). Skała i jeziora nie są nadpisywane, więc tuż przy skale blok może być przycięty (test to dopuszcza).
+- **Odcisk** Seed 1729 100×100: 13595504628373791379 (poprzednio 13556304753518616142). Rzeki są teraz w 24 z 24 seedów 100×100 (poprzednio 23).
+- **Dialog:** pola brushy to listy rozwijane tylko do wyboru (brushe gruntu dla trawy/ziemi/wody/skały/brzegu, doodady dla drzew/krzaków/kamieni), z domyślnym wyborem `grass`, `dirt`, `clear water`, `rocky ground`, `sand`, `trees`, `bushes`, `small rocks`, jeśli istnieją w załadowanym kliencie. Lista nie sprawdza, czy brush jest sensowny dla roli (np. woda jako trawa); to nadal waliduje resolver.
+- Próbniki po zmianie: `g2d2-surface-154412`, `g2d2-preview-154412`, `g2d2-commit-154412` (`--surface` zapisuje `passed: false` tylko przez D1; kod wyjścia 0, stderr pusty), wiersze commitu G1 bez zmian, `pairs_without_border=0`, `halo_tiles_modified` 99 (100×100 seed 1) i 54 (250×250), pozostałe 0 (D5).
+- **Niezweryfikowane:** wygląd nowych rzek i działanie list w natywnym RME; dialog z klientem, który nie ma domyślnych nazw (pierwsza pozycja listy); wydajność dialogu przy dużej liczbie brushy.
+
 ## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
 
 | Próbnik | Przebieg | Wynik |

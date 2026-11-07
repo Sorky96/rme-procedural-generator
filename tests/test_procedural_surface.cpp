@@ -167,7 +167,7 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 13556304753518616142ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 13595504628373791379ULL, "Seed 1729 100x100 surface output changed");
 }
 
 struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; };
@@ -188,6 +188,11 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		require(river.touchesBorder || river.touches, "River ends inside the land");
 		require(river.size >= config.tuning.minRiverLength, "River shorter than minimum");
 	}
+	// Rivers spring from rock: every river touches a rock cell (its source).
+	for (const auto& river : components(grid, [](SurfaceKind k) { return k == SurfaceKind::River; },
+		[](SurfaceKind k) { return k == SurfaceKind::Rock; })) {
+		require(river.touches, "River does not start at rock");
+	}
 	// With shoreWidth >= 1, land next to a lake is shore unless it is rock or river.
 	const uint32_t w = grid.region.width, h = grid.region.height;
 	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
@@ -201,7 +206,7 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		require(!nextToLake || config.tuning.shoreWidth == 0, "Land touches a lake without a shore");
 	}
 	// A river is never one cell wide: each river cell sits in a 2x2 window of river/lake cells,
-	// unless a lake ends the river at that cell.
+	// unless a lake or the rock it springs from clips the block at that cell.
 	const auto wet = [&](uint32_t x, uint32_t y) {
 		const auto kind = grid.cells[size_t(y) * w + x];
 		return kind == SurfaceKind::River || kind == SurfaceKind::Lake;
@@ -219,7 +224,11 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 			(x + 1 < w && grid.cells[cell + 1] == SurfaceKind::Lake) ||
 			(y > 0 && grid.cells[cell - w] == SurfaceKind::Lake) ||
 			(y + 1 < h && grid.cells[cell + w] == SurfaceKind::Lake);
-		require(wide || nextToLake, "One-cell-wide river stretch");
+		const bool nextToRock = (x > 0 && grid.cells[cell - 1] == SurfaceKind::Rock) ||
+			(x + 1 < w && grid.cells[cell + 1] == SurfaceKind::Rock) ||
+			(y > 0 && grid.cells[cell - w] == SurfaceKind::Rock) ||
+			(y + 1 < h && grid.cells[cell + w] == SurfaceKind::Rock);
+		require(wide || nextToLake || nextToRock, "One-cell-wide river stretch");
 	}
 	// Shore never reaches farther from a lake than shoreWidth steps.
 	std::vector<uint32_t> distance(grid.cells.size(), UINT32_MAX);
@@ -246,7 +255,7 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 }
 
 void distributions(uint32_t side, uint32_t seeds) {
-	size_t riverSeeds = 0, lakeSeeds = 0, rockSeeds = 0, dirtSeeds = 0;
+	size_t riverSeeds = 0, lakeSeeds = 0, rockSeeds = 0, dirtSeeds = 0, riverCells = 0, thickRiverCells = 0;
 	double minDirt = 1, maxDirt = 0;
 	for (uint32_t seed = 1; seed <= seeds; ++seed) {
 		const auto config = makeConfig(side, seed);
@@ -254,6 +263,19 @@ void distributions(uint32_t side, uint32_t seeds) {
 		require(grid && grid->valid(), "Surface generation failed");
 		const auto tally = structure(config, *grid);
 		require(tally.rock <= tally.cells * (config.tuning.rockPermille + 20) / 1000, "Rock share far above its cap");
+		// Rivers thicken after a merge: count river cells that are the centre of a full 3x3 block.
+		const uint32_t gw = grid->region.width, gh = grid->region.height;
+		for (uint32_t y = 1; y + 1 < gh; ++y) {
+			for (uint32_t x = 1; x + 1 < gw; ++x) {
+				if (grid->cells[size_t(y) * gw + x] != SurfaceKind::River) continue;
+				++riverCells;
+				bool full = true;
+				for (uint32_t dy = 0; dy < 3 && full; ++dy) for (uint32_t dx = 0; dx < 3; ++dx) {
+					full &= grid->cells[size_t(y - 1 + dy) * gw + (x - 1 + dx)] == SurfaceKind::River;
+				}
+				thickRiverCells += full;
+			}
+		}
 		riverSeeds += tally.river > 0; lakeSeeds += tally.lake > 0; rockSeeds += tally.rock > 0;
 		const double dirtShare = double(tally.dirt) / double(std::max<size_t>(1, tally.grass + tally.dirt));
 		minDirt = std::min(minDirt, dirtShare); maxDirt = std::max(maxDirt, dirtShare);
@@ -269,7 +291,7 @@ void distributions(uint32_t side, uint32_t seeds) {
 	require(dirtSeeds == seeds, "Some seed lacked grass or dirt");
 	require(minDirt >= 0.10 && maxDirt <= 0.60, "Dirt share of open land outside 10-60%");
 	std::cout << side << 'x' << side << " seeds=" << seeds << " with_lake=" << lakeSeeds << " with_river=" << riverSeeds
-		<< " with_rock=" << rockSeeds << " dirt_share_of_open_land=" << minDirt << ".." << maxDirt << '\n';
+		<< " with_rock=" << rockSeeds << " river_cells=" << riverCells << " in_3x3_block=" << thickRiverCells << " dirt_share_of_open_land=" << minDirt << ".." << maxDirt << '\n';
 	require(lakeSeeds > 0 && riverSeeds > 0 && rockSeeds > 0, "A feature never appeared in any seed");
 }
 

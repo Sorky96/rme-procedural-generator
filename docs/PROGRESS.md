@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2: rzeki ze skał o zmiennej szerokości, brushe z list
+
+Po teście GUI: źródła rzek tylko ze skał, szerokość rzeki 2–4 kafli zależna od liczby zlewających się tras (źródło cienkie), pola brushy w dialogu zamienione na listy rozwijane (grunt / doodad). Test rdzenia, `--surface`, `--preview`, `--commit` na kliencie 1098 PASS (D1 bez zmian), odcisk Seed 1729 → 13595504628373791379. Wygląd i listy w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
 ## 2026-11-07 — G2-D: kontrole rozkładów, szerokość rzeki, stan bramki
 
 Test rdzenia sprawdza teraz szerokość rzeki (okno 2×2) i górną granicę szerokości brzegu oraz 3 seedy 500×500. Kontrola znalazła jednokaflowy ogonek na źródle rzeki; poprawione (komórka południowo-wschodnia przy rozszerzaniu), przypięty odcisk Seed 1729 → 13556304753518616142. `--surface`, `--preview`, `--commit` na kliencie 1098 przeszły, wiersze commitu G1 bez zmian, `pairs_without_border=0`. Status bramki G2 **PARTIAL**: brak przeglądu wizualnego kilku seedów w RME, D5 otwarty. [Stan bramki](procedural/G2_GATE_STATUS.md).

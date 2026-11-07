@@ -32,7 +32,7 @@ struct SurfaceTuning {
 	uint32_t featureSize = 24;        // coarsest noise lattice step in cells, 1..4096
 	uint32_t lakePermille = 60;       // share of lowest cells that start as lake, 0..500
 	uint32_t minLakeCells = 12;       // smaller 4-connected lakes become land
-	uint32_t riverCount = 3;          // sources drawn from the highest quarter, 0..1024
+	uint32_t riverCount = 3;          // sources drawn from rock cells, 0..1024
 	uint32_t minRiverLength = 20;     // own cells of an accepted river; shorter ones are dropped
 	uint32_t shoreWidth = 2;          // 4-connected ring of Shore around lakes, 0..4
 	uint32_t rockPermille = 80;       // at least this share of highest cells is rock, 0..500
