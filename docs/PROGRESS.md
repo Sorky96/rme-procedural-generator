@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G4-0: zgodność items.otb z klientem 10.98 (PARTIAL)
+
+Gałąź `feature/procedural-g4-style-learning` z `origin/master` (PR #4 scalony). Niezależny skrypt porównał 25 548 itemów `data/1098/items.otb` z `Tibia.dat` zwykłego 10.98 w sześciu cechach: 0 niezgodności; nagłówek 3.57 na wszystkich 19 mapach; dwie serie bajtowo identyczne. Nie dowiedziono, że mapy powstały z tym konkretnym OTB (brak drugiego pliku). [G4_ITEMS_OTB.md](procedural/G4_ITEMS_OTB.md), D11 zaktualizowany. Następne: G4-A (manifest, podział po rodzinach, test memoryzacji).
+
 ## 2026-11-07 — G3 zamknięte z długiem (decyzja użytkownika)
 
 Bramka G3 „Import i analiza map referencyjnych” zamknięta jako PASS z długiem, bez twierdzenia, że wszystko zweryfikowano: D8 (resztki: ładowanie `Map` to ok. 94 % szczytu pamięci, anulowanie przy normalizacji ok. 1,2 s), D9 (cechy z 4.2: rzeki, jaskinie, szlaki, osady, mikrostruktury, wąskie gardła), D10 (brak testu podobieństwa/memoryzacji i podziału zbiorów), D11 (companion XML, kontenery, niepotwierdzony `items.otb`, brak HTML, jedna maszyna). Kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek): powtarzalne raporty (dwie serie, bajtowo identyczne), statystyki i mapa semantyczna (PNG na piętro, niezależnie zweryfikowany). Kontrola niezależna: Map Statistics w RME zgodne co do kafli, itemów i kafli nieprzechodnich. [Stan bramki](procedural/G3_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md). Następne: G4 (profile stylu, dopasowanie rozkładów, holdout), najpierw D10.
