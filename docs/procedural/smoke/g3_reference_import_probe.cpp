@@ -4,6 +4,7 @@
 #include "ui/gui.h"
 #include "app/managers/version_manager.h"
 #include "procedural/adapter/reference_import.h"
+#include "procedural/core/topology.h"
 #include <wx/module.h>
 #include <wx/log.h>
 #include <cstdlib>
@@ -74,6 +75,33 @@ std::string renderSemantic(const NormalizedReference& n) {
     return out;
 }
 
+std::string renderTopology(const NormalizedReference& n, const TopologyReport& t, const TopologyOptions& o) {
+    std::string out = "{\n  \"schema\": \"g3-topology-report/1\",\n";
+    out += std::format("  \"sha256\": \"{}\",\n  \"options\": {{\"impassable_percent\": {}, \"small_component_cells\": {}}},\n",
+        n.summary.sha256, o.impassablePercent, o.smallComponentCells);
+    out += "  \"floors\": [\n";
+    for (size_t i = 0; i < t.floors.size(); ++i) {
+        const auto& f = t.floors[i];
+        const auto& w = f.walkable;
+        out += std::format("    {{\"z\": {}, \"width\": {}, \"height\": {}, \"tiles\": {}, \"walkable_cells\": {}, \"unknown_cells\": {}, \"floor_change_cells\": {}, \"teleport_cells\": {}, ",
+            f.bounds.z, f.bounds.width, f.bounds.height, f.tiles, f.walkableCells, f.unknownCells, f.floorChangeCells, f.teleportCells);
+        out += std::format("\"components\": {}, \"largest\": {}, \"small_components\": {}, \"small_cells\": {}, \"top\": [", w.count, w.largest, w.smallCount, w.smallCells);
+        for (size_t k = 0; k < w.top.size(); ++k) out += std::format("{}{}", k ? ", " : "", w.top[k]);
+        out += "], \"size_buckets\": [";
+        for (size_t k = 0; k < w.buckets.size(); ++k) out += std::format("{}{}", k ? ", " : "", w.buckets[k]);
+        out += std::format("]}}{}\n", i + 1 < t.floors.size() ? "," : "");
+    }
+    out += "  ],\n  \"ground_regions\": [\n";
+    const auto& keys = n.map.groundKeys();
+    for (size_t i = 0; i < keys.size(); ++i) {
+        const auto& k = t.keys[i];
+        out += std::format("    {{\"key\": \"{}\", \"impassable\": {}, \"tiles\": {}, \"regions\": {}, \"largest\": {}, \"enclosed\": {}}}{}\n",
+            keys[i], k.impassable ? "true" : "false", k.tiles, k.regions, k.largest, k.enclosed, i + 1 < keys.size() ? "," : "");
+    }
+    out += "  ]\n}\n";
+    return out;
+}
+
 void runProbe() {
     const auto root = fs::current_path();
     std::ofstream log(root / "g3-probe.log");
@@ -98,6 +126,10 @@ void runProbe() {
         check(after && *after == *before && *before == summary.sha256, "Input copy changed during import");
         { std::ofstream report(root / "reference-report.json", std::ios::binary); report << render(summary); }
         { std::ofstream report(root / "semantic-report.json", std::ios::binary); report << renderSemantic(*normalized); }
+        const TopologyOptions topologyOptions;
+        const auto topology = analyzeTopology(normalized->map, normalized->semantic, topologyOptions, {});
+        check(topology.has_value(), "Topology analysis failed");
+        { std::ofstream report(root / "topology-report.json", std::ios::binary); report << renderTopology(*normalized, *topology, topologyOptions); }
         log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();
         std::_Exit(0);

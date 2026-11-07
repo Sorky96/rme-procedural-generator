@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G3-C: regiony i topologia (PARTIAL)
+
+Dodano `analyzeTopology` (rdzeń): składowe przechodnie, regiony tego samego gruntu (nieprzechodnie, zamknięte) i cechy pięter, bez ID i nazw, z anulowaniem. `forgotten.otbm`: 95 103 pola przechodnie, na piętrze 7 największa składowa 22 634 z 46 534 pól, sumy kafli zgodne, dwa przebiegi bajtowo identyczne. Nie zrobiono wąskich gardeł, rzek/jaskiń/szlaków, połączeń pięter; liczenia nie porównano z niezależną implementacją. Szczegóły: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md). Następne: G3-D (feature extraction i raport zbiorczy), wąskie gardła, kontenery.
+
 ## 2026-11-07 — G3-B: normalizator semantyczny (PARTIAL)
 
 Dodano `SemanticMap` (rdzeń) i `normalizeReference` (adapter): klucz gruntu z pędzla klienta i 16 cech strukturalnych z definicji itemów, bez wpisanych ID. `forgotten.otbm`: 3 028 669 komórek, 77 kluczy gruntu, suma kafli po kluczach = 340 595, dwa przebiegi bajtowo identyczne. Kontrola sumy znalazła błąd (93 kafle bez cech traktowane jako puste), naprawiony bitem `Present`. Ścieżka `unknown` zweryfikowana na syntetycznym fixture (8/8 kontroli, kontrola negatywna); nie sprawdzono jej na mapie z realnymi brakami, kontenerów ani pamięci procesu. Szczegóły: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md). Następne: G3-C (regiony, biomy, topologia).
