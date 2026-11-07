@@ -49,6 +49,19 @@ int main() {
 	header.width = 0;
 	check(checkCompatibility(header, &client) == Compatibility::EmptyHeader, "empty header");
 
+	// Load estimate: bytes x factor (expanded size for gzip, none without it), saturating.
+	ReferenceHeader sized {2, 10, 10, 3, 57, false, 1000};
+	check(estimateLoadBytes(sized, 40) == std::optional<uint64_t> {40000}, "estimate is file bytes x factor");
+	check(estimateLoadBytes(sized, minLoadBytesPerFileByte) == std::optional<uint64_t> {1000 * minLoadBytesPerFileByte}, "default factor");
+	check(estimateLoadBytes(sized, 0) == std::optional<uint64_t> {0}, "factor 0 gives 0");
+	sized.compressed = true;
+	check(!estimateLoadBytes(sized, 40).has_value(), "compressed file without trailer size has no estimate");
+	sized.expandedBytes = 5000;
+	check(estimateLoadBytes(sized, 40) == std::optional<uint64_t> {200000}, "compressed estimate uses the expanded size");
+	sized.compressed = false;
+	sized.fileBytes = UINT64_MAX / 2;
+	check(estimateLoadBytes(sized, 40) == std::optional<uint64_t> {UINT64_MAX}, "estimate saturates on overflow");
+
 	if (failures == 0) std::cout << "REFERENCE_HEADER_PASS\n";
 	return failures == 0 ? 0 : 1;
 }

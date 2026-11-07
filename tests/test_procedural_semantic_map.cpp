@@ -54,6 +54,13 @@ int main() {
 	const SemanticSummary again = summarize(map);
 	check(again.tilesPerTrait == summary.tilesPerTrait && again.tilesPerFloor == summary.tilesPerFloor, "summary repeatable");
 
+	// Analysis memory bound: 6 B per cell plus 16 B per cell of the largest floor, saturating.
+	check(analysisWorkingBytes(100, 10) == 100 * 6 + 10 * 16, "analysis bytes");
+	check(analysisWorkingBytes(0, 0) == 0, "analysis bytes of nothing");
+	check(analysisWorkingBytes(UINT64_MAX / 6 + 1, 1) == UINT64_MAX, "cells overflow saturates");
+	check(analysisWorkingBytes(1, UINT64_MAX / 16 + 1) == UINT64_MAX, "floor overflow saturates");
+	check(analysisWorkingBytes(UINT64_MAX / 6, UINT64_MAX / 16) == UINT64_MAX, "sum overflow saturates");
+
 	if (failures == 0) std::cout << "SEMANTIC_MAP_PASS\n";
 	return failures == 0 ? 0 : 1;
 }

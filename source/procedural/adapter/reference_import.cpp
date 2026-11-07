@@ -11,7 +11,13 @@
 #include "map/map.h"
 #include "map/tile.h"
 
+#ifdef _WIN32
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
+#endif
+
 #include <algorithm>
+#include <chrono>
 #include <climits>
 #include <unordered_map>
 #include <fstream>
@@ -21,6 +27,15 @@ namespace rme::procedural {
 
 namespace {
 constexpr size_t hashChunkBytes = 1 << 20;
+constexpr uint32_t cancelPollTiles = 4096; // tiles between stop_token polls
+
+[[nodiscard]] uint32_t elapsedMs(std::chrono::steady_clock::time_point since) {
+	return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count());
+}
+
+[[nodiscard]] uint64_t saturatingAdd(uint64_t a, uint64_t b) noexcept {
+	return a > UINT64_MAX - b ? UINT64_MAX : a + b;
+}
 
 void countItem(const Item& item, bool ground, ReferenceImportSummary& summary) {
 	++summary.itemCount;
@@ -40,9 +55,29 @@ const char* referenceImportErrorName(ReferenceImportError value) noexcept {
 		case ReferenceImportError::LoadFailed: return "load_failed";
 		case ReferenceImportError::BudgetExceeded: return "budget_exceeded";
 		case ReferenceImportError::NormalizeFailed: return "normalize_failed";
+		case ReferenceImportError::Cancelled: return "cancelled";
+		case ReferenceImportError::EstimateUnavailable: return "estimate_unavailable";
+		case ReferenceImportError::MemoryEstimateExceeded: return "memory_estimate_exceeded";
+		case ReferenceImportError::MemoryBudgetExceeded: return "memory_budget_exceeded";
 	}
 	return "unknown";
 }
+
+#ifdef _WIN32
+namespace {
+PROCESS_MEMORY_COUNTERS processCounters() {
+	PROCESS_MEMORY_COUNTERS counters {};
+	counters.cb = sizeof(counters);
+	if (!GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters))) counters = {};
+	return counters;
+}
+}
+uint64_t currentProcessBytes() { return processCounters().WorkingSetSize; }
+uint64_t peakProcessBytes() { return processCounters().PeakWorkingSetSize; }
+#else
+uint64_t currentProcessBytes() { return 0; }
+uint64_t peakProcessBytes() { return 0; }
+#endif
 
 std::optional<ClientItemVersion> currentClientItemVersion() {
 	if (!g_version.IsVersionLoaded()) return std::nullopt;
@@ -75,6 +110,16 @@ std::expected<ReferenceHeader, ReferenceImportError> readReferenceHeader(
 	header.itemsMinor = info.items_minor_version;
 	header.compressed = info.is_compressed;
 	header.fileBytes = bytes;
+	if (header.compressed && bytes >= 18) {
+		// The last 4 bytes of a gzip stream hold the uncompressed size modulo 2^32 (little endian).
+		std::ifstream gz(file, std::ios::binary);
+		unsigned char trailer[4] {};
+		gz.seekg(-4, std::ios::end);
+		if (gz.read(reinterpret_cast<char*>(trailer), 4)) {
+			header.expandedBytes = static_cast<uint64_t>(trailer[0]) | static_cast<uint64_t>(trailer[1]) << 8
+				| static_cast<uint64_t>(trailer[2]) << 16 | static_cast<uint64_t>(trailer[3]) << 24;
+		}
+	}
 	return header;
 }
 
@@ -95,11 +140,21 @@ std::expected<std::string, ReferenceImportError> hashReferenceFile(const std::fi
 namespace {
 // Header, hash and in-memory load shared by import and normalization; counting is left to callers.
 std::expected<ReferenceImportSummary, ReferenceImportError> loadReference(
-	Map& map, const std::filesystem::path& file, const ReferenceImportLimits& limits) {
+	Map& map, const std::filesystem::path& file, const ReferenceImportLimits& limits, ImportMeasurements* measurements) {
+	if (limits.stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
 	auto client = currentClientItemVersion();
 	if (!client) return std::unexpected(ReferenceImportError::NoClient);
 	auto header = readReferenceHeader(file, limits);
 	if (!header) return std::unexpected(header.error());
+
+	// Pre-load budget check: nothing has been allocated for the map yet.
+	const auto estimate = estimateLoadBytes(*header, limits.loadBytesPerFileByte);
+	if (!estimate) return std::unexpected(ReferenceImportError::EstimateUnavailable);
+	const uint64_t before = currentProcessBytes();
+	if (measurements) { measurements->processBytesBefore = before; measurements->estimatedLoadBytes = *estimate; }
+	if (limits.maxProcessBytes == 0 || saturatingAdd(before, *estimate) > limits.maxProcessBytes) {
+		return std::unexpected(ReferenceImportError::MemoryEstimateExceeded);
+	}
 
 	// OTBM display version 1..5 maps to MapVersionID 0..4.
 	const auto& supported = g_version.GetCurrentVersion().getMapVersionsSupported();
@@ -112,12 +167,31 @@ std::expected<ReferenceImportSummary, ReferenceImportError> loadReference(
 	summary.clientId = std::string(g_version.GetCurrentVersionIDView());
 	if (auto digest = hashReferenceFile(file)) summary.sha256 = std::move(*digest);
 	else return std::unexpected(digest.error());
+	if (limits.stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
 
 	// Map::open is protected and also records the path as the map's save target; the
 	// loader alone keeps this import free of anything that could later be saved.
 	IOMapOTBM loader(map.getVersion());
-	if (!loader.loadMap(map, FileName(wxString(file.wstring())))) return std::unexpected(ReferenceImportError::LoadFailed);
+	// Evaluated on this thread while tiles load: a stop request or a working set over the limit
+	// aborts the load, so the limit holds during loading, not only before and after it.
+	enum class AbortReason { None, Stop, Memory } reason = AbortReason::None;
+	loader.setAbortCheck([&] {
+		if (limits.stop.stop_requested()) { reason = AbortReason::Stop; return true; }
+		if (currentProcessBytes() > limits.maxProcessBytes) { reason = AbortReason::Memory; return true; }
+		return false;
+	});
+	const auto loadStarted = std::chrono::steady_clock::now();
+	const bool loaded = loader.loadMap(map, FileName(wxString(file.wstring())));
+	if (measurements) { measurements->loadMs = elapsedMs(loadStarted); measurements->peakBytesAfterLoad = peakProcessBytes(); }
+	if (!loaded) {
+		if (loader.wasAborted()) {
+			return std::unexpected(reason == AbortReason::Stop ? ReferenceImportError::Cancelled : ReferenceImportError::MemoryBudgetExceeded);
+		}
+		return std::unexpected(ReferenceImportError::LoadFailed);
+	}
 	summary.loaderWarnings = loader.getWarnings().size();
+	if (limits.stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
+	if (currentProcessBytes() > limits.maxProcessBytes) return std::unexpected(ReferenceImportError::MemoryBudgetExceeded);
 	return summary;
 }
 
@@ -158,11 +232,16 @@ uint32_t itemTraits(const Item& item, bool ground) {
 }
 
 std::expected<ReferenceImportSummary, ReferenceImportError> importReference(
-	const std::filesystem::path& file, const ReferenceImportLimits& limits) {
+	const std::filesystem::path& file, const ReferenceImportLimits& limits, ImportMeasurements* measurements) {
 	Map map;
-	auto summary = loadReference(map, file, limits);
+	auto summary = loadReference(map, file, limits, measurements);
 	if (!summary) return summary;
+	uint32_t sincePoll = 0;
 	for (auto& location : map.tiles()) {
+		if (++sincePoll == cancelPollTiles) {
+			sincePoll = 0;
+			if (limits.stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
+		}
 		const Tile* tile = location.get();
 		if (tile != nullptr && !tile->empty()) countTile(*tile, *summary);
 	}
@@ -170,10 +249,18 @@ std::expected<ReferenceImportSummary, ReferenceImportError> importReference(
 }
 
 std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
-	const std::filesystem::path& file, const ReferenceImportLimits& limits, const SemanticBudget& budget) {
+	const std::filesystem::path& file, const ReferenceImportLimits& limits, const SemanticBudget& budget,
+	ImportMeasurements* measurements) {
 	Map map;
-	auto loaded = loadReference(map, file, limits);
+	auto loaded = loadReference(map, file, limits, measurements);
 	if (!loaded) return std::unexpected(loaded.error());
+	const auto normalizeStarted = std::chrono::steady_clock::now();
+	uint32_t sincePoll = 0;
+	auto cancelled = [&] {
+		if (++sincePoll < cancelPollTiles) return false;
+		sincePoll = 0;
+		return limits.stop.stop_requested();
+	};
 	NormalizedReference result;
 	result.summary = std::move(*loaded);
 
@@ -182,6 +269,7 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	std::array<Box, 16> boxes {};
 	std::unordered_map<const Brush*, std::string> brushNames;
 	for (auto& location : map.tiles()) {
+		if (cancelled()) return std::unexpected(ReferenceImportError::Cancelled);
 		const Tile* tile = location.get();
 		if (tile == nullptr || tile->empty()) continue;
 		countTile(*tile, result.summary);
@@ -199,6 +287,16 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	for (size_t z = 0; z < boxes.size(); ++z) {
 		const Box& box = boxes[z];
 		if (box.used) bounds.push_back({static_cast<int>(z), box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1});
+	}
+	// Budget for what comes next, checked against the measured working set (the Map is still loaded).
+	uint64_t totalCells = 0, largestFloorCells = 0;
+	for (const FloorBounds& b : bounds) {
+		const uint64_t cells = static_cast<uint64_t>(b.width) * static_cast<uint64_t>(b.height);
+		totalCells += cells;
+		largestFloorCells = std::max(largestFloorCells, cells);
+	}
+	if (saturatingAdd(currentProcessBytes(), analysisWorkingBytes(totalCells, largestFloorCells)) > limits.maxProcessBytes) {
+		return std::unexpected(ReferenceImportError::MemoryBudgetExceeded);
 	}
 	auto created = SemanticMap::create(bounds, budget);
 	if (!created) {
@@ -220,6 +318,7 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 
 	// Pass 2: fill cells.
 	for (auto& location : map.tiles()) {
+		if (cancelled()) return std::unexpected(ReferenceImportError::Cancelled);
 		const Tile* tile = location.get();
 		if (tile == nullptr || tile->empty()) continue;
 		uint32_t traits = 0;
@@ -233,6 +332,7 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 		if (!result.map.set(position.x, position.y, position.z, key, traits)) return std::unexpected(ReferenceImportError::NormalizeFailed);
 	}
 	result.semantic = summarize(result.map);
+	if (measurements) { measurements->normalizeMs = elapsedMs(normalizeStarted); measurements->peakBytesAfterNormalize = peakProcessBytes(); }
 	return result;
 }
 

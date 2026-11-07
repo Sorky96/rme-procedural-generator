@@ -93,4 +93,14 @@ struct SemanticSummary {
 // Pure function of the map: same input gives the same summary, independent of time or addresses.
 [[nodiscard]] SemanticSummary summarize(const SemanticMap& map);
 
+// Upper bound of working memory for the semantic model and the analyses that follow it:
+// 6 bytes per cell (ground key + traits) plus 16 bytes per cell of the largest floor for the
+// topology (9), feature (5) and semantic image (2) buffers. Saturates instead of overflowing; excludes the loaded Map.
+[[nodiscard]] constexpr uint64_t analysisWorkingBytes(uint64_t cells, uint64_t largestFloorCells) noexcept {
+	constexpr uint64_t max = UINT64_MAX;
+	if (cells > max / 6 || largestFloorCells > max / 16) return max;
+	const uint64_t model = cells * 6, buffers = largestFloorCells * 16;
+	return model > max - buffers ? max : model + buffers;
+}
+
 } // namespace rme::procedural

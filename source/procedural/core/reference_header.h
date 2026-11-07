@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -35,6 +36,9 @@ struct ReferenceHeader {
 	uint32_t itemsMinor = 0;
 	bool compressed = false;
 	uint64_t fileBytes = 0;
+	// gzip only: uncompressed size from the stream trailer (ISIZE, modulo 2^32), 0 when unknown.
+	// Not part of any report.
+	uint64_t expandedBytes = 0;
 };
 
 // What the loaded client declares it can read.
@@ -59,5 +63,16 @@ enum class Compatibility : uint8_t {
 	const ClientItemVersion* client) noexcept;
 
 [[nodiscard]] const char* compatibilityName(Compatibility value) noexcept;
+
+// LOWER bound of the bytes that loading a reference adds to the process, per byte of uncompressed
+// OTBM file. Measured on 19 maps (G3_REFERENCES.md): 23.4..36.1 for files of 5 MiB and more, never
+// below 18 on smaller ones; 16 leaves a margin below the lowest. Because it is a lower bound, the
+// pre-load check refuses only a map that cannot fit even at the lowest density seen; the limit
+// itself is enforced while the map loads (IOMapOTBM::setAbortCheck).
+inline constexpr uint64_t minLoadBytesPerFileByte = 16;
+
+// Lower-bound estimate from the uncompressed size (expandedBytes for gzip). nullopt when it is
+// unknown. Saturates instead of overflowing.
+[[nodiscard]] std::optional<uint64_t> estimateLoadBytes(const ReferenceHeader& header, uint64_t bytesPerFileByte) noexcept;
 
 } // namespace rme::procedural

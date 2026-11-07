@@ -113,4 +113,11 @@ const char* compatibilityName(Compatibility value) noexcept {
 	return "unknown";
 }
 
+std::optional<uint64_t> estimateLoadBytes(const ReferenceHeader& header, uint64_t bytesPerFileByte) noexcept {
+	const uint64_t bytes = header.compressed ? header.expandedBytes : header.fileBytes;
+	if (header.compressed && bytes == 0) return std::nullopt;
+	if (bytesPerFileByte != 0 && bytes > UINT64_MAX / bytesPerFileByte) return UINT64_MAX;
+	return bytes * bytesPerFileByte;
+}
+
 } // namespace rme::procedural
