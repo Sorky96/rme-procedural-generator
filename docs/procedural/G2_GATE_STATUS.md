@@ -65,6 +65,15 @@ Widać do poprawy:
 - **Seed 1:** rzeka skręca pod kątem prostym i okrąża zieloną wyspę przy skale; szerokość zmienia się skokowo blokami (2 → 3 → 4), co wygląda prostokątnie, a nie jak koryto.
 - Rzeka na seedzie 1 wychodzi poza prawą krawędź widoku (widok nie obejmuje całego obszaru, więc jej początku nie oceniono).
 
+## Poprawki po zrzutach seedów 4242, 7, 1 (2026-11-07)
+
+- **Wyspy w jeziorach:** płat lądu w pełni otoczony jeziorem (nie dotyka krawędzi obszaru) i mniejszy niż 24 komórki zmienia się w jezioro (`islandCells`). Test: każdy płat lądu w jeziorze ma ≥24 komórek albo dotyka krawędzi.
+- **Pierścienie brzegu zależne od jeziora:** pierścień r ≥ 1 wymaga jeziora o co najmniej 30·3^(r−1) komórek (30, 90, 270), więc małe stawy mają wąską plażę (rozmiar jeziora jest propagowany po pierścieniach, nasycony na 65535).
+- **Rzeki gładsze:** trasa jest wygładzana średnią ruchomą (do 4 komórek na stronę, arytmetyka stałoprzecinkowa 1/16 komórki, bez wygładzania na końcach i w komórkach zlewu, więc dopływ styka się z rzeką), a wokół każdego punktu rysowany jest kwadrat o półboku 1–2 komórki rosnący płynnie z rozmiarem rzeki (przebyte komórki plus 15 za każdą wpadającą trasę, pełny zakres po 60). Skutek: skręty nie są kątami prostymi, szerokość rośnie stopniowo. Rzeka może przeciąć skałę (inaczej przecięłaby się na dwie części); ukośne odcinki są poziomo szersze niż proste (kwadratowy stempel).
+- **Błędy na drodze:** pierwsza wersja zerwała połączenie dopływu z rzeką (test „River ends inside the land”), naprawione przypięciem komórek zlewu i pozwoleniem na przecięcie skały.
+- Odcisk Seed 1729 100×100: 6783381837833077004. Test rdzenia PASS (206 punktów alokacji z wstrzykniętą awarią, wszystkie zgłoszone; 24+6+3 seedy); `--surface` (z `SURFACE_NEXT_TO_TERRAIN_PASS`) i `--commit` PASS (`g2g-surface-182831`, `g2g-commit-182831`), `pairs_without_border=0`, wiersze commitu G1 bez zmian. Dodatkowo obejrzany zrzut ASCII jednego seeda: rzeki ukośne bez kątów prostych (tymczasowy kod, usunięty).
+- **Niezweryfikowane:** wygląd w RME po tej zmianie (zrzuty powyżej są sprzed niej); `rme.exe` nie został przebudowany w tym kroku, bo działający RME blokował plik; szacunek pamięci roboczej (40 B/komórkę) nie był przeliczany po dodaniu wektorów (rozmiary jezior, trasy, zlewy); rozkład szerokości rzeki (płynność) nie jest mierzony testem.
+
 ## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
 
 | Próbnik | Przebieg | Wynik |

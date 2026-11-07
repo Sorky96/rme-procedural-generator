@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2: wyspy w jeziorach, małe stawy, gładsze rzeki
+
+Po zrzutach: wypełnianie wysp <24 komórek w jeziorach, pierścienie brzegu zależne od wielkości jeziora, rzeki rysowane po wygładzonej osi z płynnie rosnącą szerokością. Test rdzenia, `--surface`, `--commit` PASS, odcisk Seed 1729 → 6783381837833077004. Wygląd w RME i `rme.exe` po tej zmianie niezweryfikowane (RME działał). [Szczegóły](procedural/G2_GATE_STATUS.md).
+
 ## 2026-11-07 — G2: zrzuty kilku seedów (4242, 7, 1)
 
 Zrzuty zapisane w `docs/procedural/screenshots/`; użytkownik nie wystawił oceny. Obserwacje z zrzutów: piasek nieregularny i dobry, ale na seedzie 7 wyspa piasku w jeziorze, na seedzie 1 rzeka z kątami prostymi i skokową szerokością. Kryterium wizualne G2 nadal otwarte. [Szczegóły](procedural/G2_GATE_STATUS.md).

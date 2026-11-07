@@ -20,6 +20,7 @@ constexpr uint64_t shoreStream = 0x73686f72655f7332ULL;    // "shore_s2"
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
 constexpr uint32_t noiseBins = 65536;
 constexpr int64_t fixedOne = 4096;
+constexpr uint32_t islandCells = 24;     // land patches fully inside a lake and smaller than this become lake
 constexpr uint32_t shoreStep = 6;        // lattice step of the beach outline
 constexpr uint32_t transitionStep = 10;  // lattice step of the grass/dirt edge wobble
 constexpr uint32_t minPatchCells = 24;   // smaller grass or dirt patches are absorbed
@@ -122,6 +123,60 @@ bool dropSmall(std::vector<uint8_t>& flag, uint32_t width, uint32_t height, uint
 	return true;
 }
 
+// Sets every 4-connected component of unflagged cells that never touches the grid border and has
+// fewer than maxCells cells: a patch of land completely surrounded by the flagged kind.
+bool fillEnclosed(std::vector<uint8_t>& flag, uint32_t width, uint32_t height, uint32_t maxCells,
+	const std::stop_token& stop) {
+	std::vector<uint8_t> seen(flag.size(), 0);
+	std::vector<uint32_t> stack, component;
+	for (size_t start = 0; start < flag.size(); ++start) {
+		if (start % 4096 == 0 && stop.stop_requested()) return false;
+		if (flag[start] || seen[start]) continue;
+		component.clear();
+		stack.assign(1, uint32_t(start));
+		seen[start] = 1;
+		bool touchesBorder = false;
+		while (!stack.empty()) {
+			const uint32_t cell = stack.back();
+			stack.pop_back();
+			component.push_back(cell);
+			const uint32_t x = cell % width, y = cell / width;
+			touchesBorder |= x == 0 || y == 0 || x + 1 == width || y + 1 == height;
+			forNeighbours(cell, width, height, [&](size_t next) {
+				if (!flag[next] && !seen[next]) { seen[next] = 1; stack.push_back(uint32_t(next)); }
+			});
+		}
+		if (!touchesBorder && component.size() < maxCells) for (const auto cell : component) flag[cell] = 1;
+	}
+	return true;
+}
+
+// Size of the 4-connected component of every flagged cell, saturated at 65535; 0 for unflagged cells.
+bool componentSizes(const std::vector<uint8_t>& flag, uint32_t width, uint32_t height,
+	std::vector<uint16_t>& sizes, const std::stop_token& stop) {
+	sizes.assign(flag.size(), 0);
+	std::vector<uint8_t> seen(flag.size(), 0);
+	std::vector<uint32_t> stack, component;
+	for (size_t start = 0; start < flag.size(); ++start) {
+		if (start % 4096 == 0 && stop.stop_requested()) return false;
+		if (!flag[start] || seen[start]) continue;
+		component.clear();
+		stack.assign(1, uint32_t(start));
+		seen[start] = 1;
+		while (!stack.empty()) {
+			const uint32_t cell = stack.back();
+			stack.pop_back();
+			component.push_back(cell);
+			forNeighbours(cell, width, height, [&](size_t next) {
+				if (flag[next] && !seen[next]) { seen[next] = 1; stack.push_back(uint32_t(next)); }
+			});
+		}
+		const auto size = uint16_t(std::min<size_t>(component.size(), 0xffff));
+		for (const auto cell : component) sizes[cell] = size;
+	}
+	return true;
+}
+
 } // namespace
 
 uint32_t surfaceValueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step) {
@@ -202,6 +257,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::vector<uint8_t> lake(count), rock(count);
 		for (size_t i = 0; i < count; ++i) lake[i] = elevation[i] < lakeLevel;
 		if (!dropSmall(lake, width, height, config.tuning.minLakeCells, stop)) return cancelled();
+		if (!fillEnclosed(lake, width, height, islandCells, stop)) return cancelled();
 		for (size_t i = 0; i < count; ++i) rock[i] = !lake[i] && elevation[i] >= rockLevel;
 		if (!dropSmall(rock, width, height, config.tuning.minRockCells, stop)) return cancelled();
 
@@ -250,6 +306,9 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			// upstream. A tributary adds its flow and run to every cell downstream of the junction,
 			// so a river is thin at its source and grows gradually towards its mouth and after merges.
 			std::vector<uint16_t> flow(count, 0), run(count, 0);
+			std::vector<uint32_t> routeCells;   // accepted routes, source to mouth, back to back
+			std::vector<size_t> routeEnds;      // end offset of each accepted route in routeCells
+			std::vector<uint8_t> junction(count, 0); // river cells a tributary flows into: never smoothed away
 			for (uint32_t index = 0; index < config.tuning.riverCount && !sources.empty(); ++index) {
 				if (stop.stop_requested()) return cancelled();
 				route.clear();
@@ -259,6 +318,9 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 					route.push_back(uint32_t(cell));
 				}
 				if (route.size() < config.tuning.minRiverLength) continue;
+				routeCells.insert(routeCells.end(), route.begin(), route.end());
+				routeEnds.push_back(routeCells.size());
+				if (const int64_t joint = parent[route.back()]; joint != noParent && !lake[joint]) junction[joint] = 1;
 				for (size_t step = 0; step < route.size(); ++step) {
 					river[route[step]] = 1;
 					flow[route[step]] = 1;
@@ -270,24 +332,42 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 					run[down] = std::max<uint16_t>(run[down], uint16_t(std::min<size_t>(travelled++, 0xffff)));
 				}
 			}
-			// Widen each route cell into a block of 2, 3 or 4 cells by its size (cells travelled plus
-			// 15 per merged route): under 20 -> 2, under 45 -> 3, otherwise 4. No stretch or headwater
-			// tip is one cell wide. Lakes and rock are kept.
-			const auto route2 = river;
-			for (size_t i = 0; i < count; ++i) {
-				if (!route2[i]) continue;
-				const uint32_t size = uint32_t(run[i]) + 15u * (flow[i] - 1u);
-				const int32_t blockWidth = size >= 45 ? 4 : size >= 20 ? 3 : 2;
-				const int32_t first = -((blockWidth - 2) / 2), last = first + blockWidth - 1;
-				const int32_t x = int32_t(i % width), y = int32_t(i / width);
-				for (int32_t dy = first; dy <= last; ++dy) {
-					for (int32_t dx = first; dx <= last; ++dx) {
-						const int32_t nx = x + dx, ny = y + dy;
-						if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
-						const size_t target = size_t(ny) * width + size_t(nx);
-						if (!lake[target] && !rock[target]) river[target] = 1;
+			// Draw each route as a smoothed centre line: a moving average over up to 4 cells either side
+			// (fixed point, 1/16 cell), shrinking to nothing at both ends so a tributary still meets its
+			// river. Around every point goes a square of half-size 1 to 2 cells that grows with the
+			// size of the river there (cells travelled plus 15 per merged route), so rivers bend instead
+			// of turning at right angles and widen gradually. Lakes are kept; a river cuts through rock.
+			constexpr int64_t unit = 16;
+			constexpr size_t smoothing = 4;
+			std::fill(river.begin(), river.end(), 0);
+			size_t begin = 0;
+			for (const size_t end : routeEnds) {
+				if (stop.stop_requested()) return cancelled();
+				const size_t length = end - begin;
+				for (size_t k = 0; k < length; ++k) {
+					const uint32_t own = routeCells[begin + k];
+					const size_t half = junction[own] ? 0 : std::min({ smoothing, k, length - 1 - k });
+					int64_t sumX = 0, sumY = 0;
+					for (size_t j = k - half; j <= k + half; ++j) {
+						const uint32_t routeCell = routeCells[begin + j];
+						sumX += routeCell % width;
+						sumY += routeCell / width;
+					}
+					const int64_t points = int64_t(2 * half + 1);
+					const int64_t centreX = sumX * unit / points, centreY = sumY * unit / points;
+					const int64_t size = int64_t(run[own]) + 15 * (int64_t(flow[own]) - 1);
+					const int64_t radius = unit + std::min<int64_t>(size * unit / 60, unit);
+					const auto firstCell = [&](int64_t centre) { return centre - radius <= 0 ? int64_t(0) : (centre - radius + unit - 1) / unit; };
+					const int64_t xMax = std::min<int64_t>(width - 1, (centreX + radius) / unit);
+					const int64_t yMax = std::min<int64_t>(height - 1, (centreY + radius) / unit);
+					for (int64_t y = firstCell(centreY); y <= yMax; ++y) {
+						for (int64_t x = firstCell(centreX); x <= xMax; ++x) {
+							const size_t target = size_t(y) * width + size_t(x);
+							if (!lake[target]) river[target] = 1;
+						}
 					}
 				}
+				begin = end;
 			}
 		}
 
@@ -317,8 +397,15 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		}
 		if (config.tuning.shoreWidth) {
 			std::vector<uint8_t> wet = lake;
+			// Size of the lake each wet cell belongs to or borders: a small pond gets a narrow beach.
+			std::vector<uint16_t> wetSize;
+			if (!componentSizes(lake, width, height, wetSize, stop)) return cancelled();
 			for (uint32_t ring = 0; ring < config.tuning.shoreWidth; ++ring) {
 				const auto previous = wet;
+				const auto previousSize = wetSize;
+				// Ring r (r >= 1) needs a lake of at least 30 * 3^(r-1) cells: 30, 90, 270.
+				uint32_t neededLake = 30;
+				for (uint32_t step = 1; step < ring; ++step) neededLake *= 3;
 				// The first ring always exists; every further ring needs smooth noise above a threshold
 				// that rises with the ring, so the beach is wide in some places and grass reaches in
 				// elsewhere instead of forming an even band.
@@ -326,11 +413,18 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				for (size_t i = 0; i < count; ++i) {
 					if (previous[i] || kinds[i] == SurfaceKind::Rock) continue;
 					bool touches = false;
-					forNeighbours(i, width, height, [&](size_t next) { touches |= previous[next] != 0; });
+					uint16_t lakeSize = 0;
+					forNeighbours(i, width, height, [&](size_t next) {
+						if (!previous[next]) return;
+						touches = true;
+						lakeSize = std::max(lakeSize, previousSize[next]);
+					});
 					if (!touches) continue;
+					if (ring > 0 && lakeSize < neededLake) continue;
 					if (cut && valueNoise(config.seed, shoreStream, uint32_t(config.region.x) + uint32_t(i % width),
 						uint32_t(config.region.y) + uint32_t(i / width), shoreStep) < cut) continue;
 					wet[i] = 1;
+					wetSize[i] = lakeSize;
 					kinds[i] = SurfaceKind::Shore;
 				}
 			}

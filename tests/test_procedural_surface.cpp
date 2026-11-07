@@ -167,7 +167,7 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 7666204984290374682ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 6783381837833077004ULL, "Seed 1729 100x100 surface output changed");
 }
 
 struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; std::array<size_t, 5> shoreAt {}; };
@@ -187,6 +187,10 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		[](SurfaceKind k) { return k == SurfaceKind::Lake; })) {
 		require(river.touchesBorder || river.touches, "River ends inside the land");
 		require(river.size >= config.tuning.minRiverLength, "River shorter than minimum");
+	}
+	// A lake leaves no island: land fully surrounded by lake has at least 24 cells (islandCells).
+	for (const auto& land : components(grid, [](SurfaceKind k) { return k != SurfaceKind::Lake; }, [](SurfaceKind) { return false; })) {
+		require(land.touchesBorder || land.size >= 24, "Land patch enclosed by a lake");
 	}
 	// Rivers spring from rock: every river touches a rock cell (its source).
 	for (const auto& river : components(grid, [](SurfaceKind k) { return k == SurfaceKind::River; },
