@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Private loaded-client wxModule probe, linked with the current real RME.
 #include "app/main.h"
+#include "procedural_probe_warnings.h"
 #include "editor/operations/draw_operations.h"
 #include "procedural/adapter/generation_snapshot.h"
 #include "procedural/adapter/ground_resolver.h"
@@ -1899,6 +1900,7 @@ public:
 	void OnExit() override {}
 	void OnIdle(wxIdleEvent& event) {
 		event.Skip();
+		if (dismissStartupWarningsDialog()) return;
 		if (!g_gui.root || !wxApp::IsMainLoopRunning() || !g_gui.root->IsEnabled()) return;
 		wxTheApp->Unbind(wxEVT_IDLE,&G1PreviewModule::OnIdle,this);
 		wxTheApp->CallAfter([] { run(); });

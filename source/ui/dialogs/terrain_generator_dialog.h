@@ -12,13 +12,16 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <wx/arrstr.h>
 #include <wx/bitmap.h>
+#include <wx/checkbox.h>
 #include <wx/dialog.h>
 #include <wx/timer.h>
 
 class Editor;
 class wxButton;
 class wxChoice;
+class wxComboBox;
 class wxPanel;
 class wxSpinCtrl;
 class wxStaticText;
@@ -50,6 +53,7 @@ private:
 	void OnPaintPreview(wxPaintEvent& event);
 
 	[[nodiscard]] bool SelectionMode() const;
+	[[nodiscard]] bool NaturalSurface() const;
 	[[nodiscard]] std::optional<Request> ReadRequest();
 	[[nodiscard]] Editor* CurrentTarget();
 	[[nodiscard]] bool BuildPreviewBitmap();
@@ -79,9 +83,18 @@ private:
 	wxSpinCtrl* grass_weight_spin_ = nullptr;
 	wxSpinCtrl* dirt_weight_spin_ = nullptr;
 	wxSpinCtrl* water_weight_spin_ = nullptr;
-	wxTextCtrl* grass_brush_text_ = nullptr;
-	wxTextCtrl* dirt_brush_text_ = nullptr;
-	wxTextCtrl* water_brush_text_ = nullptr;
+	wxComboBox* grass_brush_choice_ = nullptr;
+	wxComboBox* dirt_brush_choice_ = nullptr;
+	wxComboBox* water_brush_choice_ = nullptr;
+	wxChoice* style_choice_ = nullptr;
+	wxComboBox* rock_brush_choice_ = nullptr;
+	wxComboBox* shore_brush_choice_ = nullptr;
+	wxCheckBox* vegetation_check_ = nullptr;
+	wxArrayString ground_names_;
+	wxArrayString doodad_names_;
+	wxComboBox* tree_brush_choice_ = nullptr;
+	wxComboBox* bush_brush_choice_ = nullptr;
+	wxComboBox* stone_brush_choice_ = nullptr;
 	std::array<wxStaticText*, 5> rectangle_labels_ {};
 	wxStaticText* region_label_ = nullptr;
 	wxStaticText* client_label_ = nullptr;

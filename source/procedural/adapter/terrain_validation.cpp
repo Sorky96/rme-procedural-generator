@@ -12,10 +12,7 @@ namespace {
 
 constexpr size_t cancelInterval = 4096;
 
-bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept {
-	return a.region == b.region && a.seed == b.seed && a.grassWeight == b.grassWeight &&
-		a.dirtWeight == b.dirtWeight && a.waterWeight == b.waterWeight;
-}
+bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept { return a == b; }
 
 std::unexpected<PreparedValidationError> fail(PreparedValidationError error) noexcept {
 	return std::unexpected(error);
@@ -49,7 +46,7 @@ std::expected<void, PreparedValidationError> validatePreparedTerrain(
 
 	// Request: explicit config fields and exact profile names against both captured copies.
 	if (!sameConfig(currentConfig, input.config) || !sameConfig(currentConfig, plan.config) ||
-		currentProfile.brushes != plan.profile.brushes) {
+		!(currentProfile == plan.profile)) {
 		return fail(PreparedValidationError::StaleRequest);
 	}
 

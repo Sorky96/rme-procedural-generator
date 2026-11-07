@@ -55,11 +55,14 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 	if (!charge(sizeof(PreparedTerrain) + preparationScratchBytes + 8 * kSnapshotAllocationOverhead) ||
 		!charge(snapshot.cells.capacity(), sizeof(SnapshotCell)) ||
 		!charge(snapshot.input.mask.capacity()) || !charge(snapshot.input.protection.capacity()) ||
-		!charge(prepared.plan.items.capacity(), sizeof(uint16_t)) ||
+		!charge(prepared.plan.items.capacity(), sizeof(uint16_t)) || !charge(prepared.plan.decor.capacity(), sizeof(uint16_t)) ||
 		!charge(prepared.plan.client.capacity() + 1) || !charge(prepared.preview.getEstimatedPeakBytes())) {
 		return failure(TerrainCommitFailure::MemoryLimit);
 	}
-	for (const auto& name : prepared.plan.profile.brushes) {
+	for (const auto& name : prepared.plan.profile.active()) {
+		if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return failure(TerrainCommitFailure::MemoryLimit);
+	}
+	for (const auto& name : prepared.plan.profile.activeDecor()) {
 		if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return failure(TerrainCommitFailure::MemoryLimit);
 	}
 	for (const auto& cell : snapshot.cells) {

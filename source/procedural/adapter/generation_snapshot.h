@@ -41,6 +41,13 @@ std::expected<GenerationSnapshot, SnapshotError> captureGenerationSnapshot(
 	const Map& map, const GenerationConfig& config, CoreBudget coreBudget,
 	SnapshotBudget budget, std::span<const uint8_t> mask = {}, std::stop_token stop = {});
 
+// Writable cells the surface algorithm leaves empty: a border beside existing ground would be
+// written onto that ground, outside what the user allowed, and the preview refuses such results.
+// A cell qualifies when one of its eight neighbours is not writable (outside the area, masked out or
+// protected) and holds ground. One byte per cell, row-major over the region; computed from the
+// snapshot alone, so capture and preview agree.
+[[nodiscard]] std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot);
+
 // Re-checks owned tile values and location metadata as well as revision stamps.
 [[nodiscard]] bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noexcept;
 

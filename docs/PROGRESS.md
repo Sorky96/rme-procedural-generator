@@ -1,5 +1,61 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2 zamknięte (decyzja użytkownika)
+
+Bramka G2 „Sensowna powierzchnia i border” zamknięta jako PASS z długiem, bez podawania, że wszystko zweryfikowano: D5 (szew obok terenu), D6 (rzeki głównie po osiach), D7 (brak ostatniego przeglądu seeda 4242, szacunek pamięci nieprzeliczony), tylko klient 1098-BlackTek. Gałąź `feature/procedural-g2-surface`: 19 lokalnych commitów, nic nie wypchnięte, brak PR. [Stan bramki](procedural/G2_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md).
+
+## 2026-11-07 — G2: wyspy w jeziorach, małe stawy, gładsze rzeki
+
+Po zrzutach: wypełnianie wysp <24 komórek w jeziorach, pierścienie brzegu zależne od wielkości jeziora, rzeki rysowane po wygładzonej osi z płynnie rosnącą szerokością. Test rdzenia, `--surface`, `--commit` PASS, odcisk Seed 1729 → 6783381837833077004. Wygląd w RME i `rme.exe` po tej zmianie niezweryfikowane (RME działał). [Szczegóły](procedural/G2_GATE_STATUS.md).
+
+## 2026-11-07 — G2: zrzuty kilku seedów (4242, 7, 1)
+
+Zrzuty zapisane w `docs/procedural/screenshots/`; użytkownik nie wystawił oceny. Obserwacje z zrzutów: piasek nieregularny i dobry, ale na seedzie 7 wyspa piasku w jeziorze, na seedzie 1 rzeka z kątami prostymi i skokową szerokością. Kryterium wizualne G2 nadal otwarte. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
+## 2026-11-07 — G2: nieregularny brzeg jezior
+
+Po uwadze recenzenta (piasek równomierny, trawa powinna się wcinać): `shoreWidth` 3, pierwszy pierścień zawsze, dalsze według gładkiego szumu. Rozkład kafli piasku 1/2/3 kroki od wody 4253/3290/1273 (24 seedy 100×100). Test rdzenia, `--surface`, `--commit` PASS, odcisk Seed 1729 → 7666204984290374682. Wygląd w RME niezweryfikowany. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
+## 2026-11-07 — D5: Surface obok istniejącego terenu
+
+Bordery Surface przy istniejącym terenie powodowały odmowę podglądu (zmiana poza obszarem). Odtworzone testem `nextToTerrain` w `--surface`; poprawka: komórki zapisywalne obok niezapisywalnych z gruntem zostają puste (1-kaflowy szew), `surfaceKeepClear` wspólne dla przygotowania i preview (ścisła równość zachowana). `SURFACE_NEXT_TO_TERRAIN_PASS` (100×100, z kaflem w środku, 250×250), regresje `--preview`/`--commit`/rdzeń PASS, wiersze commitu G1 bez zmian. Szew i wygląd w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
+## 2026-11-07 — G2: rzeki ze skał o zmiennej szerokości, brushe z list
+
+Po teście GUI: źródła rzek tylko ze skał, szerokość rzeki 2–4 kafli rosnąca z odległością od źródła i ze zlewami (po zrzucie: pierwsza wersja zmieniała szerokość tylko przy zlewie), pola brushy w dialogu zamienione na listy rozwijane (grunt / doodad). Test rdzenia, `--surface`, `--preview`, `--commit` na kliencie 1098 PASS (D1 bez zmian), odcisk Seed 1729 → 1951698793224813922; wolne otwieranie dialogu (user: dialog; ~70 tys. pozycji w 8 listach) → `wxComboBox` readonly ładowany przy pierwszym rozwinięciu, doodady tylko z pojedynczymi itemami; niezmierzone i nieprzetestowane natywnie. Wygląd i listy w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
+## 2026-11-07 — G2-D: kontrole rozkładów, szerokość rzeki, stan bramki
+
+Test rdzenia sprawdza teraz szerokość rzeki (okno 2×2) i górną granicę szerokości brzegu oraz 3 seedy 500×500. Kontrola znalazła jednokaflowy ogonek na źródle rzeki; poprawione (komórka południowo-wschodnia przy rozszerzaniu), przypięty odcisk Seed 1729 → 13556304753518616142. `--surface`, `--preview`, `--commit` na kliencie 1098 przeszły, wiersze commitu G1 bez zmian, `pairs_without_border=0`. Status bramki G2 **PARTIAL**: brak przeglądu wizualnego kilku seedów w RME, D5 otwarty. [Stan bramki](procedural/G2_GATE_STATUS.md).
+
+## 2026-11-07 — G2: szerszy piasek (shoreWidth 2) po teście GUI G2-C
+
+Użytkownik: roślinność w GUI wygląda dobrze, Undo/Redo działa; piasek wokół jezior za cienki. Domyślne `shoreWidth` 1 → 2 (zakres 0–4 bez zmian), przypięty odcisk Seed 1729 100x100 zmieniony na 4385766052247269449. `test_procedural_surface` PASS, próbnik `--surface` (100 i 250, bez i z roślinnością) PASS, `pairs_without_border=0`. Test GUI użytkownika (500x500, roślinność włączona): piasek, drzewa, kamienie i skały oceniono jako „ok”; to ocena wizualna jednego widoku, bez Undo/Redo i bez wielu seedów na tym rozmiarze.
+
+## 2026-11-07 — G2-C: roślinność i detale zależne od terenu
+
+Nowa warstwa dekoracji dla Surface (opcja wyłączona domyślnie): drzewa, krzaki i kamienie z brushy doodad (tylko pojedyncze itemy), reguły zależne od terenu (drzewa tylko na trawie i nie przy wodzie, kamienie na ziemi i przy skale). `GroundPlan::decor`, podgląd, commit z jednym Undo, dialog. `test_procedural_surface`, próbnik `--surface` (100 i 250, Undo i Redo), regresje G1 (`--preview`, `--commit`, rdzeń) PASS. Status **PARTIAL**: dialog i wygląd w RME niezweryfikowane, wielokaflowe doodady poza zakresem. [Raport](procedural/G2_VEGETATION.md).
+
+## 2026-11-07 — G2: poprawki wyglądu po pierwszym teście GUI
+
+Test GUI potwierdził Natural surface, Undo i Redo (po restarcie RME zniknęły nakładki „entry/spawn”, które nie pochodziły z generatora). Uwagi: ziemia „poszatkowana”, rzeki za wąskie. Zmieniono gładkie przejście trawa/ziemia z usuwaniem płatów < 24 komórek oraz poszerzenie rzek do ≥ 2 kafli; `test_procedural_surface` i `--surface` PASS, fingerprinty przepięte. Status **PARTIAL**: efekt wizualny czeka na ponowny ogląd w RME. [Raport](procedural/G2_CORE.md).
+
+## 2026-11-07 — G2-B2: powierzchnia v2 w potoku Preview/Commit
+
+`GenerationConfig` (algorithm, surface), `GroundProfile` (count, 3 lub 6 brushy), przygotowanie, hash podglądu, resolver i dialog („Terrain style”) obsługują Surface obok niezmienionego Classic. Regresje G1 przeszły: resolver, `--preview` i `--commit` z fingerprintami zgodnymi z dokumentami G1. `--surface` end-to-end (przygotowanie, walidacja, commit jako jedno Undo, Undo, Redo) działa dla 100×100 i 250×250 po podniesieniu limitu Undo do 512 MiB; runner dał `passed: false` tylko przez dwa ostrzeżenia `SetFocus` w stderr (D1). Domyślny limit Undo 40 MiB odrzuca 250×250 (`HistoryRefused`). Dodano test-only zamykanie okna „Warnings” w próbnikach. Status **PARTIAL**: nie sprawdzono dialogu w GUI ani wyglądu w RME. [Raport](procedural/G2_PIPELINE.md).
+
+## 2026-11-06 — G2-B: resolver powierzchni i bordery na kliencie 1098
+
+`resolveSurfacePlan` (profil grass, dirt, rocky ground, sand, sea, sea) i istniejący `GroundBorderCalculator` przeszły próbnik na rzeczywistym kliencie (`g2-surface-resolver-2-20261106`, `SURFACE_RESOLVER_PASS`; pierwszy przebieg padł na pustej konfiguracji klienta, zanim wykonał się kod resolvera). Sześć przebiegów 100×100–500×500, zero par różnych brushy bez bordera, ale borders sięgają poza obszar przy cudzym sąsiedzie (95 i 50 kafli), co potok G1 odrzuca: dług D5. Status **PARTIAL**: brak wpięcia w Preview/Commit/dialog i wyniku w RME, czasy to pojedyncze serie. [Raport](procedural/G2_BORDERS.md).
+
+## 2026-11-06 — G2-A: rdzeń powierzchni v2
+
+Nowy generator `surface.h/.cpp` (jeziora, rzeki, skała, brzegi, pas przejściowy trawa/ziemia) obok niezmienionego v1. `test_procedural_surface` przeszedł (24 seedy 100×100, 6 seedów 250×250, 92 wstrzyknięte awarie alokacji, maska bez wpływu na inne komórki); `test_procedural_core` nadal PASS. Status **PARTIAL**: nie ma adaptera ani wyniku w RME, czytelność i borders nieocenione. Czasy to pojedyncze serie. [Raport](procedural/G2_CORE.md). G2 w toku.
+
+## 2026-11-06 — G1: zamknięte z długiem
+
+Decyzja użytkownika: G1 zamknięte z udokumentowanym długiem. Pięć kryteriów bramki ma dowody, progi zasobów 500×500 i 100×100 są zatwierdzone i spełnione; otwarte pozycje D1–D4 są w [TECH_DEBT.md](procedural/TECH_DEBT.md). Zastrzeżenia: czasy Place 500×500 pochodzą z EXE `15c25557…`, nie z obecnego `b87d1abb…`; wiele dowodów to pojedyncze serie; PR #1 nie ma CI, a commity pośrednie nie były budowane osobno. Sesje live poza zakresem. Zmieniono tylko status w `G1_GATE_STATUS.md`, liście Fazy 1 i tym pliku; wpisy poniżej z napisem „G1 IN PROGRESS” to historia z daty pomiaru. G2 nierozpoczęte.
+
 ## 2026-11-06 — G1: zatwierdzenie progów i dług techniczny
 
 Zatwierdzono progi 500×500 i 100×100 (w tym Preview 100×100 ≤ 250 ms) i uznano weryfikator za wystarczający. Zmierzone wartości mieszczą się w progach (ocena w `G1_GATE_STATUS.md`), z zastrzeżeniem, że czasy Place 500×500 pochodzą z EXE `15c25557…`, a nie z obecnego. Nowy `docs/procedural/TECH_DEBT.md` zapisuje jako dług: `SetFocus` przy zamykaniu (D1), niewyjaśniony stos aktywacji (D2), awarie alokacji poza przetestowanymi miejscami (D3) i niezbadane skoki pamięci (D4). Sesje live poza zakresem.

@@ -7,6 +7,9 @@
 
 #include "app/managers/version_manager.h"
 #include "app/settings.h"
+#include "brushes/brush.h"
+#include "brushes/doodad/doodad_brush.h"
+#include "brushes/ground/ground_brush.h"
 #include "editor/action_queue.h"
 #include "editor/editor.h"
 #include "editor/operations/draw_operations.h"
@@ -33,7 +36,9 @@
 #include <variant>
 
 #include <wx/button.h>
+#include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/combobox.h>
 #include <wx/dcclient.h>
 #include <wx/image.h>
 #include <wx/panel.h>
@@ -137,6 +142,8 @@ wxString describe(PreparationInputError error) {
 			return tooLargeMessage;
 		case PreparationInputError::Cancelled:
 			return cancelledMessage;
+		case PreparationInputError::InvalidParameters:
+			return "The surface settings are not valid.";
 		case PreparationInputError::AllocationFailed:
 			return memoryMessage;
 	}
@@ -304,6 +311,50 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		return control;
 	};
 
+	// A read-only list of the brushes the loaded client offers, so a name can only be picked.
+	// Ground brushes feed the terrain fields, doodad brushes the vegetation fields.
+	{
+		std::string previousGround, previousDoodad;
+		for (const auto& [brushName, brush] : g_brushes.getMap()) {
+			if (brushName.empty()) continue;
+			if (brush->is<GroundBrush>()) {
+				if (brushName == previousGround) continue;
+				previousGround = brushName;
+				ground_names_.Add(wxstr(brushName));
+			} else if (const auto* doodad = brush->as<DoodadBrush>()) {
+				// The resolver only places single items of variation 0.
+				if (brushName == previousDoodad || !doodad->hasSingleObjects(0)) continue;
+				previousDoodad = brushName;
+				doodad_names_.Add(wxstr(brushName));
+			}
+		}
+	}
+	const auto brushChoice = [&](const wxString& name, const wxString& preferred, bool doodad) {
+		const wxArrayString& names = doodad ? doodad_names_ : ground_names_;
+		// Only the preferred (or first) entry exists until the list is first opened: filling
+		// thousands of entries into eight lists made opening the dialog slow.
+		wxString initial = names.Index(preferred) != wxNOT_FOUND ? preferred : (names.IsEmpty() ? wxString() : names[0]);
+		auto* control = newd wxComboBox(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxCB_READONLY);
+		control->SetName(name);
+		control->SetBackgroundColour(fieldBackground);
+		control->SetForegroundColour(fieldText);
+		if (!initial.empty()) {
+			control->Append(initial);
+			control->SetSelection(0);
+		}
+		control->Bind(wxEVT_COMBOBOX_DROPDOWN, [control, &names](wxCommandEvent& event) {
+			event.Skip();
+			if (control->GetCount() > 1 || names.size() < 2) return;
+			const wxString current = control->GetValue();
+			control->Freeze();
+			control->Clear();
+			control->Append(names);
+			control->SetStringSelection(current);
+			control->Thaw();
+		});
+		return control;
+	};
+
 	// Inputs, in tab order.
 	auto* form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
 	form->AddGrowableCol(1, 1);
@@ -358,16 +409,50 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(water_weight_spin_, 1, wxEXPAND);
 
 	form->Add(label("G&rass brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	grass_brush_text_ = text("terrain-grass-brush", "grass");
-	form->Add(grass_brush_text_, 1, wxEXPAND);
+	grass_brush_choice_ = brushChoice("terrain-grass-brush", "grass", false);
+	form->Add(grass_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("D&irt brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	dirt_brush_text_ = text("terrain-dirt-brush", "dirt");
-	form->Add(dirt_brush_text_, 1, wxEXPAND);
+	dirt_brush_choice_ = brushChoice("terrain-dirt-brush", "dirt", false);
+	form->Add(dirt_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Wa&ter brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	water_brush_text_ = text("terrain-water-brush", "clear water");
-	form->Add(water_brush_text_, 1, wxEXPAND);
+	water_brush_choice_ = brushChoice("terrain-water-brush", "clear water", false);
+	form->Add(water_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Terrain &style:"), 0, wxALIGN_CENTER_VERTICAL);
+	style_choice_ = newd wxChoice(this, wxID_ANY);
+	style_choice_->SetName("terrain-style");
+	style_choice_->Append("Classic (random mix)");
+	style_choice_->Append("Natural surface (lakes, rivers, rock)");
+	style_choice_->SetSelection(0);
+	form->Add(style_choice_, 1, wxEXPAND);
+
+	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	rock_brush_choice_ = brushChoice("terrain-rock-brush", "rocky ground", false);
+	form->Add(rock_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("S&hore brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
+	form->Add(shore_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
+	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
+	vegetation_check_->SetName("terrain-vegetation");
+	vegetation_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	form->Add(vegetation_check_, 1, wxEXPAND);
+
+	form->Add(label("Tree brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	tree_brush_choice_ = brushChoice("terrain-tree-brush", "trees", true);
+	form->Add(tree_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Bush brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	bush_brush_choice_ = brushChoice("terrain-bush-brush", "bushes", true);
+	form->Add(bush_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Stone brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	stone_brush_choice_ = brushChoice("terrain-stone-brush", "small rocks", true);
+	form->Add(stone_brush_choice_, 1, wxEXPAND);
 	auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; placing adds one Undo step.");
 	helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	helper->Wrap(Theme::Grid(64));
@@ -451,10 +536,13 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
-	for (wxTextCtrl* control : { seed_text_, grass_brush_text_, dirt_brush_text_, water_brush_text_ }) {
-		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+	seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
+		control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
 	place_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPlace, this);
@@ -474,6 +562,10 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 bool TerrainGeneratorDialog::SelectionMode() const {
 	return scope_choice_->GetSelection() == 1;
+}
+
+bool TerrainGeneratorDialog::NaturalSurface() const {
+	return style_choice_->GetSelection() == 1;
 }
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
@@ -499,6 +591,11 @@ void TerrainGeneratorDialog::ReleasePreview() {
 }
 
 void TerrainGeneratorDialog::UpdateControlStates() {
+	const bool natural = NaturalSurface();
+	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
+	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
+	vegetation_check_->Enable(natural);
+	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
 	const bool rectangle = !SelectionMode();
 	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_ }) {
 		control->Enable(rectangle);
@@ -556,22 +653,46 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 	config.seed = value;
 
-	config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
-	config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
-	config.waterWeight = uint32_t(water_weight_spin_->GetValue());
+	const bool natural = NaturalSurface();
+	if (natural) {
+		// Weights belong to the classic mix only; the surface algorithm keeps the defaults.
+		config.algorithm = GenerationAlgorithm::Surface;
+	} else {
+		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
+		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
+		config.waterWeight = uint32_t(water_weight_spin_->GetValue());
+	}
 	if (uint64_t(config.grassWeight) + config.dirtWeight + config.waterWeight == 0) {
 		SetStatus("At least one terrain weight must be above zero.", true);
 		grass_weight_spin_->SetFocus();
 		return std::nullopt;
 	}
 
-	wxTextCtrl* const brushFields[] = { grass_brush_text_, dirt_brush_text_, water_brush_text_ };
-	for (size_t i = 0; i < request.profile.brushes.size(); ++i) {
+	// Surface order: Grass, Dirt, Rock, Shore, Lake, River. Lake and river share the water brush.
+	wxComboBox* const classicFields[] = { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_ };
+	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
+	wxComboBox* const* const brushFields = natural ? surfaceFields : classicFields;
+	request.profile.count = natural ? GroundProfile::surfaceCount : GroundProfile::groundRollCount;
+	for (size_t i = 0; i < request.profile.count; ++i) {
 		request.profile.brushes[i] = std::string(brushFields[i]->GetValue().utf8_str());
 		if (request.profile.brushes[i].empty()) {
-			SetStatus("Enter a ground brush name.", true);
+			SetStatus("Choose a ground brush for every terrain field.", true);
 			brushFields[i]->SetFocus();
 			return std::nullopt;
+		}
+	}
+
+	config.vegetation = natural && vegetation_check_->GetValue();
+	if (config.vegetation) {
+		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
+		request.profile.decorCount = GroundProfile::decorationCount;
+		for (size_t i = 0; i < GroundProfile::decorationCount; ++i) {
+			request.profile.decor[i] = std::string(decorFields[i]->GetValue().utf8_str());
+			if (request.profile.decor[i].empty()) {
+				SetStatus("Choose a doodad brush for trees, bushes and stones.", true);
+				decorFields[i]->SetFocus();
+				return std::nullopt;
+			}
 		}
 	}
 

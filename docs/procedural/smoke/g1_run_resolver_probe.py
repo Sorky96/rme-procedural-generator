@@ -11,6 +11,7 @@ import sys
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--preview', action='store_true', help='Run the owned sandbox/diff probe instead of resolver-only checks')
+parser.add_argument('--surface', action='store_true', help='Run the surface v2 resolver and border probe')
 parser.add_argument('--commit', action='store_true', help='Include atomic terrain history assertions; no GUI preview or G1 E2E claim')
 parser.add_argument('--visible', action='store_true', help='Show the private GUI normally for editor/selection tests requiring focus')
 for name in ('output', 'profile_data', 'config'):
@@ -23,7 +24,7 @@ if not args.output.is_relative_to(repo / 'local-data/procedural-smoke'):
     parser.error('A private output inside local-data/procedural-smoke is required')
 args.output.mkdir(parents=True, exist_ok=False)
 subprocess.run([sys.executable, str(Path(__file__).with_name('g1_build_input_probe.py')),
-                str(args.output), '--source', str(repo / ('tests/test_procedural_preview.cpp' if args.preview else 'tests/test_procedural_resolver.cpp')),
+                str(args.output), '--source', str(repo / ('tests/test_procedural_preview.cpp' if args.preview else 'tests/test_procedural_surface_resolver.cpp' if args.surface else 'tests/test_procedural_resolver.cpp')),
                 '--application-entry'], cwd=repo, check=True)
 run = args.output / 'run'
 data = run / 'data'
@@ -71,6 +72,7 @@ if args.commit:
 verification = {'passed': passed, 'exit_code': code, 'input_assets_unchanged': unchanged,
                 'scope': ('real loaded-client owned preview and atomic Commit/Undo/Redo core; no GUI preview/Commit wiring or G1 E2E' if args.commit else
                           'real loaded-client owned DrawOperations sandbox/diff; no commit/GUI-preview or G1 E2E' if args.preview else
+                          'real loaded-client surface v2 placements and existing border calculator on a synthetic map; no DrawOperations/commit/GUI' if args.surface else
                           'real loaded-client placements at 100x100/500x500; no drawing/commit or G1 E2E'),
                 'report': report, 'source_assets': original,
                 'stderr_empty': stderr_empty}

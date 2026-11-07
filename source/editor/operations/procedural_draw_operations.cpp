@@ -3,6 +3,7 @@
 #include "editor/operations/draw_operations.h"
 
 #include "app/managers/version_manager.h"
+#include "brushes/doodad/doodad_brush.h"
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
@@ -25,10 +26,7 @@ using namespace rme::procedural;
 constexpr uint64_t maxBorderItems = 128;
 constexpr uint64_t borderScratchBytes = 4096;
 
-bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept {
-	return a.region == b.region && a.seed == b.seed && a.grassWeight == b.grassWeight &&
-		a.dirtWeight == b.dirtWeight && a.waterWeight == b.waterWeight;
-}
+bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept { return a == b; }
 
 bool emptyContent(const Tile* tile) noexcept {
 	return !tile || (!tile->ground && tile->items.empty() && !tile->creature && !tile->spawn &&
@@ -69,6 +67,14 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, c.grassWeight, 4);
 		hashField(hash, c.dirtWeight, 4);
 		hashField(hash, c.waterWeight, 4);
+		// GroundRoll keeps its original wire layout; only Surface adds its algorithm and tuning.
+		if (c.algorithm != GenerationAlgorithm::GroundRoll) {
+			hashField(hash, uint8_t(c.algorithm), 1);
+			hashField(hash, c.vegetation, 1);
+			for (const auto value : {c.surface.featureSize, c.surface.lakePermille, c.surface.minLakeCells, c.surface.riverCount,
+				c.surface.minRiverLength, c.surface.shoreWidth, c.surface.rockPermille, c.surface.minRockCells,
+				c.surface.dirtPermille, c.surface.transitionWidth}) hashField(hash, value, 4);
+		}
 	};
 	const auto string = [&](std::string_view value) {
 		hashField(hash, value.size());
@@ -98,18 +104,21 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	hashField(hash, plan.assetRevision);
 	hashField(hash, plan.semanticFingerprint);
 	string(plan.client);
-	for (const auto& name : plan.profile.brushes) string(name);
+	for (const auto& name : plan.profile.active()) string(name);
+	for (const auto& name : plan.profile.activeDecor()) string(name);
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
+	hashField(hash, plan.decor.size());
+	for (const auto id : plan.decor) hashField(hash, id, 2);
 	return hash;
 }
 
-bool hashItem(uint64_t& hash, const Item* item, bool ground) noexcept {
+bool hashItem(uint64_t& hash, const Item* item, bool ground, std::span<const uint16_t> decorIds) noexcept {
 	if (!item || typeid(*item) != typeid(Item) || item->getInvalidOTBMData() ||
 		(item->getAttributesView() && !item->getAttributesView()->empty())) return false;
 	const auto definition = g_item_definitions.get(item->getID());
 	if (!definition || !definition.clientId() || definition.isMetaItem() ||
-		(ground ? !definition.isGroundTile() : !item->isBorder())) return false;
+		(ground ? !definition.isGroundTile() : !(item->isBorder() || std::ranges::binary_search(decorIds, item->getID())))) return false;
 	hashField(hash, item->getID(), 2);
 	hashField(hash, item->getSubtype(), 2);
 	hashField(hash, item->isSelected(), 1);
@@ -159,9 +168,9 @@ std::optional<uint64_t> TerrainPreview::currentFingerprint() const noexcept {
 		hashField(hash, uint32_t(position.z), 4);
 		hashField(hash, tile->statflags, 2);
 		hashField(hash, tile->minimapColor, 1);
-		if (!hashItem(hash, tile->ground.get(), true)) return std::nullopt;
+		if (!hashItem(hash, tile->ground.get(), true, decorIds_)) return std::nullopt;
 		hashField(hash, tile->items.size(), 4);
-		for (const auto& item : tile->items) if (!hashItem(hash, item.get(), false)) return std::nullopt;
+		for (const auto& item : tile->items) if (!hashItem(hash, item.get(), false, decorIds_)) return std::nullopt;
 	}
 	return hash;
 }
@@ -204,21 +213,55 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	const int64_t bottom = std::min<int64_t>(int64_t(MAP_MAX_HEIGHT) + 1, int64_t(r.y) + r.height + 2);
 	if (c != GenerationRegion{left, top, r.z, uint32_t(right-left), uint32_t(bottom-top)}) co_return std::unexpected(PreviewError::InvalidPlan);
 	const auto contextIndex = [&](int x, int y) { return size_t(y-c.y) * c.width + size_t(x-c.x); };
-	std::array<const GroundBrush*, 3> brushes {};
-	for (size_t i = 0; i < brushes.size(); ++i) {
+	if (plan.profile.count != GroundProfile::groundRollCount && plan.profile.count != GroundProfile::surfaceCount) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
+	std::array<const GroundBrush*, GroundProfile::surfaceCount> brushes {};
+	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
 		const auto* brush = g_brushes.getBrush(plan.profile.brushes[i]);
 		brushes[i] = brush ? brush->as<GroundBrush>() : nullptr;
 		if (!brushes[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
+	const bool vegetation = plan.config.vegetation;
+	if (vegetation != !plan.decor.empty() || plan.profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0) ||
+		(vegetation && (plan.decor.size() != plan.items.size() || plan.config.algorithm != GenerationAlgorithm::Surface))) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
+	std::vector<uint16_t> decorIds;
+	for (size_t i = 0; vegetation && i < GroundProfile::decorationCount; ++i) {
+		const auto* brush = g_brushes.getBrush(plan.profile.decor[i]);
+		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
+		if (plan.profile.decor[i].empty() || plan.profile.decor[i].size() > 256 || !doodad || !doodad->hasSingleObjects(0) ||
+			doodad->getSingleChance(0) <= 0 || doodad->getSingleChance(0) > 100000) co_return std::unexpected(PreviewError::InvalidPlan);
+		for (int roll = 1; roll <= doodad->getSingleChance(0); ++roll) {
+			const auto* item = doodad->getRandomSingleItem(0, roll);
+			if (!item || !item->getID()) co_return std::unexpected(PreviewError::InvalidItem);
+			decorIds.push_back(item->getID());
+		}
+	}
+	std::ranges::sort(decorIds);
+	decorIds.erase(std::ranges::unique(decorIds).begin(), decorIds.end());
+	uint64_t decorPlacements = 0;
 	uint64_t placements = 0;
+	// Surface leaves writable cells beside existing ground empty; every other cell must be placed.
+	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot) : std::vector<uint8_t>();
 	for (size_t i = 0; i < plan.items.size(); ++i) {
 		if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
 		if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x,y)]) ||
-			bool(plan.items[i]) != (input.mask[i] && !input.protection[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+			bool(plan.items[i]) != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (plan.decor.empty() ? false : bool(plan.decor[i]) && !plan.items[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.items[i]) continue;
 		++placements;
+		if (!plan.decor.empty() && plan.decor[i]) {
+			if (!std::ranges::binary_search(decorIds, plan.decor[i])) co_return std::unexpected(PreviewError::InvalidItem);
+			const auto decorDefinition = g_item_definitions.get(plan.decor[i]);
+			if (!decorDefinition || !decorDefinition.clientId() || decorDefinition.isMetaItem() || decorDefinition.isGroundTile()) {
+				co_return std::unexpected(PreviewError::InvalidItem);
+			}
+			++decorPlacements;
+		}
 		const auto definition = g_item_definitions.get(plan.items[i]);
 		if (!definition || !definition.clientId() || definition.isMetaItem()) {
 			co_return std::unexpected(PreviewError::InvalidItem);
@@ -228,7 +271,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			(baseId > 0 && baseId <= UINT16_MAX ? g_item_definitions.get(uint16_t(baseId)) : ItemDefinitionView{});
 		if (!ground || !ground.isGroundTile() || !ground.clientId() || ground.isMetaItem()) co_return std::unexpected(PreviewError::InvalidItem);
 		bool found = false;
-		for (const auto* brush : brushes) {
+		for (const auto* brush : std::span(brushes).first(plan.profile.count)) {
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}
@@ -253,7 +296,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	if (!charge(count, sizeof(uint8_t)+sizeof(uint64_t)+emptyAllowance) || !charge(placements, sizeof(Position)) ||
 		!charge(cells, sizeof(SpatialHashGrid::GridCell)+3*sizeof(SpatialHashGrid::CellEntry)+kSnapshotAllocationOverhead) ||
 		!charge(nodes, sizeof(MapNode)+sizeof(Floor)+2*kSnapshotAllocationOverhead) || !charge(borderScratchBytes) ||
-		!charge(maximumSnapshotItemAllocation())) co_return std::unexpected(PreviewError::Limit);
+		!charge(maximumSnapshotItemAllocation()) ||
+		!charge(decorPlacements, maximumSnapshotItemAllocation() + 3*sizeof(std::unique_ptr<Item>))) co_return std::unexpected(PreviewError::Limit);
 	for (const auto& cell : snapshot.cells) {
 		if (!cell.original) continue;
 		const auto memory = estimateSnapshotTileMemory(*cell.original, budget.maxBytes-used, stop);
@@ -268,6 +312,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		result.planFingerprint_ = plan.fingerprint();
 		result.sourceFingerprint_ = hashPreviewSource(snapshot,plan);
 		result.assetsFingerprint_ = *assets;
+		result.decorIds_ = std::move(decorIds);
 		result.buffer_ = std::make_unique<BaseMap>();
 		result.buffer_->getChangeTracker().markAllDirty();
 		result.changes_.reserve(size_t(placements));
@@ -334,6 +379,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 					tileBytes[i] = memory->bytes;
 				}
 			}
+		}
+		// Vegetation goes on after the borders: the border calculator never sees it.
+		for (size_t i = 0; i < plan.decor.size(); ++i) {
+			if (!plan.decor[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->addItem(Item::Create(plan.decor[i]));
 		}
 		// Classify actual values, ignoring only derived caches. Even a border on
 		// an unselected neighbour rejects the whole candidate; never clip it away.

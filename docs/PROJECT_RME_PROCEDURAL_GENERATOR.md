@@ -327,7 +327,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 1 - Rdzeń abstrakcyjny i podstawowa integracja
 
-**IN PROGRESS, 2026-11-02:** rozpoczęto G1-A na gałęzi `feature/procedural-g1-core`. [Rdzeń i ograniczenia](procedural/G1_CORE.md); test C++ 100×100/500×500 PASS nie zastępuje bramki integracyjnej G1 poniżej.
+**G1 ZAMKNIĘTE Z DŁUGIEM, 2026-11-06** ([dług techniczny](procedural/TECH_DEBT.md), [stan bramki](procedural/G1_GATE_STATUS.md)). Rozpoczęto 2026-11-02 G1-A na gałęzi `feature/procedural-g1-core`. [Rdzeń i ograniczenia](procedural/G1_CORE.md); test C++ 100×100/500×500 PASS nie zastępuje bramki integracyjnej G1 poniżej.
 
 - [x] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary. Rdzeń C++ i testy gotowe; ochrona i dokładna maska z rzeczywistego snapshotu i zaznaczenia: [snapshot](procedural/G1_SNAPSHOT.md), [maska](procedural/G1_MASK.md), a w pełnych round-tripach 100×100 i 500×500 pięć kafli fixture pozostało bez zmian.
 - [x] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3. Pierwszy semantyczny baseline v1, bez noise i oceny naturalności; rzeczywiste testy C++ 100×100/500×500 PASS.
@@ -339,7 +339,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 **G1:** 100x100 i 500x500 na jednym piętrze w zmierzonym budżecie zasobów, preview zgodny z zastosowanym diffem, zapis i otwarcie kompletu plików, jedno Undo i Redo, zero zmian poza maską i w danych chronionych. Brak budżetu dla 500x500 jest ograniczeniem, nie zaliczeniem G1.
 
-**Stan 2026-11-06:** wszystkie pozycje listy mają dowód poza jednym wyjątkiem opisanym przy ostatniej pozycji. Pełny round-trip obu rozmiarów powtórzono na bieżącym binarium, progi zasobów 100×100 zatwierdzono, a wzrost pamięci w 200 cyklach uznano za niebędący blokerem (decyzja użytkownika). Bramka pozostaje **IN PROGRESS**: rzeczywiste sesje sieciowe live uznano za poza zakresem G1 (decyzja użytkownika 2026-11-06). Nie rozstrzygnięto pozostałych miejsc awarii alokacji ani stosu `SetFocus` z aktywacji ramki przy otwartym generatorze (2026-11-04); `SetFocus` przy zamykaniu i w przebiegu odmów wyjaśniono. Część dowodów to pojedyncze serie. Odłożone pozycje: [dług techniczny](procedural/TECH_DEBT.md). Szczegóły: [stan bramki](procedural/G1_GATE_STATUS.md).
+**Stan 2026-11-06:** wszystkie pozycje listy mają dowód poza jednym wyjątkiem opisanym przy ostatniej pozycji. Pełny round-trip obu rozmiarów powtórzono na bieżącym binarium, progi zasobów 100×100 zatwierdzono, a wzrost pamięci w 200 cyklach uznano za niebędący blokerem (decyzja użytkownika). Bramka jest **zamknięta z długiem** (decyzja użytkownika 2026-11-06; zastrzeżenia: czasy Place 500×500 z EXE `15c25557…`, nie z obecnego `b87d1abb…`; wiele dowodów to pojedyncze serie; PR bez CI, commity pośrednie nie były budowane osobno). Rzeczywiste sesje sieciowe live uznano za poza zakresem G1. Nie rozstrzygnięto pozostałych miejsc awarii alokacji ani stosu `SetFocus` z aktywacji ramki przy otwartym generatorze (2026-11-04); `SetFocus` przy zamykaniu i w przebiegu odmów wyjaśniono. Część dowodów to pojedyncze serie. Odłożone pozycje: [dług techniczny](procedural/TECH_DEBT.md). Szczegóły: [stan bramki](procedural/G1_GATE_STATUS.md).
 
 ### FAZA 2 - Sensowna powierzchnia i border
 

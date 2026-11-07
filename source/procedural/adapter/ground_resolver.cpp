@@ -18,6 +18,14 @@ uint64_t GroundPlan::fingerprint() const {
 		hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
 		hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
 	}
+	// Appended only with vegetation, so plans without it keep their original fingerprint.
+	if (!decor.empty()) {
+		hash = (hash ^ 0x64) * 1099511628211ULL;
+		for (const auto id : decor) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
 	return hash;
 }
 
@@ -41,7 +49,8 @@ std::expected<GroundPlan, ResolveError> resolveGroundPlan(
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
 	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * sizeof(uint16_t);
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
-	for (const auto& name : profile.brushes) {
+	if (profile.count != GroundProfile::groundRollCount) return std::unexpected(ResolveError::InvalidProfile);
+	for (const auto& name : profile.active()) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;

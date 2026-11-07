@@ -6,10 +6,13 @@
 #include "editor/operations/draw_operations.h"
 #include "map/map.h"
 #include "procedural/adapter/snapshot_memory.h"
+#include "procedural/adapter/surface_resolver.h"
+#include "procedural/core/decoration.h"
 
 #include <algorithm>
 #include <limits>
 #include <new>
+#include <optional>
 #include <wx/thread.h>
 
 namespace rme::procedural {
@@ -19,6 +22,21 @@ constexpr uint64_t maxNameBytes = 256;
 
 std::unexpected<PreparationError> fail(PreparationError error) {
 	return std::unexpected<PreparationError>(std::move(error));
+}
+
+PreparationError fromSurface(SurfaceError error) {
+	switch (error) {
+		case SurfaceError::Cancelled: return PreparationInputError::Cancelled;
+		case SurfaceError::AllocationFailed: return PreparationInputError::AllocationFailed;
+		case SurfaceError::CellLimit: return GenerationError::CellLimit;
+		case SurfaceError::OutputLimit: case SurfaceError::WorkingLimit: return PreparationInputError::MemoryLimit;
+		case SurfaceError::SizeOverflow: return GenerationError::SizeOverflow;
+		case SurfaceError::InvalidRegion: return GenerationError::InvalidRegion;
+		case SurfaceError::InvalidMask: return GenerationError::InvalidMask;
+		case SurfaceError::NoWritableCells: return GenerationError::NoWritableCells;
+		case SurfaceError::InvalidParameters: break;
+	}
+	return PreparationInputError::InvalidParameters;
 }
 
 bool validName(uint64_t length) noexcept {
@@ -78,8 +96,18 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (contextCells > budget.maxContextCells) return fail(PreparationInputError::ContextLimit);
 	if (budget.maxChanges == 0) return fail(PreparationInputError::ChangeLimit);
 
+	const uint8_t expectedBrushes = config.algorithm == GenerationAlgorithm::Surface ?
+		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
+	if (profile.count != expectedBrushes) return fail(PreparationInputError::InvalidProfile);
+	const bool vegetation = config.vegetation;
+	if (vegetation && config.algorithm != GenerationAlgorithm::Surface) return fail(PreparationInputError::InvalidParameters);
+	if (profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) return fail(PreparationInputError::InvalidProfile);
 	uint64_t profileBytes = 0;
-	for (const auto& name : profile.brushes) {
+	for (const auto& name : profile.activeDecor()) {
+		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name.size());
+	}
+	for (const auto& name : profile.active()) {
 		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name.size());
 	}
@@ -99,13 +127,34 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t);
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * (vegetation ? 2 : 1);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t semanticBytes = outputBytes + kSnapshotAllocationOverhead;
+	uint64_t semanticBytes = outputBytes + kSnapshotAllocationOverhead;
+	if (config.algorithm == GenerationAlgorithm::Surface) {
+		// The surface generator also holds working fields and queues; reserve its bound up front.
+		const auto surface = validateSurface({ config.region, config.seed, config.surface }, extent,
+			{ budget.maxCells, UINT64_MAX, UINT64_MAX }, mask, {}, stop);
+		if (!surface) return fail(fromSurface(surface.error()));
+		if (surface->workingBytes > std::numeric_limits<uint64_t>::max() - semanticBytes) {
+			return fail(PreparationInputError::MemoryLimit);
+		}
+		semanticBytes += surface->workingBytes;
+		// surfaceKeepClear() and the combined protection: one byte per cell each, alive while the grid is built.
+		if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes - 2 * kSnapshotAllocationOverhead) / 2) {
+			return fail(PreparationInputError::MemoryLimit);
+		}
+		semanticBytes += 2 * cellCount + 2 * kSnapshotAllocationOverhead;
+		if (vegetation) {
+			if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes) / decorationBytesPerCell) {
+				return fail(PreparationInputError::MemoryLimit);
+			}
+			semanticBytes += cellCount * decorationBytesPerCell;
+		}
+	}
 
 	// Reserved before any copy of map data; kept even after the grid is released.
 	if (!reserve(semanticBytes) || !reserve(planBytes)) return fail(PreparationInputError::MemoryLimit);
@@ -156,12 +205,30 @@ TerrainPreparationSteps runPreparation(
 		// The semantic grid lives only in this scope, so it is released before the sandbox exists.
 		GroundPlan plan;
 		{
-			auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
-				input.mask, input.protection, stop);
-			if (!grid) co_return fail(grid.error());
-			auto resolved = resolveGroundPlan(input, *grid, profile, planBytes, stop);
-			if (!resolved) co_return fail(resolved.error());
-			plan = std::move(*resolved);
+			if (input.config.algorithm == GenerationAlgorithm::Surface) {
+				const auto keepClear = surfaceKeepClear(*snapshot);
+				std::vector<uint8_t> protection = input.protection;
+				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
+				auto grid = generateSurface({ input.config.region, input.config.seed, input.config.surface }, input.extent,
+					{ budget.maxCells, semanticBytes, semanticBytes }, input.mask, protection, stop);
+				if (!grid) co_return fail(fromSurface(grid.error()));
+				std::optional<DecorGrid> decor;
+				if (input.config.vegetation) {
+					auto generated = generateDecoration(*grid, input.config.seed, stop);
+					if (!generated) co_return fail(fromSurface(generated.error()));
+					decor = std::move(*generated);
+				}
+				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear);
+				if (!resolved) co_return fail(resolved.error());
+				plan = std::move(*resolved);
+			} else {
+				auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
+					input.mask, input.protection, stop);
+				if (!grid) co_return fail(grid.error());
+				auto resolved = resolveGroundPlan(input, *grid, profile, planBytes, stop);
+				if (!resolved) co_return fail(resolved.error());
+				plan = std::move(*resolved);
+			}
 		}
 
 		// The preview gets only what is left of the joint budget.
