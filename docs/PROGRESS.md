@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2 zamknięte (decyzja użytkownika)
+
+Bramka G2 „Sensowna powierzchnia i border” zamknięta jako PASS z długiem, bez podawania, że wszystko zweryfikowano: D5 (szew obok terenu), D6 (rzeki głównie po osiach), D7 (brak ostatniego przeglądu seeda 4242, szacunek pamięci nieprzeliczony), tylko klient 1098-BlackTek. Gałąź `feature/procedural-g2-surface`: 19 lokalnych commitów, nic nie wypchnięte, brak PR. [Stan bramki](procedural/G2_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md).
+
 ## 2026-11-07 — G2: wyspy w jeziorach, małe stawy, gładsze rzeki
 
 Po zrzutach: wypełnianie wysp <24 komórek w jeziorach, pierścienie brzegu zależne od wielkości jeziora, rzeki rysowane po wygładzonej osi z płynnie rosnącą szerokością. Test rdzenia, `--surface`, `--commit` PASS, odcisk Seed 1729 → 6783381837833077004. Wygląd w RME i `rme.exe` po tej zmianie niezweryfikowane (RME działał). [Szczegóły](procedural/G2_GATE_STATUS.md).
