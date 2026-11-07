@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G4-B: schemat profilu i mapowanie klucz→rodzaj (PARTIAL)
+
+`g4-profile/1` (klient, hashe `items.otb`/`Tibia.dat`, poziom i piętra, źródła z wagami, mapowanie, statystyki całkowitoliczbowe) z walidacją, odmową niezgodnego klienta/assetów/poziomu i projekcją statystyk przez mapowanie; mapowanie po całych słowach nazwy brusha, bez ID. Test PASS. Propozycja mapowania dla 10.98 (108 kluczy, 5 Unmapped = 2 ‰ kafli) **czeka na akceptację użytkownika**; profile nie są jeszcze wypełniane (G4-C). [G4_PROFILE.md](procedural/G4_PROFILE.md).
+
 ## 2026-11-07 — G4-A: manifest, podział po rodzinach, test podobieństwa (PARTIAL)
 
 Rdzeń: odciski okien 16×16 (shift-niezmiennicze, bez pozycji i piętra), zawieranie w ‰, filtr okien ogólnych, manifest `g4-manifest/1`, rodziny po treści i 5 foldów leave-one-family-out; narzędzie `reference_split`. Test rdzenia PASS. Na 19 mapach 10.98: pary shape 1000 ‰ (kontrola pozytywna), 5 foldów z przeciekiem ≤ 45 ‰; dwie serie bajtowo identyczne, raporty G3 bez zmian. Pierwszy przebieg zdegenerował się (9 map w jednej rodzinie), więc dodano filtr okien ogólnych (jawnie opisane). Nie ma testu memoryzacji wyniku generatora ani podziału BlackTek. [G4_SPLIT.md](procedural/G4_SPLIT.md). Następne: G4-B (schemat profilu, mapowanie klucz→rodzaj).
