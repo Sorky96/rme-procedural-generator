@@ -53,6 +53,27 @@ std::string render(const ReferenceImportSummary& s) {
     return out;
 }
 
+std::string renderSemantic(const NormalizedReference& n) {
+    std::string out = "{\n  \"schema\": \"g3-semantic-report/1\",\n";
+    out += std::format("  \"sha256\": \"{}\",\n  \"cells\": {},\n", n.summary.sha256, n.map.cellCount());
+    out += "  \"floors\": [";
+    bool first = true;
+    for (const auto& floor : n.map.floors()) {
+        out += std::format("{}{{\"z\": {}, \"width\": {}, \"height\": {}}}", first ? "" : ", ", floor.bounds.z, floor.bounds.width, floor.bounds.height);
+        first = false;
+    }
+    out += "],\n  \"tiles_per_trait\": {";
+    for (size_t t = 0; t < traitCount; ++t) out += std::format("{}\"{}\": {}", t ? ", " : "", traitName(t), n.semantic.tilesPerTrait[t]);
+    out += "},\n  \"ground_keys\": [";
+    const auto& keys = n.map.groundKeys();
+    for (size_t i = 0; i < keys.size(); ++i) {
+        const auto& stat = n.semantic.groundKeyStats[i];
+        out += std::format("{}{{\"key\": \"{}\", \"tiles\": {}, \"blocking_tiles\": {}}}", i ? ", " : "", keys[i], stat.tiles, stat.blockingTiles);
+    }
+    out += "]\n}\n";
+    return out;
+}
+
 void runProbe() {
     const auto root = fs::current_path();
     std::ofstream log(root / "g3-probe.log");
@@ -67,15 +88,17 @@ void runProbe() {
         limits.maxFileBytes = 64ull << 20;
         const auto before = hashReferenceFile(map);
         check(before.has_value(), "Hash before failed");
-        const auto summary = importReference(map, limits);
-        if (!summary) {
-            log << "IMPORT_ERROR\t" << referenceImportErrorName(summary.error()) << '\n';
+        const auto normalized = normalizeReference(map, limits, SemanticBudget {200ull << 20});
+        if (!normalized) {
+            log << "IMPORT_ERROR\t" << referenceImportErrorName(normalized.error()) << '\n';
             check(false, "Import failed");
         }
+        const auto& summary = normalized->summary;
         const auto after = hashReferenceFile(map);
-        check(after && *after == *before && *before == summary->sha256, "Input copy changed during import");
-        { std::ofstream report(root / "reference-report.json", std::ios::binary); report << render(*summary); }
-        log << "IMPORT_PASS\t" << compatibilityName(summary->compatibility) << '\n';
+        check(after && *after == *before && *before == summary.sha256, "Input copy changed during import");
+        { std::ofstream report(root / "reference-report.json", std::ios::binary); report << render(summary); }
+        { std::ofstream report(root / "semantic-report.json", std::ios::binary); report << renderSemantic(*normalized); }
+        log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();
         std::_Exit(0);
     } catch (const std::exception& failure) {

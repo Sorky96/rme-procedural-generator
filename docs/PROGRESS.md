@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G3-B: normalizator semantyczny (PARTIAL)
+
+Dodano `SemanticMap` (rdzeń) i `normalizeReference` (adapter): klucz gruntu z pędzla klienta i 16 cech strukturalnych z definicji itemów, bez wpisanych ID. `forgotten.otbm`: 3 028 669 komórek, 77 kluczy gruntu, suma kafli po kluczach = 340 595, dwa przebiegi bajtowo identyczne. Kontrola sumy znalazła błąd (93 kafle bez cech traktowane jako puste), naprawiony bitem `Present`. Ścieżka `unknown` zweryfikowana na syntetycznym fixture (8/8 kontroli, kontrola negatywna); nie sprawdzono jej na mapie z realnymi brakami, kontenerów ani pamięci procesu. Szczegóły: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md). Następne: G3-C (regiony, biomy, topologia).
+
 ## 2026-11-07 — G3-A: import tylko do odczytu (PARTIAL)
 
 Gałąź `feature/procedural-g3-reference-analysis`. Dodano SHA-256 i werdykt zgodności (rdzeń), adapter importu bez `Editor` i próbnik na prywatnej kopii. `forgotten.otbm`: zgodna z 1098-BlackTek, 340 595 kafli, 0 unknown, dwa przebiegi bajtowo identyczne, źródło bez zmian. Nie zrobiono: kontenerów, companion XML, anulowania/limitu pamięci, G3-B…E. Szczegóły i luki: [G3_IMPORT.md](procedural/G3_IMPORT.md). Następne: G3-B (normalizator semantyczny i `unknown`), kontenery, fixture z niezgodną wersją.

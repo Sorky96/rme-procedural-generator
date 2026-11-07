@@ -2,6 +2,7 @@
 #pragma once
 
 #include "procedural/core/reference_header.h"
+#include "procedural/core/semantic_map.h"
 
 #include <array>
 #include <cstdint>
@@ -35,7 +36,7 @@ struct ReferenceImportSummary {
 };
 
 enum class ReferenceImportError : uint8_t {
-	NoClient, FileMissing, FileTooLarge, HeaderUnreadable, LoadFailed
+	NoClient, FileMissing, FileTooLarge, HeaderUnreadable, LoadFailed, BudgetExceeded, NormalizeFailed
 };
 
 [[nodiscard]] const char* referenceImportErrorName(ReferenceImportError value) noexcept;
@@ -55,5 +56,16 @@ enum class ReferenceImportError : uint8_t {
 // Peak memory is not bounded by this call; only the file size is limited.
 [[nodiscard]] std::expected<ReferenceImportSummary, ReferenceImportError> importReference(
 	const std::filesystem::path& file, const ReferenceImportLimits& limits);
+
+// Import plus the structural semantic map. Same read-only guarantees as importReference;
+// memory is bounded by the cell budget for the map, not for the loaded Map itself.
+struct NormalizedReference {
+	ReferenceImportSummary summary;
+	SemanticMap map;
+	SemanticSummary semantic;
+};
+
+[[nodiscard]] std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
+	const std::filesystem::path& file, const ReferenceImportLimits& limits, const SemanticBudget& budget);
 
 } // namespace rme::procedural
