@@ -244,9 +244,10 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 			StableRandom random(config.seed, riverStream);
 			std::vector<uint32_t> route;
-			// Number of accepted routes through a cell: a tributary adds its flow to every cell
-			// downstream of the junction, so a river is thin at its source and thicker after each merge.
-			std::vector<uint16_t> flow(count, 0);
+			// flow: accepted routes through a cell. run: cells travelled from the farthest source
+			// upstream. A tributary adds its flow and run to every cell downstream of the junction,
+			// so a river is thin at its source and grows gradually towards its mouth and after merges.
+			std::vector<uint16_t> flow(count, 0), run(count, 0);
 			for (uint32_t index = 0; index < config.tuning.riverCount && !sources.empty(); ++index) {
 				if (stop.stop_requested()) return cancelled();
 				route.clear();
@@ -256,15 +257,25 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 					route.push_back(uint32_t(cell));
 				}
 				if (route.size() < config.tuning.minRiverLength) continue;
-				for (const auto routeCell : route) { river[routeCell] = 1; flow[routeCell] = 1; }
-				for (int64_t down = parent[route.back()]; down != noParent && !lake[down]; down = parent[down]) ++flow[down];
+				for (size_t step = 0; step < route.size(); ++step) {
+					river[route[step]] = 1;
+					flow[route[step]] = 1;
+					run[route[step]] = uint16_t(std::min<size_t>(step, 0xffff));
+				}
+				size_t travelled = route.size();
+				for (int64_t down = parent[route.back()]; down != noParent && !lake[down]; down = parent[down]) {
+					++flow[down];
+					run[down] = std::max<uint16_t>(run[down], uint16_t(std::min<size_t>(travelled++, 0xffff)));
+				}
 			}
-			// Widen each route cell into a block of 2 (flow 1), 3 (flow 2-3) or 4 (flow 4+) cells,
-			// so no stretch or headwater tip is one cell wide. Lakes and rock are kept.
+			// Widen each route cell into a block of 2, 3 or 4 cells by its size (cells travelled plus
+			// 15 per merged route): under 20 -> 2, under 45 -> 3, otherwise 4. No stretch or headwater
+			// tip is one cell wide. Lakes and rock are kept.
 			const auto route2 = river;
 			for (size_t i = 0; i < count; ++i) {
 				if (!route2[i]) continue;
-				const int32_t blockWidth = flow[i] >= 4 ? 4 : flow[i] >= 2 ? 3 : 2;
+				const uint32_t size = uint32_t(run[i]) + 15u * (flow[i] - 1u);
+				const int32_t blockWidth = size >= 45 ? 4 : size >= 20 ? 3 : 2;
 				const int32_t first = -((blockWidth - 2) / 2), last = first + blockWidth - 1;
 				const int32_t x = int32_t(i % width), y = int32_t(i / width);
 				for (int32_t dy = first; dy <= last; ++dy) {

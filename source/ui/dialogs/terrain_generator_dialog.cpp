@@ -312,18 +312,26 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 	// A read-only list of the brushes the loaded client offers, so a name can only be picked.
 	// Ground brushes feed the terrain fields, doodad brushes the vegetation fields.
+	wxArrayString groundNames, doodadNames;
+	{
+		std::string previousGround, previousDoodad;
+		for (const auto& [brushName, brush] : g_brushes.getMap()) {
+			if (brushName.empty()) continue;
+			if (brush->is<GroundBrush>() && brushName != previousGround) {
+				previousGround = brushName;
+				groundNames.Add(wxstr(brushName));
+			} else if (brush->is<DoodadBrush>() && brushName != previousDoodad) {
+				previousDoodad = brushName;
+				doodadNames.Add(wxstr(brushName));
+			}
+		}
+	}
 	const auto brushChoice = [&](const wxString& name, const wxString& preferred, bool doodad) {
 		auto* control = newd wxChoice(this, wxID_ANY);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
-		std::string previous;
-		for (const auto& [brushName, brush] : g_brushes.getMap()) {
-			const bool match = doodad ? brush->is<DoodadBrush>() : brush->is<GroundBrush>();
-			if (!match || brushName.empty() || brushName == previous) continue;
-			previous = brushName;
-			control->Append(wxstr(brushName));
-		}
+		control->Append(doodad ? doodadNames : groundNames);
 		const int index = control->FindString(preferred, true);
 		if (index != wxNOT_FOUND) control->SetSelection(index);
 		else if (control->GetCount() > 0) control->SetSelection(0);
