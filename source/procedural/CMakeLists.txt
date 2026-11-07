@@ -18,6 +18,8 @@ target_sources(rme PRIVATE adapter/terrain_validation.cpp adapter/terrain_valida
 target_sources(rme PRIVATE adapter/generation_assets.cpp adapter/generation_assets.h)
 target_sources(rme PRIVATE adapter/terrain_target.cpp adapter/terrain_target.h)
 
+target_sources(rme PRIVATE adapter/reference_import.cpp adapter/reference_import.h)
+
 target_sources(rme PRIVATE adapter/terrain_commit.h
     ${PROJECT_SOURCE_DIR}/source/editor/operations/procedural_commit_operations.cpp)
 

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G3-A: import tylko do odczytu (PARTIAL)
+
+Gałąź `feature/procedural-g3-reference-analysis`. Dodano SHA-256 i werdykt zgodności (rdzeń), adapter importu bez `Editor` i próbnik na prywatnej kopii. `forgotten.otbm`: zgodna z 1098-BlackTek, 340 595 kafli, 0 unknown, dwa przebiegi bajtowo identyczne, źródło bez zmian. Nie zrobiono: kontenerów, companion XML, anulowania/limitu pamięci, G3-B…E. Szczegóły i luki: [G3_IMPORT.md](procedural/G3_IMPORT.md). Następne: G3-B (normalizator semantyczny i `unknown`), kontenery, fixture z niezgodną wersją.
+
 ## 2026-11-07 — G2 zamknięte (decyzja użytkownika)
 
 Bramka G2 „Sensowna powierzchnia i border” zamknięta jako PASS z długiem, bez podawania, że wszystko zweryfikowano: D5 (szew obok terenu), D6 (rzeki głównie po osiach), D7 (brak ostatniego przeglądu seeda 4242, szacunek pamięci nieprzeliczony), tylko klient 1098-BlackTek. Gałąź `feature/procedural-g2-surface`: 19 lokalnych commitów, nic nie wypchnięte, brak PR. [Stan bramki](procedural/G2_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md).

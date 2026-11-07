@@ -500,7 +500,7 @@ W `docs/PROGRESS.md` trzymaj aktualny stan. Poniżej szablon startowy, nie rapor
 | 0 | TODO | - | - | - | Audyt repozytorium |
 | 1 | TODO | - | - | - | Po G0 |
 | 2 | TODO | - | - | - | Po G1 |
-| 3 | TODO | - | - | - | Po G2 |
+| 3 | IN PROGRESS | 2026-11-07 | - | - | G3-A: import i zgodność (PARTIAL), zob. G3_IMPORT.md |
 | 4 | TODO | - | - | - | Po G3 |
 | 5 | TODO | - | - | - | Po G4 |
 | 6 | TODO | - | - | - | Po G5 |
