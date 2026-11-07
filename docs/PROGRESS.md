@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2: szerszy piasek (shoreWidth 2) po teście GUI G2-C
+
+Użytkownik: roślinność w GUI wygląda dobrze, Undo/Redo działa; piasek wokół jezior za cienki. Domyślne `shoreWidth` 1 → 2 (zakres 0–4 bez zmian), przypięty odcisk Seed 1729 100x100 zmieniony na 4385766052247269449. `test_procedural_surface` PASS, próbnik `--surface` (100 i 250, bez i z roślinnością) PASS, `pairs_without_border=0`. Wygląd nowego piasku w RME niezweryfikowany.
+
 ## 2026-11-07 — G2-C: roślinność i detale zależne od terenu
 
 Nowa warstwa dekoracji dla Surface (opcja wyłączona domyślnie): drzewa, krzaki i kamienie z brushy doodad (tylko pojedyncze itemy), reguły zależne od terenu (drzewa tylko na trawie i nie przy wodzie, kamienie na ziemi i przy skale). `GroundPlan::decor`, podgląd, commit z jednym Undo, dialog. `test_procedural_surface`, próbnik `--surface` (100 i 250, Undo i Redo), regresje G1 (`--preview`, `--commit`, rdzeń) PASS. Status **PARTIAL**: dialog i wygląd w RME niezweryfikowane, wielokaflowe doodady poza zakresem. [Raport](procedural/G2_VEGETATION.md).

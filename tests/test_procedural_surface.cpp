@@ -167,7 +167,7 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 15556827831682428334ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 4385766052247269449ULL, "Seed 1729 100x100 surface output changed");
 }
 
 struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; };
@@ -188,7 +188,7 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		require(river.touchesBorder || river.touches, "River ends inside the land");
 		require(river.size >= config.tuning.minRiverLength, "River shorter than minimum");
 	}
-	// With shoreWidth 1, land next to a lake is shore unless it is rock or river.
+	// With shoreWidth >= 1, land next to a lake is shore unless it is rock or river.
 	const uint32_t w = grid.region.width, h = grid.region.height;
 	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
 		const auto kind = grid.cells[cell];
