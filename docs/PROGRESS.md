@@ -1,5 +1,13 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2-B2: powierzchnia v2 w potoku Preview/Commit
+
+`GenerationConfig` (algorithm, surface), `GroundProfile` (count, 3 lub 6 brushy), przygotowanie, hash podglądu, resolver i dialog („Terrain style”) obsługują Surface obok niezmienionego Classic. Regresje G1 przeszły: resolver, `--preview` i `--commit` z fingerprintami zgodnymi z dokumentami G1. `--surface` end-to-end (przygotowanie, walidacja, commit jako jedno Undo, Undo, Redo) działa dla 100×100 i 250×250 po podniesieniu limitu Undo do 512 MiB; runner dał `passed: false` tylko przez dwa ostrzeżenia `SetFocus` w stderr (D1). Domyślny limit Undo 40 MiB odrzuca 250×250 (`HistoryRefused`). Dodano test-only zamykanie okna „Warnings” w próbnikach. Status **PARTIAL**: nie sprawdzono dialogu w GUI ani wyglądu w RME. [Raport](procedural/G2_PIPELINE.md).
+
+## 2026-11-06 — G2-B: resolver powierzchni i bordery na kliencie 1098
+
+`resolveSurfacePlan` (profil grass, dirt, rocky ground, sand, sea, sea) i istniejący `GroundBorderCalculator` przeszły próbnik na rzeczywistym kliencie (`g2-surface-resolver-2-20261106`, `SURFACE_RESOLVER_PASS`; pierwszy przebieg padł na pustej konfiguracji klienta, zanim wykonał się kod resolvera). Sześć przebiegów 100×100–500×500, zero par różnych brushy bez bordera, ale borders sięgają poza obszar przy cudzym sąsiedzie (95 i 50 kafli), co potok G1 odrzuca: dług D5. Status **PARTIAL**: brak wpięcia w Preview/Commit/dialog i wyniku w RME, czasy to pojedyncze serie. [Raport](procedural/G2_BORDERS.md).
+
 ## 2026-11-06 — G2-A: rdzeń powierzchni v2
 
 Nowy generator `surface.h/.cpp` (jeziora, rzeki, skała, brzegi, pas przejściowy trawa/ziemia) obok niezmienionego v1. `test_procedural_surface` przeszedł (24 seedy 100×100, 6 seedów 250×250, 92 wstrzyknięte awarie alokacji, maska bez wpływu na inne komórki); `test_procedural_core` nadal PASS. Status **PARTIAL**: nie ma adaptera ani wyniku w RME, czytelność i borders nieocenione. Czasy to pojedyncze serie. [Raport](procedural/G2_CORE.md). G2 w toku.
