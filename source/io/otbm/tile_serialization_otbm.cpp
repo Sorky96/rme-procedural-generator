@@ -140,6 +140,9 @@ void TileSerializationOTBM::readTileArea(
 	}
 
 	mapNode.forEachChild([&](FastOTBMNode& tileNode) {
+		if (iomap.loadAborted()) {
+			return;
+		}
 		const uint8_t tile_type = tileNode.type;
 		if (tile_type != OTBM_TILE && tile_type != OTBM_HOUSETILE) {
 			return;

@@ -24,6 +24,9 @@
 #include "io/filehandle.h"
 #include "io/otbm/otbm_types.h"
 
+#include <atomic>
+#include <functional>
+
 class BinaryNode;
 
 // Pragma pack is VERY important since otherwise it won't be able to load the structs correctly
@@ -109,8 +112,23 @@ public:
 	bool loadMap(Map& map, const FileName& identifier) override;
 	bool saveMap(Map& map, const FileName& identifier) override;
 
+	// Optional abort hook for loading. Called on the thread that runs loadMap about every 5 ms while
+	// tiles are being created (and once after the node scan). When it returns true, loading stops
+	// at the next tile, loadMap returns false and wasAborted() is true. The partially filled map
+	// must be discarded. Without a hook nothing changes. Not part of the OTBM format.
+	void setAbortCheck(std::function<bool()> check) { abort_check_ = std::move(check); }
+	[[nodiscard]] bool wasAborted() const noexcept { return aborted_.load(std::memory_order_relaxed); }
+	// Polled by the tile reader on the worker threads; a cheap relaxed read.
+	[[nodiscard]] bool loadAborted() const noexcept { return aborted_.load(std::memory_order_relaxed); }
+
 protected:
 	static bool getVersionInfo(NodeFileReadHandle* f, MapVersion& out_ver);
+
+	// Evaluates the abort hook (if any) and latches the result.
+	bool pollAbort();
+
+	std::function<bool()> abort_check_;
+	std::atomic<bool> aborted_ { false };
 
 	bool loadMapFromDisk(Map& map, const FileName& identifier);
 	bool loadMapFast(Map& map, const uint8_t* data, size_t size);

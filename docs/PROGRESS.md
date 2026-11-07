@@ -1,5 +1,49 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G3 zamknięte z długiem (decyzja użytkownika)
+
+Bramka G3 „Import i analiza map referencyjnych” zamknięta jako PASS z długiem, bez twierdzenia, że wszystko zweryfikowano: D8 (resztki: ładowanie `Map` to ok. 94 % szczytu pamięci, anulowanie przy normalizacji ok. 1,2 s), D9 (cechy z 4.2: rzeki, jaskinie, szlaki, osady, mikrostruktury, wąskie gardła), D10 (brak testu podobieństwa/memoryzacji i podziału zbiorów), D11 (companion XML, kontenery, niepotwierdzony `items.otb`, brak HTML, jedna maszyna). Kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek): powtarzalne raporty (dwie serie, bajtowo identyczne), statystyki i mapa semantyczna (PNG na piętro, niezależnie zweryfikowany). Kontrola niezależna: Map Statistics w RME zgodne co do kafli, itemów i kafli nieprzechodnich. [Stan bramki](procedural/G3_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md). Następne: G4 (profile stylu, dopasowanie rozkładów, holdout), najpierw D10.
+
+## 2026-11-07 — D7 zamknięty decyzją użytkownika
+
+Użytkownik zamknął dług D7 (G2): zrzuty seedów 4242, 7 i 1 ocenił jako OK. To jego ocena wizualna; nie wykonano przeliczenia szacunku pamięci Surface (40 B/komórkę) ani testu płynności szerokości rzeki, co zapisano w [TECH_DEBT.md](procedural/TECH_DEBT.md) i [G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md). D5 i D6 zostają.
+
+## 2026-11-07 — D8: ręczny test w RME zaliczony
+
+Użytkownik otworzył `forgotten.otbm` w zwykłym RME po zmianie loadera i podał Map → Statistics: 340 595 kafli, 429 037 itemów i 244 283 kafli nieprzechodnich, identycznie jak raporty G3 (kafle, itemy, cecha `blocking`). Potwierdza to import i cechę `blocking` niezależnym programem oraz poprawne działanie ścieżki edytora bez haka. Definicje pozostałych pozycji różnią się (przechodniość, przesuwalne, kontenery), nie błąd; szczegóły w [G3_REFERENCES.md](procedural/G3_REFERENCES.md#kontrola-niezależna-statystyki-rme-gui-ścieżka-edytora). D8: usunięto punkt „brak testu w RME”.
+
+## 2026-11-07 — D8: dług G3 domknięty dalej (hak przerwania w loaderze)
+
+Dodano opcjonalny predykat przerwania do `IOMapOTBM` (osobna zmiana w `source/io`, 45 linii; bez haka zachowanie bez zmian) i użyto go w imporcie: limit pamięci obowiązuje w trakcie ładowania (nadwyżka 3–21 MiB zamiast 293 MiB), a anulowanie w ładowaniu trwa 78–310 ms zamiast 1,4–1,7 s. Dzięki twardej kontroli w ładowaniu szacunek przed ładowaniem jest dolną granicą (16 B/B), więc M06 (71 MiB) przechodzi przy domyślnym limicie 2 048 MiB (szczyt 1 900 MiB). Regresja: 295 plików zestawu i komplet `forgotten.otbm` bajtowo identyczne; ścieżka edytora (bez haka) daje identyczną liczbę kafli na 5 mapach. Resztki: ładowanie `Map` to 94 % szczytu (wymaga innego sposobu wczytywania), anulowanie przy normalizacji ok. 1,2 s, brak ręcznego testu w RME. Szczegóły: [G3_REFERENCES.md](procedural/G3_REFERENCES.md#limit-pamięci-i-anulowanie-d8). **Do wykonania przez użytkownika:** krótki test otwarcia mapy w RME (kroki w odpowiedzi).
+
+## 2026-11-07 — G3: eksport mapy semantycznej i status bramki
+
+Mapa semantyczna jest teraz zapisywana jako artefakt: deterministyczny PNG (8-bitowy indeksowany, bez zależności) na piętro plus `legend.json` (sloty, kolory, ramki pięter), w `local-data/` (prywatne). Niezależny weryfikator (Python `zlib`) przeszedł wszystkie PNG 19 map zwykłego 10.98 i `forgotten.otbm` (wymiary, CRC, filtry, liczba pikseli = liczba kafli, piksele „unknown” = komórki unknown), dwie serie dały 105 bajtowo identycznych plików, pozostałe raporty bez zmian. Wyjaśniono `unknown` w M01/M06 (id spoza items.otb i „deprecated”). Dodano [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md): kryteria bramki i luki, decyzja o zamknięciu należy do użytkownika. Następne: decyzja o G3, brakujące cechy z 4.2 (rzeki, jaskinie, szlaki, osady, mikrostruktury), test podobieństwa/memoryzacji.
+
+## 2026-11-07 — D8: limit pamięci i anulowanie importu (zamknięty z długiem resztkowym)
+
+Import ma limit pamięci procesu (szacunek 40 B/B przed ładowaniem, pomiar po nim; gzip przez trailer ISIZE) i `stop_token` (przed/po haszowaniu i ładowaniu, co 4 096 kafli, co wiersz w analizach). Pomiary na M06 (71 MiB): odmowa przy 2 048 MiB, PASS przy 3 328 MiB (szczyt 1 898 MiB, z czego ładowanie 1 792), opóźnienie anulowania 154–1 713 ms w imporcie i 5–428 ms w analizie. Regresja: 190 plików zestawu i komplet `forgotten.otbm` bajtowo identyczne. Resztki: loader nieprzerywalny (ładowanie i zniszczenie mapy do 1,7 s), szacunek konserwatywny (M06 nie mieści się w 2 GiB wg szacunku, choć zużywa 1 898 MiB), przekroczenie możliwe w trakcie ładowania. Szczegóły: [G3_REFERENCES.md](procedural/G3_REFERENCES.md#limit-pamięci-i-anulowanie-d8). Następne: kalibracja szacunku na większej liczbie map, punkt anulowania w loaderze (osobny commit), brakujące cechy z 4.2.
+
+## 2026-11-07 — G3-E: zestaw 19 map zwykłego 10.98 (PARTIAL)
+
+Analiza G3-A…D uruchomiona na 19 mapach klienta 10.98 (osobny klient od BlackTek: `Tibia.dat` ma 23 725 vs 26 381 itemów). Dwie pełne serie dały 190 bajtowo identycznych plików raportów, źródła i `Tibia.dat/spr` bez zmian, 38 przebiegów bez stderr/dialogów. Prawdziwe `unknown` na dwóch mapach (M01: 90 sztuk w 14 id, pokrycie 99,8 %; M06: 48 w 15 id). Szczyt pamięci mapy 71 MiB (7,8 mln kafli): 1 899 MiB, 93 % budżetu 2 GB: dług D8. Błąd w moim runnerze (start RME ładował BlackTek, bo profil nie miał wpisu „10.98”) naprawiony i opisany. Nie oceniano sensowności cech, brak anulowania i limitu pamięci. Szczegóły: [G3_REFERENCES.md](procedural/G3_REFERENCES.md). Następne: limit pamięci i anulowanie importu (D8), brakujące cechy z 4.2, wyjaśnienie unknown w M01/M06.
+
+## 2026-11-07 — G3-D: ekstrakcja cech i raport zbiorczy (PARTIAL)
+
+Dodano `extractFeatures` (sąsiedztwo gruntów, bloki 16/32/64, cechy per piętro, częstość cech vs odległość od gruntu nieprzechodniego) i renderery JSON/MD/CSV (liczby całkowite, bez czasu i locale), próbnik zapisuje 7 plików. `forgotten.otbm`: 100,0 % pokrycia, dwa przebiegi bajtowo identyczne we wszystkich plikach; fixture z `unknown`: 98,7 %. Test na mapie 3×2 policzonej ręcznie PASS. Nie zrobiono: rzek, jaskiń, szlaków, osad, mikrostruktur, testu podobieństwa, HTML; tylko jedna referencja. Szczegóły: [G3_FEATURES.md](procedural/G3_FEATURES.md). Następne: G3-E (powtarzalność na kilku referencjach, pamięć, anulowanie), brakujące cechy z sekcji 4.2.
+
+## 2026-11-07 — G3-C: regiony i topologia (PARTIAL)
+
+Dodano `analyzeTopology` (rdzeń): składowe przechodnie, regiony tego samego gruntu (nieprzechodnie, zamknięte) i cechy pięter, bez ID i nazw, z anulowaniem. `forgotten.otbm`: 95 103 pola przechodnie, na piętrze 7 największa składowa 22 634 z 46 534 pól, sumy kafli zgodne, dwa przebiegi bajtowo identyczne. Nie zrobiono wąskich gardeł, rzek/jaskiń/szlaków, połączeń pięter; liczenia nie porównano z niezależną implementacją. Szczegóły: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md). Następne: G3-D (feature extraction i raport zbiorczy), wąskie gardła, kontenery.
+
+## 2026-11-07 — G3-B: normalizator semantyczny (PARTIAL)
+
+Dodano `SemanticMap` (rdzeń) i `normalizeReference` (adapter): klucz gruntu z pędzla klienta i 16 cech strukturalnych z definicji itemów, bez wpisanych ID. `forgotten.otbm`: 3 028 669 komórek, 77 kluczy gruntu, suma kafli po kluczach = 340 595, dwa przebiegi bajtowo identyczne. Kontrola sumy znalazła błąd (93 kafle bez cech traktowane jako puste), naprawiony bitem `Present`. Ścieżka `unknown` zweryfikowana na syntetycznym fixture (8/8 kontroli, kontrola negatywna); nie sprawdzono jej na mapie z realnymi brakami, kontenerów ani pamięci procesu. Szczegóły: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md). Następne: G3-C (regiony, biomy, topologia).
+
+## 2026-11-07 — G3-A: import tylko do odczytu (PARTIAL)
+
+Gałąź `feature/procedural-g3-reference-analysis`. Dodano SHA-256 i werdykt zgodności (rdzeń), adapter importu bez `Editor` i próbnik na prywatnej kopii. `forgotten.otbm`: zgodna z 1098-BlackTek, 340 595 kafli, 0 unknown, dwa przebiegi bajtowo identyczne, źródło bez zmian. Nie zrobiono: kontenerów, companion XML, anulowania/limitu pamięci, G3-B…E. Szczegóły i luki: [G3_IMPORT.md](procedural/G3_IMPORT.md). Następne: G3-B (normalizator semantyczny i `unknown`), kontenery, fixture z niezgodną wersją.
+
 ## 2026-11-07 — G2 zamknięte (decyzja użytkownika)
 
 Bramka G2 „Sensowna powierzchnia i border” zamknięta jako PASS z długiem, bez podawania, że wszystko zweryfikowano: D5 (szew obok terenu), D6 (rzeki głównie po osiach), D7 (brak ostatniego przeglądu seeda 4242, szacunek pamięci nieprzeliczony), tylko klient 1098-BlackTek. Gałąź `feature/procedural-g2-surface`: 19 lokalnych commitów, nic nie wypchnięte, brak PR. [Stan bramki](procedural/G2_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md).

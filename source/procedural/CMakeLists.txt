@@ -1,4 +1,4 @@
-add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp)
+add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
 target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rme PRIVATE rme_procedural_core)
@@ -18,6 +18,8 @@ target_sources(rme PRIVATE adapter/terrain_validation.cpp adapter/terrain_valida
 target_sources(rme PRIVATE adapter/generation_assets.cpp adapter/generation_assets.h)
 target_sources(rme PRIVATE adapter/terrain_target.cpp adapter/terrain_target.h)
 
+target_sources(rme PRIVATE adapter/reference_import.cpp adapter/reference_import.h)
+
 target_sources(rme PRIVATE adapter/terrain_commit.h
     ${PROJECT_SOURCE_DIR}/source/editor/operations/procedural_commit_operations.cpp)
 
@@ -32,3 +34,23 @@ add_test(NAME test_procedural_core COMMAND test_procedural_core)
 add_executable(test_procedural_surface ${PROJECT_SOURCE_DIR}/tests/test_procedural_surface.cpp)
 target_link_libraries(test_procedural_surface PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_surface COMMAND test_procedural_surface)
+
+add_executable(test_procedural_reference_header ${PROJECT_SOURCE_DIR}/tests/test_procedural_reference_header.cpp)
+target_link_libraries(test_procedural_reference_header PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_reference_header COMMAND test_procedural_reference_header)
+
+add_executable(test_procedural_semantic_map ${PROJECT_SOURCE_DIR}/tests/test_procedural_semantic_map.cpp)
+target_link_libraries(test_procedural_semantic_map PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_semantic_map COMMAND test_procedural_semantic_map)
+
+add_executable(test_procedural_topology ${PROJECT_SOURCE_DIR}/tests/test_procedural_topology.cpp)
+target_link_libraries(test_procedural_topology PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_topology COMMAND test_procedural_topology)
+
+add_executable(test_procedural_features ${PROJECT_SOURCE_DIR}/tests/test_procedural_features.cpp)
+target_link_libraries(test_procedural_features PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_features COMMAND test_procedural_features)
+
+add_executable(test_procedural_semantic_image ${PROJECT_SOURCE_DIR}/tests/test_procedural_semantic_image.cpp)
+target_link_libraries(test_procedural_semantic_image PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_semantic_image COMMAND test_procedural_semantic_image)
