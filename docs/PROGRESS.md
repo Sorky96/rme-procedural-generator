@@ -2,7 +2,7 @@
 
 ## 2026-11-07 — G2: rzeki ze skał o zmiennej szerokości, brushe z list
 
-Po teście GUI: źródła rzek tylko ze skał, szerokość rzeki 2–4 kafli rosnąca z odległością od źródła i ze zlewami (po zrzucie: pierwsza wersja zmieniała szerokość tylko przy zlewie), pola brushy w dialogu zamienione na listy rozwijane (grunt / doodad). Test rdzenia, `--surface`, `--preview`, `--commit` na kliencie 1098 PASS (D1 bez zmian), odcisk Seed 1729 → 1951698793224813922; listy brushy budowane raz (podejrzenie wolnego otwierania dialogu, niezmierzone). Wygląd i listy w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).
+Po teście GUI: źródła rzek tylko ze skał, szerokość rzeki 2–4 kafli rosnąca z odległością od źródła i ze zlewami (po zrzucie: pierwsza wersja zmieniała szerokość tylko przy zlewie), pola brushy w dialogu zamienione na listy rozwijane (grunt / doodad). Test rdzenia, `--surface`, `--preview`, `--commit` na kliencie 1098 PASS (D1 bez zmian), odcisk Seed 1729 → 1951698793224813922; wolne otwieranie dialogu (user: dialog; ~70 tys. pozycji w 8 listach) → `wxComboBox` readonly ładowany przy pierwszym rozwinięciu, doodady tylko z pojedynczymi itemami; niezmierzone i nieprzetestowane natywnie. Wygląd i listy w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).
 
 ## 2026-11-07 — G2-D: kontrole rozkładów, szerokość rzeki, stan bramki
 
