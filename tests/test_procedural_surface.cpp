@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "procedural/core/decoration.h"
 #include "procedural/core/surface.h"
 
 #include <algorithm>
@@ -280,6 +281,78 @@ void measure(uint32_t side) {
 	std::cout << side << 'x' << side << " generation_ms=" << elapsed << " working_bytes_estimate=" << layout->workingBytes
 		<< " fingerprint=" << grid->fingerprint() << " (single run)\n";
 }
+
+void decoration(uint32_t side, uint32_t seeds) {
+	size_t trees = 0, bushes = 0, stones = 0, landCells = 0, forestSeeds = 0;
+	for (uint32_t seed = 1; seed <= seeds; ++seed) {
+		const auto config = makeConfig(side, seed);
+		const auto grid = generateSurface(config, extent, budget);
+		require(grid && grid->valid(), "Surface generation failed");
+		const auto decor = generateDecoration(*grid, seed);
+		const auto again = generateDecoration(*grid, seed);
+		require(decor && again && decor->valid() && decor->cells == again->cells, "Decoration not deterministic");
+		require(decor->region == grid->region, "Decoration region differs");
+		const uint32_t w = side;
+		size_t seedTrees = 0;
+		for (size_t i = 0; i < grid->cells.size(); ++i) {
+			const SurfaceKind kind = grid->cells[i];
+			const DecorKind placed = decor->cells[i];
+			if (kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt) ++landCells;
+			if (placed == DecorKind::None) continue;
+			require(kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt, "Decoration on water, shore or rock");
+			require(!(kind == SurfaceKind::Dirt && placed != DecorKind::Stone), "Non-stone decoration on dirt");
+			if (placed == DecorKind::Tree) {
+				++trees; ++seedTrees;
+				// No tree within two 4-steps of water: Manhattan distance 2 around the cell.
+				const int x = int(i % w), y = int(i / w);
+				for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) {
+					if (std::abs(dx) + std::abs(dy) > 2) continue;
+					const int nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= int(side) || ny >= int(side)) continue;
+					const auto near = grid->cells[size_t(ny) * w + size_t(nx)];
+					require(near != SurfaceKind::Lake && near != SurfaceKind::Shore && near != SurfaceKind::River, "Tree next to water");
+				}
+			}
+			bushes += placed == DecorKind::Bush; stones += placed == DecorKind::Stone;
+		}
+		forestSeeds += seedTrees > 0;
+		auto other = *decor; (void)other;
+		const auto different = generateDecoration(*grid, seed + 1000);
+		require(different && different->cells != decor->cells, "Decoration seed had no effect");
+	}
+	const double treeShare = double(trees) / double(landCells);
+	require(forestSeeds == seeds, "A seed produced no trees");
+	require(trees > 0 && bushes > 0 && stones > 0, "A decoration kind never appeared");
+	require(treeShare >= 0.01 && treeShare <= 0.12, "Tree share of land outside 1-12%");
+	std::cout << "decoration " << side << 'x' << side << " seeds=" << seeds << " tree_share_of_land=" << treeShare
+		<< " bushes=" << bushes << " stones=" << stones << '\n';
+}
+
+void decorationFailures() {
+	const auto grid = generateSurface(makeConfig(24, 3), extent, budget);
+	require(bool(grid), "Surface baseline failed");
+	SurfaceGrid broken = *grid; broken.cells.pop_back();
+	const auto invalid = generateDecoration(broken, 1);
+	require(!invalid, "Short grid accepted by decoration");
+	std::stop_source source; source.request_stop();
+	const auto stopped = generateDecoration(*grid, 1, source.get_token());
+	require(!stopped && stopped.error() == SurfaceError::Cancelled, "Decoration ignored stop");
+	allocationRecording = true; allocationCount = 0; failedAllocation = 0;
+	const auto baseline = generateDecoration(*grid, 1);
+	allocationRecording = false;
+	require(bool(baseline), "Decoration baseline failed");
+	const size_t total = allocationCount;
+	size_t failures = 0;
+	for (size_t fail = 1; fail <= total; ++fail) {
+		allocationRecording = true; allocationCount = 0; failedAllocation = fail;
+		const auto result = generateDecoration(*grid, 1);
+		allocationRecording = false;
+		if (!result) { require(result.error() == SurfaceError::AllocationFailed, "Unexpected decoration error"); ++failures; }
+		else require(result->cells == baseline->cells, "Decoration changed after skipped failure");
+	}
+	require(failures > 0, "No decoration allocation failure reported");
+	std::cout << "decoration allocation_points=" << total << " injected_failures_reported=" << failures << '\n';
+}
 } // namespace
 
 int main() {
@@ -287,6 +360,7 @@ int main() {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		distributions(100, 24); distributions(250, 6); allocationFailures();
 		measure(100); measure(500);
+		decoration(100, 24); decoration(250, 6); decorationFailures();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {

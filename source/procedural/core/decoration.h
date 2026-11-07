@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include "procedural/core/surface.h"
+
+namespace rme::procedural {
+
+// Single-tile vegetation and detail kinds placed on top of the surface ground. Pure function of
+// (seed, absolute coordinates, the surface grid), integer math only. Only Grass and Dirt cells
+// ever receive a kind; water, shore, rock and Preserve cells stay None. Water and rock distances
+// look at the grid as given, so cells next to a Preserve cell treat it as plain land.
+enum class DecorKind : uint8_t { None = 0, Tree, Bush, Stone };
+inline constexpr size_t decorKindCount = 3;
+
+struct DecorGrid {
+	GenerationRegion region;
+	std::vector<DecorKind> cells;
+	[[nodiscard]] bool valid() const noexcept;
+};
+
+// Working memory estimate (flags and output), not a measurement.
+inline constexpr uint64_t decorationBytesPerCell = 4;
+
+std::expected<DecorGrid, SurfaceError> generateDecoration(
+	const SurfaceGrid& grid, uint64_t seed, std::stop_token stop = {});
+
+} // namespace rme::procedural

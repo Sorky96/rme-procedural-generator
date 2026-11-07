@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2-C: roślinność i detale zależne od terenu
+
+Nowa warstwa dekoracji dla Surface (opcja wyłączona domyślnie): drzewa, krzaki i kamienie z brushy doodad (tylko pojedyncze itemy), reguły zależne od terenu (drzewa tylko na trawie i nie przy wodzie, kamienie na ziemi i przy skale). `GroundPlan::decor`, podgląd, commit z jednym Undo, dialog. `test_procedural_surface`, próbnik `--surface` (100 i 250, Undo i Redo), regresje G1 (`--preview`, `--commit`, rdzeń) PASS. Status **PARTIAL**: dialog i wygląd w RME niezweryfikowane, wielokaflowe doodady poza zakresem. [Raport](procedural/G2_VEGETATION.md).
+
 ## 2026-11-07 — G2: poprawki wyglądu po pierwszym teście GUI
 
 Test GUI potwierdził Natural surface, Undo i Redo (po restarcie RME zniknęły nakładki „entry/spawn”, które nie pochodziły z generatora). Uwagi: ziemia „poszatkowana”, rzeki za wąskie. Zmieniono gładkie przejście trawa/ziemia z usuwaniem płatów < 24 komórek oraz poszerzenie rzek do ≥ 2 kafli; `test_procedural_surface` i `--surface` PASS, fingerprinty przepięte. Status **PARTIAL**: efekt wizualny czeka na ponowny ogląd w RME. [Raport](procedural/G2_CORE.md).

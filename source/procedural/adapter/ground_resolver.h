@@ -17,6 +17,12 @@ struct GroundProfile {
 	std::array<std::string, 6> brushes;
 	uint8_t count = groundRollCount;
 	[[nodiscard]] std::span<const std::string> active() const noexcept { return std::span(brushes).first(count); }
+	// Vegetation doodad brushes in DecorKind order after None: Tree, Bush, Stone. decorCount is 0 (none)
+	// or decorationCount; entries past it must stay empty.
+	static constexpr uint8_t decorationCount = 3;
+	std::array<std::string, 3> decor;
+	uint8_t decorCount = 0;
+	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
 };
 
@@ -30,6 +36,9 @@ struct GroundPlan {
 	uint64_t semanticFingerprint = 0;
 	// Row-major brush placement IDs; 0 means Preserve, never erase.
 	std::vector<uint16_t> items;
+	// Row-major vegetation item IDs placed on top of the ground; empty when vegetation is off,
+	// otherwise one entry per cell with 0 meaning none.
+	std::vector<uint16_t> decor;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
 

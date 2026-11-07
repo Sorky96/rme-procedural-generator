@@ -122,6 +122,14 @@ bool dropSmall(std::vector<uint8_t>& flag, uint32_t width, uint32_t height, uint
 
 } // namespace
 
+uint32_t surfaceValueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step) {
+	return valueNoise(seed, stream, x, y, std::max<uint32_t>(1, step));
+}
+
+uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y) {
+	return lattice(seed, stream, x, y);
+}
+
 bool SurfaceGrid::valid() const noexcept {
 	if (region.x < 0 || region.y < 0 || region.z < 0 || region.width == 0 || region.height == 0 ||
 		uint64_t(region.width) * region.height != cells.size()) return false;

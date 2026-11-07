@@ -33,6 +33,7 @@
 #include <variant>
 
 #include <wx/button.h>
+#include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/dcclient.h>
 #include <wx/image.h>
@@ -386,6 +387,24 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("S&hore brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	shore_brush_text_ = text("terrain-shore-brush", "sand");
 	form->Add(shore_brush_text_, 1, wxEXPAND);
+
+	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
+	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
+	vegetation_check_->SetName("terrain-vegetation");
+	vegetation_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	form->Add(vegetation_check_, 1, wxEXPAND);
+
+	form->Add(label("Tree brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	tree_brush_text_ = text("terrain-tree-brush", "trees");
+	form->Add(tree_brush_text_, 1, wxEXPAND);
+
+	form->Add(label("Bush brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	bush_brush_text_ = text("terrain-bush-brush", "bushes");
+	form->Add(bush_brush_text_, 1, wxEXPAND);
+
+	form->Add(label("Stone brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	stone_brush_text_ = text("terrain-stone-brush", "small rocks");
+	form->Add(stone_brush_text_, 1, wxEXPAND);
 	auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; placing adds one Undo step.");
 	helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	helper->Wrap(Theme::Grid(64));
@@ -469,11 +488,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
-	for (wxTextCtrl* control : { seed_text_, grass_brush_text_, dirt_brush_text_, water_brush_text_, rock_brush_text_, shore_brush_text_ }) {
+	for (wxTextCtrl* control : { seed_text_, grass_brush_text_, dirt_brush_text_, water_brush_text_, rock_brush_text_, shore_brush_text_, tree_brush_text_, bush_brush_text_, stone_brush_text_ }) {
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
 	place_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPlace, this);
@@ -525,6 +545,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	const bool natural = NaturalSurface();
 	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxTextCtrl* control : { rock_brush_text_, shore_brush_text_ }) control->Enable(natural);
+	vegetation_check_->Enable(natural);
+	for (wxTextCtrl* control : { tree_brush_text_, bush_brush_text_, stone_brush_text_ }) control->Enable(natural && vegetation_check_->GetValue());
 	const bool rectangle = !SelectionMode();
 	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_ }) {
 		control->Enable(rectangle);
@@ -608,6 +630,20 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			SetStatus("Enter a ground brush name.", true);
 			brushFields[i]->SetFocus();
 			return std::nullopt;
+		}
+	}
+
+	config.vegetation = natural && vegetation_check_->GetValue();
+	if (config.vegetation) {
+		wxTextCtrl* const decorFields[] = { tree_brush_text_, bush_brush_text_, stone_brush_text_ };
+		request.profile.decorCount = GroundProfile::decorationCount;
+		for (size_t i = 0; i < GroundProfile::decorationCount; ++i) {
+			request.profile.decor[i] = std::string(decorFields[i]->GetValue().utf8_str());
+			if (request.profile.decor[i].empty()) {
+				SetStatus("Enter a doodad brush name for trees, bushes and stones.", true);
+				decorFields[i]->SetFocus();
+				return std::nullopt;
+			}
 		}
 	}
 

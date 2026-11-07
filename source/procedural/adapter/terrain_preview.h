@@ -39,5 +39,7 @@ private:
 	uint64_t assetsFingerprint_ = 0;
 	std::unique_ptr<BaseMap> buffer_;
 	std::vector<Position> changes_;
+	// Sorted vegetation item IDs this preview may hold besides ground and borders.
+	std::vector<uint16_t> decorIds_;
 };
 } // namespace rme::procedural

@@ -3,10 +3,14 @@
 #include "procedural/adapter/surface_resolver.h"
 
 #include "app/managers/version_manager.h"
+#include "brushes/doodad/doodad_brush.h"
+#include "game/item.h"
 #include "brushes/ground/ground_brush.h"
 #include "item_definitions/core/item_definition_store.h"
+#include <array>
 #include <limits>
 #include <new>
+#include <ranges>
 #include <wx/thread.h>
 
 namespace rme::procedural {
@@ -19,11 +23,15 @@ constexpr std::array<uint64_t, kindCount> variantStreams {
 	0x73325f6772617373ULL, 0x73325f6469727420ULL, 0x73325f726f636b20ULL,
 	0x73325f73686f7265ULL, 0x73325f6c616b6520ULL, 0x73325f7269766572ULL
 };
+constexpr std::array<uint64_t, decorKindCount> decorStreams {
+	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
+};
+constexpr uint64_t maxDecorChance = 100000;
 }
 
 std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	const GenerationInput& input, const SurfaceGrid& grid, const GroundProfile& profile,
-	uint64_t maxPlanBytes, std::stop_token stop) {
+	uint64_t maxPlanBytes, std::stop_token stop, const DecorGrid* decor) {
 	if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
 	if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 	if (!g_version.IsVersionLoaded() || !g_version.getLoadedVersion()) return std::unexpected(ResolveError::NoClient);
@@ -37,11 +45,17 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		return std::unexpected(ResolveError::InvalidInput);
 	}
 	if (profile.count != GroundProfile::surfaceCount) return std::unexpected(ResolveError::InvalidProfile);
+	const bool vegetation = input.config.vegetation;
+	if (vegetation != (decor != nullptr) ||
+		profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) {
+		return std::unexpected(ResolveError::InvalidProfile);
+	}
+	if (vegetation && (decor->region != grid.region || !decor->valid())) return std::unexpected(ResolveError::InvalidInput);
 	if (grid.cells.size() > (std::numeric_limits<size_t>::max() - sizeof(GroundPlan)) / sizeof(uint16_t) ||
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
-	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * sizeof(uint16_t);
+	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * sizeof(uint16_t) * (vegetation ? 2 : 1);
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
-	for (const auto& name : profile.active()) {
+	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.active(), profile.activeDecor()})) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
@@ -79,15 +93,40 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (previous != brushes[index]->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
 			totals[index] = uint64_t(previous);
 		}
+		std::array<const DoodadBrush*, decorKindCount> doodads {};
+		std::array<uint64_t, decorKindCount> decorTotals {};
+		for (size_t index = 0; vegetation && index < decorKindCount; ++index) {
+			const auto* brush = g_brushes.getBrush(profile.decor[index]);
+			doodads[index] = brush ? brush->as<DoodadBrush>() : nullptr;
+			if (!doodads[index] || !doodads[index]->hasSingleObjects(0) || doodads[index]->getSingleChance(0) <= 0 ||
+				uint64_t(doodads[index]->getSingleChance(0)) > maxDecorChance) return std::unexpected(ResolveError::InvalidProfile);
+			decorTotals[index] = uint64_t(doodads[index]->getSingleChance(0));
+			// Every reachable single item must be a real, plain, non-ground, non-border item.
+			for (uint64_t roll = 1; roll <= decorTotals[index]; ++roll) {
+				if (roll % 1024 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+				const auto* item = doodads[index]->getRandomSingleItem(0, int(roll));
+				const auto definition = item && item->getID() ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
+				if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile() ||
+					definition.attribute(ItemAttributeKey::BorderBaseGroundId) > 0) return std::unexpected(ResolveError::InvalidItem);
+			}
+		}
 		GroundPlan result {input.config, profile, client, input.mapGeneration, input.mapRevision,
 			input.assetRevision, grid.fingerprint(), std::vector<uint16_t>(grid.cells.size(), 0)};
+		if (vegetation) result.decor.assign(grid.cells.size(), 0);
 		std::vector<StableRandom> streams;
 		streams.reserve(kindCount);
 		for (const auto stream : variantStreams) streams.emplace_back(input.config.seed, stream);
+		std::vector<StableRandom> decorRng;
+		decorRng.reserve(decorKindCount);
+		if (vegetation) for (const auto stream : decorStreams) decorRng.emplace_back(input.config.seed, stream);
 		for (size_t i = 0; i < grid.cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 			std::array<int, kindCount> rolls {};
 			for (size_t kind = 0; kind < kindCount; ++kind) rolls[kind] = int(streams[kind].bounded(totals[kind])) + 1;
+			std::array<int, decorKindCount> decorRolls {};
+			if (vegetation) for (size_t kind = 0; kind < decorKindCount; ++kind) {
+				decorRolls[kind] = int(decorRng[kind].bounded(decorTotals[kind])) + 1;
+			}
 			const bool writable = input.mask[i] && !input.protection[i];
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
@@ -95,6 +134,15 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			const auto id = brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;
+			if (vegetation) {
+				const auto placed = decor->cells[i];
+				if (placed != DecorKind::None) {
+					const size_t slot = size_t(placed) - 1;
+					const auto* item = doodads[slot]->getRandomSingleItem(0, decorRolls[slot]);
+					if (!item || !item->getID()) return std::unexpected(ResolveError::InvalidItem);
+					result.decor[i] = item->getID();
+				}
+			}
 		}
 		if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 		return result;

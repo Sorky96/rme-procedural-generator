@@ -196,12 +196,18 @@ struct UndoLimits {
 	~UndoLimits() { g_settings.setInteger(Config::UNDO_SIZE, count); g_settings.setInteger(Config::UNDO_MEM_SIZE, bytes); }
 };
 
-void endToEnd(uint32_t side, std::ostream& report) {
+void endToEnd(uint32_t side, std::ostream& report, bool vegetation = false) {
 	UndoLimits undoLimits;
 	check(g_gui.NewMap(), "Editor creation failed");
 	auto& editor = *g_gui.GetCurrentEditor();
 	GenerationConfig config {{100, 100, 7, side, side}, 1729};
 	config.algorithm = GenerationAlgorithm::Surface;
+	config.vegetation = vegetation;
+	GroundProfile profile = ::profile;
+	if (vegetation) {
+		profile.decor = {"trees", "bushes", "small rocks"};
+		profile.decorCount = GroundProfile::decorationCount;
+	}
 	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
 	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
 	const auto baselineTiles = editor.map.getTileCount();
@@ -214,11 +220,30 @@ void endToEnd(uint32_t side, std::ostream& report) {
 	check(!validatePreparedTerrain(editor.map, *prepared, tuned, profile), "Changed tuning accepted as current");
 	auto classic = config;
 	classic.algorithm = GenerationAlgorithm::GroundRoll;
+	classic.vegetation = false;
 	check(!validatePreparedTerrain(editor.map, *prepared, classic, profile), "Changed algorithm accepted as current");
 	const GroundProfile threeNames {{"grass", "dirt", "sea"}};
 	check(!prepareTerrain(editor.map, config, threeNames, preparation), "Surface accepted a three-brush profile");
 	check(!prepareTerrain(editor.map, classic, profile, preparation), "Classic accepted a six-brush profile");
+	if (vegetation) {
+		auto withoutNames = profile;
+		withoutNames.decorCount = 0;
+		check(!prepareTerrain(editor.map, config, withoutNames, preparation), "Vegetation accepted without decoration brushes");
+		auto classicVegetation = classic;
+		classicVegetation.vegetation = true;
+		check(!prepareTerrain(editor.map, classicVegetation, profile, preparation), "Classic accepted vegetation");
+		auto badBrush = profile;
+		badBrush.decor[0] = "grass";
+		check(!prepareTerrain(editor.map, config, badBrush, preparation), "A ground brush was accepted as a doodad brush");
+		auto changed = config;
+		changed.vegetation = false;
+		check(!validatePreparedTerrain(editor.map, *prepared, changed, profile), "Vegetation toggle accepted as current");
+		check(prepared->plan.decor.size() == prepared->plan.items.size(), "Vegetation plan has no decoration layer");
+	} else {
+		check(prepared->plan.decor.empty(), "Plan without vegetation carries a decoration layer");
+	}
 	const auto expected = prepared->plan.items;
+	const auto expectedDecor = prepared->plan.decor;
 	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
 	check(bool(receipt), "Surface commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()) +
 		(receipt || receipt.error().index() != 0 ? std::string() : " value " + std::to_string(int(std::get<TerrainCommitFailure>(receipt.error())))));
@@ -226,8 +251,18 @@ void endToEnd(uint32_t side, std::ostream& report) {
 	const auto checkPlaced = [&](bool placed) {
 		for (size_t i = 0; i < expected.size(); ++i) {
 			const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
-			if (placed) check(tile && tile->ground && tile->ground->getID() == expected[i], "Committed ground differs from the plan");
-			else check(!tile || !tile->ground, "Undo left generated ground");
+			if (placed) {
+				check(tile && tile->ground && tile->ground->getID() == expected[i], "Committed ground differs from the plan");
+				size_t plain = 0;
+				for (const auto& item : tile->items) {
+					if (item->isBorder()) continue;
+					++plain;
+					check(!expectedDecor.empty() && item->getID() == expectedDecor[i], "Committed tile holds an item outside the plan");
+				}
+				check(plain == ((!expectedDecor.empty() && expectedDecor[i]) ? 1u : 0u), "Decoration count differs from the plan");
+			} else {
+				check(!tile || (!tile->ground && tile->items.empty()), "Undo left generated content");
+			}
 		}
 	};
 	checkPlaced(true);
@@ -240,7 +275,8 @@ void endToEnd(uint32_t side, std::ostream& report) {
 	check(editor.map.getTileCount() == committedTiles, "Redo changed the tile count");
 	// A modified synthetic map would make the final Close() ask to save it and wait for an operator.
 	editor.map.clearChanges();
-	report << "SURFACE_E2E_PASS\t" << side << "\tchanges=" << receipt->changes << "\tbytes=" << receipt->totalBytes << '\n';
+	report << (vegetation ? "SURFACE_VEGETATION_E2E_PASS\t" : "SURFACE_E2E_PASS\t") << side << "\tdecorated="
+		<< std::ranges::count_if(expectedDecor, [](uint16_t id) { return id != 0; }) << "\tchanges=" << receipt->changes << "\tbytes=" << receipt->totalBytes << '\n';
 }
 
 void run() {
@@ -258,6 +294,8 @@ void run() {
 		oneRun(500, 1729, report, false);
 		endToEnd(100, report);
 		endToEnd(250, report);
+		endToEnd(100, report, true);
+		endToEnd(250, report, true);
 		report << "SURFACE_RESOLVER_PASS\n";
 		report.close();
 		wxTheApp->CallAfter([] { g_gui.root->Close(); });

@@ -45,6 +45,10 @@ struct SurfaceGrid {
 
 // Empty mask/protection: same rules as validateGeneration. Rivers end at a lake or
 // at the border of the generated rectangle, never inside the land.
+// Shared integer noise for generators that must agree with the surface fields.
+uint32_t surfaceValueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step);
+uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y);
+
 std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask = {}, std::span<const uint8_t> protection = {},

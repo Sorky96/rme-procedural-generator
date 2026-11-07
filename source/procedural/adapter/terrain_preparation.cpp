@@ -7,10 +7,12 @@
 #include "map/map.h"
 #include "procedural/adapter/snapshot_memory.h"
 #include "procedural/adapter/surface_resolver.h"
+#include "procedural/core/decoration.h"
 
 #include <algorithm>
 #include <limits>
 #include <new>
+#include <optional>
 #include <wx/thread.h>
 
 namespace rme::procedural {
@@ -97,7 +99,14 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	const uint8_t expectedBrushes = config.algorithm == GenerationAlgorithm::Surface ?
 		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
 	if (profile.count != expectedBrushes) return fail(PreparationInputError::InvalidProfile);
+	const bool vegetation = config.vegetation;
+	if (vegetation && config.algorithm != GenerationAlgorithm::Surface) return fail(PreparationInputError::InvalidParameters);
+	if (profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) return fail(PreparationInputError::InvalidProfile);
 	uint64_t profileBytes = 0;
+	for (const auto& name : profile.activeDecor()) {
+		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name.size());
+	}
 	for (const auto& name : profile.active()) {
 		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name.size());
@@ -118,7 +127,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t);
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * (vegetation ? 2 : 1);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -134,6 +143,12 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			return fail(PreparationInputError::MemoryLimit);
 		}
 		semanticBytes += surface->workingBytes;
+		if (vegetation) {
+			if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes) / decorationBytesPerCell) {
+				return fail(PreparationInputError::MemoryLimit);
+			}
+			semanticBytes += cellCount * decorationBytesPerCell;
+		}
 	}
 
 	// Reserved before any copy of map data; kept even after the grid is released.
@@ -189,7 +204,13 @@ TerrainPreparationSteps runPreparation(
 				auto grid = generateSurface({ input.config.region, input.config.seed, input.config.surface }, input.extent,
 					{ budget.maxCells, semanticBytes, semanticBytes }, input.mask, input.protection, stop);
 				if (!grid) co_return fail(fromSurface(grid.error()));
-				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop);
+				std::optional<DecorGrid> decor;
+				if (input.config.vegetation) {
+					auto generated = generateDecoration(*grid, input.config.seed, stop);
+					if (!generated) co_return fail(fromSurface(generated.error()));
+					decor = std::move(*generated);
+				}
+				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr);
 				if (!resolved) co_return fail(resolved.error());
 				plan = std::move(*resolved);
 			} else {

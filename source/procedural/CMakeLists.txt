@@ -1,4 +1,4 @@
-add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp)
+add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
 target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rme PRIVATE rme_procedural_core)

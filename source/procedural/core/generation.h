@@ -50,6 +50,8 @@ struct GenerationConfig {
 	uint32_t waterWeight = 10;
 	GenerationAlgorithm algorithm = GenerationAlgorithm::GroundRoll;
 	SurfaceTuning surface;
+	// Surface only: adds single-tile trees, bushes and stones from doodad brushes.
+	bool vegetation = false;
 	bool operator==(const GenerationConfig&) const = default;
 };
 

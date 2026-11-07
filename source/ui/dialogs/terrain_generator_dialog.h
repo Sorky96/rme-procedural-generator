@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <wx/bitmap.h>
+#include <wx/checkbox.h>
 #include <wx/dialog.h>
 #include <wx/timer.h>
 
@@ -86,6 +87,10 @@ private:
 	wxChoice* style_choice_ = nullptr;
 	wxTextCtrl* rock_brush_text_ = nullptr;
 	wxTextCtrl* shore_brush_text_ = nullptr;
+	wxCheckBox* vegetation_check_ = nullptr;
+	wxTextCtrl* tree_brush_text_ = nullptr;
+	wxTextCtrl* bush_brush_text_ = nullptr;
+	wxTextCtrl* stone_brush_text_ = nullptr;
 	std::array<wxStaticText*, 5> rectangle_labels_ {};
 	wxStaticText* region_label_ = nullptr;
 	wxStaticText* client_label_ = nullptr;
