@@ -1,5 +1,29 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — D7 zamknięty decyzją użytkownika
+
+Użytkownik zamknął dług D7 (G2): zrzuty seedów 4242, 7 i 1 ocenił jako OK. To jego ocena wizualna; nie wykonano przeliczenia szacunku pamięci Surface (40 B/komórkę) ani testu płynności szerokości rzeki, co zapisano w [TECH_DEBT.md](procedural/TECH_DEBT.md) i [G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md). D5 i D6 zostają.
+
+## 2026-11-07 — D8: ręczny test w RME zaliczony
+
+Użytkownik otworzył `forgotten.otbm` w zwykłym RME po zmianie loadera i podał Map → Statistics: 340 595 kafli, 429 037 itemów i 244 283 kafli nieprzechodnich, identycznie jak raporty G3 (kafle, itemy, cecha `blocking`). Potwierdza to import i cechę `blocking` niezależnym programem oraz poprawne działanie ścieżki edytora bez haka. Definicje pozostałych pozycji różnią się (przechodniość, przesuwalne, kontenery), nie błąd; szczegóły w [G3_REFERENCES.md](procedural/G3_REFERENCES.md#kontrola-niezależna-statystyki-rme-gui-ścieżka-edytora). D8: usunięto punkt „brak testu w RME”.
+
+## 2026-11-07 — D8: dług G3 domknięty dalej (hak przerwania w loaderze)
+
+Dodano opcjonalny predykat przerwania do `IOMapOTBM` (osobna zmiana w `source/io`, 45 linii; bez haka zachowanie bez zmian) i użyto go w imporcie: limit pamięci obowiązuje w trakcie ładowania (nadwyżka 3–21 MiB zamiast 293 MiB), a anulowanie w ładowaniu trwa 78–310 ms zamiast 1,4–1,7 s. Dzięki twardej kontroli w ładowaniu szacunek przed ładowaniem jest dolną granicą (16 B/B), więc M06 (71 MiB) przechodzi przy domyślnym limicie 2 048 MiB (szczyt 1 900 MiB). Regresja: 295 plików zestawu i komplet `forgotten.otbm` bajtowo identyczne; ścieżka edytora (bez haka) daje identyczną liczbę kafli na 5 mapach. Resztki: ładowanie `Map` to 94 % szczytu (wymaga innego sposobu wczytywania), anulowanie przy normalizacji ok. 1,2 s, brak ręcznego testu w RME. Szczegóły: [G3_REFERENCES.md](procedural/G3_REFERENCES.md#limit-pamięci-i-anulowanie-d8). **Do wykonania przez użytkownika:** krótki test otwarcia mapy w RME (kroki w odpowiedzi).
+
+## 2026-11-07 — G3: eksport mapy semantycznej i status bramki
+
+Mapa semantyczna jest teraz zapisywana jako artefakt: deterministyczny PNG (8-bitowy indeksowany, bez zależności) na piętro plus `legend.json` (sloty, kolory, ramki pięter), w `local-data/` (prywatne). Niezależny weryfikator (Python `zlib`) przeszedł wszystkie PNG 19 map zwykłego 10.98 i `forgotten.otbm` (wymiary, CRC, filtry, liczba pikseli = liczba kafli, piksele „unknown” = komórki unknown), dwie serie dały 105 bajtowo identycznych plików, pozostałe raporty bez zmian. Wyjaśniono `unknown` w M01/M06 (id spoza items.otb i „deprecated”). Dodano [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md): kryteria bramki i luki, decyzja o zamknięciu należy do użytkownika. Następne: decyzja o G3, brakujące cechy z 4.2 (rzeki, jaskinie, szlaki, osady, mikrostruktury), test podobieństwa/memoryzacji.
+
+## 2026-11-07 — D8: limit pamięci i anulowanie importu (zamknięty z długiem resztkowym)
+
+Import ma limit pamięci procesu (szacunek 40 B/B przed ładowaniem, pomiar po nim; gzip przez trailer ISIZE) i `stop_token` (przed/po haszowaniu i ładowaniu, co 4 096 kafli, co wiersz w analizach). Pomiary na M06 (71 MiB): odmowa przy 2 048 MiB, PASS przy 3 328 MiB (szczyt 1 898 MiB, z czego ładowanie 1 792), opóźnienie anulowania 154–1 713 ms w imporcie i 5–428 ms w analizie. Regresja: 190 plików zestawu i komplet `forgotten.otbm` bajtowo identyczne. Resztki: loader nieprzerywalny (ładowanie i zniszczenie mapy do 1,7 s), szacunek konserwatywny (M06 nie mieści się w 2 GiB wg szacunku, choć zużywa 1 898 MiB), przekroczenie możliwe w trakcie ładowania. Szczegóły: [G3_REFERENCES.md](procedural/G3_REFERENCES.md#limit-pamięci-i-anulowanie-d8). Następne: kalibracja szacunku na większej liczbie map, punkt anulowania w loaderze (osobny commit), brakujące cechy z 4.2.
+
+## 2026-11-07 — G3-E: zestaw 19 map zwykłego 10.98 (PARTIAL)
+
+Analiza G3-A…D uruchomiona na 19 mapach klienta 10.98 (osobny klient od BlackTek: `Tibia.dat` ma 23 725 vs 26 381 itemów). Dwie pełne serie dały 190 bajtowo identycznych plików raportów, źródła i `Tibia.dat/spr` bez zmian, 38 przebiegów bez stderr/dialogów. Prawdziwe `unknown` na dwóch mapach (M01: 90 sztuk w 14 id, pokrycie 99,8 %; M06: 48 w 15 id). Szczyt pamięci mapy 71 MiB (7,8 mln kafli): 1 899 MiB, 93 % budżetu 2 GB: dług D8. Błąd w moim runnerze (start RME ładował BlackTek, bo profil nie miał wpisu „10.98”) naprawiony i opisany. Nie oceniano sensowności cech, brak anulowania i limitu pamięci. Szczegóły: [G3_REFERENCES.md](procedural/G3_REFERENCES.md). Następne: limit pamięci i anulowanie importu (D8), brakujące cechy z 4.2, wyjaśnienie unknown w M01/M06.
+
 ## 2026-11-07 — G3-D: ekstrakcja cech i raport zbiorczy (PARTIAL)
 
 Dodano `extractFeatures` (sąsiedztwo gruntów, bloki 16/32/64, cechy per piętro, częstość cech vs odległość od gruntu nieprzechodniego) i renderery JSON/MD/CSV (liczby całkowite, bez czasu i locale), próbnik zapisuje 7 plików. `forgotten.otbm`: 100,0 % pokrycia, dwa przebiegi bajtowo identyczne we wszystkich plikach; fixture z `unknown`: 98,7 %. Test na mapie 3×2 policzonej ręcznie PASS. Nie zrobiono: rzek, jaskiń, szlaków, osad, mikrostruktur, testu podobieństwa, HTML; tylko jedna referencja. Szczegóły: [G3_FEATURES.md](procedural/G3_FEATURES.md). Następne: G3-E (powtarzalność na kilku referencjach, pamięć, anulowanie), brakujące cechy z sekcji 4.2.

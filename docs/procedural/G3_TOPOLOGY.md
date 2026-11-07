@@ -21,7 +21,7 @@ Raport lokalny `topology-report.json` (SHA-256 `041ECE44…B1A2`) w `local-data/
 Przebieg na fixture z `unknown`: 395 pól przechodnych, 1 składowa (395), 5 nieznanych wykluczonych, region „bez klucza” 3 kafle w 2 regionach, zgodnie z przewidywaniem z fixture.
 
 ## Czego NIE zweryfikowano
-- Wynik na dużej mapie nie ma niezależnej kontroli (np. innym programem): poprawność liczenia składowych potwierdzają testy ręcznie policzone i zgodność sum, nie porównanie z drugą implementacją.
+- Składowe przechodnie i regiony nie mają niezależnej kontroli (np. innym programem): potwierdzają je testy ręcznie policzone i zgodność sum. Niezależnie potwierdzona jest tylko liczba kafli nieprzechodnich, zgodna ze statystykami RME ([G3_REFERENCES.md](G3_REFERENCES.md#kontrola-niezależna-statystyki-rme-gui-ścieżka-edytora)).
 - „Przechodni” to przechodniość po flagach itemów (blokujący item, np. drzewo, ściana, zamyka kafel), nie pełna symulacja ruchu: bez przekątnych, bez rozmiaru stworów, bez przejść między piętrami, bez drzwi otwieranych/zamkniętych.
 - Brak wąskich gardeł, długości i krętości rzek, komór i korytarzy jaskiń, sieci szlaków, osad. Region gruntu to nie nazwany biom: nazwy biomów byłyby zgadywaniem, więc raport podaje klucz gruntu z klienta i dane o nieprzechodniości.
 - „Zamknięty” liczony względem zajętego prostokąta piętra, nie granic mapy, więc morze przy brzegu zajętego obszaru jest „otwarte”.

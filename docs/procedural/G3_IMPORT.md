@@ -22,7 +22,7 @@
 - Do importu skopiowano tylko `.otbm`, więc companion XML (house/spawn/zones) nie były wczytywane; ich wpływu nie sprawdzono. Katalog `forgotten-zones` nie jest hashowany przez runner (tylko pliki `*-*.xml`).
 - Itemy wewnątrz kontenerów nie są liczone ani sprawdzane pod kątem `unknown`.
 - Reguła zgodności („starszy minor OK, nowszy zgłaszany”) to założenie projektu, sprawdzone tylko dla przypadku równych wersji i testów jednostkowych; brak fixture z niezgodną wersją na prawdziwym pliku.
-- Anulowanie i limit pamięci: jest tylko limit rozmiaru pliku (64 MiB w próbniku); `loadMap` nie jest przerywalny, szczyt pamięci niezmierzony. Do zamknięcia przed G3-E.
+- Anulowanie i limit pamięci: dodane 2026-11-07 (D8), opis i pomiary w [G3_REFERENCES.md](G3_REFERENCES.md#limit-pamięci-i-anulowanie-d8); `loadMap` nadal nieprzerywalny.
 - Test GUI nie dotyczy tego kroku (brak zmian w interfejsie).
 
 ## Korekta: blokujący dialog wxWidgets (zgłoszenie użytkownika, 2026-11-07)

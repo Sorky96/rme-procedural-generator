@@ -2,6 +2,8 @@
 
 **ZAMKNIĘTA decyzją użytkownika 2026-11-07 (PASS z długiem, nie PASS bez zastrzeżeń).** Gate: „teren czytelny w RME i brak znanych krytycznych błędów borderów”. Dowody: testy rdzenia i próbniki na rzeczywistym kliencie 1098-BlackTek (`pairs_without_border=0`, regresje G1 bez zmian), oceny GUI użytkownika (roślinność, Undo/Redo, 500×500, dialog, generowanie obok terenu, seed 7 po poprawkach) oraz zrzuty seedów 4242, 7 i 1 (4242 i 7 sprzed ostatnich poprawek, 1 po nich). Zaakceptowane zastrzeżenia zapisano jako dług: rzeki wciąż głównie po osiach i brak ostatniego przeglądu seeda 4242 (D6, D7), szew obok istniejącego terenu (D5), a także: tylko klient 1098-BlackTek, brak pomiarów wydajności, brak oceny przechodniości z drzewami i kamieniami. Poniższe sekcje są zapisem kolejnych kroków i dowodów w kolejności chronologicznej; część wcześniejszych zdań o statusie „PARTIAL” w tabeli i sekcjach jest historyczna.
 
+**Aktualizacja 2026-11-07 (po zamknięciu G2):** D7 zamknięty decyzją użytkownika; zrzuty seedów 4242, 7 i 1 uznał za OK (ocena użytkownika, nie test). Przeliczenie szacunku pamięci Surface i test płynności szerokości rzeki nie zostały wykonane. D5 i D6 pozostają jako dług ([TECH_DEBT.md](TECH_DEBT.md)).
+
 ## Kryteria z planu G2 i dowody
 
 | Kryterium | Dowód | Status |

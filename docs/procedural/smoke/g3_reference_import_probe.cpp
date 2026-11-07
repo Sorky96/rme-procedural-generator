@@ -3,17 +3,24 @@
 #include "app/main.h"
 #include "ui/gui.h"
 #include "app/managers/version_manager.h"
+#include "io/iomap_otbm.h"
+#include "map/map.h"
 #include "procedural/adapter/reference_import.h"
 #include "procedural/core/feature_report.h"
 #include "procedural/core/features.h"
+#include "procedural/core/semantic_image.h"
 #include "procedural/core/topology.h"
 #include <wx/module.h>
 #include <wx/log.h>
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <stop_token>
 #include <string>
+#include <thread>
 
 namespace {
 namespace fs = std::filesystem;
@@ -113,12 +120,74 @@ void runProbe() {
         const auto map = root / "reference.otbm";
         wxString error;
         std::vector<std::string> warnings;
-        check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Client load failed");
+        auto readSetting = [&](const char* name) {
+            std::ifstream file(root / name);
+            std::string value;
+            std::getline(file, value);
+            return value;
+        };
+        const std::string clientId = readSetting("client-id.txt");
+        const bool clientLoaded = !clientId.empty() && g_version.LoadVersion(clientId, error, warnings);
+        if (!clientLoaded) log << "CLIENT_ERROR\t" << error.ToStdString() << '\n';
+        for (const auto& warning : warnings) log << "CLIENT_WARNING\t" << warning << '\n';
+        check(clientLoaded, "Client load failed");
+        if (g_version.GetCurrentVersionIDView() != clientId) {
+            log << "CLIENT_MISMATCH\twanted " << clientId << ", loaded " << std::string(g_version.GetCurrentVersionIDView()) << '\n';
+        }
+        check(g_version.GetCurrentVersionIDView() == clientId, "A different client than requested is loaded");
         ReferenceImportLimits limits;
-        limits.maxFileBytes = 64ull << 20;
+        limits.maxFileBytes = std::stoull(readSetting("limits.txt"));
+        limits.maxProcessBytes = std::stoull(readSetting("memory-limit.txt"));
+        if (const std::string factor = readSetting("estimate-factor.txt"); !factor.empty()) limits.loadBytesPerFileByte = std::stoull(factor);
+        std::stop_source stopSource;
+        limits.stop = stopSource.get_token();
         const auto before = hashReferenceFile(map);
         check(before.has_value(), "Hash before failed");
-        const auto normalized = normalizeReference(map, limits, SemanticBudget {200ull << 20});
+        // Cancellation test mode: a second thread requests stop after the given delay and the
+        // latency from that request to normalizeReference returning is measured.
+        const std::string cancelSetting = readSetting("cancel-after-ms.txt");
+        std::atomic<long long> requestedAt {0};
+        std::jthread canceller;
+        if (!cancelSetting.empty()) {
+            canceller = std::jthread([&, delay = std::stoul(cancelSetting)] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+                requestedAt = std::chrono::steady_clock::now().time_since_epoch().count();
+                stopSource.request_stop();
+            });
+        }
+        ImportMeasurements measurements;
+        const auto normalized = normalizeReference(map, limits, SemanticBudget {100'000'000}, &measurements);
+        const long long returnedAt = std::chrono::steady_clock::now().time_since_epoch().count();
+        canceller = {};
+        const auto mib = [](uint64_t bytes) { return bytes >> 20; };
+        log << std::format("MEASURE\tlimit={}MiB before={}MiB estimate={}MiB peakAfterLoad={}MiB peakAfterNormalize={}MiB loadMs={} normalizeMs={}\n",
+            mib(limits.maxProcessBytes), mib(measurements.processBytesBefore), mib(measurements.estimatedLoadBytes),
+            mib(measurements.peakBytesAfterLoad), mib(measurements.peakBytesAfterNormalize), measurements.loadMs, measurements.normalizeMs);
+        if (!cancelSetting.empty()) {
+            auto cancelPass = [&](const char* stage, long long returnedNs) {
+                const long long latencyMs = (returnedNs - requestedAt) / 1'000'000;
+                log << std::format("CANCEL_PASS\tstage={} after={}ms latency={}ms loadMs={} normalizeMs={}\n", stage, cancelSetting, latencyMs,
+                    measurements.loadMs, measurements.normalizeMs);
+                log.close();
+                std::_Exit(0);
+            };
+            if (!normalized && normalized.error() == ReferenceImportError::Cancelled && requestedAt != 0) cancelPass("import", returnedAt);
+            if (!normalized) {
+                log << "CANCEL_MISSED\t" << referenceImportErrorName(normalized.error()) << '\n';
+                check(false, "Import failed instead of being cancelled");
+            }
+            // The import finished before the request; the analysis stages poll the same token.
+            const auto cancelTopology = analyzeTopology(normalized->map, normalized->semantic, TopologyOptions {}, stopSource.get_token());
+            const long long topologyReturned = std::chrono::steady_clock::now().time_since_epoch().count();
+            if (!cancelTopology && cancelTopology.error() == TopologyError::Cancelled && requestedAt != 0) cancelPass("topology", topologyReturned);
+            if (cancelTopology) {
+                const auto cancelFeatures = extractFeatures(normalized->map, *cancelTopology, FeatureOptions {}, stopSource.get_token());
+                const long long featuresReturned = std::chrono::steady_clock::now().time_since_epoch().count();
+                if (!cancelFeatures && cancelFeatures.error() == FeatureError::Cancelled && requestedAt != 0) cancelPass("features", featuresReturned);
+            }
+            log << "CANCEL_MISSED\tall stages finished before the request\n";
+            check(false, "Cancellation was not observed");
+        }
         if (!normalized) {
             log << "IMPORT_ERROR\t" << referenceImportErrorName(normalized.error()) << '\n';
             check(false, "Import failed");
@@ -126,13 +195,23 @@ void runProbe() {
         const auto& summary = normalized->summary;
         const auto after = hashReferenceFile(map);
         check(after && *after == *before && *before == summary.sha256, "Input copy changed during import");
+        // Optional: the same file through the loader without any abort hook (the editor's path) must
+        // give the same number of tiles as the hooked import above.
+        if (!readSetting("nohook-check.txt").empty()) {
+            Map plain;
+            IOMapOTBM plainLoader(plain.getVersion());
+            check(plainLoader.loadMap(plain, FileName(wxString(map.wstring()))), "Load without abort hook failed");
+            check(!plainLoader.wasAborted(), "Loader reports an abort without a hook");
+            log << "NOHOOK_TILES\t" << plain.getTileCount() << "\tIMPORT_TILES\t" << summary.tileCount << '\n';
+            check(plain.getTileCount() == summary.tileCount, "Tile count differs without the abort hook");
+        }
         { std::ofstream report(root / "reference-report.json", std::ios::binary); report << render(summary); }
         { std::ofstream report(root / "semantic-report.json", std::ios::binary); report << renderSemantic(*normalized); }
         const TopologyOptions topologyOptions;
-        const auto topology = analyzeTopology(normalized->map, normalized->semantic, topologyOptions, {});
+        const auto topology = analyzeTopology(normalized->map, normalized->semantic, topologyOptions, stopSource.get_token());
         check(topology.has_value(), "Topology analysis failed");
         { std::ofstream report(root / "topology-report.json", std::ios::binary); report << renderTopology(*normalized, *topology, topologyOptions); }
-        const auto features = extractFeatures(normalized->map, *topology, FeatureOptions {}, {});
+        const auto features = extractFeatures(normalized->map, *topology, FeatureOptions {}, stopSource.get_token());
         check(features.has_value(), "Feature extraction failed");
         const ReportInput reportInput = makeReportInput(*normalized, *topology, *features, topologyOptions);
         fs::create_directory(root / "analysis");
@@ -143,6 +222,14 @@ void runProbe() {
         writeText("reference-analysis.json", renderJson(reportInput));
         writeText("reference-analysis.md", renderMarkdown(reportInput));
         for (const CsvTable table : allCsvTables) writeText(std::string(csvTableName(table)) + ".csv", renderCsv(reportInput, table));
+        const auto images = renderSemanticImages(normalized->map, *topology, stopSource.get_token());
+        check(images.has_value(), "Semantic image export failed");
+        fs::create_directories(root / "analysis" / "semantic");
+        writeText("semantic/legend.json", renderSemanticLegendJson(*images));
+        for (const auto& floorImage : images->floors) {
+            writeText(std::format("semantic/floor-{:02}.png", floorImage.bounds.z),
+                std::string(floorImage.png.begin(), floorImage.png.end()));
+        }
         log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();
         std::_Exit(0);

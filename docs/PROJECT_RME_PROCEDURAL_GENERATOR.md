@@ -352,11 +352,13 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 3 - Import i analiza map referencyjnych
 
+**Stan 2026-11-07: kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek), zakres z planu nie w całości; bramki nie zamknięto, decyzja należy do użytkownika.** Kryteria, dowody i luki: [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md).
+
 - [~] Lokalny import OTBM, wykrywanie zgodności item/asset. Część wykonana 2026-11-07, jedna referencja: [G3_IMPORT.md](procedural/G3_IMPORT.md).
 - [~] Normalizator map do reprezentacji semantycznej + `unknown` reports. 2026-11-07, fixture i jedna referencja: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md).
 - [~] Rozpoznawanie regionów, biomów, cech topologicznych, pięter. 2026-11-07, bez wąskich gardeł i nazwanych biomów: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md).
 - [~] Feature extraction + raport CSV/JSON/HTML lub MD. 2026-11-07, JSON/MD/CSV, bez HTML i bez części cech z 4.2: [G3_FEATURES.md](procedural/G3_FEATURES.md).
-- [ ] Testy na minimum kilku własnych fixture i na referencjach użytkownika, bez publikacji referencji. Fixture własne są, referencja jedna (`forgotten.otbm`); brak kilku.
+- [~] Testy na minimum kilku własnych fixture i na referencjach użytkownika, bez publikacji referencji. 2026-11-07: fixture własne, `forgotten.otbm` (BlackTek) i 19 map zwykłego 10.98, dwie serie bajtowo identyczne; bez limitu pamięci/anulowania importu (D8) i bez oceny sensowności cech: [G3_REFERENCES.md](procedural/G3_REFERENCES.md).
 
 **G3:** dla każdej mapy referencyjnej generowany jest powtarzalny raport, statystyki i mapa semantyczna.
 
