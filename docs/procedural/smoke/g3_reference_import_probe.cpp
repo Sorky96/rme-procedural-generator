@@ -9,6 +9,7 @@
 #include "procedural/core/feature_report.h"
 #include "procedural/core/features.h"
 #include "procedural/core/semantic_image.h"
+#include "procedural/core/similarity.h"
 #include "procedural/core/topology.h"
 #include <wx/module.h>
 #include <wx/log.h>
@@ -230,6 +231,10 @@ void runProbe() {
             writeText(std::format("semantic/floor-{:02}.png", floorImage.bounds.z),
                 std::string(floorImage.png.begin(), floorImage.png.end()));
         }
+        // G4-A: shift-invariant window fingerprint for the similarity test and the family split.
+        const auto fingerprint = computeFingerprint(normalized->map, FingerprintOptions {}, stopSource.get_token());
+        check(fingerprint.has_value(), "Fingerprint failed");
+        writeText("fingerprint.fp", serializeFingerprint(*fingerprint));
         log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();
         std::_Exit(0);

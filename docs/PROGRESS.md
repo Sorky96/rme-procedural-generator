@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G4-A: manifest, podział po rodzinach, test podobieństwa (PARTIAL)
+
+Rdzeń: odciski okien 16×16 (shift-niezmiennicze, bez pozycji i piętra), zawieranie w ‰, filtr okien ogólnych, manifest `g4-manifest/1`, rodziny po treści i 5 foldów leave-one-family-out; narzędzie `reference_split`. Test rdzenia PASS. Na 19 mapach 10.98: pary shape 1000 ‰ (kontrola pozytywna), 5 foldów z przeciekiem ≤ 45 ‰; dwie serie bajtowo identyczne, raporty G3 bez zmian. Pierwszy przebieg zdegenerował się (9 map w jednej rodzinie), więc dodano filtr okien ogólnych (jawnie opisane). Nie ma testu memoryzacji wyniku generatora ani podziału BlackTek. [G4_SPLIT.md](procedural/G4_SPLIT.md). Następne: G4-B (schemat profilu, mapowanie klucz→rodzaj).
+
 ## 2026-11-07 — G4-0: zgodność items.otb z klientem 10.98 (PARTIAL)
 
 Gałąź `feature/procedural-g4-style-learning` z `origin/master` (PR #4 scalony). Niezależny skrypt porównał 25 548 itemów `data/1098/items.otb` z `Tibia.dat` zwykłego 10.98 w sześciu cechach: 0 niezgodności; nagłówek 3.57 na wszystkich 19 mapach; dwie serie bajtowo identyczne. Nie dowiedziono, że mapy powstały z tym konkretnym OTB (brak drugiego pliku). [G4_ITEMS_OTB.md](procedural/G4_ITEMS_OTB.md), D11 zaktualizowany. Następne: G4-A (manifest, podział po rodzinach, test memoryzacji).
