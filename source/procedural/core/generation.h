@@ -24,12 +24,33 @@ struct GenerationRegion {
 	bool operator==(const GenerationRegion&) const = default;
 };
 
+enum class GenerationAlgorithm : uint8_t { GroundRoll = 1, Surface = 2 };
+
+// Tunables of the surface algorithm (v2), ignored by GroundRoll. Ranges are enforced by
+// validateSurface.
+struct SurfaceTuning {
+	uint32_t featureSize = 24;        // coarsest noise lattice step in cells, 1..4096
+	uint32_t lakePermille = 60;       // share of lowest cells that start as lake, 0..500
+	uint32_t minLakeCells = 12;       // smaller 4-connected lakes become land
+	uint32_t riverCount = 3;          // sources drawn from the highest quarter, 0..1024
+	uint32_t minRiverLength = 20;     // own cells of an accepted river; shorter ones are dropped
+	uint32_t shoreWidth = 1;          // 4-connected ring of Shore around lakes, 0..4
+	uint32_t rockPermille = 80;       // at least this share of highest cells is rock, 0..500
+	uint32_t minRockCells = 8;        // smaller 4-connected rock patches become land
+	uint32_t dirtPermille = 300;      // share of driest cells that are dirt, 0..1000
+	uint32_t transitionWidth = 6000;  // half width of the grass/dirt dithered band, 0..32768
+	bool operator==(const SurfaceTuning&) const = default;
+};
+
 struct GenerationConfig {
 	GenerationRegion region;
 	uint64_t seed = 0;
 	uint32_t grassWeight = 70;
 	uint32_t dirtWeight = 20;
 	uint32_t waterWeight = 10;
+	GenerationAlgorithm algorithm = GenerationAlgorithm::GroundRoll;
+	SurfaceTuning surface;
+	bool operator==(const GenerationConfig&) const = default;
 };
 
 // Exclusive bounds supplied by the adapter from the actual map/client limits.

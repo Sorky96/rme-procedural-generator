@@ -4,6 +4,7 @@ target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(rme PRIVATE rme_procedural_core)
 target_sources(rme PRIVATE adapter/generation_input.cpp adapter/generation_input.h)
 target_sources(rme PRIVATE adapter/ground_resolver.cpp adapter/ground_resolver.h)
+target_sources(rme PRIVATE adapter/surface_resolver.cpp adapter/surface_resolver.h)
 target_sources(rme PRIVATE adapter/snapshot_memory.cpp adapter/snapshot_memory.h
     adapter/snapshot_equal.cpp adapter/snapshot_equal.h
     adapter/generation_snapshot.cpp adapter/generation_snapshot.h)

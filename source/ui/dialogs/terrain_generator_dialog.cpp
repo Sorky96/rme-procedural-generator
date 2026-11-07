@@ -137,6 +137,8 @@ wxString describe(PreparationInputError error) {
 			return tooLargeMessage;
 		case PreparationInputError::Cancelled:
 			return cancelledMessage;
+		case PreparationInputError::InvalidParameters:
+			return "The surface settings are not valid.";
 		case PreparationInputError::AllocationFailed:
 			return memoryMessage;
 	}
@@ -368,6 +370,22 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Wa&ter brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	water_brush_text_ = text("terrain-water-brush", "clear water");
 	form->Add(water_brush_text_, 1, wxEXPAND);
+
+	form->Add(label("Terrain &style:"), 0, wxALIGN_CENTER_VERTICAL);
+	style_choice_ = newd wxChoice(this, wxID_ANY);
+	style_choice_->SetName("terrain-style");
+	style_choice_->Append("Classic (random mix)");
+	style_choice_->Append("Natural surface (lakes, rivers, rock)");
+	style_choice_->SetSelection(0);
+	form->Add(style_choice_, 1, wxEXPAND);
+
+	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	rock_brush_text_ = text("terrain-rock-brush", "rocky ground");
+	form->Add(rock_brush_text_, 1, wxEXPAND);
+
+	form->Add(label("S&hore brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	shore_brush_text_ = text("terrain-shore-brush", "sand");
+	form->Add(shore_brush_text_, 1, wxEXPAND);
 	auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; placing adds one Undo step.");
 	helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	helper->Wrap(Theme::Grid(64));
@@ -451,10 +469,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
-	for (wxTextCtrl* control : { seed_text_, grass_brush_text_, dirt_brush_text_, water_brush_text_ }) {
+	for (wxTextCtrl* control : { seed_text_, grass_brush_text_, dirt_brush_text_, water_brush_text_, rock_brush_text_, shore_brush_text_ }) {
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
 	place_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPlace, this);
@@ -474,6 +493,10 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 bool TerrainGeneratorDialog::SelectionMode() const {
 	return scope_choice_->GetSelection() == 1;
+}
+
+bool TerrainGeneratorDialog::NaturalSurface() const {
+	return style_choice_->GetSelection() == 1;
 }
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
@@ -499,6 +522,9 @@ void TerrainGeneratorDialog::ReleasePreview() {
 }
 
 void TerrainGeneratorDialog::UpdateControlStates() {
+	const bool natural = NaturalSurface();
+	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
+	for (wxTextCtrl* control : { rock_brush_text_, shore_brush_text_ }) control->Enable(natural);
 	const bool rectangle = !SelectionMode();
 	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_ }) {
 		control->Enable(rectangle);
@@ -556,17 +582,27 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 	config.seed = value;
 
-	config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
-	config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
-	config.waterWeight = uint32_t(water_weight_spin_->GetValue());
+	const bool natural = NaturalSurface();
+	if (natural) {
+		// Weights belong to the classic mix only; the surface algorithm keeps the defaults.
+		config.algorithm = GenerationAlgorithm::Surface;
+	} else {
+		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
+		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
+		config.waterWeight = uint32_t(water_weight_spin_->GetValue());
+	}
 	if (uint64_t(config.grassWeight) + config.dirtWeight + config.waterWeight == 0) {
 		SetStatus("At least one terrain weight must be above zero.", true);
 		grass_weight_spin_->SetFocus();
 		return std::nullopt;
 	}
 
-	wxTextCtrl* const brushFields[] = { grass_brush_text_, dirt_brush_text_, water_brush_text_ };
-	for (size_t i = 0; i < request.profile.brushes.size(); ++i) {
+	// Surface order: Grass, Dirt, Rock, Shore, Lake, River. Lake and river share the water brush.
+	wxTextCtrl* const classicFields[] = { grass_brush_text_, dirt_brush_text_, water_brush_text_ };
+	wxTextCtrl* const surfaceFields[] = { grass_brush_text_, dirt_brush_text_, rock_brush_text_, shore_brush_text_, water_brush_text_, water_brush_text_ };
+	wxTextCtrl* const* const brushFields = natural ? surfaceFields : classicFields;
+	request.profile.count = natural ? GroundProfile::surfaceCount : GroundProfile::groundRollCount;
+	for (size_t i = 0; i < request.profile.count; ++i) {
 		request.profile.brushes[i] = std::string(brushFields[i]->GetValue().utf8_str());
 		if (request.profile.brushes[i].empty()) {
 			SetStatus("Enter a ground brush name.", true);

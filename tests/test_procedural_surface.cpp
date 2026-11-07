@@ -83,21 +83,21 @@ void parametersAndLimits() {
 		const auto result = generateSurface(bad, extent, limit);
 		require(!result && result.error() == expected, what);
 	};
-	auto bad = base; bad.featureSize = 0;
+	auto bad = base; bad.tuning.featureSize = 0;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "featureSize 0 accepted");
-	bad = base; bad.featureSize = 4097;
+	bad = base; bad.tuning.featureSize = 4097;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "featureSize 4097 accepted");
-	bad = base; bad.lakePermille = 501;
+	bad = base; bad.tuning.lakePermille = 501;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "lakePermille 501 accepted");
-	bad = base; bad.rockPermille = 501;
+	bad = base; bad.tuning.rockPermille = 501;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "rockPermille 501 accepted");
-	bad = base; bad.riverCount = 1025;
+	bad = base; bad.tuning.riverCount = 1025;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "riverCount 1025 accepted");
-	bad = base; bad.shoreWidth = 5;
+	bad = base; bad.tuning.shoreWidth = 5;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 5 accepted");
-	bad = base; bad.dirtPermille = 1001;
+	bad = base; bad.tuning.dirtPermille = 1001;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "dirtPermille 1001 accepted");
-	bad = base; bad.transitionWidth = 32769;
+	bad = base; bad.tuning.transitionWidth = 32769;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "transitionWidth 32769 accepted");
 	bad = base; bad.region.width = 0;
 	expectError(bad, budget, SurfaceError::InvalidRegion, "Empty region accepted");
@@ -177,15 +177,15 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		countOf(grid, SurfaceKind::River) };
 	require(tally.grass + tally.dirt + tally.rock + tally.shore + tally.lake + tally.river == tally.cells,
 		"A cell has no surface kind");
-	require(tally.lake <= tally.cells * config.lakePermille / 1000, "Lake share above its cap");
+	require(tally.lake <= tally.cells * config.tuning.lakePermille / 1000, "Lake share above its cap");
 	for (const auto& lake : components(grid, [](SurfaceKind k) { return k == SurfaceKind::Lake; }, [](SurfaceKind) { return false; })) {
-		require(lake.size >= config.minLakeCells, "Lake smaller than minimum");
+		require(lake.size >= config.tuning.minLakeCells, "Lake smaller than minimum");
 	}
 	// A river component must end at a lake or the rectangle border and meet the length minimum.
 	for (const auto& river : components(grid, [](SurfaceKind k) { return k == SurfaceKind::River; },
 		[](SurfaceKind k) { return k == SurfaceKind::Lake; })) {
 		require(river.touchesBorder || river.touches, "River ends inside the land");
-		require(river.size >= config.minRiverLength, "River shorter than minimum");
+		require(river.size >= config.tuning.minRiverLength, "River shorter than minimum");
 	}
 	// With shoreWidth 1, land next to a lake is shore unless it is rock or river.
 	const uint32_t w = grid.region.width, h = grid.region.height;
@@ -197,7 +197,7 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 			(x + 1 < w && grid.cells[cell + 1] == SurfaceKind::Lake) ||
 			(y > 0 && grid.cells[cell - w] == SurfaceKind::Lake) ||
 			(y + 1 < h && grid.cells[cell + w] == SurfaceKind::Lake);
-		require(!nextToLake || config.shoreWidth == 0, "Land touches a lake without a shore");
+		require(!nextToLake || config.tuning.shoreWidth == 0, "Land touches a lake without a shore");
 	}
 	return tally;
 }
@@ -210,17 +210,17 @@ void distributions(uint32_t side, uint32_t seeds) {
 		const auto grid = generateSurface(config, extent, budget);
 		require(grid && grid->valid(), "Surface generation failed");
 		const auto tally = structure(config, *grid);
-		require(tally.rock <= tally.cells * (config.rockPermille + 20) / 1000, "Rock share far above its cap");
+		require(tally.rock <= tally.cells * (config.tuning.rockPermille + 20) / 1000, "Rock share far above its cap");
 		riverSeeds += tally.river > 0; lakeSeeds += tally.lake > 0; rockSeeds += tally.rock > 0;
 		const double dirtShare = double(tally.dirt) / double(std::max<size_t>(1, tally.grass + tally.dirt));
 		minDirt = std::min(minDirt, dirtShare); maxDirt = std::max(maxDirt, dirtShare);
 		dirtSeeds += tally.dirt > 0 && tally.grass > 0;
 		// Without rivers, every accepted rock patch keeps its minimum size.
-		auto noRivers = config; noRivers.riverCount = 0;
+		auto noRivers = config; noRivers.tuning.riverCount = 0;
 		const auto dry = generateSurface(noRivers, extent, budget);
 		require(dry && countOf(*dry, SurfaceKind::River) == 0, "riverCount 0 produced a river");
 		for (const auto& rock : components(*dry, [](SurfaceKind k) { return k == SurfaceKind::Rock; }, [](SurfaceKind) { return false; })) {
-			require(rock.size >= config.minRockCells, "Rock patch smaller than minimum");
+			require(rock.size >= config.tuning.minRockCells, "Rock patch smaller than minimum");
 		}
 	}
 	require(dirtSeeds == seeds, "Some seed lacked grass or dirt");
@@ -232,8 +232,8 @@ void distributions(uint32_t side, uint32_t seeds) {
 
 void transitionBand() {
 	// A zero-width band is a hard threshold; a wide band must mix both kinds near it.
-	auto hard = makeConfig(100, 5); hard.transitionWidth = 0;
-	auto soft = hard; soft.transitionWidth = 16000;
+	auto hard = makeConfig(100, 5); hard.tuning.transitionWidth = 0;
+	auto soft = hard; soft.tuning.transitionWidth = 16000;
 	const auto a = generateSurface(hard, extent, budget);
 	const auto b = generateSurface(soft, extent, budget);
 	require(a && b && a->cells != b->cells, "Transition width had no effect");

@@ -50,6 +50,7 @@ private:
 	void OnPaintPreview(wxPaintEvent& event);
 
 	[[nodiscard]] bool SelectionMode() const;
+	[[nodiscard]] bool NaturalSurface() const;
 	[[nodiscard]] std::optional<Request> ReadRequest();
 	[[nodiscard]] Editor* CurrentTarget();
 	[[nodiscard]] bool BuildPreviewBitmap();
@@ -82,6 +83,9 @@ private:
 	wxTextCtrl* grass_brush_text_ = nullptr;
 	wxTextCtrl* dirt_brush_text_ = nullptr;
 	wxTextCtrl* water_brush_text_ = nullptr;
+	wxChoice* style_choice_ = nullptr;
+	wxTextCtrl* rock_brush_text_ = nullptr;
+	wxTextCtrl* shore_brush_text_ = nullptr;
 	std::array<wxStaticText*, 5> rectangle_labels_ {};
 	wxStaticText* region_label_ = nullptr;
 	wxStaticText* client_label_ = nullptr;

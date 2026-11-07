@@ -144,9 +144,9 @@ uint64_t SurfaceGrid::fingerprint() const {
 std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
-	if (config.featureSize < 1 || config.featureSize > 4096 || config.lakePermille > 500 ||
-		config.rockPermille > 500 || config.riverCount > 1024 || config.shoreWidth > 4 ||
-		config.dirtPermille > 1000 || config.transitionWidth > 32768) {
+	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 4 ||
+		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
 	// Region, mask and budget rules are shared with v1 through a unit-weight config.
@@ -178,20 +178,20 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			if (stop.stop_requested()) return cancelled();
 			for (uint32_t x = 0; x < width; ++x) {
 				const uint32_t ax = uint32_t(config.region.x) + x, ay = uint32_t(config.region.y) + y;
-				elevation[size_t(y) * width + x] = fractalNoise(config.seed, heightStream, ax, ay, config.featureSize);
+				elevation[size_t(y) * width + x] = fractalNoise(config.seed, heightStream, ax, ay, config.tuning.featureSize);
 				moisture[size_t(y) * width + x] = fractalNoise(config.seed, moistureStream, ax, ay,
-					std::min<uint32_t>(config.featureSize * 2, 8192));
+					std::min<uint32_t>(config.tuning.featureSize * 2, 8192));
 			}
 		}
 
 		// Lakes (lowest cells) and rock (highest cells), then drop patches that are too small.
-		const uint32_t lakeLevel = config.lakePermille ? lowCut(elevation, config.lakePermille) : 0;
-		const uint32_t rockLevel = config.rockPermille ? lowCut(elevation, 1000 - config.rockPermille) : noiseBins;
+		const uint32_t lakeLevel = config.tuning.lakePermille ? lowCut(elevation, config.tuning.lakePermille) : 0;
+		const uint32_t rockLevel = config.tuning.rockPermille ? lowCut(elevation, 1000 - config.tuning.rockPermille) : noiseBins;
 		std::vector<uint8_t> lake(count), rock(count);
 		for (size_t i = 0; i < count; ++i) lake[i] = elevation[i] < lakeLevel;
-		if (!dropSmall(lake, width, height, config.minLakeCells, stop)) return cancelled();
+		if (!dropSmall(lake, width, height, config.tuning.minLakeCells, stop)) return cancelled();
 		for (size_t i = 0; i < count; ++i) rock[i] = !lake[i] && elevation[i] >= rockLevel;
-		if (!dropSmall(rock, width, height, config.minRockCells, stop)) return cancelled();
+		if (!dropSmall(rock, width, height, config.tuning.minRockCells, stop)) return cancelled();
 
 		// Priority flood from lakes and the rectangle border. Every other cell records the
 		// neighbour it was reached from; that chain is a loop-free 4-connected downhill route.
@@ -225,7 +225,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		// Rivers: sources from the highest quarter of dry cells; a route shorter than
 		// minRiverLength own cells is dropped. The draw count never depends on acceptance.
 		std::vector<uint8_t> river(count, 0);
-		if (config.riverCount) {
+		if (config.tuning.riverCount) {
 			const uint32_t highLevel = lowCut(elevation, 750);
 			std::vector<uint32_t> sources;
 			for (size_t i = 0; i < count; ++i) {
@@ -233,21 +233,21 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 			StableRandom random(config.seed, riverStream);
 			std::vector<uint32_t> route;
-			for (uint32_t index = 0; index < config.riverCount && !sources.empty(); ++index) {
+			for (uint32_t index = 0; index < config.tuning.riverCount && !sources.empty(); ++index) {
 				if (stop.stop_requested()) return cancelled();
 				route.clear();
 				for (int64_t cell = sources[random.bounded(sources.size())];
 					cell != noParent && !lake[cell] && !river[cell]; cell = parent[cell]) {
 					route.push_back(uint32_t(cell));
 				}
-				if (route.size() >= config.minRiverLength) for (const auto cell : route) river[cell] = 1;
+				if (route.size() >= config.tuning.minRiverLength) for (const auto cell : route) river[cell] = 1;
 			}
 		}
 
 		// Final kinds. Priority: river > shore > lake > rock > dry/wet land.
-		const uint32_t dirtLevel = lowCut(moisture, config.dirtPermille);
-		const int64_t bandStart = int64_t(dirtLevel) - config.transitionWidth;
-		const int64_t bandWidth = int64_t(config.transitionWidth) * 2;
+		const uint32_t dirtLevel = lowCut(moisture, config.tuning.dirtPermille);
+		const int64_t bandStart = int64_t(dirtLevel) - config.tuning.transitionWidth;
+		const int64_t bandWidth = int64_t(config.tuning.transitionWidth) * 2;
 		std::vector<SurfaceKind> kinds(count, SurfaceKind::Grass);
 		for (size_t i = 0; i < count; ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return cancelled();
@@ -265,9 +265,9 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 			kinds[i] = grass ? SurfaceKind::Grass : SurfaceKind::Dirt;
 		}
-		if (config.shoreWidth) {
+		if (config.tuning.shoreWidth) {
 			std::vector<uint8_t> wet = lake;
-			for (uint32_t ring = 0; ring < config.shoreWidth; ++ring) {
+			for (uint32_t ring = 0; ring < config.tuning.shoreWidth; ++ring) {
 				const auto previous = wet;
 				for (size_t i = 0; i < count; ++i) {
 					if (previous[i] || kinds[i] == SurfaceKind::Rock) continue;

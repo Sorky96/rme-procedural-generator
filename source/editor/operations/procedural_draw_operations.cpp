@@ -25,10 +25,7 @@ using namespace rme::procedural;
 constexpr uint64_t maxBorderItems = 128;
 constexpr uint64_t borderScratchBytes = 4096;
 
-bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept {
-	return a.region == b.region && a.seed == b.seed && a.grassWeight == b.grassWeight &&
-		a.dirtWeight == b.dirtWeight && a.waterWeight == b.waterWeight;
-}
+bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept { return a == b; }
 
 bool emptyContent(const Tile* tile) noexcept {
 	return !tile || (!tile->ground && tile->items.empty() && !tile->creature && !tile->spawn &&
@@ -69,6 +66,13 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, c.grassWeight, 4);
 		hashField(hash, c.dirtWeight, 4);
 		hashField(hash, c.waterWeight, 4);
+		// GroundRoll keeps its original wire layout; only Surface adds its algorithm and tuning.
+		if (c.algorithm != GenerationAlgorithm::GroundRoll) {
+			hashField(hash, uint8_t(c.algorithm), 1);
+			for (const auto value : {c.surface.featureSize, c.surface.lakePermille, c.surface.minLakeCells, c.surface.riverCount,
+				c.surface.minRiverLength, c.surface.shoreWidth, c.surface.rockPermille, c.surface.minRockCells,
+				c.surface.dirtPermille, c.surface.transitionWidth}) hashField(hash, value, 4);
+		}
 	};
 	const auto string = [&](std::string_view value) {
 		hashField(hash, value.size());
@@ -98,7 +102,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	hashField(hash, plan.assetRevision);
 	hashField(hash, plan.semanticFingerprint);
 	string(plan.client);
-	for (const auto& name : plan.profile.brushes) string(name);
+	for (const auto& name : plan.profile.active()) string(name);
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	return hash;
@@ -204,8 +208,11 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	const int64_t bottom = std::min<int64_t>(int64_t(MAP_MAX_HEIGHT) + 1, int64_t(r.y) + r.height + 2);
 	if (c != GenerationRegion{left, top, r.z, uint32_t(right-left), uint32_t(bottom-top)}) co_return std::unexpected(PreviewError::InvalidPlan);
 	const auto contextIndex = [&](int x, int y) { return size_t(y-c.y) * c.width + size_t(x-c.x); };
-	std::array<const GroundBrush*, 3> brushes {};
-	for (size_t i = 0; i < brushes.size(); ++i) {
+	if (plan.profile.count != GroundProfile::groundRollCount && plan.profile.count != GroundProfile::surfaceCount) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
+	std::array<const GroundBrush*, GroundProfile::surfaceCount> brushes {};
+	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
 		const auto* brush = g_brushes.getBrush(plan.profile.brushes[i]);
 		brushes[i] = brush ? brush->as<GroundBrush>() : nullptr;
@@ -228,7 +235,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			(baseId > 0 && baseId <= UINT16_MAX ? g_item_definitions.get(uint16_t(baseId)) : ItemDefinitionView{});
 		if (!ground || !ground.isGroundTile() || !ground.clientId() || ground.isMetaItem()) co_return std::unexpected(PreviewError::InvalidItem);
 		bool found = false;
-		for (const auto* brush : brushes) {
+		for (const auto* brush : std::span(brushes).first(plan.profile.count)) {
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}

@@ -59,7 +59,7 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 		!charge(prepared.plan.client.capacity() + 1) || !charge(prepared.preview.getEstimatedPeakBytes())) {
 		return failure(TerrainCommitFailure::MemoryLimit);
 	}
-	for (const auto& name : prepared.plan.profile.brushes) {
+	for (const auto& name : prepared.plan.profile.active()) {
 		if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return failure(TerrainCommitFailure::MemoryLimit);
 	}
 	for (const auto& cell : snapshot.cells) {

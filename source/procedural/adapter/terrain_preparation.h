@@ -41,7 +41,7 @@ struct PreparationMemory {
 
 enum class PreparationInputError {
 	WrongThread, NoClient, InvalidProfile, MemoryLimit, ContextLimit,
-	ChangeLimit, Cancelled, AllocationFailed
+	ChangeLimit, Cancelled, AllocationFailed, InvalidParameters
 };
 
 // Stage failures are forwarded unchanged so callers see the exact module cause.

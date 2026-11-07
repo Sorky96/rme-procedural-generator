@@ -3,13 +3,21 @@
 
 #include "procedural/adapter/generation_input.h"
 #include <array>
+#include <span>
 #include <string>
 
 namespace rme::procedural {
 
 struct GroundProfile {
-	// Grass, Dirt, Water, in Terrain enum order. Names are resolved in loaded assets.
-	std::array<std::string, 3> brushes;
+	// GroundRoll: Grass, Dirt, Water (count 3). Surface: Grass, Dirt, Rock, Shore, Lake, River (count 6).
+	// Names are resolved in loaded assets; the same brush may serve several kinds. Entries past
+	// `count` are unused and must stay empty.
+	static constexpr uint8_t groundRollCount = 3;
+	static constexpr uint8_t surfaceCount = 6;
+	std::array<std::string, 6> brushes;
+	uint8_t count = groundRollCount;
+	[[nodiscard]] std::span<const std::string> active() const noexcept { return std::span(brushes).first(count); }
+	bool operator==(const GroundProfile&) const = default;
 };
 
 struct GroundPlan {
