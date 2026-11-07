@@ -121,4 +121,36 @@ bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noex
 	return true;
 }
 
+
+std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot) {
+	const auto& input = snapshot.input;
+	const auto& region = input.config.region;
+	const auto& context = snapshot.context;
+	std::vector<uint8_t> result(input.mask.size(), 0);
+	const auto writableAt = [&](int64_t x, int64_t y) {
+		if (x < 0 || y < 0 || x >= int64_t(region.width) || y >= int64_t(region.height)) return false;
+		const size_t index = size_t(y) * region.width + size_t(x);
+		return input.mask[index] && !input.protection[index];
+	};
+	const auto holdsGround = [&](int64_t x, int64_t y) {
+		const int64_t cx = region.x + x - context.x, cy = region.y + y - context.y;
+		if (cx < 0 || cy < 0 || cx >= int64_t(context.width) || cy >= int64_t(context.height)) return false;
+		const auto& original = snapshot.cells[size_t(cy) * context.width + size_t(cx)].original;
+		return original && original->ground;
+	};
+	for (int64_t y = 0; y < int64_t(region.height); ++y) {
+		for (int64_t x = 0; x < int64_t(region.width); ++x) {
+			if (!writableAt(x, y)) continue;
+			for (int64_t dy = -1; dy <= 1; ++dy) {
+				for (int64_t dx = -1; dx <= 1; ++dx) {
+					if ((dx || dy) && !writableAt(x + dx, y + dy) && holdsGround(x + dx, y + dy)) {
+						result[size_t(y) * region.width + size_t(x)] = 1;
+					}
+				}
+			}
+		}
+	}
+	return result;
+}
+
 } // namespace rme::procedural

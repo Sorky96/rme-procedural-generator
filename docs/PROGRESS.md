@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — D5: Surface obok istniejącego terenu
+
+Bordery Surface przy istniejącym terenie powodowały odmowę podglądu (zmiana poza obszarem). Odtworzone testem `nextToTerrain` w `--surface`; poprawka: komórki zapisywalne obok niezapisywalnych z gruntem zostają puste (1-kaflowy szew), `surfaceKeepClear` wspólne dla przygotowania i preview (ścisła równość zachowana). `SURFACE_NEXT_TO_TERRAIN_PASS` (100×100, z kaflem w środku, 250×250), regresje `--preview`/`--commit`/rdzeń PASS, wiersze commitu G1 bez zmian. Szew i wygląd w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
 ## 2026-11-07 — G2: rzeki ze skał o zmiennej szerokości, brushe z list
 
 Po teście GUI: źródła rzek tylko ze skał, szerokość rzeki 2–4 kafli rosnąca z odległością od źródła i ze zlewami (po zrzucie: pierwsza wersja zmieniała szerokość tylko przy zlewie), pola brushy w dialogu zamienione na listy rozwijane (grunt / doodad). Test rdzenia, `--surface`, `--preview`, `--commit` na kliencie 1098 PASS (D1 bez zmian), odcisk Seed 1729 → 1951698793224813922; wolne otwieranie dialogu (user: dialog; ~70 tys. pozycji w 8 listach) → `wxComboBox` readonly ładowany przy pierwszym rozwinięciu, doodady tylko z pojedynczymi itemami; niezmierzone i nieprzetestowane natywnie. Wygląd i listy w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).

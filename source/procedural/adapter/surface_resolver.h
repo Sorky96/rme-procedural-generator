@@ -15,8 +15,11 @@ namespace rme::procedural {
 // input.config.seed, and the grid must come from the same region and seed. With
 // input.config.vegetation, decor must be the DecorGrid of that grid and profile.decor must name
 // three doodad brushes with single-tile items; otherwise decor must be null and decorCount 0.
+// keepClear (empty or one byte per cell) marks writable cells the grid left as Preserve on purpose;
+// they get no item, and every other writable cell must still be placed.
 std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	const GenerationInput& input, const SurfaceGrid& grid, const GroundProfile& profile,
-	uint64_t maxPlanBytes, std::stop_token stop = {}, const DecorGrid* decor = nullptr);
+	uint64_t maxPlanBytes, std::stop_token stop = {}, const DecorGrid* decor = nullptr,
+	std::span<const uint8_t> keepClear = {});
 
 } // namespace rme::procedural

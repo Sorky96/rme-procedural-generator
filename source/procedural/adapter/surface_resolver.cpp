@@ -31,7 +31,7 @@ constexpr uint64_t maxDecorChance = 100000;
 
 std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	const GenerationInput& input, const SurfaceGrid& grid, const GroundProfile& profile,
-	uint64_t maxPlanBytes, std::stop_token stop, const DecorGrid* decor) {
+	uint64_t maxPlanBytes, std::stop_token stop, const DecorGrid* decor, std::span<const uint8_t> keepClear) {
 	if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
 	if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 	if (!g_version.IsVersionLoaded() || !g_version.getLoadedVersion()) return std::unexpected(ResolveError::NoClient);
@@ -41,7 +41,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		{grid.cells.size(), UINT64_MAX}, input.mask, input.protection, stop);
 	if (!layout) return std::unexpected(layout.error() == GenerationError::Cancelled ?
 		ResolveError::Cancelled : ResolveError::InvalidInput);
-	if (input.mask.size() != grid.cells.size() || input.protection.size() != grid.cells.size()) {
+	if (input.mask.size() != grid.cells.size() || input.protection.size() != grid.cells.size() ||
+		(!keepClear.empty() && keepClear.size() != grid.cells.size())) {
 		return std::unexpected(ResolveError::InvalidInput);
 	}
 	if (profile.count != GroundProfile::surfaceCount) return std::unexpected(ResolveError::InvalidProfile);
@@ -127,7 +128,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (vegetation) for (size_t kind = 0; kind < decorKindCount; ++kind) {
 				decorRolls[kind] = int(decorRng[kind].bounded(decorTotals[kind])) + 1;
 			}
-			const bool writable = input.mask[i] && !input.protection[i];
+			const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
 			const auto kind = size_t(grid.cells[i]) - 1;

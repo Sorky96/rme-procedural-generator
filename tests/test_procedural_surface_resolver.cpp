@@ -279,6 +279,62 @@ void endToEnd(uint32_t side, std::ostream& report, bool vegetation = false) {
 		<< std::ranges::count_if(expectedDecor, [](uint16_t id) { return id != 0; }) << "\tchanges=" << receipt->changes << "\tbytes=" << receipt->totalBytes << '\n';
 }
 
+// D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
+// tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
+void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
+	UndoLimits undoLimits;
+	check(g_gui.NewMap(), "Editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	const int x0 = 100, y0 = 100, z = 7, area = int(side);
+	const auto grassId = g_brushes.getBrush("grass")->as<GroundBrush>()->getBorderItems().front().id;
+	const auto inArea = [&](int x, int y) { return x >= x0 && y >= y0 && x < x0 + area && y < y0 + area; };
+	const int holeX = x0 + area / 2, holeY = y0 + area / 2;
+	std::vector<Position> existing;
+	for (int y = y0 - 3; y < y0 + area + 3; ++y) for (int x = x0 - 3; x < x0 + area + 3; ++x) {
+		if (inArea(x, y) && !(withHole && x == holeX && y == holeY)) continue;
+		TerrainPlacement::placeBrushItem(*editor.map.getOrCreateTile(Position(x, y, z)), grassId);
+		existing.emplace_back(x, y, z);
+	}
+	const auto existingImage = [&] {
+		std::vector<std::vector<uint32_t>> image;
+		for (const auto& position : existing) image.push_back(stackImage(editor.map, position.x, position.y, z, 1, 1));
+		return image;
+	};
+	const auto before = existingImage();
+	GenerationConfig config {{x0, y0, z, side, side}, seed};
+	config.algorithm = GenerationAlgorithm::Surface;
+	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	auto prepared = prepareTerrain(editor.map, config, ::profile, preparation);
+	check(bool(prepared), "Surface next to existing terrain refused, error index " + std::to_string(prepared ? 0 : prepared.error().index()) +
+		(prepared || prepared.error().index() != 4 ? std::string() : " preview error " + std::to_string(int(std::get<PreviewError>(prepared.error())))));
+	check(bool(validatePreparedTerrain(editor.map, *prepared, config, ::profile)), "Surface next to terrain failed validation");
+	const auto& items = prepared->plan.items;
+	size_t gap = 0, placed = 0;
+	for (size_t i = 0; i < items.size(); ++i) {
+		const int x = x0 + int(i % side), y = y0 + int(i / side);
+		const bool hole = withHole && x == holeX && y == holeY;
+		bool beside = false;
+		for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+			const int nx = x + dx, ny = y + dy;
+			beside |= (dx || dy) && (!inArea(nx, ny) || (withHole && nx == holeX && ny == holeY));
+		}
+		check((items[i] == 0) == (hole || beside), "Cell beside existing ground is not empty, or a far cell is");
+		gap += !hole && beside;
+		placed += items[i] != 0;
+	}
+	check(gap > 0 && placed > 0, "No gap or no terrain generated");
+	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, ::profile, commit);
+	check(bool(receipt), "Commit next to existing terrain failed");
+	check(existingImage() == before, "Commit changed existing terrain");
+	check(editor.actionQueue->undo(), "Undo refused next to terrain");
+	check(existingImage() == before, "Undo changed existing terrain");
+	check(editor.actionQueue->redo(), "Redo refused next to terrain");
+	check(existingImage() == before, "Redo changed existing terrain");
+	editor.map.clearChanges();
+	report << "SURFACE_NEXT_TO_TERRAIN_PASS\t" << side << '\t' << seed << "\thole=" << withHole << "\tgap=" << gap << "\tplaced=" << placed << '\n';
+}
+
 void run() {
 	const auto root = std::filesystem::current_path();
 	std::ofstream report(root / "resolver-probe.log");
@@ -296,6 +352,9 @@ void run() {
 		endToEnd(250, report);
 		endToEnd(100, report, true);
 		endToEnd(250, report, true);
+		nextToTerrain(100, 1, false, report);
+		nextToTerrain(100, 1, true, report);
+		nextToTerrain(250, 1729, false, report);
 		report << "SURFACE_RESOLVER_PASS\n";
 		report.close();
 		wxTheApp->CallAfter([] { g_gui.root->Close(); });

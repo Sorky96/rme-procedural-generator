@@ -26,7 +26,7 @@ Czasy to pojedyncze przebiegi, bez powtórzeń i bez narzutu `DrawOperations`.
 
 ## Znaleziska
 
-- **Bordery na kaflach poza obszarem.** Pierścień trawy wokół obszaru był położony tylko w dwóch przebiegach (100×100 seed 1 i 250×250 seed 1729). W nich krawędź obszaru o innym rodzaju niż sąsiad dopisała bordery na kafle halo poza obszarem: 95 i 50 kafli. W pozostałych przebiegach nie było żadnych kafli halo, więc „0” tam nic nie mówi o zachowaniu przy sąsiedzie. Obecny potok G1 odrzuca taki podgląd (`OutOfMask`: „Borders would extend outside the allowed area”), więc przy wpięciu v2 generowanie obok istniejącego terenu będzie często odrzucane. Do rozstrzygnięcia w G2-B2 (np. kształtowanie pierścienia brzegowego obszaru); wpisano jako D5 w [TECH_DEBT.md](TECH_DEBT.md).
+- **Bordery na kaflach poza obszarem.** Pierścień trawy wokół obszaru był położony tylko w dwóch przebiegach (100×100 seed 1 i 250×250 seed 1729). W nich krawędź obszaru o innym rodzaju niż sąsiad dopisała bordery na kafle halo poza obszarem: 95 i 50 kafli. W pozostałych przebiegach nie było żadnych kafli halo, więc „0” tam nic nie mówi o zachowaniu przy sąsiedzie. Obecny potok G1 odrzuca taki podgląd (`OutOfMask`: „Borders would extend outside the allowed area”), więc przy wpięciu v2 generowanie obok istniejącego terenu będzie często odrzucane. Rozstrzygnięte 2026-11-07 (patrz [G2_GATE_STATUS.md](G2_GATE_STATUS.md), sekcja D5); dawniej: do rozstrzygnięcia w G2-B2 (np. kształtowanie pierścienia brzegowego obszaru); wpisano jako D5 w [TECH_DEBT.md](TECH_DEBT.md).
 - Kafle poza jednokaflowym halo nie zmieniły się nigdy (asercja).
 
 ## Czego nie zweryfikowano

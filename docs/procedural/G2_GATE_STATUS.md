@@ -1,6 +1,6 @@
 # G2 — stan bramki „Sensowna powierzchnia i border”, 2026-11-07
 
-**PARTIAL.** Kryteria rdzenia, adaptera i borderów mają dowody z testów i próbników na rzeczywistym kliencie 1098-BlackTek. Kryterium „teren czytelny w RME” ma dotąd ocenę użytkownika z dwóch pojedynczych widoków (250×250 i 500×500, seed domyślny), a nie przegląd kilku seedów. Wciąż otwarty jest dług D5. Bramka nie jest zamknięta.
+**PARTIAL.** Kryteria rdzenia, adaptera i borderów mają dowody z testów i próbników na rzeczywistym kliencie 1098-BlackTek. Kryterium „teren czytelny w RME” ma dotąd ocenę użytkownika z dwóch pojedynczych widoków (250×250 i 500×500, seed domyślny), a nie przegląd kilku seedów. Dług D5 (bordery poza obszarem) rozstrzygnięty dla Surface 2026-11-07 (sekcja niżej). Bramka nie jest zamknięta: brakuje oceny wizualnej kilku seedów.
 
 ## Kryteria z planu G2 i dowody
 
@@ -15,7 +15,7 @@
 | Testy rozkładów | Powyżej plus dekoracje: udział drzew w lądzie ≈ 3,1% (24 seedy 100×100) i 3,2% (6 seedów 250×250). | PASS |
 | Brak nieobsługiwanych itemów | Resolver i podgląd sprawdzają każdy item (definicja, clientId, nie meta; dekoracje także nie grunt ani border); E2E: dla każdej komórki położone itemy zgodne z planem. | PASS (klient 1098) |
 | Testy wizualne na kilku seedach | **Nie wykonano.** Są tylko pojedyncze widoki użytkownika; brak zrzutów z kilku seedów w repozytorium. | OTWARTE |
-| Brak znanych krytycznych błędów borderów | `pairs_without_border=0`; jedyny znany problem to D5 (bordery poza obszarem przy cudzym sąsiedzie, potok G1 odrzuca taki podgląd). | PARTIAL (D5) |
+| Brak znanych krytycznych błędów borderów | `pairs_without_border=0`; D5 (bordery poza obszarem przy cudzym sąsiedzie) rozwiązany dla Surface przez pozostawienie pustych komórek przy istniejącym gruncie, test `SURFACE_NEXT_TO_TERRAIN_PASS`. | PASS testy (klient 1098); wygląd szwu nieoceniony |
 
 ## Co zmieniono w tym kroku
 
@@ -34,6 +34,15 @@ Użytkownik: wygląd ok; rzeki powinny się pogrubiać po zlaniu i zwężać ku 
 - **Wolne otwieranie dialogu (potwierdzone przez użytkownika jako dialog):** dane zawierają 15741 brushy doodad i 4756 gruntu (liczone z XML w `brushes/` i `data/`), a osiem list było wypełnianych przy każdym otwarciu, łącznie ok. 70 tysięcy pozycji. Listy to teraz `wxComboBox` tylko do wyboru: do rozwinięcia zawierają jedną pozycję (domyślną albo pierwszą), pełna lista ładuje się przy pierwszym rozwinięciu. Lista doodadów jest ograniczona do brushy z pojedynczymi itemami wariantu 0, bo tylko takie resolver akceptuje. Czasu otwarcia nie mierzono przed ani po zmianie; zmiana jest oparta na liczbie pozycji, nie na pomiarze, a lazy ładowanie w zdarzeniu rozwinięcia nie było sprawdzone w natywnym RME (możliwe migotanie lub opóźnienie przy pierwszym rozwinięciu listy 15 tysięcy pozycji).
 - **Test GUI użytkownika po lazy ładowaniu:** „Jest ok” (dialog otwiera się bez problemu, listy działają); bez pomiaru czasu i bez osobnej oceny rzek na seedach 1, 7, 4242.
 - **Niezweryfikowane:** wygląd nowych rzek i działanie list w natywnym RME; dialog z klientem, który nie ma domyślnych nazw (pierwsza pozycja listy); wydajność dialogu przy dużej liczbie brushy.
+
+## D5: generowanie obok istniejącego terenu (2026-11-07)
+
+- **Przyczyna:** po położeniu gruntu `GroundBorderCalculator` liczy bordery także dla kafli sąsiednich (halo, a przy dziurach w selekcji i chronionych kaflach także w obszarze). Gdy brzeg obszaru ma brush o wyższym priorytecie niż istniejący sąsiad, border ląduje na kaflu sąsiada, a potok G1 odrzuca każdą zmianę poza zapisywalnym obszarem (celowo, bez przycinania).
+- **Odtworzenie (przed poprawką):** nowy test `nextToTerrain` w `--surface` (obszar 100×100 seed 1 otoczony trawą) zakończył się odmową przygotowania, a po pierwszej połowie poprawki odmową `InvalidPlan` (preview wymaga ścisłej równości „item istnieje ⇔ komórka zapisywalna”).
+- **Rozwiązanie (tylko Surface):** `surfaceKeepClear(snapshot)` wskazuje komórki zapisywalne, które mają w 8-sąsiedztwie komórkę niezapisywalną (poza obszarem, poza maską lub chronioną) z gruntem. Te komórki zostają puste (`Preserve` w generatorze i resolverze, bez itemu), więc kafle z borderami są ≥2 kroki od cudzego terenu. Preview dopuszcza pustą zapisywalną komórkę tylko wtedy, gdy ta sama funkcja ją wskazuje (ścisła równość zachowana). Classic i test G1 `OutOfMask` bez zmian. Przy pustej mapie i pustym otoczeniu wynik jest identyczny jak wcześniej (próbniki, odciski).
+- **Wynik testu** (`d5d-surface-162711`): `SURFACE_NEXT_TO_TERRAIN_PASS` dla 100×100 seed 1 (szew 396 komórek, 9604 położone), 100×100 seed 1 z istniejącym kaflem w środku (404 / 9595) i 250×250 seed 1729 (996 / 61504): przygotowanie i walidacja przechodzą, komórki obok istniejącego gruntu są puste, wszystkie pozostałe położone, istniejący teren bez zmian po commicie, Undo i Redo. Regresje: `--preview`, `--commit` PASS (`d5e-*-162844`), wiersze commitu G1 bez zmian, test rdzenia PASS.
+- **Koszt:** 1-kaflowy pusty szew przy istniejącym terenie (trzeba go wypełnić ręcznie), brak płynnego przejścia na stronie sąsiada. Szacunek pamięci przygotowania Surface wzrósł o 2 bajty na komórkę plus narzut (`bytes` w `SURFACE_E2E_PASS` 100×100: 13385154 → 13405218).
+- **Niezweryfikowane:** wygląd szwu w RME i to, czy użytkownik woli szew od odmowy; połączenie z roślinnością obok terenu (nie testowane); inne typy sąsiadów niż trawa (ring w teście to `grass`); kafle z samymi itemami bez gruntu (nie liczą się jako sąsiad); klienty inne niż 1098-BlackTek.
 
 ## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
 

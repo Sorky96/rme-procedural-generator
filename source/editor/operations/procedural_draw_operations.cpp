@@ -244,11 +244,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	decorIds.erase(std::ranges::unique(decorIds).begin(), decorIds.end());
 	uint64_t decorPlacements = 0;
 	uint64_t placements = 0;
+	// Surface leaves writable cells beside existing ground empty; every other cell must be placed.
+	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot) : std::vector<uint8_t>();
 	for (size_t i = 0; i < plan.items.size(); ++i) {
 		if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
 		if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x,y)]) ||
-			bool(plan.items[i]) != (input.mask[i] && !input.protection[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+			bool(plan.items[i]) != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (plan.decor.empty() ? false : bool(plan.decor[i]) && !plan.items[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.items[i]) continue;
 		++placements;

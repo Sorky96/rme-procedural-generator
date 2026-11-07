@@ -143,6 +143,11 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			return fail(PreparationInputError::MemoryLimit);
 		}
 		semanticBytes += surface->workingBytes;
+		// surfaceKeepClear() and the combined protection: one byte per cell each, alive while the grid is built.
+		if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes - 2 * kSnapshotAllocationOverhead) / 2) {
+			return fail(PreparationInputError::MemoryLimit);
+		}
+		semanticBytes += 2 * cellCount + 2 * kSnapshotAllocationOverhead;
 		if (vegetation) {
 			if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes) / decorationBytesPerCell) {
 				return fail(PreparationInputError::MemoryLimit);
@@ -201,8 +206,11 @@ TerrainPreparationSteps runPreparation(
 		GroundPlan plan;
 		{
 			if (input.config.algorithm == GenerationAlgorithm::Surface) {
+				const auto keepClear = surfaceKeepClear(*snapshot);
+				std::vector<uint8_t> protection = input.protection;
+				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
 				auto grid = generateSurface({ input.config.region, input.config.seed, input.config.surface }, input.extent,
-					{ budget.maxCells, semanticBytes, semanticBytes }, input.mask, input.protection, stop);
+					{ budget.maxCells, semanticBytes, semanticBytes }, input.mask, protection, stop);
 				if (!grid) co_return fail(fromSurface(grid.error()));
 				std::optional<DecorGrid> decor;
 				if (input.config.vegetation) {
@@ -210,7 +218,7 @@ TerrainPreparationSteps runPreparation(
 					if (!generated) co_return fail(fromSurface(generated.error()));
 					decor = std::move(*generated);
 				}
-				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr);
+				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear);
 				if (!resolved) co_return fail(resolved.error());
 				plan = std::move(*resolved);
 			} else {
