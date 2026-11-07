@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2: nieregularny brzeg jezior
+
+Po uwadze recenzenta (piasek równomierny, trawa powinna się wcinać): `shoreWidth` 3, pierwszy pierścień zawsze, dalsze według gładkiego szumu. Rozkład kafli piasku 1/2/3 kroki od wody 4253/3290/1273 (24 seedy 100×100). Test rdzenia, `--surface`, `--commit` PASS, odcisk Seed 1729 → 7666204984290374682. Wygląd w RME niezweryfikowany. [Szczegóły](procedural/G2_GATE_STATUS.md).
+
 ## 2026-11-07 — D5: Surface obok istniejącego terenu
 
 Bordery Surface przy istniejącym terenie powodowały odmowę podglądu (zmiana poza obszarem). Odtworzone testem `nextToTerrain` w `--surface`; poprawka: komórki zapisywalne obok niezapisywalnych z gruntem zostają puste (1-kaflowy szew), `surfaceKeepClear` wspólne dla przygotowania i preview (ścisła równość zachowana). `SURFACE_NEXT_TO_TERRAIN_PASS` (100×100, z kaflem w środku, 250×250), regresje `--preview`/`--commit`/rdzeń PASS, wiersze commitu G1 bez zmian. Szew i wygląd w RME niezweryfikowane. [Szczegóły](procedural/G2_GATE_STATUS.md).

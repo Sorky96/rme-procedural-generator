@@ -16,9 +16,11 @@ constexpr uint64_t heightStream = 0x6865696768745f32ULL;   // "height_2"
 constexpr uint64_t moistureStream = 0x6d6f69737475725fULL; // "moistur_"
 constexpr uint64_t ditherStream = 0x6469746865725f32ULL;   // "dither_2"
 constexpr uint64_t riverStream = 0x72697665725f7332ULL;    // "river_s2"
+constexpr uint64_t shoreStream = 0x73686f72655f7332ULL;    // "shore_s2"
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
 constexpr uint32_t noiseBins = 65536;
 constexpr int64_t fixedOne = 4096;
+constexpr uint32_t shoreStep = 6;        // lattice step of the beach outline
 constexpr uint32_t transitionStep = 10;  // lattice step of the grass/dirt edge wobble
 constexpr uint32_t minPatchCells = 24;   // smaller grass or dirt patches are absorbed
 
@@ -317,11 +319,19 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			std::vector<uint8_t> wet = lake;
 			for (uint32_t ring = 0; ring < config.tuning.shoreWidth; ++ring) {
 				const auto previous = wet;
+				// The first ring always exists; every further ring needs smooth noise above a threshold
+				// that rises with the ring, so the beach is wide in some places and grass reaches in
+				// elsewhere instead of forming an even band.
+				const uint32_t cut = ring == 0 ? 0 : uint32_t(uint64_t(noiseBins) * (5 + 30 * ring) / 100);
 				for (size_t i = 0; i < count; ++i) {
 					if (previous[i] || kinds[i] == SurfaceKind::Rock) continue;
 					bool touches = false;
 					forNeighbours(i, width, height, [&](size_t next) { touches |= previous[next] != 0; });
-					if (touches) { wet[i] = 1; kinds[i] = SurfaceKind::Shore; }
+					if (!touches) continue;
+					if (cut && valueNoise(config.seed, shoreStream, uint32_t(config.region.x) + uint32_t(i % width),
+						uint32_t(config.region.y) + uint32_t(i / width), shoreStep) < cut) continue;
+					wet[i] = 1;
+					kinds[i] = SurfaceKind::Shore;
 				}
 			}
 		}

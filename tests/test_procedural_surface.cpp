@@ -167,10 +167,10 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 1951698793224813922ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 7666204984290374682ULL, "Seed 1729 100x100 surface output changed");
 }
 
-struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; };
+struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; std::array<size_t, 5> shoreAt {}; };
 
 Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 	Tally tally { grid.cells.size(), countOf(grid, SurfaceKind::Grass), countOf(grid, SurfaceKind::Dirt),
@@ -250,12 +250,14 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
 		require(grid.cells[cell] != SurfaceKind::Shore || distance[cell] <= config.tuning.shoreWidth,
 			"Shore farther from a lake than shoreWidth");
+		if (grid.cells[cell] == SurfaceKind::Shore && distance[cell] < tally.shoreAt.size()) ++tally.shoreAt[distance[cell]];
 	}
 	return tally;
 }
 
 void distributions(uint32_t side, uint32_t seeds) {
 	size_t riverSeeds = 0, lakeSeeds = 0, rockSeeds = 0, dirtSeeds = 0, riverCells = 0, thickRiverCells = 0;
+	std::array<size_t, 5> shoreAt {};
 	double minDirt = 1, maxDirt = 0;
 	for (uint32_t seed = 1; seed <= seeds; ++seed) {
 		const auto config = makeConfig(side, seed);
@@ -276,6 +278,7 @@ void distributions(uint32_t side, uint32_t seeds) {
 				thickRiverCells += full;
 			}
 		}
+		for (size_t ring = 1; ring < shoreAt.size(); ++ring) shoreAt[ring] += tally.shoreAt[ring];
 		riverSeeds += tally.river > 0; lakeSeeds += tally.lake > 0; rockSeeds += tally.rock > 0;
 		const double dirtShare = double(tally.dirt) / double(std::max<size_t>(1, tally.grass + tally.dirt));
 		minDirt = std::min(minDirt, dirtShare); maxDirt = std::max(maxDirt, dirtShare);
@@ -291,8 +294,10 @@ void distributions(uint32_t side, uint32_t seeds) {
 	require(dirtSeeds == seeds, "Some seed lacked grass or dirt");
 	require(minDirt >= 0.10 && maxDirt <= 0.60, "Dirt share of open land outside 10-60%");
 	std::cout << side << 'x' << side << " seeds=" << seeds << " with_lake=" << lakeSeeds << " with_river=" << riverSeeds
-		<< " with_rock=" << rockSeeds << " river_cells=" << riverCells << " in_3x3_block=" << thickRiverCells << " dirt_share_of_open_land=" << minDirt << ".." << maxDirt << '\n';
+		<< " with_rock=" << rockSeeds << " river_cells=" << riverCells << " in_3x3_block=" << thickRiverCells << " shore_at_1/2/3=" << shoreAt[1] << '/' << shoreAt[2] << '/' << shoreAt[3] << " dirt_share_of_open_land=" << minDirt << ".." << maxDirt << '\n';
 	require(lakeSeeds > 0 && riverSeeds > 0 && rockSeeds > 0, "A feature never appeared in any seed");
+	// The beach is irregular: outer rings exist, but only partly, so the band is not an even width.
+	require(shoreAt[2] > 0 && shoreAt[3] > 0 && shoreAt[2] < shoreAt[1] && shoreAt[3] < shoreAt[2], "Shore band has an even width");
 }
 
 void transitionBand() {

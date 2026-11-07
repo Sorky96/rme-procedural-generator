@@ -45,6 +45,15 @@ Użytkownik: wygląd ok; rzeki powinny się pogrubiać po zlaniu i zwężać ku 
 - **Test GUI użytkownika (2026-11-07):** generowanie obok istniejącego terenu, „Wygląda dobrze” (ocena wizualna; Undo/Redo na GUI nie raportowane osobno).
 - **Niezweryfikowane:** połączenie z roślinnością obok terenu (nie testowane); inne typy sąsiadów niż trawa (ring w teście to `grass`); kafle z samymi itemami bez gruntu (nie liczą się jako sąsiad); klienty inne niż 1098-BlackTek.
 
+## Nieregularny brzeg (2026-11-07, uwaga zewnętrznego recenzenta)
+
+Uwaga: koncepcja dobra, piasek nieregularny, miejscami trawa powinna się wcinać; wygląda „jak losowe”. Interpretacja: pas piasku wokół jeziora miał stałą szerokość (obrys jeziora), a naturalna plaża powinna się zwężać i poszerzać.
+
+- **Zmiana:** `shoreWidth` domyślnie 3 (poprzednio 2). Pierwszy pierścień przy jeziorze zawsze jest piaskiem; każdy dalszy pierścień powstaje tylko tam, gdzie gładki szum (siatka co 6 komórek, osobny strumień `shore_s2`) przekracza próg rosnący z pierścieniem (35%, 65%, 95% zakresu). Efekt: plaża szeroka w jednych miejscach, a gdzie indziej trawa wcina się do pierwszego pierścienia.
+- **Rozkład** (liczba kafli piasku 1/2/3 kroki od wody): 4253/3290/1273 (24 seedy 100×100), 6126/4763/1863 (6 seedów 250×250), 12984/10185/4085 (3 seedy 500×500). Test wymaga, żeby pierścienie 2 i 3 istniały i były rzadsze niż poprzednie.
+- Odcisk Seed 1729 100×100: 7666204984290374682. Test rdzenia, `--surface` (z `SURFACE_NEXT_TO_TERRAIN_PASS`) i `--commit` PASS (`g2f-surface-171132`, `g2f-commit-171132`), `pairs_without_border=0`, wiersze commitu G1 bez zmian.
+- **Niezweryfikowane:** wygląd w RME i czy to odpowiada intencji uwagi („kępy trawy w piasku” mogły oznaczać też izolowane kępy trawy wewnątrz piasku, czego ta zmiana nie robi: trawa wcina się tylko od zewnątrz); wpływ na roślinność (drzewa trzymają 2 kroki od brzegu, więc teren z szerszym piaskiem ma mniej drzew przy wodzie).
+
 ## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
 
 | Próbnik | Przebieg | Wynik |
