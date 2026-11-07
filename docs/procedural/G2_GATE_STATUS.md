@@ -74,6 +74,14 @@ Widać do poprawy:
 - Odcisk Seed 1729 100×100: 6783381837833077004. Test rdzenia PASS (206 punktów alokacji z wstrzykniętą awarią, wszystkie zgłoszone; 24+6+3 seedy); `--surface` (z `SURFACE_NEXT_TO_TERRAIN_PASS`) i `--commit` PASS (`g2g-surface-182831`, `g2g-commit-182831`), `pairs_without_border=0`, wiersze commitu G1 bez zmian. Dodatkowo obejrzany zrzut ASCII jednego seeda: rzeki ukośne bez kątów prostych (tymczasowy kod, usunięty).
 - **Niezweryfikowane:** wygląd w RME po tej zmianie (zrzuty powyżej są sprzed niej); `rme.exe` nie został przebudowany w tym kroku, bo działający RME blokował plik; szacunek pamięci roboczej (40 B/komórkę) nie był przeliczany po dodaniu wektorów (rozmiary jezior, trasy, zlewy); rozkład szerokości rzeki (płynność) nie jest mierzony testem.
 
+## Ponowny test GUI po poprawkach (2026-11-07, `rme.exe` przebudowany)
+
+Użytkownik: „7 wygląda ok, 1 tak jak na screeni”; seeda 4242 nie raportował. Zrzut seeda 1: [seed 1 po poprawkach](screenshots/g2-surface-seed-1-after-fixes-20261107.webp) (zoom 37%). Seed 7 ocena słowna, bez zrzutu.
+
+Obserwacje asystenta ze zrzutu seeda 1: wyspy w jeziorach nie ma, małe stawy po lewej mają wąski pierścień piasku, skręty rzeki są zaokrąglone, a szerokość rośnie ku ujściu (ok. 2 → 4 kafli), dopływ styka się z rzeką. Nadal widać długie proste odcinki poziome i pionowe (np. poziomy odcinek przy skale w prawym górnym rogu i pionowy odcinek w środku), czyli rzeka jest mniej kanciasta niż wcześniej, ale wciąż poprowadzona głównie po osiach. Nie wiadomo, czy użytkownik uznaje to za akceptowalne („tak jak na screeni” może znaczyć zarówno „dobrze”, jak i „bez zmian”).
+
+Status kryterium wizualnego: seed 7 ok (ocena użytkownika), seed 1 oceny jednoznacznej brak, seed 4242 po poprawkach nieoceniony.
+
 ## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
 
 | Próbnik | Przebieg | Wynik |
