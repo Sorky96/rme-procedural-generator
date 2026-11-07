@@ -1,6 +1,6 @@
 # G3 — stan bramki „Import i analiza map referencyjnych”, 2026-11-07
 
-**Nie zamykam bramki sam.** Kryterium bramki jest spełnione dla 20 map (19 zwykłego 10.98 i jednej BlackTek), ale zakres z planu nie jest wykonany w całości (patrz „Luki”). Propozycja do decyzji użytkownika: zamknąć G3 z długiem (jak G1/G2), z listą luk poniżej.
+**ZAMKNIĘTA decyzją użytkownika 2026-11-07 (PASS z długiem, nie PASS bez zastrzeżeń).** Kryterium bramki jest spełnione dla 20 map (19 zwykłego 10.98 i jednej BlackTek), ale zakres z planu nie jest wykonany w całości; luki poniżej zaakceptowano jako dług (D9–D11 w [TECH_DEBT.md](TECH_DEBT.md), D8 z resztkami).
 
 **Bramka z planu:** „dla każdej mapy referencyjnej generowany jest powtarzalny raport, statystyki i mapa semantyczna.”
 
@@ -15,7 +15,7 @@
 | Import tylko do odczytu, mapy prywatne | Hashe map i `Tibia.dat/spr` przed i po każdym przebiegu; raporty tylko w `local-data/` (git-ignored); w repo agregaty | PASS |
 | Limity pamięci, anulowanie od początku | D8 zamknięty z długiem resztkowym: limit egzekwowany także w trakcie ładowania (hak w `IOMapOTBM`), anulowanie w ładowaniu 78–310 ms; ładowanie `Map` to 94 % szczytu; ścieżka edytora sprawdzona ręcznie przez użytkownika | PASS z długiem |
 
-## Luki (nie zaliczone)
+## Luki (zaakceptowane jako dług)
 - **Cechy z sekcji 4.2 planu:** brak rzek (długość, krętość, szerokość, rozwidlenia), jaskiń (komory, korytarze, cykle, przewężenia), lasu (klastry), gór (ściany do plateau), szlaków i mostów, osad i budowli, mikrostruktur, wąskich gardeł oraz połączeń między piętrami. Regiony gruntu to nie nazwane biomy (nazwy byłyby zgadywaniem).
 - **Test podobieństwa/memoryzacji** (plan 4.3) i podział train/validation/test (4.4): nie wykonano; to wejście dla G4.
 - **Ocena sensowności:** cechy i mapy semantyczne są mierzone; poza jednym obejrzanym obrazem (piętro 7 `forgotten.otbm`) nie oceniano ich wizualnie ani merytorycznie.
@@ -23,7 +23,7 @@
 - **Pliki towarzyszące** (house, spawn, zones) nie są wczytywane; itemy w kontenerach nie wnoszą cech.
 - **Items.otb:** nie potwierdzono, że `data/1098/items.otb` to dokładnie plik, z którym powstały mapy zwykłego 10.98 (zgodność wskazuje na to, nie dowodzi).
 - **Dług techniczny z tego etapu:** D8 (resztki: ładowanie `Map` 94 % szczytu, anulowanie przy normalizacji ok. 1,2 s), patrz [TECH_DEBT.md](TECH_DEBT.md). Powtarzalność sprawdzono na jednej maszynie.
-- **Zatwierdzenia i commity:** zmiany z G3-E, D8 i eksportu semantycznego nie są scommitowane (stan na 2026-11-07).
+- **Commity i PR:** zmiany G3 są w commitach na gałęzi `feature/procedural-g3-reference-analysis`; CI jest wyłączone, a commity pośrednie nie były budowane osobno.
 
 ## Wymagany test w GUI (użytkownik)
 G3 nie zmienia interfejsu RME, więc nie ma testu GUI w tym etapie. Do oceny przez użytkownika są pliki PNG w `local-data/…/run/analysis/semantic/` (piętra) wraz z `legend.json`; można je otworzyć dowolnym przeglądarką obrazów.

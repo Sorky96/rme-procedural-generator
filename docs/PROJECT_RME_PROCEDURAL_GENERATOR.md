@@ -352,7 +352,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 3 - Import i analiza map referencyjnych
 
-**Stan 2026-11-07: kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek), zakres z planu nie w całości; bramki nie zamknięto, decyzja należy do użytkownika.** Kryteria, dowody i luki: [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md).
+**G3 ZAMKNIĘTE Z DŁUGIEM, 2026-11-07 (decyzja użytkownika): kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek), zakres z planu nie w całości.** Kryteria, dowody i luki: [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md).
 
 - [~] Lokalny import OTBM, wykrywanie zgodności item/asset. Część wykonana 2026-11-07, jedna referencja: [G3_IMPORT.md](procedural/G3_IMPORT.md).
 - [~] Normalizator map do reprezentacji semantycznej + `unknown` reports. 2026-11-07, fixture i jedna referencja: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md).
@@ -502,8 +502,8 @@ W `docs/PROGRESS.md` trzymaj aktualny stan. Poniżej szablon startowy, nie rapor
 | 0 | TODO | - | - | - | Audyt repozytorium |
 | 1 | TODO | - | - | - | Po G0 |
 | 2 | TODO | - | - | - | Po G1 |
-| 3 | IN PROGRESS | 2026-11-07 | - | - | G3-A: import i zgodność (PARTIAL), zob. G3_IMPORT.md |
-| 4 | TODO | - | - | - | Po G3 |
+| 3 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 | G3_GATE_STATUS.md | D8 (resztki), D9–D11 | G4 |
+| 4 | TODO | - | - | - | G3 zamknięte z długiem 2026-11-07, start G4 |
 | 5 | TODO | - | - | - | Po G4 |
 | 6 | TODO | - | - | - | Po G5 |
 | 7 | TODO | - | - | - | Po G6 |
