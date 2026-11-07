@@ -252,14 +252,17 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				}
 				if (route.size() >= config.tuning.minRiverLength) for (const auto cell : route) river[cell] = 1;
 			}
-			// Widen every route to at least two cells: the route is 4-connected, so adding the
-			// east and south neighbour of each cell leaves no one-cell-wide stretch. Lakes are kept.
+			// Widen every route to at least two cells: each route cell becomes the corner of a full
+			// 2x2 block (east, south and south-east neighbours), so no stretch or headwater tip is
+			// one cell wide. Lakes are kept.
 			const auto route2 = river;
 			for (size_t i = 0; i < count; ++i) {
 				if (!route2[i]) continue;
 				const uint32_t x = uint32_t(i % width), y = uint32_t(i / width);
-				if (x + 1 < width && !lake[i + 1]) river[i + 1] = 1;
-				if (y + 1 < height && !lake[i + width]) river[i + width] = 1;
+				const bool east = x + 1 < width, south = y + 1 < height;
+				if (east && !lake[i + 1]) river[i + 1] = 1;
+				if (south && !lake[i + width]) river[i + width] = 1;
+				if (east && south && !lake[i + width + 1]) river[i + width + 1] = 1;
 			}
 		}
 

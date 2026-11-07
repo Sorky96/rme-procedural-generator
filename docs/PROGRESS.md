@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-07 — G2-D: kontrole rozkładów, szerokość rzeki, stan bramki
+
+Test rdzenia sprawdza teraz szerokość rzeki (okno 2×2) i górną granicę szerokości brzegu oraz 3 seedy 500×500. Kontrola znalazła jednokaflowy ogonek na źródle rzeki; poprawione (komórka południowo-wschodnia przy rozszerzaniu), przypięty odcisk Seed 1729 → 13556304753518616142. `--surface`, `--preview`, `--commit` na kliencie 1098 przeszły, wiersze commitu G1 bez zmian, `pairs_without_border=0`. Status bramki G2 **PARTIAL**: brak przeglądu wizualnego kilku seedów w RME, D5 otwarty. [Stan bramki](procedural/G2_GATE_STATUS.md).
+
 ## 2026-11-07 — G2: szerszy piasek (shoreWidth 2) po teście GUI G2-C
 
 Użytkownik: roślinność w GUI wygląda dobrze, Undo/Redo działa; piasek wokół jezior za cienki. Domyślne `shoreWidth` 1 → 2 (zakres 0–4 bez zmian), przypięty odcisk Seed 1729 100x100 zmieniony na 4385766052247269449. `test_procedural_surface` PASS, próbnik `--surface` (100 i 250, bez i z roślinnością) PASS, `pairs_without_border=0`. Test GUI użytkownika (500x500, roślinność włączona): piasek, drzewa, kamienie i skały oceniono jako „ok”; to ocena wizualna jednego widoku, bez Undo/Redo i bez wielu seedów na tym rozmiarze.

@@ -167,7 +167,7 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 4385766052247269449ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 13556304753518616142ULL, "Seed 1729 100x100 surface output changed");
 }
 
 struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; };
@@ -199,6 +199,48 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 			(y > 0 && grid.cells[cell - w] == SurfaceKind::Lake) ||
 			(y + 1 < h && grid.cells[cell + w] == SurfaceKind::Lake);
 		require(!nextToLake || config.tuning.shoreWidth == 0, "Land touches a lake without a shore");
+	}
+	// A river is never one cell wide: each river cell sits in a 2x2 window of river/lake cells,
+	// unless a lake ends the river at that cell.
+	const auto wet = [&](uint32_t x, uint32_t y) {
+		const auto kind = grid.cells[size_t(y) * w + x];
+		return kind == SurfaceKind::River || kind == SurfaceKind::Lake;
+	};
+	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
+		if (grid.cells[cell] != SurfaceKind::River) continue;
+		const uint32_t x = uint32_t(cell % w), y = uint32_t(cell / w);
+		bool wide = false;
+		for (uint32_t wy = (y > 0 ? y - 1 : 0); wy <= y && wy + 1 < h && !wide; ++wy) {
+			for (uint32_t wx = (x > 0 ? x - 1 : 0); wx <= x && wx + 1 < w; ++wx) {
+				wide |= wet(wx, wy) && wet(wx + 1, wy) && wet(wx, wy + 1) && wet(wx + 1, wy + 1);
+			}
+		}
+		const bool nextToLake = (x > 0 && grid.cells[cell - 1] == SurfaceKind::Lake) ||
+			(x + 1 < w && grid.cells[cell + 1] == SurfaceKind::Lake) ||
+			(y > 0 && grid.cells[cell - w] == SurfaceKind::Lake) ||
+			(y + 1 < h && grid.cells[cell + w] == SurfaceKind::Lake);
+		require(wide || nextToLake, "One-cell-wide river stretch");
+	}
+	// Shore never reaches farther from a lake than shoreWidth steps.
+	std::vector<uint32_t> distance(grid.cells.size(), UINT32_MAX);
+	std::vector<size_t> queue;
+	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
+		if (grid.cells[cell] == SurfaceKind::Lake) { distance[cell] = 0; queue.push_back(cell); }
+	}
+	for (size_t head = 0; head < queue.size(); ++head) {
+		const size_t cell = queue[head];
+		const uint32_t x = uint32_t(cell % w), y = uint32_t(cell / w);
+		const auto visit = [&](size_t next) {
+			if (distance[next] == UINT32_MAX) { distance[next] = distance[cell] + 1; queue.push_back(next); }
+		};
+		if (x > 0) visit(cell - 1);
+		if (x + 1 < w) visit(cell + 1);
+		if (y > 0) visit(cell - w);
+		if (y + 1 < h) visit(cell + w);
+	}
+	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
+		require(grid.cells[cell] != SurfaceKind::Shore || distance[cell] <= config.tuning.shoreWidth,
+			"Shore farther from a lake than shoreWidth");
 	}
 	return tally;
 }
@@ -358,7 +400,7 @@ void decorationFailures() {
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
-		distributions(100, 24); distributions(250, 6); allocationFailures();
+		distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
