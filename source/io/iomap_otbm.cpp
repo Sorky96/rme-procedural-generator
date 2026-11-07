@@ -338,6 +338,16 @@ bool IOMapOTBM::loadMapFromDisk(Map& map, const FileName& filename) {
 	return true;
 }
 
+bool IOMapOTBM::pollAbort() {
+	if (!abort_check_) {
+		return false;
+	}
+	if (!aborted_.load(std::memory_order_relaxed) && abort_check_()) {
+		aborted_.store(true, std::memory_order_relaxed);
+	}
+	return aborted_.load(std::memory_order_relaxed);
+}
+
 bool IOMapOTBM::loadMapFast(Map& map, const uint8_t* data, size_t size) {
 	if (size < 4) {
 		return false;
@@ -512,6 +522,11 @@ bool IOMapOTBM::loadMapFast(Map& map, const uint8_t* data, size_t size) {
 		std::chrono::duration<double, std::milli>(t_prescan_end - t_prescan_start).count(),
 		block_buckets.size(), unaligned_jobs.size());
 
+	if (pollAbort()) {
+		spdlog::info("FastOTBM: load aborted by caller after scanning");
+		return false;
+	}
+
 	// Pre-allocate spatial hash grid cells
 	map.getGrid().preallocateCells(cell_keys);
 
@@ -552,7 +567,7 @@ bool IOMapOTBM::loadMapFast(Map& map, const uint8_t* data, size_t size) {
 			try {
 				while (true) {
 					size_t bidx = next_bucket_idx.fetch_add(1, std::memory_order_relaxed);
-					if (bidx >= block_buckets.size() || worker_failed.load(std::memory_order_relaxed)) {
+					if (bidx >= block_buckets.size() || worker_failed.load(std::memory_order_relaxed) || loadAborted()) {
 						break;
 					}
 
@@ -575,18 +590,24 @@ bool IOMapOTBM::loadMapFast(Map& map, const uint8_t* data, size_t size) {
 	const size_t total_buckets = block_buckets.size();
 	while (true) {
 		size_t done = completed_buckets.load(std::memory_order_relaxed);
-		if (done >= total_buckets) {
+		if (done >= total_buckets || pollAbort()) {
 			break;
 		}
 		int pct = 20 + static_cast<int>(70.0 * done / (total_buckets > 0 ? total_buckets : 1));
 		g_gui.SetLoadDone(pct, wxString::Format("Loading map tiles (%zu/%zu blocks)...", done, total_buckets));
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
+		// With an abort hook the hook is evaluated more often, so a limit is noticed sooner.
+		std::this_thread::sleep_for(std::chrono::milliseconds(abort_check_ ? 5 : 25));
 	}
 
 	for (auto& w : workers) {
 		if (w.joinable()) {
 			w.join();
 		}
+	}
+
+	if (aborted_.load(std::memory_order_relaxed)) {
+		spdlog::info("FastOTBM: load aborted by caller while loading tiles");
+		return false;
 	}
 
 	if (worker_failed.load(std::memory_order_relaxed)) {
