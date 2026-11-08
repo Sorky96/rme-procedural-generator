@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: profile stylu w oknie generatora (kod gotowy, test ręczny czeka)
+
+Lista **Style profile** w Map → Generate terrain… (tylko dla „Natural surface”), profile `*.profile` z `procedural/styles` w lokalnym katalogu danych, oferowane wyłącznie dla dokładnie tego klienta i assetów (hashe `items.otb` i `Tibia.dat`). Wybrany profil ustawia strojenie powierzchni i wegetacji w `GenerationConfig`; odcisk podglądu bez zmian dla dotychczasowych konfiguracji. `rme.exe` buduje się, testy PASS, oferta sprawdzona w próbniku z prawdziwym klientem 10.98 (8 z 8). Okno nie było uruchamiane przeze mnie. [G4_GUI.md](procedural/G4_GUI.md).
+
 ## 2026-11-08 — G4-F iteracja 3: profile per styl (kryterium iteracji spełnione in-sample, G4 z planu nadal niewykazana)
 
 Osiem stylów (rodzin z celem), profil na styl z ograniczeniem spójności lądu; kryteria zapisane przed uruchomieniem. A: profil lepszy w S1 i S2 w 8 z 8 stylów (in-sample), C: 6 z 8 rozpoznanych, P1 ≥ 95 % wszędzie; B (jedyny przypadek na mapie niewidzianej, swamp, n = 2): lepszy w obu. Interpretacja zapisana z góry: to dowodzi odtwarzania rozkładu rodzajów stylu przez generator, nie poprawy na mapach niewidzianych. Dwa przebiegi bajtowo identyczne. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

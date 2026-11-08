@@ -6,6 +6,8 @@
 //   C  which style target each style profile is closest to (distinguishability)
 //
 // Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
+//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX]
+// With --profiles-out each style profile is also written as <style>.profile (g4-profile/3) for the generator dialog.
 
 #include "procedural/core/decor_context.h"
 #include "procedural/core/reference_split.h"
@@ -108,7 +110,8 @@ std::string tuningJson(const SurfaceTuning& t, const DecorTuning& d) {
 } // namespace
 
 int main(int argc, char** argv) {
-	fs::path manifestPath, fingerprintDir, statsDir, outPath;
+	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath;
+	std::string client, otbSha, datSha;
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string key = argv[i];
 		const char* value = argv[i + 1];
@@ -116,6 +119,11 @@ int main(int argc, char** argv) {
 		else if (key == "--fingerprints") fingerprintDir = value;
 		else if (key == "--stats") statsDir = value;
 		else if (key == "--out") outPath = value;
+		else if (key == "--profiles-out") profilesOut = value;
+		else if (key == "--keymap") keymapPath = value;
+		else if (key == "--client") client = value;
+		else if (key == "--otb-sha") otbSha = value;
+		else if (key == "--dat-sha") datSha = value;
 		else { std::cerr << "unknown option " << key << '\n'; return 2; }
 	}
 	if (manifestPath.empty() || fingerprintDir.empty() || statsDir.empty() || outPath.empty()) {
@@ -269,6 +277,43 @@ int main(int argc, char** argv) {
 		return std::format("\"S1_shares_ppm\": {}, \"S2_adjacency_ppm\": {}, \"S3_vegetation_microprm\": {}, \"S3_terms\": {}, \"P1_baseline_median_ppm\": {}, \"P1_candidate_median_ppm\": {}, \"P1_candidate_at_least_95_percent\": {}",
 			summaryJson(c.s1), summaryJson(c.s2), summaryJson(c.s3), c.s3Terms, c.p1Base, c.p1Cand, c.p1Ok ? "true" : "false");
 	};
+
+	if (!profilesOut.empty()) {
+		if (keymapPath.empty() || client.empty() || otbSha.empty() || datSha.empty() || manifest->entries.front().client != client) {
+			std::cerr << "--profiles-out needs --keymap, --client (the manifest's), --otb-sha and --dat-sha\n";
+			return 2;
+		}
+		if (!readFile(keymapPath, text)) { std::cerr << "cannot read key map\n"; return 2; }
+		const auto keymap = parseKeyMap(text);
+		if (!keymap) { std::cerr << "invalid key map\n"; return 3; }
+		fs::create_directories(profilesOut);
+		for (const Style* st : styles) {
+			StyleProfile profile;
+			profile.client = client;
+			profile.otbSha256 = otbSha;
+			profile.datSha256 = datSha;
+			profile.level = StyleLevel::Surface;
+			profile.zMin = 0;
+			profile.zMax = 7;
+			profile.sources = st->target->used;
+			profile.keymap = *keymap;
+			for (const size_t i : st->usable) {
+				for (size_t a = 0; a < styleKindCount; ++a) {
+					profile.stats.kindTiles[a] += stats[i].stats.kindTiles[a];
+					for (size_t b = 0; b < styleKindCount; ++b) profile.stats.pairs[a][b] += stats[i].stats.pairs[a][b];
+				}
+			}
+			profile.target = st->target->target;
+			profile.tuning = st->profile.surface;
+			profile.decorTarget = st->decorTarget;
+			profile.decorTuning = st->profile.decor;
+			const auto out = serializeProfile(profile);
+			if (!out) { std::cerr << "cannot serialize profile " << st->name << '\n'; return 4; }
+			std::ofstream f(profilesOut / (st->name + ".profile"), std::ios::binary);
+			f << *out;
+			if (!f) { std::cerr << "cannot write profile " << st->name << '\n'; return 4; }
+		}
+	}
 
 	std::string report = "{\n  \"schema\": \"g4-styles-report/1\",\n";
 	report += std::format("  \"fit_side\": {}, \"eval_side\": {}, \"eval_seeds\": [{}, {}], \"min_connectivity_percent\": {},\n  \"styles\": [\n", fitSide, evalSide, firstSeed, firstSeed + seedCount - 1, minConnectivityPercent);

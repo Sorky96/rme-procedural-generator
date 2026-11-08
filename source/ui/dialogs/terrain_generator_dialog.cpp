@@ -428,6 +428,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	style_choice_->SetSelection(0);
 	form->Add(style_choice_, 1, wxEXPAND);
 
+	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
+	profile_choice_ = newd wxChoice(this, wxID_ANY);
+	profile_choice_->SetName("terrain-profile");
+	profile_choice_->Append("Built-in (manual settings)");
+	profile_choice_->SetSelection(0);
+	LoadStyleProfiles();
+	form->Add(profile_choice_, 1, wxEXPAND);
+
 	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_brush_choice_ = brushChoice("terrain-rock-brush", "rocky ground", false);
 	form->Add(rock_brush_choice_, 1, wxEXPAND);
@@ -542,6 +550,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	profile_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
@@ -566,6 +575,34 @@ bool TerrainGeneratorDialog::SelectionMode() const {
 
 bool TerrainGeneratorDialog::NaturalSurface() const {
 	return style_choice_->GetSelection() == 1;
+}
+
+// Offers the style profiles that were learned for exactly the loaded client and its assets. Read-only: the
+// folder is never created and a profile that does not match is not listed, only counted in the tooltip.
+void TerrainGeneratorDialog::LoadStyleProfiles() {
+	namespace rp = rme::procedural;
+	const auto folder = rp::styleProfileDirectory();
+	const auto ids = rp::loadedClientAssetIds();
+	wxString hint;
+	if (!ids) {
+		hint = "Style profiles need a loaded client with items.otb.";
+	} else {
+		auto scan = rp::scanStyleProfiles(folder, *ids);
+		const wxString where(folder.generic_wstring());
+		if (!scan.exists) {
+			hint = "No style profiles. Put *.profile files in:\n" + where;
+		} else {
+			profiles_ = std::move(scan.offer.offered);
+			for (const auto& entry : profiles_) profile_choice_->Append(wxstr(entry.name));
+			hint = wxstr(std::format("{} style profile(s) offered from:\n", profiles_.size())) + where;
+			const size_t hidden = scan.offer.otherClient + scan.offer.otherAssets + scan.offer.notUsable + scan.unreadable;
+			if (hidden > 0) {
+				hint += wxstr(std::format("\nHidden: {} for another client, {} for other items.otb or Tibia.dat, {} unusable.",
+					scan.offer.otherClient, scan.offer.otherAssets, scan.offer.notUsable + scan.unreadable));
+			}
+		}
+	}
+	profile_choice_->SetToolTip(hint);
 }
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
@@ -595,6 +632,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
 	vegetation_check_->Enable(natural);
+	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
 	const bool rectangle = !SelectionMode();
 	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_ }) {
@@ -657,6 +695,12 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	if (natural) {
 		// Weights belong to the classic mix only; the surface algorithm keeps the defaults.
 		config.algorithm = GenerationAlgorithm::Surface;
+		// A style profile replaces the built-in tuning; the choice was listed only for this client and these assets.
+		if (const int picked = profile_choice_->GetSelection(); picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
+			const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
+			config.surface = *profile.tuning;
+			if (profile.decorTuning) config.decor = *profile.decorTuning;
+		}
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());

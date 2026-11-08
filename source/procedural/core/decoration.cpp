@@ -54,10 +54,7 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(
 	const SurfaceGrid& grid, uint64_t seed, const DecorTuning& tuning, std::stop_token stop) {
 	if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
 	if (!grid.valid()) return std::unexpected(SurfaceError::InvalidRegion);
-	if (tuning.treeScalePermille > maxTreeScalePermille || tuning.waterTreePermille > 1000 || tuning.bushPermille > 1000 ||
-	    tuning.waterBushPermille > 1000 || tuning.dirtStonePermille > 1000 || tuning.rockStonePermille > 1000) {
-		return std::unexpected(SurfaceError::InvalidParameters);
-	}
+	if (!valid(tuning)) return std::unexpected(SurfaceError::InvalidParameters);
 	const uint32_t bushPermille = tuning.bushPermille, waterBushPermille = tuning.waterBushPermille;
 	const uint32_t dirtStonePermille = tuning.dirtStonePermille, rockStonePermille = tuning.rockStonePermille;
 	try {

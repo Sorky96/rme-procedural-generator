@@ -8,6 +8,7 @@
 #include "procedural/adapter/reference_import.h"
 #include "procedural/core/feature_report.h"
 #include "procedural/core/features.h"
+#include "procedural/adapter/style_profile_store.h"
 #include "procedural/core/decor_context.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
@@ -249,6 +250,21 @@ void runProbe() {
                 csv += std::format("{},{},{},{},\"{}\"\n", id, use.count, use.clientId, use.blocking ? 1 : 0, quoted);
             }
             writeText("ground-without-brush.csv", csv);
+        }
+        // G4 GUI wiring: what the generator dialog would offer for this client (same functions, no GUI).
+        if (const std::string profilesDir = readSetting("profiles-dir.txt"); !profilesDir.empty()) {
+            std::string offerText;
+            const auto ids = loadedClientAssetIds();
+            if (!ids) {
+                offerText = "no asset ids\n";
+            } else {
+                const auto folder = scanStyleProfiles(profilesDir, *ids);
+                offerText = std::format("client={}\notb={}\ndat={}\nfolder_exists={}\noffered={}\nother_client={}\nother_assets={}\nnot_usable={}\nunreadable={}\n",
+                    ids->client, ids->otbSha256, ids->datSha256, folder.exists, folder.offer.offered.size(), folder.offer.otherClient,
+                    folder.offer.otherAssets, folder.offer.notUsable, folder.unreadable);
+                for (const auto& entry : folder.offer.offered) offerText += std::format("profile={}\n", entry.name);
+            }
+            writeText("profile-offer.txt", offerText);
         }
         // G4-D: doodad brushes in use (names and item counts only).
         {

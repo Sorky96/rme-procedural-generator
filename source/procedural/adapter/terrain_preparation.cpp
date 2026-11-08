@@ -101,6 +101,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (profile.count != expectedBrushes) return fail(PreparationInputError::InvalidProfile);
 	const bool vegetation = config.vegetation;
 	if (vegetation && config.algorithm != GenerationAlgorithm::Surface) return fail(PreparationInputError::InvalidParameters);
+	if (vegetation && !valid(config.decor)) return fail(PreparationInputError::InvalidParameters);
 	if (profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) return fail(PreparationInputError::InvalidProfile);
 	uint64_t profileBytes = 0;
 	for (const auto& name : profile.activeDecor()) {
@@ -214,7 +215,7 @@ TerrainPreparationSteps runPreparation(
 				if (!grid) co_return fail(fromSurface(grid.error()));
 				std::optional<DecorGrid> decor;
 				if (input.config.vegetation) {
-					auto generated = generateDecoration(*grid, input.config.seed, stop);
+					auto generated = generateDecoration(*grid, input.config.seed, input.config.decor, stop);
 					if (!generated) co_return fail(fromSurface(generated.error()));
 					decor = std::move(*generated);
 				}

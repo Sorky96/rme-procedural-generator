@@ -35,6 +35,7 @@ parser.add_argument('--estimate-factor', type=int, help='override the pre-load e
 parser.add_argument('--cancel-after-ms', type=int, help='cancellation test: request stop after this delay; PASS means the import was cancelled')
 parser.add_argument('--keymap', type=lambda value: Path(value).resolve(), help='accepted g4-keymap/1 file; the probe then also writes kind-stats-surface.txt and kind-stats-underground.txt')
 parser.add_argument('--name-unbrushed', action='store_true', help='key ground items that no brush owns by their definition name ("item <name>")')
+parser.add_argument('--profiles-dir', type=lambda value: Path(value).resolve(), help='folder of *.profile files; the probe writes profile-offer.txt with what the generator dialog would offer')
 parser.add_argument('--nohook-check', action='store_true', help='also load the file without the abort hook and compare tile counts (doubles memory)')
 parser.add_argument('--expect-refusal', help='refusal test: PASS means the import was refused with this error code')
 args = parser.parse_args()
@@ -122,6 +123,8 @@ if args.client_path:
 (run / 'client-id.txt').write_text(args.client_id, encoding='utf-8')
 (run / 'limits.txt').write_text(str(args.max_file_mib << 20), encoding='utf-8')
 (run / 'memory-limit.txt').write_text(str(args.memory_limit_mib << 20), encoding='utf-8')
+if args.profiles_dir:
+    (run / 'profiles-dir.txt').write_text(str(args.profiles_dir), encoding='utf-8')
 if args.keymap:
     shutil.copy2(args.keymap, run / 'keymap.tsv')
 if args.name_unbrushed:
