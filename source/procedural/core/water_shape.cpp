@@ -289,6 +289,33 @@ std::expected<ChannelShapes, StatsError> extractChannelShapes(
 	}
 }
 
+std::expected<ChannelShapes, StatsError> extractKeyShapes(
+	const SemanticMap& map, std::span<const std::string_view> keys, int zMin, int zMax, std::stop_token stop) {
+	if (zMin > zMax) return std::unexpected(StatsError::InvalidRange);
+	try {
+		const auto& names = map.groundKeys();
+		std::vector<uint8_t> listed(names.size(), 0);
+		for (size_t i = 0; i < names.size(); ++i) listed[i] = std::find(keys.begin(), keys.end(), std::string_view(names[i])) != keys.end();
+		ChannelShapes result;
+		std::vector<uint8_t> mask;
+		for (const SemanticFloor& floor : map.floors()) {
+			if (floor.bounds.z < zMin || floor.bounds.z > zMax) continue;
+			mask.assign(floor.ground.size(), 0);
+			for (size_t i = 0; i < mask.size(); ++i) {
+				const bool present = floor.traits[i] & bit(Trait::Present);
+				result.regionCells += present;
+				if (present && listed[floor.ground[i]]) { mask[i] = 1; ++result.maskCells; }
+			}
+			if (auto added = addWaterShapes(mask, static_cast<uint32_t>(floor.bounds.width), static_cast<uint32_t>(floor.bounds.height), result.shapes, stop); !added) {
+				return std::unexpected(added.error());
+			}
+		}
+		return result;
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(StatsError::AllocationFailed);
+	}
+}
+
 std::expected<ChannelShapes, StatsError> channelShapesOf(const SurfaceGrid& grid, std::stop_token stop) {
 	try {
 		std::vector<uint8_t> mask(grid.cells.size());

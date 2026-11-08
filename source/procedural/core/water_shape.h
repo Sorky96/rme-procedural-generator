@@ -51,11 +51,16 @@ inline constexpr uint32_t channelWindow = 13;
 struct ChannelShapes {
 	WaterShapes shapes;           // channel components in `rivers`
 	uint64_t regionCells = 0;     // cells of the examined area (present tiles of a reference, all cells of a grid)
+	uint64_t maskCells = 0;       // (key shapes only) tiles in the mask
 };
 // Fills `open` (same size as `water`) with the open water of one floor.
 void openWaterMask(std::span<const uint8_t> water, uint32_t width, uint32_t height, std::vector<uint8_t>& open);
 [[nodiscard]] std::expected<ChannelShapes, StatsError> extractChannelShapes(
 	const SemanticMap& map, std::span<const KeyMapEntry> keymap, int zMin, int zMax, std::stop_token stop);
+// Reference side, any set of ground keys (iteration 9, paths): narrow bodies of tiles whose ground key is listed, same
+// component definition as the rivers. `shapes.rivers` are the accepted components, `touchesOpen` is not filled.
+[[nodiscard]] std::expected<ChannelShapes, StatsError> extractKeyShapes(
+	const SemanticMap& map, std::span<const std::string_view> keys, int zMin, int zMax, std::stop_token stop);
 [[nodiscard]] std::expected<ChannelShapes, StatsError> channelShapesOf(const SurfaceGrid& grid, std::stop_token stop = {});
 
 struct ChannelSummary {

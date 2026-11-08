@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace rme::procedural;
@@ -222,6 +223,30 @@ void testChannels() {
 	check(none.has_value() && none->shapes.rivers.empty(), "a 14 x 14 pond has no channel");
 }
 
+// Reference side by ground key (iteration 9): a 50 x 2 band of cobblestone in grass is one narrow component; a 5 x 5
+// patch of the same ground is too small to count; floors above z 7 and other keys are not counted.
+void testKeyShapes() {
+	auto map = SemanticMap::create(std::vector<FloorBounds> {{7, 0, 0, 60, 20}, {8, 0, 0, 60, 20}}, {100000}).value();
+	const uint16_t grass = map.internGroundKey("grass").value();
+	const uint16_t cobble = map.internGroundKey("cobblestone").value();
+	const uint16_t floor = map.internGroundKey("stone floor").value();
+	const uint32_t t = bit(Trait::HasGround) | bit(Trait::Present);
+	for (int y = 0; y < 20; ++y) for (int x = 0; x < 60; ++x) { check(map.set(x, y, 7, grass, t).has_value(), "set grass"); check(map.set(x, y, 8, cobble, t).has_value(), "set upper"); }
+	for (int x = 5; x < 55; ++x) { check(map.set(x, 4, 7, cobble, t).has_value(), "band"); check(map.set(x, 5, 7, cobble, t).has_value(), "band"); }
+	for (int y = 12; y < 17; ++y) for (int x = 40; x < 45; ++x) check(map.set(x, y, 7, cobble, t).has_value(), "patch");
+	for (int y = 12; y < 17; ++y) for (int x = 10; x < 30; ++x) check(map.set(x, y, 7, floor, t).has_value(), "house floor");
+	const std::vector<std::string_view> keys {"cobblestone"};
+	const auto found = extractKeyShapes(map, keys, 0, 7, {});
+	check(found.has_value(), "key shapes extracted");
+	if (!found) return;
+	check(found->maskCells == 100 + 25, "only cobblestone on z <= 7 is in the mask");
+	check(found->regionCells == 60 * 20, "region is the present tiles of the examined floors");
+	check(found->shapes.rivers.size() == 1 && found->shapes.rivers[0].area == 100, "the band is the only narrow component");
+	check(found->shapes.rivers[0].skeleton >= 45, "the skeleton follows the band");
+	check(summarizeChannels(*found).count == 1, "summary counts the component");
+	check(extractKeyShapes(map, keys, 3, 2, {}).error() == StatsError::InvalidRange, "reversed range refused");
+}
+
 } // namespace
 
 int main() {
@@ -232,6 +257,7 @@ int main() {
 	testSources();
 	testMeanderEffect();
 	testChannels();
+	testKeyShapes();
 	if (failures == 0) std::cout << "OK\n";
 	return failures == 0 ? 0 : 1;
 }

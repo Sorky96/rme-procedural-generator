@@ -366,6 +366,14 @@ void runProbe() {
                 writeText("patches-surface.txt", std::format("boundary\t{}\ncompact\t{}\nbeach\t{}\ndirt_cells\t{}\nshore_cells\t{}\nrock_boundary\t{}\nrock_compact\t{}\nrock_dust\t{}\nrock_cells\t{}\nshares\t{} {} {} {} {}\n",
                     opt(ps.boundary), opt(ps.compact), opt(ps.beach), patches->dirtCells, patches->shoreCells, opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), patches->rockCells, ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]));
             }
+            {
+                static constexpr std::string_view pathKeys[] = {"cobblestone", "dark cobblestone", "grassy cobblestone", "item cobblestone", "white gravel", "pavement", "item pavement"};
+                const auto paths = extractKeyShapes(normalized->map, pathKeys, 0, 7, stopSource.get_token());
+                check(paths.has_value(), "Path extraction failed");
+                const ChannelSummary ps = summarizeChannels(*paths);
+                writeText("paths-surface.txt", std::format("count\t{}\nlength_per_64k\t{}\nwidth_milli\t{}\nbranches_per_100_milli\t{}\npath_cells\t{}\nregion_cells\t{}\n",
+                    ps.count, ps.lengthPer64k, ps.widthMilli, ps.branchesPer100Milli, paths->maskCells, paths->regionCells));
+            }
             const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(channels.has_value(), "Channel extraction failed");
             {

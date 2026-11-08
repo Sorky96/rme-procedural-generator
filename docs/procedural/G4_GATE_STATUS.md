@@ -201,3 +201,17 @@ Definicje, wynik 8a i zmiana modelu zapisane przed pomiarem ([G4_METRICS.md](G4_
 **Zastrzeżenia.** Dwie referencje; skała M06 to tylko ok. 5 % powierzchni; nie sprawdzono niezmiennika rzek ani regresji G1 po zmianie szumu (rzeki zależą od wysokości, więc wpływ jest możliwy); wygląd oceni użytkownik w GUI. Pozostała luka (granica skały) wymagałaby drobnoziarnistego zaburzenia progu skały, niezapisanego jeszcze.
 
 **Ocena użytkownika (2026-11-08, GUI, m19 500×500 po iteracji 8b):** „wygląda ok” (brzegi, skała i plaża po dodaniu oktaw szumu); ocena subiektywna, nie zmienia wyniku metryk (kryterium iteracji 8 nadal niespełnione).
+
+## Iteracja 9a — szlaki: czy da się je zmierzyć w referencjach (2026-11-08)
+
+Definicja (lista kluczy gruntu i składowa szlaku) zapisana przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9”, commit `468b8ee`); funkcja `extractKeyShapes` z testem (PASS, wartości policzone ręcznie), wyjście sondy `paths-surface.txt`. Wszystkie 19 map referencyjnych (mapowanie v3), z ≤ 7; bez oceny, tylko opis.
+
+| Mapa | składowych szlaku | L (szkielet na 65 536 kafli) | W (tys. kafla) | B (rozgałęzienia, ×1000 na 100 kafli) | kafli szlaku | udział w obecnych kaflach |
+| --- | --- | --- | --- | --- | --- | --- |
+| M06 | 22 | 70 | 3 642 | 30 200 | 12 905 | 0,46 % |
+| M19 | 5 | 78 | 4 606 | 26 259 | 7 346 | 0,72 % |
+| pozostałe 17 | 0 | — | — | — | ≤ 2 | ≈ 0 |
+
+**Wniosek.** Szlaki (wg wąskiej listy kluczy: bruk, żwir, chodnik) da się zmierzyć w dwóch mapach (M06: 22 składowe, M19: dokładnie 5, czyli na granicy kwalifikacji); zajmują 0,5–0,7 % powierzchni i mają rząd ok. 70–80 kafli szkieletu na 65 536 kafli (np. w obszarze 512×512 to ok. 300 kafli, kilka odcinków po kilkadziesiąt kafli). Warunek zapisany z góry (≥ 2 kwalifikujące się mapy) jest spełniony, więc generowanie szlaków nie jest zablokowane danymi, ale podstawa jest bardzo wąska.
+
+**Zastrzeżenia.** Rozpoznanie po nazwie brusha (heurystyka); szlak z innego gruntu (np. ubita ziemia, piasek) jest niewidoczny; wartość M19 oparta na 5 składowych; generator szlaków nie istnieje, więc stan bazowy generatora jest zerowy z definicji. Generowanie wymagałoby nowego rodzaju powierzchni przechodzącego przez resolver, okno generatora (pole brusha szlaku), profil (schemat) i odcisk podglądu.
