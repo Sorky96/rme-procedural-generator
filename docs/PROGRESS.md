@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: ściany budynków (iteracja 11c) — PARTIAL
+
+Na prośbę użytkownika podłogi budynków dostały ściany (bez drzwi): warstwa przedmiotów ścian w planie (`GroundPlan::walls`, `GroundProfile::wall`), walidacja w resolverze i podglądzie, wyrównanie elementów istniejącym `WallBrush::doWalls`, pola w oknie generatora. Mediana komórek obrysu w paśmie referencji (28 vs 30 / 24). Regresja G1 `--commit` PASS. **Niezweryfikowane: GUI (Preview/Validate/Place/Undo ze ścianami), poprawność narożników na kliencie, e2e na rzeczywistym kliencie.** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: osady i struktury, podstawy budynków (iteracja 11) — PARTIAL
 
 Pomiar 11a: budynki (obrysy murów) są w M06 i M19 liczne (ok. 31–37 na 65 536 kafli, mediana 9 × 7, połowa z drzwiami). Zakres wybrany przez użytkownika: same podstawy. Zaimplementowano opcjonalne prostokąty podłogi (`SurfaceKind::Floor`, `buildingDensity`, ośmiu pędzli w profilu, pola w oknie generatora): liczba i rozmiar w paśmie referencji, udziały rodzajów spełnione dla m06, nie dla m19 (1,8 vs 1 punkt procentowy). Regresja G1 `--commit` PASS. **Niezweryfikowane: GUI (okno, Preview/Place/Undo z podłogami), wygląd; brak ścian, drzwi i dachów (nie jest to budynek).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

@@ -7,6 +7,7 @@
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
+#include "brushes/wall/wall_brush.h"
 #include "item_definitions/core/item_definition_store.h"
 #include "map/map.h"
 #include "map/tile_operations.h"
@@ -119,6 +120,10 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	hashField(hash, plan.decor.size());
 	for (const auto id : plan.decor) hashField(hash, id, 2);
+	if (!plan.walls.empty()) {
+		hashField(hash, plan.walls.size());
+		for (const auto id : plan.walls) hashField(hash, id, 2);
+	}
 	return hash;
 }
 
@@ -257,6 +262,20 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			decorIds.push_back(item->getID());
 		}
 	}
+	// Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
+	std::vector<uint16_t> wallIds;
+	const WallBrush* wallBrush = nullptr;
+	if (!plan.profile.wall.empty()) {
+		const auto* brush = plan.profile.wall.size() <= 256 ? g_brushes.getBrush(plan.profile.wall) : nullptr;
+		wallBrush = brush ? brush->as<WallBrush>() : nullptr;
+		if (!wallBrush || plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
+		const_cast<WallBrush*>(wallBrush)->getRelatedItems(wallIds);
+		std::ranges::sort(wallIds);
+		wallIds.erase(std::ranges::unique(wallIds).begin(), wallIds.end());
+		decorIds.insert(decorIds.end(), wallIds.begin(), wallIds.end());
+	} else if (!plan.walls.empty()) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
 	std::ranges::sort(decorIds);
 	decorIds.erase(std::ranges::unique(decorIds).begin(), decorIds.end());
 	uint64_t decorPlacements = 0;
@@ -269,6 +288,11 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x,y)]) ||
 			bool(plan.items[i]) != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (plan.decor.empty() ? false : bool(plan.decor[i]) && !plan.items[i]) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (!plan.walls.empty() && plan.walls[i]) {
+			if (!plan.items[i] || !std::ranges::binary_search(wallIds, plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+			const auto wallDefinition = g_item_definitions.get(plan.walls[i]);
+			if (!wallDefinition || !wallDefinition.clientId() || wallDefinition.isMetaItem() || wallDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
+		}
 		if (!plan.items[i]) continue;
 		++placements;
 		if (!plan.decor.empty() && plan.decor[i]) {
@@ -403,6 +427,19 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.decor[i]));
+		}
+		// Walls follow the vegetation: the pieces are placed with the brush's first item and RME's own wall logic then
+		// picks the right piece (straight, corner) from the neighbouring walls.
+		for (size_t i = 0; i < plan.walls.size(); ++i) {
+			if (!plan.walls[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->addItem(Item::Create(plan.walls[i]));
+		}
+		for (size_t i = 0; i < plan.walls.size(); ++i) {
+			if (!plan.walls[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			WallBrush::doWalls(result.buffer_.get(), tile);
 		}
 		// Classify actual values, ignoring only derived caches. Even a border on
 		// an unselected neighbour rejects the whole candidate; never clip it away.

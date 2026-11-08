@@ -26,6 +26,8 @@ struct GroundProfile {
 	static constexpr uint8_t decorationCount = 3;
 	std::array<std::string, 3> decor;
 	uint8_t decorCount = 0;
+	// Wall brush for the outline of Floor foundations; empty = no walls. Only valid with a profile of eight brushes.
+	std::string wall;
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
 };
@@ -43,6 +45,9 @@ struct GroundPlan {
 	// Row-major vegetation item IDs placed on top of the ground; empty when vegetation is off,
 	// otherwise one entry per cell with 0 meaning none.
 	std::vector<uint16_t> decor;
+	// Wall item per cell for the outline of a Floor foundation (the brush's first item; the real alignment is fixed by
+	// RME's wall logic on the preview buffer); empty when the profile has no wall brush, otherwise one entry per cell.
+	std::vector<uint16_t> walls;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
 

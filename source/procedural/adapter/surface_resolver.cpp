@@ -6,6 +6,7 @@
 #include "brushes/doodad/doodad_brush.h"
 #include "game/item.h"
 #include "brushes/ground/ground_brush.h"
+#include "brushes/wall/wall_brush.h"
 #include "item_definitions/core/item_definition_store.h"
 #include <array>
 #include <limits>
@@ -48,6 +49,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	if (profile.count != GroundProfile::surfaceCount && profile.count != GroundProfile::surfaceWithPathCount &&
 		profile.count != GroundProfile::surfaceWithFloorCount) return std::unexpected(ResolveError::InvalidProfile);
 	const size_t kinds = profile.count;
+	const bool walled = !profile.wall.empty();
+	if (walled && (profile.count != GroundProfile::surfaceWithFloorCount || profile.wall.size() > 256)) return std::unexpected(ResolveError::InvalidProfile);
 	const bool vegetation = input.config.vegetation;
 	if (vegetation != (decor != nullptr) ||
 		profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) {
@@ -96,6 +99,15 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (previous != brushes[index]->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
 			totals[index] = uint64_t(previous);
 		}
+		uint16_t wallItem = 0;
+		if (walled) {
+			const auto* brush = g_brushes.getBrush(profile.wall);
+			const auto* wall = brush ? brush->as<WallBrush>() : nullptr;
+			if (!wall || wall->is<WallDecorationBrush>()) return std::unexpected(ResolveError::InvalidProfile);
+			wallItem = wall->getPlacementItemId();
+			const auto definition = wallItem ? g_item_definitions.get(wallItem) : ItemDefinitionView{};
+			if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
+		}
 		std::array<const DoodadBrush*, decorKindCount> doodads {};
 		std::array<uint64_t, decorKindCount> decorTotals {};
 		for (size_t index = 0; vegetation && index < decorKindCount; ++index) {
@@ -116,6 +128,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		GroundPlan result {input.config, profile, client, input.mapGeneration, input.mapRevision,
 			input.assetRevision, grid.fingerprint(), std::vector<uint16_t>(grid.cells.size(), 0)};
 		if (vegetation) result.decor.assign(grid.cells.size(), 0);
+		if (walled) result.walls.assign(grid.cells.size(), 0);
 		std::vector<StableRandom> streams;
 		streams.reserve(kinds);
 		for (size_t index = 0; index < kinds; ++index) streams.emplace_back(input.config.seed, variantStreams[index]);
@@ -138,6 +151,13 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			const auto id = brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;
+			if (walled && grid.cells[i] == SurfaceKind::Floor) {
+				// Outline of a foundation: a Floor cell with a 4-neighbour of another kind (or outside the area).
+				const size_t width = grid.region.width, height = grid.region.height, x = i % width, y = i / width;
+				const bool outline = x == 0 || y == 0 || x + 1 == width || y + 1 == height || grid.cells[i - 1] != SurfaceKind::Floor ||
+					grid.cells[i + 1] != SurfaceKind::Floor || grid.cells[i - width] != SurfaceKind::Floor || grid.cells[i + width] != SurfaceKind::Floor;
+				if (outline) result.walls[i] = wallItem;
+			}
 			if (vegetation) {
 				const auto placed = decor->cells[i];
 				if (placed != DecorKind::None) {

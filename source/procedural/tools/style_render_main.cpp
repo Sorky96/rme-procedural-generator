@@ -10,6 +10,7 @@
 #include "procedural/core/surface.h"
 #include "procedural/core/water_shape.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -101,7 +102,12 @@ int main(int argc, char** argv) {
 			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {} rockadj {} rocknear {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells, paths->maskCells ? nextToRock * 1000 / paths->maskCells : 0, paths->maskCells ? nearRock * 1000 / paths->maskCells : 0);
 		}
 		{
-			const BuildingSummary b = summarizeBuildings(floorBuildingsOf(*grid));
+			const BuildingShapes foundations = floorBuildingsOf(*grid);
+			const BuildingSummary b = summarizeBuildings(foundations);
+			std::vector<uint32_t> outlines;
+			for (const Building& f : foundations.buildings) outlines.push_back(2 * (f.longSide + f.shortSide) - 4);
+			std::sort(outlines.begin(), outlines.end());
+			std::cout << std::format("outline seed {}: median {}\n", seed, outlines.empty() ? 0u : outlines[outlines.size() / 2]);
 			std::cout << std::format("build seed {}: count {} per64k {} long {} short {}\n", seed, b.count, b.per64k, b.longMedian, b.shortMedian);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);

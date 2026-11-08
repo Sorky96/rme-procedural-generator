@@ -536,6 +536,16 @@ void buildings(uint32_t side, uint64_t seeds) {
 			require(b.cells == b.longSide * b.shortSide, "a foundation is not a solid rectangle");
 			require(b.longSide >= 7 && b.longSide <= 11 && b.shortSide >= 5 && b.shortSide <= 9 || b.longSide >= 5 && b.longSide <= 9 && b.shortSide >= 5, "a foundation has an unexpected size");
 		}
+		// The wall outline the resolver derives (Floor cells beside another kind) is 2 * (long + short) - 4 per foundation.
+		size_t outlineCells = 0, expectedOutline = 0;
+		for (size_t i = 0; i < first->cells.size(); ++i) {
+			if (first->cells[i] != SurfaceKind::Floor) continue;
+			const size_t x = i % side, y = i / side;
+			outlineCells += x == 0 || y == 0 || x + 1 == side || y + 1 == side || first->cells[i - 1] != SurfaceKind::Floor ||
+				first->cells[i + 1] != SurfaceKind::Floor || first->cells[i - side] != SurfaceKind::Floor || first->cells[i + side] != SurfaceKind::Floor;
+		}
+		for (const Building& b : shapes.buildings) expectedOutline += 2 * (b.longSide + b.shortSide) - 4;
+		require(outlineCells == expectedOutline, "the outline of the foundations is not 2 * (long + short) - 4 per building");
 		if (side >= 250) require(!shapes.buildings.empty(), "buildingDensity 40 produced no foundation");
 	}
 }
