@@ -167,3 +167,16 @@ Definicje, zmiana P na P′ i zmiana modelu zapisane przed pomiarami ([G4_METRIC
 - Metryki D i F pokazują, że granica ziemi w generatorze jest **gładsza** (D niższe), a nie bardziej poszarpana niż w referencjach (które mają wiele małych plam ziemi). To nie zgadza się z oceną wizualną „kropkowana ziemia”; D i F nie mierzą drobnych „kropek” (składowych ≤ 4 komórek). Dopasowanie względem D zwiększyłoby poszarpanie, więc nie jest oczywiste, że poprawia wygląd dla użytkownika.
 - Beach: pełne dopasowanie wymaga zmiany modelu (nowy parametr lub inna reguła pierścieni, zmiana schematu profilu), niezapisana jeszcze.
 - Dopasowanie in-sample na dwóch referencjach; testy rdzenia PASS (w tym zmieniony limit `shoreWidth` ≤ 8); profile v8 w `local-data` nie zostały zmienione.
+
+### Iteracja 7c — plaża (2026-11-08): P′ w paśmie w obu profilach
+
+Kryteria zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 7c”). Reguła pierścieni plaży: próg szumu min(5 + 10·pierścień, 40) %, wymagane jezioro min(30·3^(pierścień−1), 90) komórek. `shoreWidth` wybrany z {0..8} na seedach 1–4 (bok 512): 8 w m06 i m19 (P′ rośnie z 1 000 przy 1 do 5 835 / 5 807 przy 8, referencje 5 638 / 5 656). Ocena na seedach 1001–1032, bok 512, profile `g4-profiles/10.98-v9`:
+
+| Profil | P′ generatora | referencja | pasmo | wynik |
+| --- | --- | --- | --- | --- |
+| m06 | 5 912 | 5 638 | 3 777–8 457 | **w paśmie** |
+| m19 | 5 871 | 5 656 | 3 790–8 484 | **w paśmie** |
+
+Udział Shore rośnie z ok. 1 % do 3,4 % (cel zmiany); pozostałe udziały spadają o mniej niż 3 punkty procentowe (m06 Grass 41,2 → 39,9 %, m19 Grass 28,1 → 26,4 %), więc warunek dodatkowy spełniony. **Niezmiennik rzek nie był ponownie mierzony** (plaża jest nakładana przed rzekami, które nadpisują komórki, więc reguła plaży go nie dotyka; nie sprawdzono pomiarem), nie uruchamiano regresji G1 `--commit` po zmianie reguły. Test rdzenia PASS po zmianie przypiętego odcisku Seed 1729 100×100 z 6783381837833077004 na 9975948746684599016 (zmiana reguły zmienia wynik dla `shoreWidth` ≥ 1, zgodnie z zapisem; wcześniejsze odciski w dokumentach G2 są historyczne).
+
+**Zastrzeżenia.** In-sample na dwóch referencjach; P′ to miara grubości (nie wyglądu); w referencjach plaża obejmuje także piasek wokół kałuż i rzek, a generator jej nie robi przy rzekach; ocena wzrokowa w GUI należy do użytkownika. Ziemia (D, F) nie została zmieniona w tym kroku (D pozostaje poniżej pasma), czeka na wybór kierunku.

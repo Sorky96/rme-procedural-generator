@@ -488,13 +488,13 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			for (uint32_t ring = 0; ring < config.tuning.shoreWidth; ++ring) {
 				const auto previous = wet;
 				const auto previousSize = wetSize;
-				// Ring r (r >= 1) needs a lake of at least 30 * 3^(r-1) cells: 30, 90, 270, and 270 for every ring after.
+				// Ring r (r >= 1) needs a lake of at least 30 * 3^(r-1) cells: 30, 90, and 90 for every ring after.
 				uint32_t neededLake = 30;
-				for (uint32_t step = 1; step < ring && neededLake < 270; ++step) neededLake *= 3;
+				for (uint32_t step = 1; step < ring && neededLake < 90; ++step) neededLake *= 3;
 				// The first ring always exists; every further ring needs smooth noise above a threshold
 				// that rises with the ring, so the beach is wide in some places and grass reaches in
 				// elsewhere instead of forming an even band.
-				const uint32_t cut = ring == 0 ? 0 : uint32_t(uint64_t(noiseBins) * std::min<uint32_t>(5 + 30 * ring, 80) / 100);
+				const uint32_t cut = ring == 0 ? 0 : uint32_t(uint64_t(noiseBins) * std::min<uint32_t>(5 + 10 * ring, 40) / 100);
 				for (size_t i = 0; i < count; ++i) {
 					if (previous[i] || kinds[i] == SurfaceKind::Rock) continue;
 					bool touches = false;

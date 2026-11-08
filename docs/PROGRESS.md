@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: szersza plaża (iteracja 7c) — PARTIAL
+
+Reguła pierścieni plaży zmieniona (próg szumu ≤ 40 %, jezioro ≥ 90 komórek, `shoreWidth` do 8): P′ (grubość plaży) w paśmie referencji w m06 (5 912 vs 5 638) i m19 (5 871 vs 5 656). Profile `g4-profiles/10.98-v9` (m06 i m19 `shoreWidth` 8) do oceny wzrokowej w GUI; przypięty odcisk Seed 1729 zmieniony (zmiana reguły). Nie sprawdzono: wyglądu, niezmiennika rzek i regresji G1 po zmianie, plaż wokół rzek. Ziemia (D, F) bez zmian. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: plamy ziemi i szerokość plaży (iteracja 7) — PARTIAL
 
 Na prośbę użytkownika (ziemia „kropkowana”, plaże cienkie): metryki D (granica ziemi), F (zwartość), P′ (grubość plaży) zapisane z góry. Pomiar: generator ma ziemię **gładszą** niż referencje (D 112–203 vs 421–451), więc diagnoza wzrokowa nie potwierdza się metryką; plaża jest ok. 2,8× cieńsza (P′ ok. 1 980 vs 5 640). Zmiana reguły pierścieni plaży (`shoreWidth` do 8, próg szumu ≤ 80 %) i dopasowanie `transitionWidth`/`shoreWidth` daje D ok. 206 i P′ ok. 2 315: **kryterium nie spełnione**, siatki nasycone. Dalsza poprawa plaży wymaga zmiany modelu (nowy parametr, schemat profilu). Testy rdzenia PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
