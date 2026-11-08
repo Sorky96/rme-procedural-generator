@@ -1,6 +1,6 @@
 # G4-F — metryki i kryteria ustalone PRZED oceną na zbiorze testowym, 2026-11-08
 
-**Status: zapisane, jeszcze nie uruchomione na zbiorze testowym.** Do chwili zacommitowania tego pliku nie policzono i nie oglądano żadnej wartości na mapach testowych (rodzina testowa każdego foldu). Wartości treningowe i walidacyjne z G4-C/D były oglądane. Zmiana którejkolwiek reguły poniżej po uruchomieniu na teście wymaga osobnego wpisu i oznaczenia wyniku jako „po zmianie kryterium”.
+**Status: zapisane, jeszcze nie uruchomione na zbiorze testowym.** Do chwili zacommitowania tego pliku nie policzono i nie oglądano żadnej wartości na mapach testowych (rodzina testowa każdego foldu). Wartości treningowe i walidacyjne z G4-C/D były oglądane. **Zastrzeżenie o przecieku:** rodzina testowa foldu k jest rodziną walidacyjną foldu k−1, więc widziałem dystanse strojeń z foldu k−1 do celu rodziny testowej foldu k (G4_FIT.md, G4_COVERAGE.md, G4_DECOR.md). Strojenie foldu k, które będzie oceniane, nie było mierzone na tym celu, ale cel testowy nie jest w pełni „niewidziany”; to osłabia niezależność testu i wchodzi do zastrzeżeń wyniku. Zmiana którejkolwiek reguły poniżej po uruchomieniu na teście wymaga osobnego wpisu i oznaczenia wyniku jako „po zmianie kryterium”.
 
 ## Porównanie
 - **Baseline (ręczne presety):** domyślne `SurfaceTuning` i domyślne `DecorTuning`.
