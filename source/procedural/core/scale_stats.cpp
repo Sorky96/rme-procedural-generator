@@ -249,4 +249,73 @@ PatchSummary summarizePatches(const PatchStats& stats) {
 	return s;
 }
 
+std::expected<BuildingShapes, StatsError> extractBuildingShapes(const SemanticMap& map, int zMin, int zMax, std::stop_token stop) {
+	if (zMin > zMax) return std::unexpected(StatsError::InvalidRange);
+	try {
+		BuildingShapes result;
+		std::vector<uint8_t> seen;
+		std::vector<size_t> stack;
+		const uint32_t wallBits = bit(Trait::Wall) | bit(Trait::Door);
+		for (const SemanticFloor& floor : map.floors()) {
+			if (floor.bounds.z < zMin || floor.bounds.z > zMax) continue;
+			if (stop.stop_requested()) return std::unexpected(StatsError::Cancelled);
+			const size_t width = size_t(floor.bounds.width), height = size_t(floor.bounds.height);
+			seen.assign(floor.traits.size(), 0);
+			for (size_t i = 0; i < floor.traits.size(); ++i) result.regionCells += (floor.traits[i] & bit(Trait::Present)) != 0;
+			for (size_t start = 0; start < floor.traits.size(); ++start) {
+				if (seen[start] || !(floor.traits[start] & wallBits)) continue;
+				uint32_t cells = 0, doors = 0;
+				size_t x0 = start % width, x1 = x0, y0 = start / width, y1 = y0;
+				stack.assign(1, start);
+				seen[start] = 1;
+				while (!stack.empty()) {
+					const size_t i = stack.back();
+					stack.pop_back();
+					++cells;
+					doors += (floor.traits[i] & bit(Trait::Door)) != 0;
+					const size_t x = i % width, y = i / width;
+					x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y);
+					for (int dy = -1; dy <= 1; ++dy) {
+						for (int dx = -1; dx <= 1; ++dx) {
+							if (!dx && !dy) continue;
+							const int64_t nx = int64_t(x) + dx, ny = int64_t(y) + dy;
+							if (nx < 0 || ny < 0 || nx >= int64_t(width) || ny >= int64_t(height)) continue;
+							const size_t j = size_t(ny) * width + size_t(nx);
+							if (!seen[j] && (floor.traits[j] & wallBits)) { seen[j] = 1; stack.push_back(j); }
+						}
+					}
+				}
+				const uint32_t w = uint32_t(x1 - x0 + 1), h = uint32_t(y1 - y0 + 1);
+				if (cells >= buildingMinCells && w >= buildingMinSide && h >= buildingMinSide) result.buildings.push_back({cells, std::max(w, h), std::min(w, h), doors});
+			}
+		}
+		return result;
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(StatsError::AllocationFailed);
+	}
+}
+
+BuildingSummary summarizeBuildings(const BuildingShapes& shapes) {
+	BuildingSummary s;
+	const auto& list = shapes.buildings;
+	s.count = static_cast<uint32_t>(list.size());
+	if (list.empty() || shapes.regionCells == 0) return s;
+	const auto median = [](std::vector<uint32_t> v) {
+		std::sort(v.begin(), v.end());
+		const size_t n = v.size();
+		return n % 2 ? v[n / 2] : static_cast<uint32_t>((uint64_t(v[n / 2 - 1]) + v[n / 2]) / 2);
+	};
+	std::vector<uint32_t> longs, shorts, walls;
+	uint64_t doors = 0, withDoor = 0;
+	for (const Building& b : list) {
+		longs.push_back(b.longSide); shorts.push_back(b.shortSide); walls.push_back(b.cells);
+		doors += b.doors; withDoor += b.doors > 0;
+	}
+	s.per64k = static_cast<uint32_t>(uint64_t(list.size()) * 65536 / shapes.regionCells);
+	s.longMedian = median(longs); s.shortMedian = median(shorts); s.wallMedian = median(walls);
+	s.doorsPerBuildingMilli = static_cast<uint32_t>(doors * 1000 / list.size());
+	s.withDoorPermille = static_cast<uint32_t>(withDoor * 1000 / list.size());
+	return s;
+}
+
 } // namespace rme::procedural

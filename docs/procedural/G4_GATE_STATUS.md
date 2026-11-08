@@ -273,3 +273,21 @@ Definicje i kolejne zmiany zapisane przed wykonaniem ([G4_METRICS.md](G4_METRICS
 **Zmiana zachowania.** Reguła obwódki zmienia wyniki Surface dla wszystkich profili i dla `pathLength` 0; przypięty odcisk Seed 1729 100×100 zmieniono z 9975948746684599016 na 17159159863505677800 (test PASS, dodany test reguły obwódki: brak Dirt w odległości 2 od Shore, część styku Dirt–Rock zostaje). **Nie sprawdzono:** wyglądu w GUI, regresji G1 po tej zmianie (zmiana jest w rdzeniu, nie w resolverze), in-sample na dwóch referencjach.
 
 **Ocena użytkownika (2026-11-08, GUI, m06/m19 500×500 z obwódką trawy):** „wygląda ok”; ocena subiektywna, nie zmienia wyniku metryk (kryterium składu granic dla m19 nadal niespełnione).
+
+## Iteracja 11a — osady i struktury: budynki w referencjach (2026-11-08)
+
+Definicje zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 11”, commit `1a16d26`); funkcja `extractBuildingShapes` z testem (PASS, wartości policzone ręcznie), wyjście sondy `buildings-surface.txt`. Budynek = 8-spójna składowa kafli z cechą Wall lub Door (≥ 12 komórek, obwiednia ≥ 4 × 4), piętra z ≤ 7; wszystkie 19 map; tylko opis.
+
+| Mapa | budynków | na 65 536 kafli | mediana boków (dłuższy × krótszy) | komórek muru | drzwi na budynek | z drzwiami |
+| --- | --- | --- | --- | --- | --- | --- |
+| M06 | 1 313 | 31 | 9 × 7 | 30 | 1,66 | 51 % |
+| M19 | 582 | 37 | 9 × 7 | 24 | 3,44 | 61 % |
+| M05 | 13 | 37 | 11 × 8 | 39 | 2,15 | 85 % |
+| M15 | 5 | 48 | 11 × 6 | 19 | 0,20 | 20 % |
+| M01 | 47 | 94 | 5 × 4 | 16 | 0 | 0 % (to raczej płoty/murki) |
+| M11, M12 | 1–2 | — | — | — | — | — |
+| pozostałe 12 | 0 | — | — | — | — | — |
+
+**Wniosek.** Budynki da się zmierzyć w pięciu mapach (≥ 5 budynków: M01, M05, M06, M15, M19), a w M06 i M19 są liczne: ok. 1 budynek na 2 000 kafli (czyli ok. 125 w obszarze 512×512), typowo 9 × 7 kafli, ok. 30 komórek muru, w połowie z drzwiami. Generator nie tworzy żadnych budowli, więc stan bazowy jest zerowy z definicji.
+
+**Zastrzeżenia.** Cecha Wall obejmuje też płoty i wolnostojące mury (M01, część M15), więc „budynek” to heurystyka kształtu; wnętrza, dachy (piętra wyżej) i meble są poza miarą; dowody głównie z M06 i M19. **Czego generowanie wymaga (nie zrobione):** ściany i drzwi to nie grunt, lecz przedmioty na kaflu wymagające pędzla ściany z automatycznym dopasowaniem elementów oraz pędzla drzwi; obecny plan (`GroundPlan`) przenosi tylko grunt i doodady, więc podgląd, zatwierdzanie i Undo wymagają rozszerzenia o warstwę przedmiotów strukturalnych.

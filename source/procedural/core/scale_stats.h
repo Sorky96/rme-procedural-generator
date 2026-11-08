@@ -10,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <stop_token>
+#include <vector>
 
 namespace rme::procedural {
 
@@ -87,5 +88,32 @@ struct PatchSummary {
 	bool operator==(const PatchSummary&) const = default;
 };
 [[nodiscard]] PatchSummary summarizePatches(const PatchStats& stats);
+
+// Buildings (G4 iteration 11): 8-connected components of Wall or Door cells with at least buildingMinCells cells and a
+// bounding box of at least buildingMinSide on both sides. A heuristic by shape; definitions in G4_METRICS.md.
+inline constexpr uint32_t buildingMinCells = 12;
+inline constexpr uint32_t buildingMinSide = 4;
+struct Building {
+	uint32_t cells = 0;
+	uint32_t longSide = 0, shortSide = 0;
+	uint32_t doors = 0;
+	bool operator==(const Building&) const = default;
+};
+struct BuildingShapes {
+	std::vector<Building> buildings;
+	uint64_t regionCells = 0;   // present tiles of the examined floors
+};
+[[nodiscard]] std::expected<BuildingShapes, StatsError> extractBuildingShapes(
+	const SemanticMap& map, int zMin, int zMax, std::stop_token stop);
+
+struct BuildingSummary {
+	uint32_t count = 0;
+	uint32_t per64k = 0;                // buildings per 65536 present tiles
+	uint32_t longMedian = 0, shortMedian = 0, wallMedian = 0;
+	uint32_t doorsPerBuildingMilli = 0; // 1000 * doors / buildings
+	uint32_t withDoorPermille = 0;      // buildings with at least one Door cell
+	bool operator==(const BuildingSummary&) const = default;
+};
+[[nodiscard]] BuildingSummary summarizeBuildings(const BuildingShapes& shapes);
 
 } // namespace rme::procedural

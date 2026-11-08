@@ -377,6 +377,13 @@ void runProbe() {
                 writeText("paths-surface.txt", std::format("count\t{}\nlength_per_64k\t{}\nwidth_milli\t{}\nbranches_per_100_milli\t{}\npath_cells\t{}\nregion_cells\t{}\n",
                     ps.count, ps.lengthPer64k, ps.widthMilli, ps.branchesPer100Milli, paths->maskCells, paths->regionCells));
             }
+            {
+                const auto buildings = extractBuildingShapes(normalized->map, 0, 7, stopSource.get_token());
+                check(buildings.has_value(), "Building extraction failed");
+                const BuildingSummary b = summarizeBuildings(*buildings);
+                writeText("buildings-surface.txt", std::format("count\t{}\nper_64k\t{}\nlong_median\t{}\nshort_median\t{}\nwall_median\t{}\ndoors_per_building_milli\t{}\nwith_door_permille\t{}\nregion_cells\t{}\n",
+                    b.count, b.per64k, b.longMedian, b.shortMedian, b.wallMedian, b.doorsPerBuildingMilli, b.withDoorPermille, buildings->regionCells));
+            }
             const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(channels.has_value(), "Channel extraction failed");
             {

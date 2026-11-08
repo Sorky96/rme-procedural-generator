@@ -126,6 +126,30 @@ void testPatches() {
 	check(fromGrid.cells[4] == 2 && fromGrid.shoreNextToWater == 1 && fromGrid.dirtGrassPairs == 1, "grid kinds map to the same counts");
 }
 
+// Buildings: a 6 x 5 wall outline with one door is one building (18 cells); a 3 x 3 blob and a 20-cell wall line are not.
+void testBuildings() {
+	auto map = SemanticMap::create(std::vector<FloorBounds> {{7, 0, 0, 40, 30}, {8, 0, 0, 40, 30}}, {100000}).value();
+	const uint16_t grass = map.internGroundKey("grass").value();
+	const uint32_t ground = bit(Trait::HasGround) | bit(Trait::Present);
+	for (int y = 0; y < 30; ++y) for (int x = 0; x < 40; ++x) { check(map.set(x, y, 7, grass, ground).has_value(), "set ground"); check(map.set(x, y, 8, grass, ground).has_value(), "set upper"); }
+	for (int x = 5; x < 11; ++x) { check(map.set(x, 5, 7, grass, ground | bit(Trait::Wall)).has_value(), "wall"); check(map.set(x, 9, 7, grass, ground | bit(Trait::Wall)).has_value(), "wall"); }
+	for (int y = 6; y < 9; ++y) { check(map.set(5, y, 7, grass, ground | bit(Trait::Wall)).has_value(), "wall"); check(map.set(10, y, 7, grass, ground | bit(Trait::Wall)).has_value(), "wall"); }
+	check(map.set(7, 9, 7, grass, ground | bit(Trait::Door)).has_value(), "door");
+	for (int y = 20; y < 23; ++y) for (int x = 20; x < 23; ++x) check(map.set(x, y, 7, grass, ground | bit(Trait::Wall)).has_value(), "blob");
+	for (int x = 10; x < 30; ++x) check(map.set(x, 27, 7, grass, ground | bit(Trait::Wall)).has_value(), "line");
+	for (int x = 5; x < 11; ++x) check(map.set(x, 5, 8, grass, ground | bit(Trait::Wall)).has_value(), "upper wall");
+	const auto found = extractBuildingShapes(map, 0, 7, {});
+	check(found.has_value(), "buildings extracted");
+	if (!found) return;
+	check(found->regionCells == 40 * 30, "region is the present tiles of floor 7");
+	check(found->buildings.size() == 1, "only the outline is a building");
+	if (found->buildings.size() != 1) return;
+	check(found->buildings[0].cells == 18 && found->buildings[0].longSide == 6 && found->buildings[0].shortSide == 5 && found->buildings[0].doors == 1, "outline measured by hand");
+	const BuildingSummary summary = summarizeBuildings(*found);
+	check(summary.count == 1 && summary.per64k == 65536 / 1200 && summary.withDoorPermille == 1000 && summary.doorsPerBuildingMilli == 1000, "summary");
+	check(extractBuildingShapes(map, 3, 2, {}).error() == StatsError::InvalidRange, "reversed range refused");
+}
+
 } // namespace
 
 int main() {
@@ -134,6 +158,7 @@ int main() {
 	testSurface();
 	testAdd();
 	testPatches();
+	testBuildings();
 	if (failures) return 1;
 	std::cout << "OK\n";
 	return 0;
