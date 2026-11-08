@@ -274,3 +274,15 @@ Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o poł
 
 **Zastrzeżenia z góry.** Cecha Wall pochodzi z definicji itemów klienta (brusha ściany); mur wolnostojący, płot i ściana jaskini też ją mają, więc „budynek” to heurystyka kształtu; wnętrza, dachy (piętra wyżej) i meble są poza miarą; referencje to głównie M06 i M19.
 
+### Iteracja 11 — wynik 11a i zapis 11b: podstawy budynków (2026-11-08, przed implementacją)
+
+**11a (referencje).** M06: 1 313 budynków, 31 na 65 536 kafli, mediana 9 × 7, ok. 30 komórek muru, 1,66 drzwi na budynek; M19: 582, 37, 9 × 7, 24 komórki, 3,44 drzwi; M05, M15, M01 mniej i inne (M01 to raczej płoty). Pomiar możliwy w 5 mapach.
+
+**Decyzja użytkownika (2026-11-08):** zakres „same podstawy budynków”, bez ścian i drzwi.
+
+**Model 11b.** Nowy rodzaj komórki `SurfaceKind::Floor` i parametr `SurfaceTuning::buildingDensity` = cel liczby budynków na 65 536 komórek obszaru (0 = wyłączone, 0..100, domyślnie 0; nie jest częścią profilu stylu). Po szlakach: losowe prostokąty podłogi, dłuższy bok 7–11 (jednostajnie), krótszy 5–9 (jednostajnie, nie większy niż dłuższy), losowa orientacja; prostokąt razem z marginesem 2 komórek musi leżeć w całości na Grass lub Dirt (bez Path, Shore, Rock, Lake, River, Floor); do 40 prób na budynek, przy braku miejsca budynek jest pomijany. Podłoga ma pędzel podłogi (okno generatora, domyślnie `stone floor`, jeśli istnieje w kliencie); resolver: profil z 8 pędzlami (indeks 7: podłoga; indeks 6: szlak, wypełniany zawsze, gdy podłoga włączona) dopuszcza komórki Floor; profile z 6 i 7 pędzlami odrzucają siatkę z Floor. Brak ścian, drzwi i dachów; podłoga nie dostaje roślinności ani szlaków.
+
+**Ocena (seedy 1001–1032, bok 512, profile v10; `buildingDensity` 30 dla m06 i 40 dla m19, stałe z góry, bez dopasowania).** Składowa podłogi: 4-spójna składowa Floor. Cechy: liczba składowych na 65 536 komórek (ref. m06 31, m19 37), mediana dłuższego boku obwiedni (ref. 9, 9), mediana krótszego (ref. 7, 7). Kryterium: wszystkie trzy cechy w paśmie [0,67·ref; 1,5·ref] w obu profilach; warunki dodatkowe: Floor tylko na dawnym Grass lub Dirt (test rdzenia), brak nakładania się budynków, udziały rodzajów (mediana) wobec stanu bez budynków ±1 punkt procentowy, `buildingDensity` 0 daje wynik bajt w bajt jak dotąd (przypięty odcisk Seed 1729), testy PASS.
+
+**Zastrzeżenia z góry.** Podłoga bez ścian nie jest budynkiem; porównanie obwiedni podłogi z obwiednią muru referencji to przybliżenie (mur obejmuje obrys, podłoga wnętrze, więc podłoga bywa o 2 komórki mniejsza); rozmieszczenie jest losowe (bez dróg, bez skupisk osad); liczba budynków z dwóch map.
+
