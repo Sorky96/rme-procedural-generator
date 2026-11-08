@@ -6,7 +6,7 @@
 //   C  which style target each style profile is closest to (distinguishability)
 //
 // Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
-//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE] [--usable-doodads FILE] [--meander N]]
+//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE] [--usable-doodads FILE] [--meander N] [--palette-alias KEY=BRUSH]...]
 // With --profiles-out each style profile is also written as <style>.profile (g4-profile/4) for the generator dialog.
 
 #include "procedural/core/decor_context.h"
@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
 	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath, usableBrushesPath, usableDoodadsPath;
 	std::string client, otbSha, datSha;
 	uint32_t meander = 0;
+	std::map<std::string, std::string> paletteAlias; // ground key -> brush the generator places for it
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string key = argv[i];
 		const char* value = argv[i + 1];
@@ -143,6 +144,12 @@ int main(int argc, char** argv) {
 		else if (key == "--usable-brushes") usableBrushesPath = value;
 		else if (key == "--usable-doodads") usableDoodadsPath = value;
 		else if (key == "--meander") meander = static_cast<uint32_t>(std::strtoul(value, nullptr, 10));
+		else if (key == "--palette-alias") {
+			const std::string_view pair = value;
+			const size_t eq = pair.find('=');
+			if (eq == std::string_view::npos || eq == 0 || eq + 1 == pair.size()) { std::cerr << "--palette-alias needs KEY=BRUSH\n"; return 2; }
+			paletteAlias[std::string(pair.substr(0, eq))] = std::string(pair.substr(eq + 1));
+		}
 		else if (key == "--client") client = value;
 		else if (key == "--otb-sha") otbSha = value;
 		else if (key == "--dat-sha") datSha = value;
@@ -392,7 +399,10 @@ int main(int argc, char** argv) {
 			std::map<std::string, uint64_t> summed;
 			for (const size_t i : st->maps) {
 				if (keyTiles[i].empty()) { std::cerr << "missing ground-keys-surface.csv for " << manifest->entries[i].alias << '\n'; return 3; }
-				for (const KeyTiles& t : keyTiles[i]) summed[t.key] += t.tiles;
+				for (const KeyTiles& t : keyTiles[i]) {
+					const auto alias = paletteAlias.find(t.key);
+					summed[alias == paletteAlias.end() ? t.key : alias->second] += t.tiles;
+				}
 			}
 			std::vector<KeyTiles> merged;
 			for (const auto& [key, tiles] : summed) merged.push_back({key, tiles});
