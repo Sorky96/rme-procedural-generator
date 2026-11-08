@@ -202,3 +202,15 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 **Pomiar 9a.** Wszystkie 19 map referencyjnych (mapowanie v3), bez oceny, tylko opis; wynik decyduje, czy 9b (generowanie szlaków i ocena z pasmami jak w iteracji 5) w ogóle ma podstawy.
 
 **Zastrzeżenia z góry.** Rozpoznanie szlaku po nazwie brusha jest heurystyką (płytka brukowa może być też placem lub wnętrzem); szlak w referencji może być z innego gruntu (np. ubita ziemia) i wtedy nie jest widoczny; tylko M06 i M19 mają takie grunty w większej ilości.
+
+### Iteracja 9 — wynik 9a i zapis 9b: opcjonalne szlaki (2026-11-08, przed implementacją)
+
+**9a (referencje, metryka składowych szlaku).** M06: 22 składowe, L 70, W 3 642, B 30 200, 0,46 % powierzchni; M19: 5 składowych, L 78, W 4 606, B 26 259, 0,72 %; reszta map: 0. Szlaki mierzalne tylko w M06 i M19.
+
+**Decyzja użytkownika (2026-11-08):** prosty szlak opcjonalny (domyślnie wyłączony).
+
+**Model (9b).** Nowy rodzaj komórki `SurfaceKind::Path`; `SurfaceTuning::pathLength` = cel długości szkieletu szlaków na 65 536 komórek obszaru (0 = wyłączone, 0..400); nie jest częścią profilu stylu (schemat profilu bez zmian), ustawia go użytkownik w oknie generatora. Szlaki powstają po rzekach i plażach: trasy między losowymi komórkami lądu (Grass lub Dirt) w odległości 48–160, wyszukiwane A* po komórkach Grass, Dirt i Shore (koszt Shore wyższy), z szumem w koszcie dla krętości; rzeki, jeziora i skała są nieprzekraczalne (brak mostów w tym kroku); szerokość 3–4 komórek (stempel 3×3 z jednostronnym poszerzeniem szumem); szlak nadpisuje tylko Grass, Dirt i Shore. Dopóki długość szkieletu poniżej celu, dodawane są kolejne trasy (limit prób); `pathLength` 0 daje wynik bajt w bajt jak dotąd. Resolver: profil z 7 pędzlami (szósty indeks: pędzel szlaku) obsługuje komórki Path; profil z 6 pędzlami odrzuca siatkę zawierającą Path; wygenerowane szlaki nie dostają roślinności.
+
+**Ocena (seedy 1001–1032, bok 512, profile v10 z m06 i m19).** `pathLength` dobrany tak, by L było możliwie bliskie referencji danego profilu (siatka {40, 80, 160, 320} na seedach 1–4), pomiar tą samą definicją składowej szlaku co w 9a (pole ≥ 40, szkielet ≥ 20, szerokość ≤ 7) na komórkach Path. Kryterium: L, W i B w paśmie [0,67·ref; 1,5·ref] (ref: m06 70 / 3 642 / 30 200; m19 78 / 4 606 / 26 259), co najmniej 75 % seedów z ≥ 1 składową; warunki dodatkowe: udziały pozostałych rodzajów (mediana) wobec stanu bez szlaków ±1 punkt procentowy, szlak nigdy na Rock, Lake, River (test rdzenia), niezmienniki rzek i przypięty odcisk Seed 1729 (przy `pathLength` 0) bez zmian, testy rdzenia PASS.
+
+**Zastrzeżenia z góry.** Cele z dwóch map (M19 z dokładnie 5 składowymi); generator nie ma celów szlaków (osad, bram) i nie łączy szlaków z mostami; szlaki są losowymi trasami po lądzie, bez wniosku o realizmie; brush szlaku wybiera użytkownik (domyślnie `cobblestone`, jeśli istnieje w kliencie).
