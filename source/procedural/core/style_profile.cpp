@@ -22,7 +22,7 @@ constexpr KeyRule defaultRules[] = {
 	{"bridge", StyleKind::Other}, {"marquee", StyleKind::Other}, {"pavement", StyleKind::Other}, {"cobblestone", StyleKind::Other},
 	{"marble", StyleKind::Other}, {"brick", StyleKind::Other}, {"bamboo", StyleKind::Other}, {"void", StyleKind::Other},
 	{"lava", StyleKind::Other}, {"tar", StyleKind::Other}, {"swamp", StyleKind::Other}, {"cave", StyleKind::Other},
-	{"sandstone", StyleKind::Other},
+	{"sandstone", StyleKind::Other}, {"wall", StyleKind::Other},
 	{"sea", StyleKind::Water}, {"water", StyleKind::Water},
 	{"mountain", StyleKind::Rock}, {"rocky", StyleKind::Rock},
 	{"dirt", StyleKind::Dirt}, {"earth", StyleKind::Dirt}, {"mud", StyleKind::Dirt},

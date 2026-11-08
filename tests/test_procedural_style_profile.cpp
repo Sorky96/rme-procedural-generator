@@ -33,6 +33,8 @@ void testRules() {
 	check(kindOf("brick roof, down") == StyleKind::Other && kindOf("wooden floor (with border)") == StyleKind::Other, "man-made grounds");
 	check(kindOf("grass pitfall") == StyleKind::Other && kindOf("cave hole") == StyleKind::Other, "qualifiers win over the base ground");
 	check(kindOf("lava") == StyleKind::Other && kindOf("tar pit") == StyleKind::Other && kindOf("swamp") == StyleKind::Other, "hazards and biome grounds");
+	check(kindOf("item earth") == StyleKind::Dirt && kindOf("item mountain") == StyleKind::Rock && kindOf("item flowing water") == StyleKind::Water, "definition-named grounds use the same words");
+	check(kindOf("item dirt wall") == StyleKind::Other && kindOf("item stone wall") == StyleKind::Other, "wall-like grounds are not terrain, even when named after dirt");
 	check(kindOf("snow") == StyleKind::Unmapped && kindOf("white gravel") == StyleKind::Unmapped, "no rule: Unmapped, not guessed");
 	const std::vector<std::string> keys {"", "grass", "snow"};
 	const auto map = proposeKeyMap(keys, defaultKeyRules());

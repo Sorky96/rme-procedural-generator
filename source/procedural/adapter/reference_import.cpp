@@ -250,7 +250,7 @@ std::expected<ReferenceImportSummary, ReferenceImportError> importReference(
 
 std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	const std::filesystem::path& file, const ReferenceImportLimits& limits, const SemanticBudget& budget,
-	ImportMeasurements* measurements) {
+	ImportMeasurements* measurements, const NormalizeOptions& options) {
 	Map map;
 	auto loaded = loadReference(map, file, limits, measurements);
 	if (!loaded) return std::unexpected(loaded.error());
@@ -268,6 +268,7 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	struct Box { int x0 = INT_MAX, y0 = INT_MAX, x1 = INT_MIN, y1 = INT_MIN; bool used = false; };
 	std::array<Box, 16> boxes {};
 	std::unordered_map<const Brush*, std::string> brushNames;
+	std::unordered_map<uint32_t, std::string> unbrushedKeyNames; // server id -> key name, only with nameUnbrushedGrounds
 	for (auto& location : map.tiles()) {
 		if (cancelled()) return std::unexpected(ReferenceImportError::Cancelled);
 		const Tile* tile = location.get();
@@ -280,7 +281,20 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 		box.x0 = std::min(box.x0, position.x); box.x1 = std::max(box.x1, position.x);
 		box.y0 = std::min(box.y0, position.y); box.y1 = std::max(box.y1, position.y);
 		if (tile->ground && !tile->ground->isInvalidOTBMItem() && tile->ground->typeExists()) {
-			if (const Brush* brush = tile->ground->getGroundBrush()) brushNames.try_emplace(brush, brush->getName());
+			if (const Brush* brush = tile->ground->getGroundBrush()) {
+				brushNames.try_emplace(brush, brush->getName());
+			} else {
+				UnbrushedGround& use = result.summary.groundWithoutBrush[tile->ground->getID()];
+				if (use.count++ == 0) {
+					const auto definition = tile->ground->getDefinition();
+					use.name = std::string(definition.name());
+					use.clientId = definition.clientId();
+					use.blocking = tile->ground->isBlocking();
+				}
+				if (options.nameUnbrushedGrounds && !tile->ground->getDefinition().name().empty()) {
+					unbrushedKeyNames.try_emplace(tile->ground->getID(), "item " + std::string(tile->ground->getDefinition().name()));
+				}
+			}
 		}
 	}
 	std::vector<FloorBounds> bounds;
@@ -308,6 +322,7 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	// Keys are interned alphabetically so the table does not depend on tile iteration order.
 	std::vector<std::string> names;
 	for (const auto& entry : brushNames) names.push_back(entry.second);
+	for (const auto& entry : unbrushedKeyNames) names.push_back(entry.second);
 	std::ranges::sort(names);
 	names.erase(std::ranges::unique(names).begin(), names.end());
 	for (const auto& name : names) {
@@ -315,6 +330,8 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	}
 	std::unordered_map<const Brush*, uint16_t> keys;
 	for (const auto& [brush, name] : brushNames) keys.emplace(brush, result.map.internGroundKey(name).value());
+	std::unordered_map<uint32_t, uint16_t> unbrushedKeys;
+	for (const auto& [id, name] : unbrushedKeyNames) unbrushedKeys.emplace(id, result.map.internGroundKey(name).value());
 
 	// Pass 2: fill cells.
 	for (auto& location : map.tiles()) {
@@ -326,6 +343,9 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 		if (tile->ground) {
 			traits |= bit(Trait::HasGround) | itemTraits(*tile->ground, true);
 			if (const Brush* brush = tile->ground->isInvalidOTBMItem() ? nullptr : tile->ground->getGroundBrush()) key = keys.at(brush);
+			else if (!unbrushedKeys.empty()) {
+				if (const auto it = unbrushedKeys.find(tile->ground->getID()); it != unbrushedKeys.end()) key = it->second;
+			}
 		}
 		for (const auto& item : tile->items) traits |= itemTraits(*item, false);
 		const Position position = tile->getPosition();
