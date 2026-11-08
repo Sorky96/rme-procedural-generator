@@ -2,7 +2,7 @@
 
 ## 2026-11-08 — G4: opcjonalne szlaki (iteracja 9) — PARTIAL
 
-Pomiar 9a: szlaki (bruk, żwir, chodnik) da się zmierzyć tylko w M06 i M19 (0,5–0,7 % powierzchni). Zaimplementowano opcjonalne szlaki (domyślnie wyłączone): `SurfaceKind::Path`, `pathLength`, trasy A* po lądzie, resolver z 7. pędzlem, pola w oknie generatora. Metryka L/W/B w paśmie referencji dla m06 i m19 (3 z 3). Testy rdzenia PASS. **Niezweryfikowane: pełna ścieżka GUI (rme.exe nie zlinkowany, RME działał), regresja G1, warunek udziałów.** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+Pomiar 9a: szlaki (bruk, żwir, chodnik) da się zmierzyć tylko w M06 i M19 (0,5–0,7 % powierzchni). Zaimplementowano opcjonalne szlaki (domyślnie wyłączone): `SurfaceKind::Path`, `pathLength`, trasy A* po lądzie, resolver z 7. pędzlem, pola w oknie generatora. Metryka L/W/B w paśmie referencji dla m06 i m19 (3 z 3). Testy rdzenia PASS. Wygładzenie (9c) i odpychanie od skały (9d, szlak przy skale −80 %). Użytkownik potwierdził w GUI: Preview, Validate, Place i Undo/Redo ze szlakami działają. **Niezweryfikowane: regresja G1 `--commit`, warunek udziałów rodzajów, metryka B poza pasmem (artefakt).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
 
 ## 2026-11-08 — G4: masywy skalne (iteracja 8) — PARTIAL
 

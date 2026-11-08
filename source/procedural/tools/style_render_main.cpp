@@ -78,14 +78,24 @@ int main(int argc, char** argv) {
 		}
 		if (const auto paths = pathShapesOf(*grid)) {
 			const ChannelSummary p = summarizeChannels(*paths);
-			uint64_t nextToRock = 0;
+			uint64_t nextToRock = 0, nearRock = 0;
 			for (size_t c = 0; c < grid->cells.size(); ++c) {
 				if (grid->cells[c] != SurfaceKind::Path) continue;
-				const size_t x = c % side, y = c / side;
-				nextToRock += (x > 0 && grid->cells[c - 1] == SurfaceKind::Rock) || (x + 1 < side && grid->cells[c + 1] == SurfaceKind::Rock) ||
-					(y > 0 && grid->cells[c - side] == SurfaceKind::Rock) || (y + 1 < side && grid->cells[c + side] == SurfaceKind::Rock);
+				const int32_t x = int32_t(c % side), y = int32_t(c / side);
+				bool near = false, adjacent = false;
+				for (int32_t dy = -3; dy <= 3 && !near; ++dy) {
+					for (int32_t dx = -3; dx <= 3; ++dx) {
+						const int32_t px = x + dx, py = y + dy;
+						if (px < 0 || py < 0 || px >= int32_t(side) || py >= int32_t(side)) continue;
+						if (grid->cells[size_t(py) * side + size_t(px)] != SurfaceKind::Rock) continue;
+						near = true;
+						if (std::abs(dx) + std::abs(dy) == 1) adjacent = true;
+					}
+				}
+				nextToRock += adjacent;
+				nearRock += near;
 			}
-			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {} rockadj {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells, paths->maskCells ? nextToRock * 1000 / paths->maskCells : 0);
+			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {} rockadj {} rocknear {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells, paths->maskCells ? nextToRock * 1000 / paths->maskCells : 0, paths->maskCells ? nearRock * 1000 / paths->maskCells : 0);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

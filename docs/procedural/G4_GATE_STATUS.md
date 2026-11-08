@@ -236,3 +236,14 @@ Testy rdzenia PASS (`paths`: wyłączone dają wynik bajt w bajt jak dotąd — 
 Zapis kryteriów powstał po pomiarze (zaniedbanie procesu opisane w [G4_METRICS.md](G4_METRICS.md), „Iteracja 9c”; kryteria jak w 9b i przedstawione użytkownikowi przed zmianą): ruchy po przekątnej, koszt przy skale, wygładzenie średnią ruchomą. Pomiar (seedy 1001–1032, bok 512, v10): **m06** (`pathLength` 40): L 56,5 (ref. 70) w paśmie, W 4 546 (ref. 3 642) w paśmie, **B 3 697 (ref. 30 200) poza pasmem**; **m19** (80): L 89,5 (78) w paśmie, W 4 526 (4 606) w paśmie, **B 5 700 (26 259) poza pasmem**. Przed zmianą B wynosiło 28 494 / 29 639 (w paśmie). Udział komórek szlaku przy skale: mediana 0 ‰ / 13 ‰ (wcześniej 0 / 9 ‰), czyli nie zmieniło się (ten przypadek jest rzadki).
 
 **Wniosek.** Spadek B nie oznacza mniej rozgałęzień szlaków, tylko mniej „rozgałęzień” szkieletu: metryka B liczy kafle szkieletu z ≥ 3 sąsiadami, a poszarpany, schodkowy obrys szlaku daje ich wiele (artefakt szkieletowania), podobnie jak w ręcznie malowanych szlakach referencji. Wygładzone szlaki są bliższe temu, czego chciał użytkownik (płynne łuki, oględziny wycinka 200×200 potwierdzają gładki łuk o szerokości 3–4), ale **kryterium B z 9b nie jest spełnione**; decyzję wzrokową użytkownika przyjęto nad metryką. Testy rdzenia PASS (szlak nigdy na rock/lake/river, deterministyczne, wyłączone = bajt w bajt jak dotąd). Zastrzeżenia jak w 9b; ocena wzrokowa w GUI po wygładzeniu należy do użytkownika.
+
+### Iteracja 9d — odpychanie szlaków od skały (2026-11-08): kryterium spełnione
+
+Kryterium zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9d”, commit `f8ae580`): udział komórek szlaku z Rock w promieniu 3 (średnia i mediana po seedach) o co najmniej połowę niższy; L i W w paśmie; testy rdzenia PASS. Zmiana: koszt A* rośnie z bliskością skały (60/40/25/12 dla odległości 1/2/3/4). Wynik (seedy 1001–1032, bok 512, v10, `pathLength` 40 / 80):
+
+| Profil | rocknear mediana przed → po | rocknear średnia przed → po | L (ref.) | W (ref.) |
+| --- | --- | --- | --- | --- |
+| m06 | 0 → 0 ‰ | 36,9 → 8,2 ‰ | 55,5 (70), w paśmie | 4 434 (3 642), w paśmie |
+| m19 | 87,5 → 10 ‰ | 99,4 → 16,7 ‰ | 91,0 (78), w paśmie | 4 655 (4 606), w paśmie |
+
+Spadek średniej: m19 ok. 83 %, m06 ok. 78 %. Testy rdzenia PASS. **Potwierdzone przez użytkownika w GUI (2026-11-08):** Validate i Undo/Redo ze szlakami przeszły; użytkownik wybrał własny brush szlaku (ciemny), co wyjaśnia wygląd na zrzutach 9c. Zastrzeżenia: mediana w stanie bazowym była już niska (przypadek rzadki, stąd kontrola średnią); B nadal poza pasmem (artefakt opisany w 9c); ocena wzrokowa po 9d należy do użytkownika; udziały rodzajów po dodaniu szlaków nie były mierzone osobno.

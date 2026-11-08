@@ -78,11 +78,30 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 	const size_t count = kinds.size();
 	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
 	const auto land = [&](size_t i) { return kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt; };
-	const auto nextToRock = [&](size_t i) {
-		const size_t x = i % width, y = i / width;
-		return (x > 0 && kinds[i - 1] == SurfaceKind::Rock) || (x + 1 < width && kinds[i + 1] == SurfaceKind::Rock) ||
-			(y > 0 && kinds[i - width] == SurfaceKind::Rock) || (y + 1 < height && kinds[i + width] == SurfaceKind::Rock);
-	};
+	// Distance (Chebyshev, 1..4) to the nearest Rock cell, 0 farther away: routes are pushed off the edge of the rock.
+	std::vector<uint8_t> rockDistance(count, 0);
+	{
+		std::vector<size_t> frontier, next;
+		for (size_t i = 0; i < count; ++i) if (kinds[i] == SurfaceKind::Rock) frontier.push_back(i);
+		for (uint8_t distance = 1; distance <= 4 && !frontier.empty(); ++distance) {
+			next.clear();
+			for (const size_t i : frontier) {
+				const int32_t x = int32_t(i % width), y = int32_t(i / width);
+				for (int32_t dy = -1; dy <= 1; ++dy) {
+					for (int32_t dx = -1; dx <= 1; ++dx) {
+						const int32_t nx = x + dx, ny = y + dy;
+						if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
+						const size_t j = size_t(ny) * width + size_t(nx);
+						if (kinds[j] == SurfaceKind::Rock || rockDistance[j]) continue;
+						rockDistance[j] = distance;
+						next.push_back(j);
+					}
+				}
+			}
+			frontier.swap(next);
+		}
+	}
+	constexpr uint32_t rockPenalty[5] = {0, 60, 40, 25, 12};
 	StableRandom random(config.seed, pathStream);
 	std::vector<uint32_t> cost(count, std::numeric_limits<uint32_t>::max());
 	std::vector<int32_t> parent(count, -1);
@@ -146,7 +165,7 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 					if (closed[next]) continue;
 					const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(nx),
 						uint32_t(config.region.y) + uint32_t(ny), 5)) * 10 / noiseBins);
-					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + (nextToRock(next) ? 25 : 0);
+					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + rockPenalty[rockDistance[next]];
 					if (dx && dy) step = step * 14 / 10;
 					const uint32_t candidate = cost[current] + step;
 					if (candidate >= cost[next]) continue;
