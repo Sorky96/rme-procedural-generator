@@ -263,14 +263,19 @@ void runProbe() {
                 std::vector<std::string> f;
                 std::istringstream cells(line);
                 for (std::string cell; std::getline(cells, cell, '\t');) f.push_back(cell);
-                if (f.size() != 6) continue;
+                if (f.size() != 6 && f.size() != 9) continue; // 9 columns: also tree, bush, stone doodad brushes (vegetation on)
                 GroundProfile profile;
                 profile.count = GroundProfile::surfaceCount;
                 const std::string order[] = {f[1], f[2], f[3], f[4], f[5], f[5]}; // grass, dirt, rock, shore, lake, river
                 for (size_t i = 0; i < GroundProfile::surfaceCount; ++i) profile.brushes[i] = order[i];
+                if (f.size() == 9) {
+                    profile.decorCount = GroundProfile::decorationCount;
+                    for (size_t i = 0; i < GroundProfile::decorationCount; ++i) profile.decor[i] = f[6 + i];
+                }
                 Map paletteMap;
                 paletteMap.initializeEmpty();
                 GenerationConfig config;
+                config.vegetation = f.size() == 9;
                 config.region = {1000, 1000, 7, 100, 100};
                 config.seed = 1729;
                 config.algorithm = GenerationAlgorithm::Surface;

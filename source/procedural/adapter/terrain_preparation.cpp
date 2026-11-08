@@ -207,7 +207,7 @@ TerrainPreparationSteps runPreparation(
 		GroundPlan plan;
 		{
 			if (input.config.algorithm == GenerationAlgorithm::Surface) {
-				const auto keepClear = surfaceKeepClear(*snapshot);
+				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
 				std::vector<uint8_t> protection = input.protection;
 				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
 				auto grid = generateSurface({ input.config.region, input.config.seed, input.config.surface }, input.extent,

@@ -540,7 +540,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	// The brushes the dialog opened with: a profile choice always starts from them.
 	{
 		wxComboBox* const fields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
-		for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) default_brushes_[kind] = fields[kind]->GetValue();
+		for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) default_brushes_[kind] = fields[kind]->GetValue();		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
+		for (size_t kind = 0; kind < std::size(decorFields); ++kind) default_decor_brushes_[kind] = decorFields[kind]->GetValue();
 	}
 	CentreOnParent();
 
@@ -620,24 +621,25 @@ void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 	}
 }
 
-// A profile also names the ground brushes its style used (winter: snowy mountain). Every choice starts from the
-// brushes the dialog opened with, so brushes of a previously chosen profile do not carry over; then the
-// profile's brushes are set. A name is applied only when this client has the brush and it has ground items
-// (some brushes in the data are empty stubs that only exist to be named by borders and cannot be placed).
-// Anything else is skipped and reported, never guessed. The fields stay editable.
+// A profile also names the ground and doodad brushes its style used (winter: small snowy rocks). Every choice
+// starts from the brushes the dialog opened with, so brushes of a previously chosen profile do not carry over;
+// then the profile's brushes are set. A name is applied only when this client has the brush and the generator
+// can use it (a ground brush needs ground items, a doodad brush single items). Anything else is skipped and
+// reported, never guessed. The fields stay editable; the vegetation check box is left as the user set it.
 void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	OnInputChanged(event);
-	wxComboBox* const fields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
-	static_assert(std::size(fields) == rme::procedural::naturalKindCount);
-	static const char* const labels[] = { "Grass", "Dirt", "Rock", "Shore", "Water" };
+	wxComboBox* const groundFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
+	wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
+	static_assert(std::size(groundFields) == rme::procedural::naturalKindCount);
+	static const char* const groundLabels[] = { "Grass", "Dirt", "Rock", "Shore", "Water" };
+	static const char* const decorLabels[] = { "Tree", "Bush", "Stone" };
 	const auto setBrush = [](wxComboBox* field, const wxString& name) {
 		field->Clear();
 		field->Append(name);
 		field->SetSelection(0);
 	};
-	for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) {
-		if (!default_brushes_[kind].empty()) setBrush(fields[kind], default_brushes_[kind]);
-	}
+	for (size_t i = 0; i < std::size(groundFields); ++i) if (!default_brushes_[i].empty()) setBrush(groundFields[i], default_brushes_[i]);
+	for (size_t i = 0; i < std::size(decorFields); ++i) if (!default_decor_brushes_[i].empty()) setBrush(decorFields[i], default_decor_brushes_[i]);
 	const int picked = profile_choice_->GetSelection();
 	if (picked <= 0 || static_cast<size_t>(picked) > profiles_.size()) {
 		SetStatus("Built-in settings: brushes set back to the defaults.", false);
@@ -645,20 +647,32 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	}
 	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
 	wxString applied, skipped;
+	const auto note = [](wxString& list, const char* label, const wxString& name) {
+		list += (list.empty() ? "" : ", ") + wxString(label) + ": " + name;
+	};
 	for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) {
 		const std::string& name = entry.profile.palette[kind];
 		if (name.empty()) continue;
 		const wxString wanted = wxstr(name);
 		const Brush* brush = ground_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
 		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
-		const bool placeable = ground && ground->getTotalChance() > 0;
-		wxString& list = placeable ? applied : skipped;
-		if (placeable) setBrush(fields[kind], wanted);
-		list += (list.empty() ? "" : ", ") + wxString(labels[kind]) + ": " + wanted;
+		const bool usable = ground && ground->getTotalChance() > 0;
+		if (usable) setBrush(groundFields[kind], wanted);
+		note(usable ? applied : skipped, groundLabels[kind], wanted);
+	}
+	for (size_t kind = 0; kind < std::size(decorFields); ++kind) {
+		const std::string& name = entry.profile.decorPalette[kind];
+		if (name.empty()) continue;
+		const wxString wanted = wxstr(name);
+		const Brush* brush = doodad_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
+		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
+		const bool usable = doodad && doodad->hasSingleObjects(0);
+		if (usable) setBrush(decorFields[kind], wanted);
+		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
 	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
 	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
-	if (!skipped.empty()) message += " Not usable in this client (missing or no ground items), kept the default: " + skipped + ".";
+	if (!skipped.empty()) message += " Not usable in this client, kept the default: " + skipped + ".";
 	SetStatus(message, false);
 }
 

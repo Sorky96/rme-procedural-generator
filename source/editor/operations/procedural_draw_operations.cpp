@@ -173,7 +173,14 @@ std::optional<uint64_t> TerrainPreview::currentFingerprint() const noexcept {
 		hashField(hash, uint32_t(position.z), 4);
 		hashField(hash, tile->statflags, 2);
 		hashField(hash, tile->minimapColor, 1);
-		if (!hashItem(hash, tile->ground.get(), true, decorIds_)) return std::nullopt;
+		// A tile kept clear beside the area's edge (surfaceKeepClear) carries only the outer border of its neighbour:
+		// no ground, at least one item, and every item is checked below. Any other tile must have a valid ground.
+		if (tile->ground) {
+			if (!hashItem(hash, tile->ground.get(), true, decorIds_)) return std::nullopt;
+		} else {
+			if (tile->items.empty()) return std::nullopt;
+			hashField(hash, 0, 2);
+		}
 		hashField(hash, tile->items.size(), 4);
 		for (const auto& item : tile->items) if (!hashItem(hash, item.get(), false, decorIds_)) return std::nullopt;
 	}
@@ -250,7 +257,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	uint64_t decorPlacements = 0;
 	uint64_t placements = 0;
 	// Surface leaves writable cells beside existing ground empty; every other cell must be placed.
-	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot) : std::vector<uint8_t>();
+	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot, profileNeedsEdgeClearance(plan.profile)) : std::vector<uint8_t>();
 	for (size_t i = 0; i < plan.items.size(); ++i) {
 		if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);

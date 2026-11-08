@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/style_profile.h"
 
+#include "procedural/core/doodad_class.h"
+
 #include <algorithm>
 #include <charconv>
 #include <map>
@@ -172,6 +174,7 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 		if (bad(s.alias)) return std::unexpected(ProfileError::InvalidKey);
 	}
 	for (const auto& name : p.palette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
+	for (const auto& name : p.decorPalette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
 	std::set<std::string_view> seen;
 	for (const auto& e : p.keymap) {
 		if (bad(e.key) || bad(e.rule)) return std::unexpected(ProfileError::InvalidKey);
@@ -194,6 +197,10 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	appendStatLines(out, p.stats);
 	for (size_t k = 0; k < naturalKindCount; ++k) {
 		if (!p.palette[k].empty()) out += std::string("palette\t") + kindNames[k] + '\t' + p.palette[k] + '\n';
+	}
+	static constexpr const char* decorNames[3] = {"Tree", "Bush", "Stone"};
+	for (size_t k = 0; k < 3; ++k) {
+		if (!p.decorPalette[k].empty()) out += std::string("doodad\t") + decorNames[k] + '\t' + p.decorPalette[k] + '\n';
 	}
 	if (p.target) {
 		out += "target\tshares";
@@ -293,6 +300,14 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			if (!slot.empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
 			slot = f[2];
 		}
+		else if (type == "doodad" && f.size() == 3) {
+			static constexpr std::string_view names[3] = {"Tree", "Bush", "Stone"};
+			size_t k = 3;
+			for (size_t i = 0; i < 3; ++i) if (f[1] == names[i]) k = i;
+			if (k == 3) return std::unexpected(ProfileError::UnknownKind);
+			if (!p.decorPalette[k].empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
+			p.decorPalette[k] = f[2];
+		}
 		else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
 			if (!p.target) p.target = StyleTarget {};
 			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[2 + i], p.target->sharesPpm[i])) return std::unexpected(ProfileError::BadFormat);
@@ -358,6 +373,24 @@ StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const 
 	StylePalette palette;
 	for (size_t k = 0; k < naturalKindCount; ++k) {
 		if (best[k] && best[k]->tiles >= minTiles && best[k]->tiles * 100 >= total[k] * minSharePercent) palette[k] = best[k]->key;
+	}
+	return palette;
+}
+
+StyleDecorPalette chooseDecorPalette(std::span<const KeyTiles> items, uint64_t minItems, uint32_t minSharePercent, const std::set<std::string>* usable) {
+	std::array<uint64_t, 3> total {};
+	std::array<const KeyTiles*, 3> best {};
+	for (const KeyTiles& t : items) {
+		const DecorKind kind = classifyDoodadBrush(t.key);
+		if (kind == DecorKind::None) continue;
+		const size_t k = static_cast<size_t>(kind) - 1;
+		total[k] += t.tiles;
+		if (usable && !usable->contains(t.key)) continue;
+		if (!best[k] || t.tiles > best[k]->tiles || (t.tiles == best[k]->tiles && t.key < best[k]->key)) best[k] = &t;
+	}
+	StyleDecorPalette palette;
+	for (size_t k = 0; k < 3; ++k) {
+		if (best[k] && best[k]->tiles >= minItems && best[k]->tiles * 100 >= total[k] * minSharePercent) palette[k] = best[k]->key;
 	}
 	return palette;
 }

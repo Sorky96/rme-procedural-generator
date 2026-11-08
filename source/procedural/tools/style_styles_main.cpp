@@ -6,7 +6,7 @@
 //   C  which style target each style profile is closest to (distinguishability)
 //
 // Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
-//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE]]
+//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE] [--usable-doodads FILE]]
 // With --profiles-out each style profile is also written as <style>.profile (g4-profile/4) for the generator dialog.
 
 #include "procedural/core/decor_context.h"
@@ -128,7 +128,7 @@ std::string tuningJson(const SurfaceTuning& t, const DecorTuning& d) {
 } // namespace
 
 int main(int argc, char** argv) {
-	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath, usableBrushesPath;
+	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath, usableBrushesPath, usableDoodadsPath;
 	std::string client, otbSha, datSha;
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string key = argv[i];
@@ -140,6 +140,7 @@ int main(int argc, char** argv) {
 		else if (key == "--profiles-out") profilesOut = value;
 		else if (key == "--keymap") keymapPath = value;
 		else if (key == "--usable-brushes") usableBrushesPath = value;
+		else if (key == "--usable-doodads") usableDoodadsPath = value;
 		else if (key == "--client") client = value;
 		else if (key == "--otb-sha") otbSha = value;
 		else if (key == "--dat-sha") datSha = value;
@@ -157,6 +158,7 @@ int main(int argc, char** argv) {
 	std::vector<Fingerprint> prints;
 	std::vector<MapStats> stats;
 	std::vector<MapDecor> decors;
+	std::vector<std::vector<KeyTiles>> doodadItems; // per map: surface items per doodad brush (empty when the file is absent)
 	std::vector<std::vector<KeyTiles>> keyTiles; // per map: tiles per ground key on z <= 7 (empty when the file is absent)
 	for (const auto& entry : manifest->entries) {
 		if (!readFile(fingerprintDir / (entry.alias + ".fp"), text)) { std::cerr << "missing fingerprint " << entry.alias << '\n'; return 3; }
@@ -171,6 +173,21 @@ int main(int argc, char** argv) {
 		auto dc = parseDecorContext(text);
 		if (!dc) { std::cerr << "invalid decor context " << entry.alias << '\n'; return 3; }
 		decors.push_back({entry.alias, "", *dc});
+		doodadItems.emplace_back();
+		if (readFile(statsDir / entry.alias / "run" / "analysis" / "doodad-brushes.csv", text)) {
+			std::string_view rest = text;
+			bool first = true;
+			while (!rest.empty()) {
+				const size_t end = rest.find('\n');
+				std::string_view line = rest.substr(0, end);
+				rest = end == std::string_view::npos ? std::string_view {} : rest.substr(end + 1);
+				if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+				if (first) { first = false; continue; }
+				if (line.empty()) continue;
+				const auto f = csvFields(line);
+				if (f.size() >= 2) doodadItems.back().push_back({f[0], std::strtoull(f[1].c_str(), nullptr, 10)});
+			}
+		}
 		keyTiles.emplace_back();
 		if (readFile(statsDir / entry.alias / "run" / "analysis" / "ground-keys-surface.csv", text)) {
 			std::string_view rest = text;
@@ -334,6 +351,19 @@ int main(int argc, char** argv) {
 				if (!line.empty()) usableBrushes->insert(std::string(line));
 			}
 		}
+		std::optional<std::set<std::string>> usableDoodads;
+		if (!usableDoodadsPath.empty()) {
+			if (!readFile(usableDoodadsPath, text)) { std::cerr << "cannot read the list of usable doodad brushes\n"; return 2; }
+			usableDoodads.emplace();
+			std::string_view rest = text;
+			while (!rest.empty()) {
+				const size_t end = rest.find('\n');
+				std::string_view line = rest.substr(0, end);
+				rest = end == std::string_view::npos ? std::string_view {} : rest.substr(end + 1);
+				if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+				if (!line.empty()) usableDoodads->insert(std::string(line));
+			}
+		}
 		fs::create_directories(profilesOut);
 		for (const Style* st : styles) {
 			StyleProfile profile;
@@ -355,15 +385,22 @@ int main(int argc, char** argv) {
 			profile.tuning = st->profile.surface;
 			profile.decorTarget = st->decorTarget;
 			profile.decorTuning = st->profile.decor;
-			// Brushes the style used, from the tiles per key of the maps that carry its target.
+			// Brushes and doodads the style used, from every style map of the family (the thresholds guard small samples).
 			std::map<std::string, uint64_t> summed;
-			for (const size_t i : st->usable) {
+			for (const size_t i : st->maps) {
 				if (keyTiles[i].empty()) { std::cerr << "missing ground-keys-surface.csv for " << manifest->entries[i].alias << '\n'; return 3; }
 				for (const KeyTiles& t : keyTiles[i]) summed[t.key] += t.tiles;
 			}
 			std::vector<KeyTiles> merged;
 			for (const auto& [key, tiles] : summed) merged.push_back({key, tiles});
 			profile.palette = choosePalette(*keymap, merged, 200, 25, usableBrushes ? &*usableBrushes : nullptr);
+			std::map<std::string, uint64_t> doodadSums;
+			for (const size_t i : st->maps) for (const KeyTiles& t : doodadItems[i]) doodadSums[t.key] += t.tiles;
+			std::vector<KeyTiles> doodadMerged;
+			for (const auto& [key, items] : doodadSums) doodadMerged.push_back({key, items});
+			profile.decorPalette = chooseDecorPalette(doodadMerged, 30, 25, usableDoodads ? &*usableDoodads : nullptr);
+			std::cout << st->name << " doodads: Tree=" << (profile.decorPalette[0].empty() ? "-" : profile.decorPalette[0]) << " Bush="
+				<< (profile.decorPalette[1].empty() ? "-" : profile.decorPalette[1]) << " Stone=" << (profile.decorPalette[2].empty() ? "-" : profile.decorPalette[2]) << '\n';
 			std::cout << st->name << " palette:";
 			for (size_t k = 0; k < naturalKindCount; ++k) std::cout << ' ' << styleKindName(static_cast<StyleKind>(k)) << '=' << (profile.palette[k].empty() ? "-" : profile.palette[k]);
 			std::cout << '\n';

@@ -138,7 +138,14 @@ struct KeyTiles {
 [[nodiscard]] StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const KeyTiles> tiles,
 	uint64_t minTiles = 200, uint32_t minSharePercent = 25, const std::set<std::string>* usable = nullptr);
 
-inline constexpr std::string_view profileSchema = "g4-profile/4";
+// Doodad brush a style used most for trees, bushes and stones (entry 0, 1, 2), by the name classification of
+// classifyDoodadBrush; empty = none clearly carries that kind. `items` are surface items per doodad brush name.
+// Same thresholds and `usable` rule as choosePalette; a brush that is not classified as that kind never counts.
+using StyleDecorPalette = std::array<std::string, 3>;
+[[nodiscard]] StyleDecorPalette chooseDecorPalette(std::span<const KeyTiles> items,
+	uint64_t minItems = 100, uint32_t minSharePercent = 25, const std::set<std::string>* usable = nullptr);
+
+inline constexpr std::string_view profileSchema = "g4-profile/5";
 
 struct StyleProfile {
 	std::string client;
@@ -153,6 +160,7 @@ struct StyleProfile {
 	std::optional<DecorContext> decorTarget;   // vegetation rates by context, weighted over the sources (virtual units)
 	std::optional<DecorTuning> decorTuning;    // vegetation chances fitted to decorTarget
 	StylePalette palette;                      // brushes the style used (see StylePalette)
+	StyleDecorPalette decorPalette;            // doodad brushes the style used (see StyleDecorPalette)
 	bool operator==(const StyleProfile&) const = default;
 };
 

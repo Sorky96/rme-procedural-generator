@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: brushe z zewnętrzną bordurą (pierścień) i paleta dekoracji (schemat v5)
+
+Brushe z zewnętrzną bordurą do niczego (`earth`, `mountain`, `snowy mountain` i inne) rysują krawędź poza generowanym obszarem; przy takich brushach pole przylegające do niezapisywalnego sąsiada bez gruntu zostaje puste, a bordura ląduje wewnątrz obszaru (pierścień 1 kafla); odcisk podglądu przyjmuje kafle tylko z borderem. Pełne przygotowanie: 31 z 31 brushy gruntu przechodzi (było 21). Profil niesie także paletę dekoracji (drzewo, krzak, kamień); okno wpisuje ją w pola Tree/Bush/Stone. Korekta: `snowy mountain` nie jest stubem. Regresja G1 `--surface` i `--commit` PASS. [G4_GUI.md](procedural/G4_GUI.md).
+
 ## 2026-11-08 — G4: poprawka palety po błędzie „Borders would extend outside the allowed area”
 
 Przyczyny: brushe z palety, które generator odrzuca (`earth`, `mountain`, `snowy mountain` i 7 innych: ich krawędzie wychodzą poza obszar), oraz brushe poprzedniego profilu zostające w polach. Okno zaczyna teraz od brushy domyślnych i stosuje tylko brushe, które klient ma i mają itemy; narzędzie dobiera paletę spośród brushy, które przeszły pełne przygotowanie (próbnik, 21 z 31). Wszystkie 8 profili przechodzi pełne przygotowanie, ale palety prawie nie różnicują stylów (zima: tylko `sea`). [G4_GUI.md](procedural/G4_GUI.md).

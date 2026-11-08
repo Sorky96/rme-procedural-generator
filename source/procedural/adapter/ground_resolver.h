@@ -42,6 +42,11 @@ struct GroundPlan {
 	[[nodiscard]] uint64_t fingerprint() const;
 };
 
+// True when a ground brush of the profile has an outer border to "nothing": the border calculator then draws
+// it onto empty neighbour tiles, which for a generated area means outside it. Such profiles need
+// surfaceKeepClear(snapshot, true). Brushes that do not resolve count as false; resolution reports them.
+[[nodiscard]] bool profileNeedsEdgeClearance(const GroundProfile& profile);
+
 enum class ResolveError {
 	WrongThread, NoClient, StaleAssets, InvalidInput, InvalidProfile, InvalidItem,
 	PlanLimit, Cancelled, AllocationFailed

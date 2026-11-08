@@ -94,6 +94,7 @@ private:
 	wxChoice* profile_choice_ = nullptr;
 	std::vector<rme::procedural::OfferedProfile> profiles_; // entry i is choice i + 1
 	std::array<wxString, rme::procedural::naturalKindCount> default_brushes_; // grass, dirt, rock, shore, water
+	std::array<wxString, 3> default_decor_brushes_;                            // tree, bush, stone
 	wxComboBox* rock_brush_choice_ = nullptr;
 	wxComboBox* shore_brush_choice_ = nullptr;
 	wxCheckBox* vegetation_check_ = nullptr;

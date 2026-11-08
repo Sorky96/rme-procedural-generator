@@ -67,6 +67,8 @@ StyleProfile sample() {
 	p.decorTuning = DecorTuning {1500, 20, 150, 90, 40, 110};
 	p.palette[static_cast<size_t>(StyleKind::Rock)] = "snowy mountain";
 	p.palette[static_cast<size_t>(StyleKind::Water)] = "sea";
+	p.decorPalette[0] = "snowy trees";
+	p.decorPalette[2] = "small snowy rocks";
 	return p;
 }
 
@@ -78,9 +80,9 @@ void testSerialization() {
 	const auto back = parseProfile(*text);
 	check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
 	check(back && serializeProfile(*back).value() == *text, "serialization is stable");
-	check(text->starts_with("g4-profile/4\n"), "schema line first");
+	check(text->starts_with("g4-profile/5\n"), "schema line first");
 
-	check(parseProfile("g4-profile/5\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
+	check(parseProfile("g4-profile/6\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");
 	check(parseProfile(text->substr(0, text->find("stat\t"))).error() == ProfileError::BadFormat, "missing statistics refused");
 	std::string unknownKind = *text;
@@ -193,6 +195,35 @@ void testPalette() {
 	check(parseProfile(*text + "palette\tGrass\t\n").error() == ProfileError::BadFormat, "empty palette name refused");
 	profile.palette[0] = "a\tb";
 	check(validateProfile(profile).error() == ProfileError::InvalidKey, "tab in a palette name refused");
+}
+
+void testDecorPalette() {
+	const std::vector<KeyTiles> items {{"trees", 300}, {"snowy trees", 900}, {"bushes", 150}, {"grass tufts", 600}, {"small rocks", 80}, {"kamienie", 400},
+		{"normal bed", 5000}, {"wall lamp", 7000}, {"dead trees", 100}};
+	const StyleDecorPalette p = chooseDecorPalette(items);
+	check(p[0] == "snowy trees", "most items among tree brushes (900 of 1300 = 69 percent)");
+	check(p[1] == "grass tufts", "bush: grass tufts beat bushes");
+	check(p[2] == "kamienie", "stone: furniture and unclassified brushes do not count; small rocks is under the minimum");
+	const std::set<std::string> usable {"trees", "bushes", "small rocks"};
+	const StyleDecorPalette limited = chooseDecorPalette(items, 100, 25, &usable);
+	check(limited[0].empty() && limited[1].empty() && limited[2].empty(), "usable brushes only: trees 23 percent and bushes 20 percent are below 25, small rocks under the minimum");
+	const StyleDecorPalette lower = chooseDecorPalette(items, 100, 20, &usable);
+	check(lower[0] == "trees" && lower[1] == "bushes" && lower[2].empty(), "a lower share threshold admits them");
+	check(chooseDecorPalette({}) == StyleDecorPalette {}, "no items: empty palette");
+	std::vector<KeyTiles> shuffled(items.rbegin(), items.rend());
+	check(chooseDecorPalette(shuffled) == p, "independent of the order");
+	const std::vector<KeyTiles> tie {{"palm trees", 400}, {"banana tree", 400}};
+	check(chooseDecorPalette(tie)[0] == "banana tree", "tie: the smaller name");
+
+	StyleProfile profile = sample();
+	const auto text = serializeProfile(profile);
+	check(text && text->find("doodad\tTree\tsnowy trees\n") != std::string::npos && text->find("doodad\tStone\tsmall snowy rocks\n") != std::string::npos && text->find("doodad\tBush") == std::string::npos, "doodad lines written, empty entries not");
+	const auto back = parseProfile(text.value_or(""));
+	check(back && back->decorPalette == profile.decorPalette, "doodad palette round trip");
+	check(parseProfile(*text + "doodad\tTree\tother\n").error() == ProfileError::BadFormat, "second entry for one kind refused");
+	check(parseProfile(*text + "doodad\tFern\tx\n").error() == ProfileError::UnknownKind, "unknown doodad kind refused");
+	profile.decorPalette[1] = "a\tb";
+	check(validateProfile(profile).error() == ProfileError::InvalidKey, "tab in a doodad name refused");
 }
 
 void testTargetBuild() {
@@ -321,6 +352,7 @@ int main() {
 	testKeyMapText();
 	testTargetAndTuning();
 	testPalette();
+	testDecorPalette();
 	testTargetBuild();
 	testStatsText();
 	testValidation();
