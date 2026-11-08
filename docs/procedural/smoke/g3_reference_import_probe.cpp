@@ -351,6 +351,13 @@ void runProbe() {
             const auto waterShapes = extractWaterShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(waterShapes.has_value(), "Water shape extraction failed");
             writeText("water-shapes-surface.txt", serializeWaterShapes(*waterShapes));
+            const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(channels.has_value(), "Channel extraction failed");
+            {
+                const ChannelSummary c = summarizeChannels(*channels);
+                writeText("channels-surface.txt", std::format("count\t{}\nlength_per_64k\t{}\nwidth_milli\t{}\nbranches_per_100_milli\t{}\nconnected_permille\t{}\nregion_cells\t{}\n",
+                    c.count, c.lengthPer64k, c.widthMilli, c.branchesPer100Milli, c.connectedPermille, channels->regionCells));
+            }
             {
                 // One pixel per tile, coloured by style kind, for a side-by-side look at a floor with the generator.
                 constexpr PngColor kindColors[] = {{70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {230, 230, 230}, {255, 0, 255}, {70, 70, 70}, {0, 0, 0}};

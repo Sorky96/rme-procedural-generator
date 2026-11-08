@@ -191,6 +191,37 @@ void testMeanderEffect() {
 	check(medians(0) == std::pair {plainT, plainS}, "the measurement is repeatable");
 }
 
+// Channels: the narrow part of the water, also where it joins a lake (iteration 5).
+void testChannels() {
+	constexpr uint32_t w = 80, h = 40;
+	SurfaceGrid grid;
+	grid.region = {0, 0, 7, w, h};
+	grid.cells.assign(size_t(w) * h, SurfaceKind::Grass);
+	auto fill = [&](uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
+		for (uint32_t y = y0; y < y1; ++y) for (uint32_t x = x0; x < x1; ++x) grid.cells[size_t(y) * w + x] = SurfaceKind::Lake;
+	};
+	fill(2, 10, 22, 30);    // 20 x 20 lake: open water
+	fill(22, 19, 52, 22);   // 30 x 3 channel leaving the lake
+	fill(30, 5, 60, 7);     // 30 x 2 stream far from the lake, away from the border
+	const auto channels = channelShapesOf(grid);
+	check(channels.has_value(), "channels extracted");
+	if (!channels) return;
+	check(channels->regionCells == uint64_t(w) * h, "region is the whole grid");
+	check(channels->shapes.rivers.size() == 2, "the channel and the stream are two components");
+	size_t touching = 0;
+	for (const RiverComponent& r : channels->shapes.rivers) touching += r.touchesOpen;
+	check(touching == 1, "only the channel touches open water");
+	const ChannelSummary summary = summarizeChannels(*channels);
+	check(summary.connectedPermille == 500, "half of the components are connected");
+	check(summary.lengthPer64k > 0 && summary.widthMilli > 0, "length and width are measured");
+	SurfaceGrid pond;
+	pond.region = {0, 0, 7, 40, 40};
+	pond.cells.assign(1600, SurfaceKind::Grass);
+	for (uint32_t y = 10; y < 24; ++y) for (uint32_t x = 10; x < 24; ++x) pond.cells[size_t(y) * 40 + x] = SurfaceKind::Lake;
+	const auto none = channelShapesOf(pond);
+	check(none.has_value() && none->shapes.rivers.empty(), "a 14 x 14 pond has no channel");
+}
+
 } // namespace
 
 int main() {
@@ -200,6 +231,7 @@ int main() {
 	testText();
 	testSources();
 	testMeanderEffect();
+	testChannels();
 	if (failures == 0) std::cout << "OK\n";
 	return failures == 0 ? 0 : 1;
 }

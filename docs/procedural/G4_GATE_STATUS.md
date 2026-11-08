@@ -121,3 +121,19 @@ Mediany różnic odległości od referencji (4b, fold M06→M19): T −58 ‰ (p
 - Nie oceniano wyglądu (ślepe A/B), rozwidleń, rozmiarów jezior, podziemi ani BlackTek. Referencja S = 0 oznacza, że w referencjach nie ma 12-kafelkowych prostych szkieletu; część tej różnicy może wynikać z samego szkieletowania.
 - Rzeki w profilach v6 mają meander 8 (profile v5 nie są już wspierane).
 - **Korekta (2026-11-08, [G4_COMPARE.md](G4_COMPARE.md)):** metryka rzek iteracji 4 pomija składowe wody ≥ 20 000 kafli (morze), więc duże rzeki połączone z morzem nie weszły ani do referencji, ani do dopasowania meandru. Referencje (M06 W ≈ 1,6) opisują wąskie strumienie, a rzeki generatora są szersze (W ≈ 4,4–6,6). Wynik iteracji 4 dotyczy tylko takich strumieni.
+
+## Iteracja 5a — kanały wodne, pomiar bazowy (2026-11-08)
+
+Definicje i kryterium zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 5”, commit `f0e04bc`). Referencje (profil v7, mapowanie v3): kwalifikują się M06 (218 składowych), M08 (72), M10 (72), M19 (82), M07 i M09 mają po 1 (nie). Zgodnie z zapisem porównuję m06→M06 i m19→M19; M08 i M10 mają identyczne wartości (ta sama rodzina), nie weszły do oceny. Generator: seedy 1001–1032, bok 256, kanał w 32/32 seedach w obu profilach; dwa przebiegi bajtowo identyczne.
+
+| Cecha | m06: generator | M06 | pasmo | m19: generator | M19 | pasmo |
+| --- | --- | --- | --- | --- | --- | --- |
+| L (szkielet na 65 536 kafli) | 455 | 384 | 257–576: w paśmie | 832 | 302 | 202–453: **poza** |
+| W (szerokość, tys. kafla) | 4 679 | 2 898 | 1 942–4 347: **poza** (za szeroko) | 5 705 | 4 337 | 2 906–6 506: w paśmie |
+| B (rozgałęzienia / 100 kafli szkieletu, ×1000) | 26 987 | 41 134 | 27 560–61 701: **poza** (nieznacznie) | 32 744 | 38 913 | 26 072–58 370: w paśmie |
+| C (łączące się z wodą otwartą lub brzegiem, ‰) | 916 | 614 | 411–921: w paśmie (przy granicy) | 750 | 865 | 580–1 298: w paśmie |
+| W paśmie | **2 z 4: nie zaliczony** | | | **3 z 4: zaliczony** | | |
+
+**Wniosek (opis stanu, nie bramka).** Ilość i rozgałęzienie kanałów w generatorze są w tym samym rzędzie wielkości co w referencjach; wyjątki to zbyt szerokie kanały w m06 (4,7 vs 2,9 kafla) i 2,7 razy za dużo długości kanałów w m19. Pomiar nie wskazuje braku dopływów jako głównej różnicy między generatorem a referencjami; wcześniejsze wrażenie z oglądu (rzeki bez sieci) brało się z wycinka wybranego pod kątem największej ilości lądu oraz ze wspólnej skali szumu, której ta metryka nie opisuje.
+
+**Zastrzeżenia.** Dopasowanie in-sample (profil z tej samej mapy). Dwie referencje z rzekami, dwie ocenione. Kanał to przybliżenie (otwarcie 13×13, kwadrat sprzyja osiom; wchodzą też wąskie zatoki i ramiona jezior). Nie oceniano wyglądu, struktur w dużej skali ani rzek w M08/M10. 5b (zmiana generatora) nie została wykonana, bo 5a nie wykazała wyraźnej luki w dopływach.

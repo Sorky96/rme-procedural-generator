@@ -73,11 +73,27 @@ uint32_t medianOf(std::vector<uint32_t> v) {
 	return n % 2 ? v[n / 2] : static_cast<uint32_t>((uint64_t(v[n / 2 - 1]) + v[n / 2]) / 2);
 }
 
+// Skeleton tiles with at least 3 skeleton tiles among their 8 neighbours.
+size_t branchCells(const std::vector<uint8_t>& bitmap, size_t width, size_t height) {
+	size_t count = 0;
+	for (size_t y = 1; y + 1 < height; ++y) {
+		for (size_t x = 1; x + 1 < width; ++x) {
+			const size_t i = y * width + x;
+			if (!bitmap[i]) continue;
+			const int neighbours = bitmap[i - width - 1] + bitmap[i - width] + bitmap[i - width + 1] + bitmap[i - 1] + bitmap[i + 1] +
+				bitmap[i + width - 1] + bitmap[i + width] + bitmap[i + width + 1];
+			count += neighbours >= 3;
+		}
+	}
+	return count;
+}
+
 } // namespace
 
 std::expected<void, StatsError> addWaterShapes(
-	std::span<const uint8_t> water, uint32_t width, uint32_t height, WaterShapes& out, std::stop_token stop) {
-	if (uint64_t(width) * height != water.size()) return std::unexpected(StatsError::InvalidRange);
+	std::span<const uint8_t> water, uint32_t width, uint32_t height, WaterShapes& out, std::stop_token stop,
+	std::span<const uint8_t> openWater) {
+	if (uint64_t(width) * height != water.size() || (!openWater.empty() && openWater.size() != water.size())) return std::unexpected(StatsError::InvalidRange);
 	try {
 		std::vector<uint8_t> seen(water.size(), 0);
 		std::vector<size_t> stack, cells;
@@ -108,8 +124,15 @@ std::expected<void, StatsError> addWaterShapes(
 			for (const size_t i : cells) bitmap[(i / width - y0 + 1) * bw + (i % width - x0 + 1)] = 1;
 			const size_t skeleton = area >= riverMinArea ? thin(bitmap, bw, bh) : 0;
 			if (area >= riverMinArea && skeleton >= riverMinSkeleton && uint64_t(area) * 1000 / skeleton <= riverMaxWidthMilli) {
+				bool touches = false;
+				if (!openWater.empty()) {
+					for (const size_t i : cells) {
+						const size_t x = i % width, y = i / width;
+						if (x == 0 || y == 0 || x + 1 == width || y + 1 == height || openWater[i - 1] || openWater[i + 1] || openWater[i - width] || openWater[i + width]) { touches = true; break; }
+					}
+				}
 				out.rivers.push_back({area, static_cast<uint32_t>(skeleton), static_cast<uint32_t>(std::max(x1 - x0 + 1, y1 - y0 + 1)),
-					static_cast<uint32_t>(straightCells(bitmap, bw, bh))});
+					static_cast<uint32_t>(straightCells(bitmap, bw, bh)), static_cast<uint32_t>(branchCells(bitmap, bw, bh)), touches});
 			} else {
 				out.lakeAreas.push_back(area);
 			}
@@ -175,6 +198,126 @@ RiverSummary summarizeRivers(std::span<const RiverComponent> rivers) {
 	s.tortuosityPermille = medianOf(std::move(tortuosity));
 	s.straightPermille = medianOf(std::move(straight));
 	s.widthMilli = medianOf(std::move(width));
+	return s;
+}
+
+namespace {
+
+// True where every cell of the (2r+1) square around is set; cells outside the area count as not set.
+void erodeSquare(const std::vector<uint8_t>& in, size_t width, size_t height, size_t r, std::vector<uint8_t>& out) {
+	std::vector<uint32_t> prefix(std::max(width, height) + 1);
+	std::vector<uint8_t> rows(in.size(), 0);
+	for (size_t y = 0; y < height; ++y) {
+		prefix[0] = 0;
+		for (size_t x = 0; x < width; ++x) prefix[x + 1] = prefix[x] + in[y * width + x];
+		for (size_t x = r; x + r < width; ++x) rows[y * width + x] = prefix[x + r + 1] - prefix[x - r] == 2 * r + 1;
+	}
+	out.assign(in.size(), 0);
+	for (size_t x = 0; x < width; ++x) {
+		prefix[0] = 0;
+		for (size_t y = 0; y < height; ++y) prefix[y + 1] = prefix[y] + rows[y * width + x];
+		for (size_t y = r; y + r < height; ++y) out[y * width + x] = prefix[y + r + 1] - prefix[y - r] == 2 * r + 1;
+	}
+}
+
+// True where any cell of the (2r+1) square around is set.
+void dilateSquare(const std::vector<uint8_t>& in, size_t width, size_t height, size_t r, std::vector<uint8_t>& out) {
+	std::vector<uint32_t> prefix(std::max(width, height) + 1);
+	std::vector<uint8_t> rows(in.size(), 0);
+	for (size_t y = 0; y < height; ++y) {
+		prefix[0] = 0;
+		for (size_t x = 0; x < width; ++x) prefix[x + 1] = prefix[x] + in[y * width + x];
+		for (size_t x = 0; x < width; ++x) rows[y * width + x] = prefix[std::min(width, x + r + 1)] - prefix[x > r ? x - r : 0] != 0;
+	}
+	out.assign(in.size(), 0);
+	for (size_t x = 0; x < width; ++x) {
+		prefix[0] = 0;
+		for (size_t y = 0; y < height; ++y) prefix[y + 1] = prefix[y] + rows[y * width + x];
+		for (size_t y = 0; y < height; ++y) out[y * width + x] = prefix[std::min(height, y + r + 1)] - prefix[y > r ? y - r : 0] != 0;
+	}
+}
+
+// Adds the channels of one floor (water minus open water) to `out`.
+std::expected<void, StatsError> addChannels(const std::vector<uint8_t>& water, uint32_t width, uint32_t height, ChannelShapes& out, std::stop_token stop) {
+	std::vector<uint8_t> eroded, open, channel(water.size());
+	erodeSquare(water, width, height, channelWindow / 2, eroded);
+	dilateSquare(eroded, width, height, channelWindow / 2, open);
+	for (size_t i = 0; i < channel.size(); ++i) channel[i] = water[i] && !open[i];
+	return addWaterShapes(channel, width, height, out.shapes, stop, open);
+}
+
+} // namespace
+
+void openWaterMask(std::span<const uint8_t> water, uint32_t width, uint32_t height, std::vector<uint8_t>& open) {
+	std::vector<uint8_t> eroded;
+	const std::vector<uint8_t> copy(water.begin(), water.end());
+	erodeSquare(copy, width, height, channelWindow / 2, eroded);
+	dilateSquare(eroded, width, height, channelWindow / 2, open);
+}
+
+std::expected<ChannelShapes, StatsError> extractChannelShapes(
+	const SemanticMap& map, std::span<const KeyMapEntry> keymap, int zMin, int zMax, std::stop_token stop) {
+	if (zMin > zMax) return std::unexpected(StatsError::InvalidRange);
+	try {
+		std::unordered_map<std::string_view, StyleKind> byKey;
+		for (const auto& e : keymap) byKey.emplace(e.key, e.kind);
+		const auto& names = map.groundKeys();
+		std::vector<uint8_t> isWater(names.size());
+		for (size_t i = 0; i < names.size(); ++i) {
+			const auto it = byKey.find(names[i]);
+			if (it != byKey.end()) isWater[i] = it->second == StyleKind::Water;
+			else if (i == noGroundKey) isWater[i] = 0;
+			else return std::unexpected(StatsError::KeyNotMapped);
+		}
+		ChannelShapes channels;
+		std::vector<uint8_t> mask;
+		for (const SemanticFloor& floor : map.floors()) {
+			if (floor.bounds.z < zMin || floor.bounds.z > zMax) continue;
+			mask.assign(floor.ground.size(), 0);
+			for (size_t i = 0; i < mask.size(); ++i) {
+				const bool present = floor.traits[i] & bit(Trait::Present);
+				mask[i] = present && isWater[floor.ground[i]];
+				channels.regionCells += present;
+			}
+			if (auto added = addChannels(mask, static_cast<uint32_t>(floor.bounds.width), static_cast<uint32_t>(floor.bounds.height), channels, stop); !added) {
+				return std::unexpected(added.error());
+			}
+		}
+		return channels;
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(StatsError::AllocationFailed);
+	}
+}
+
+std::expected<ChannelShapes, StatsError> channelShapesOf(const SurfaceGrid& grid, std::stop_token stop) {
+	try {
+		std::vector<uint8_t> mask(grid.cells.size());
+		for (size_t i = 0; i < mask.size(); ++i) mask[i] = grid.cells[i] == SurfaceKind::Lake || grid.cells[i] == SurfaceKind::River;
+		ChannelShapes channels;
+		channels.regionCells = mask.size();
+		if (auto added = addChannels(mask, grid.region.width, grid.region.height, channels, stop); !added) return std::unexpected(added.error());
+		return channels;
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(StatsError::AllocationFailed);
+	}
+}
+
+ChannelSummary summarizeChannels(const ChannelShapes& channels) {
+	ChannelSummary s;
+	const auto& list = channels.shapes.rivers;
+	s.count = static_cast<uint32_t>(list.size());
+	if (list.empty() || channels.regionCells == 0) return s;
+	uint64_t skeleton = 0, area = 0, branches = 0, connected = 0;
+	for (const RiverComponent& r : list) {
+		skeleton += r.skeleton;
+		area += r.area;
+		branches += r.branches;
+		connected += r.touchesOpen;
+	}
+	s.lengthPer64k = static_cast<uint32_t>(skeleton * 65536 / channels.regionCells);
+	s.widthMilli = static_cast<uint32_t>(area * 1000 / std::max<uint64_t>(skeleton, 1));
+	s.branchesPer100Milli = static_cast<uint32_t>(branches * 100 * 1000 / std::max<uint64_t>(skeleton, 1));
+	s.connectedPermille = static_cast<uint32_t>(connected * 1000 / list.size());
 	return s;
 }
 

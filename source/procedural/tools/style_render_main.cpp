@@ -47,6 +47,10 @@ int main(int argc, char** argv) {
 			for (const auto& river : shapes->rivers) skeleton += river.skeleton;
 			std::cout << std::format("seed {}: rivers {} skeleton {} T {} S {} W {} lakes {}\n", seed, r.count, skeleton, r.tortuosityPermille, r.straightPermille, r.widthMilli, shapes->lakeAreas.size());
 		}
+		if (const auto channels = channelShapesOf(*grid)) {
+			const ChannelSummary c = summarizeChannels(*channels);
+			std::cout << std::format("channels seed {}: count {} L {} W {} B {} C {}\n", seed, c.count, c.lengthPer64k, c.widthMilli, c.branchesPer100Milli, c.connectedPermille);
+		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
 	}
