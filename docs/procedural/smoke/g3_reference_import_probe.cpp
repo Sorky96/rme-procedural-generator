@@ -13,6 +13,7 @@
 #include "procedural/core/decor_context.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
+#include "procedural/core/water_shape.h"
 #include "procedural/core/style_profile.h"
 #include "procedural/core/topology.h"
 #include <wx/module.h>
@@ -263,19 +264,20 @@ void runProbe() {
                 std::vector<std::string> f;
                 std::istringstream cells(line);
                 for (std::string cell; std::getline(cells, cell, '\t');) f.push_back(cell);
-                if (f.size() != 6 && f.size() != 9) continue; // 9 columns: also tree, bush, stone doodad brushes (vegetation on)
+                if (f.size() != 6 && f.size() != 9 && f.size() != 10) continue; // 9+ columns: also tree, bush, stone doodad brushes (vegetation on); 10: and the river meander
                 GroundProfile profile;
                 profile.count = GroundProfile::surfaceCount;
                 const std::string order[] = {f[1], f[2], f[3], f[4], f[5], f[5]}; // grass, dirt, rock, shore, lake, river
                 for (size_t i = 0; i < GroundProfile::surfaceCount; ++i) profile.brushes[i] = order[i];
-                if (f.size() == 9) {
+                if (f.size() >= 9) {
                     profile.decorCount = GroundProfile::decorationCount;
                     for (size_t i = 0; i < GroundProfile::decorationCount; ++i) profile.decor[i] = f[6 + i];
                 }
                 Map paletteMap;
                 paletteMap.initializeEmpty();
                 GenerationConfig config;
-                config.vegetation = f.size() == 9;
+                config.vegetation = f.size() >= 9;
+                if (f.size() == 10) config.surface.meander = static_cast<uint32_t>(std::stoul(f[9]));
                 config.region = {1000, 1000, 7, 100, 100};
                 config.seed = 1729;
                 config.algorithm = GenerationAlgorithm::Surface;
@@ -344,6 +346,9 @@ void runProbe() {
             const auto decorContext = extractDecorContext(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(decorContext.has_value(), "Decor context failed");
             writeText("decor-context-surface.txt", serializeDecorContext(*decorContext));
+            const auto waterShapes = extractWaterShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(waterShapes.has_value(), "Water shape extraction failed");
+            writeText("water-shapes-surface.txt", serializeWaterShapes(*waterShapes));
             writeText("kind-stats-surface.txt", serializeStats(*surface));
             writeText("kind-stats-underground.txt", serializeStats(*underground));
         }

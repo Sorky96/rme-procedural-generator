@@ -94,6 +94,10 @@ void parametersAndLimits() {
 	expectError(bad, budget, SurfaceError::InvalidParameters, "rockPermille 501 accepted");
 	bad = base; bad.tuning.riverCount = 1025;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "riverCount 1025 accepted");
+	bad = base; bad.tuning.meander = 9;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "meander 9 accepted");
+	bad = base; bad.tuning.meander = 8;
+	require(bool(generateSurface(bad, extent, budget)), "meander 8 refused");
 	bad = base; bad.tuning.shoreWidth = 5;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 5 accepted");
 	bad = base; bad.tuning.dirtPermille = 1001;
@@ -257,6 +261,37 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		if (grid.cells[cell] == SurfaceKind::Shore && distance[cell] < tally.shoreAt.size()) ++tally.shoreAt[distance[cell]];
 	}
 	return tally;
+}
+
+// Rivers with a sideways swing keep every structural rule (they end at a lake or the border, start at rock, are
+// never one cell wide, tributaries stay joined) and stay deterministic; meander 0 is the original output.
+void meanderingRivers(uint32_t side, uint32_t seeds) {
+	size_t seedsWithRiver = 0, changed = 0;
+	for (const uint32_t meander : {2u, 5u, 8u}) {
+		for (uint32_t seed = 1; seed <= seeds; ++seed) {
+			auto config = makeConfig(side, seed);
+			const auto plain = generateSurface(config, extent, budget);
+			require(plain && plain->valid(), "Surface generation failed");
+			config.tuning.meander = meander;
+			const auto first = generateSurface(config, extent, budget);
+			const auto again = generateSurface(config, extent, budget);
+			require(first && first->valid() && again && first->cells == again->cells, "Meandering surface is not repeatable");
+			(void)structure(config, *first);
+			require(countOf(*first, SurfaceKind::River) > 0 || countOf(*plain, SurfaceKind::River) == 0 || meander > 0,
+				"A river disappeared");
+			if (meander == 5) {
+				seedsWithRiver += countOf(*plain, SurfaceKind::River) > 0;
+				changed += first->cells != plain->cells;
+			}
+			// Lakes and rock do not depend on the river swing.
+			require(countOf(*first, SurfaceKind::Lake) == countOf(*plain, SurfaceKind::Lake), "Meander changed the lakes");
+			auto zero = config; zero.tuning.meander = 0;
+			const auto restored = generateSurface(zero, extent, budget);
+			require(restored && restored->cells == plain->cells, "Meander 0 is not the original surface");
+		}
+	}
+	require(seedsWithRiver > 0 && changed > 0, "Meander never changed a river");
+	std::cout << "meander side=" << side << " seeds=" << seeds << " with_river=" << seedsWithRiver << " changed=" << changed << '\n';
 }
 
 void distributions(uint32_t side, uint32_t seeds) {
@@ -431,7 +466,7 @@ void decorationFailures() {
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
-		distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
+		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";

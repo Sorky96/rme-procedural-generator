@@ -74,6 +74,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			for (const auto value : {c.surface.featureSize, c.surface.lakePermille, c.surface.minLakeCells, c.surface.riverCount,
 				c.surface.minRiverLength, c.surface.shoreWidth, c.surface.rockPermille, c.surface.minRockCells,
 				c.surface.dirtPermille, c.surface.transitionWidth}) hashField(hash, value, 4);
+			// Appended only when set, so plans with the original river routes keep their fingerprint.
+			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
 			// Appended only when it differs from the built-in rules, so other plans keep their original fingerprint.
 			if (c.vegetation && !(c.decor == DecorTuning {})) {
 				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,

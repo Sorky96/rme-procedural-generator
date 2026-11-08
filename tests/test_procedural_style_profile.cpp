@@ -60,7 +60,7 @@ StyleProfile sample() {
 	t.adjacencyPpm[0][0] = 500000;
 	t.adjacencyPpm[0][4] = t.adjacencyPpm[4][0] = 30000;
 	p.target = t;
-	p.tuning = SurfaceTuning {20, 70, 12, 2, 20, 3, 90, 8, 250, 5000};
+	p.tuning = SurfaceTuning {20, 70, 12, 2, 20, 3, 90, 8, 250, 5000, 4};
 	DecorContext d;
 	for (size_t i = 0; i < d.cell.size(); ++i) d.cell[i] = {1000000, i + 1, i + 2, i + 3};
 	p.decorTarget = d;
@@ -80,9 +80,9 @@ void testSerialization() {
 	const auto back = parseProfile(*text);
 	check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
 	check(back && serializeProfile(*back).value() == *text, "serialization is stable");
-	check(text->starts_with("g4-profile/5\n"), "schema line first");
+	check(text->starts_with("g4-profile/6\n"), "schema line first");
 
-	check(parseProfile("g4-profile/6\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
+	check(parseProfile("g4-profile/7\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");
 	check(parseProfile(text->substr(0, text->find("stat\t"))).error() == ProfileError::BadFormat, "missing statistics refused");
 	std::string unknownKind = *text;
@@ -116,7 +116,7 @@ void testKeyMapText() {
 void testTargetAndTuning() {
 	StyleProfile p = sample();
 	const auto text = serializeProfile(p);
-	check(text && text->find("target\tshares\t600000") != std::string::npos && text->find("tuning\t20\t70") != std::string::npos, "target and tuning written");
+	check(text && text->find("target\tshares\t600000") != std::string::npos && text->find("tuning\t20\t70") != std::string::npos && text->find("\t5000\t4\n") != std::string::npos, "target and tuning written, meander last");
 	const auto back = parseProfile(text.value_or(""));
 	check(back && back->target == p.target && back->tuning == p.tuning, "target and tuning round trip");
 	check(text && text->find("decor\ttuning\t1500\t20\t150\t90\t40\t110") != std::string::npos && text->find("decor\tcell\t7\t1000000") != std::string::npos, "decor sections written");
@@ -138,7 +138,8 @@ void testTargetAndTuning() {
 	std::string cut = *text;
 	cut.erase(cut.find("target\tadjacency\tDirt"), cut.find("target\tadjacency\tRock") - cut.find("target\tadjacency\tDirt"));
 	check(parseProfile(cut).error() == ProfileError::BadFormat, "target with a missing adjacency row refused");
-	check(parseProfile(*text + "tuning\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\n").error() == ProfileError::BadFormat, "second tuning line refused");
+	check(parseProfile(*text + "tuning\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\t11\n").error() == ProfileError::BadFormat, "second tuning line refused");
+	check(parseProfile(text->substr(0, text->find("tuning\t20")) + "tuning\t20\t70\t12\t2\t20\t3\t90\t8\t250\t5000\n").error() == ProfileError::BadFormat, "a tuning line without meander (the old 10 values) refused");
 	std::string overflow = *text;
 	overflow.replace(overflow.find("600000"), 6, "4294967296");
 	check(parseProfile(overflow).error() == ProfileError::BadFormat, "share beyond 32 bits refused");

@@ -231,7 +231,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		const SurfaceTuning& t = *p.tuning;
 		out += "tuning";
 		for (const uint32_t v : {t.featureSize, t.lakePermille, t.minLakeCells, t.riverCount, t.minRiverLength, t.shoreWidth,
-			t.rockPermille, t.minRockCells, t.dirtPermille, t.transitionWidth}) out += '\t' + std::to_string(v);
+			t.rockPermille, t.minRockCells, t.dirtPermille, t.transitionWidth, t.meander}) out += '\t' + std::to_string(v);
 		out += '\n';
 	}
 	return out;
@@ -337,10 +337,10 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
 			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
 		}
-		else if (type == "tuning" && f.size() == 11 && !p.tuning) {
-			uint32_t v[10];
-			for (size_t i = 0; i < 10; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
-			p.tuning = SurfaceTuning {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9]};
+		else if (type == "tuning" && f.size() == 12 && !p.tuning) {
+			uint32_t v[11];
+			for (size_t i = 0; i < 11; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
+			p.tuning = SurfaceTuning {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]};
 		}
 		else return std::unexpected(ProfileError::BadFormat);
 	}

@@ -39,6 +39,7 @@ struct SurfaceTuning {
 	uint32_t minRockCells = 8;        // smaller 4-connected rock patches become land
 	uint32_t dirtPermille = 300;      // share of driest cells that are dirt, 0..1000
 	uint32_t transitionWidth = 6000;  // half width of the grass/dirt dithered band, 0..32768
+	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
 	bool operator==(const SurfaceTuning&) const = default;
 };
 

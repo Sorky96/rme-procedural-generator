@@ -145,7 +145,7 @@ using StyleDecorPalette = std::array<std::string, 3>;
 [[nodiscard]] StyleDecorPalette chooseDecorPalette(std::span<const KeyTiles> items,
 	uint64_t minItems = 100, uint32_t minSharePercent = 25, const std::set<std::string>* usable = nullptr);
 
-inline constexpr std::string_view profileSchema = "g4-profile/5";
+inline constexpr std::string_view profileSchema = "g4-profile/6";
 
 struct StyleProfile {
 	std::string client;

@@ -17,6 +17,9 @@ constexpr uint64_t moistureStream = 0x6d6f69737475725fULL; // "moistur_"
 constexpr uint64_t ditherStream = 0x6469746865725f32ULL;   // "dither_2"
 constexpr uint64_t riverStream = 0x72697665725f7332ULL;    // "river_s2"
 constexpr uint64_t shoreStream = 0x73686f72655f7332ULL;    // "shore_s2"
+constexpr uint64_t meanderStream = 0x6d65616e6465725fULL;  // "meander_"
+constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
+constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
 constexpr uint32_t noiseBins = 65536;
 constexpr int64_t fixedOne = 4096;
@@ -213,7 +216,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
 		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 4 ||
-		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768) {
+		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
 	// Region, mask and budget rules are shared with v1 through a unit-weight config.
@@ -341,9 +344,22 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			constexpr size_t smoothing = 4;
 			std::fill(river.begin(), river.end(), 0);
 			size_t begin = 0;
+			uint32_t routeNumber = 0;
+			std::vector<uint32_t> junctionDistance;
 			for (const size_t end : routeEnds) {
 				if (stop.stop_requested()) return cancelled();
 				const size_t length = end - begin;
+				const uint32_t routeId = routeNumber++;
+				if (config.tuning.meander) {
+					// Steps to the nearest junction cell on this route, so a tributary still meets its river.
+					junctionDistance.assign(length, UINT32_MAX / 2);
+					for (size_t k = 0; k < length; ++k) {
+						if (junction[routeCells[begin + k]]) junctionDistance[k] = 0;
+						else if (k > 0) junctionDistance[k] = std::min(junctionDistance[k], junctionDistance[k - 1] + 1);
+					}
+					for (size_t k = length; k-- > 1;) junctionDistance[k - 1] = std::min(junctionDistance[k - 1], junctionDistance[k] + 1);
+				}
+				int64_t previousX = 0, previousY = 0;
 				for (size_t k = 0; k < length; ++k) {
 					const uint32_t own = routeCells[begin + k];
 					const size_t half = junction[own] ? 0 : std::min({ smoothing, k, length - 1 - k });
@@ -354,20 +370,89 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 						sumY += routeCell / width;
 					}
 					const int64_t points = int64_t(2 * half + 1);
-					const int64_t centreX = sumX * unit / points, centreY = sumY * unit / points;
+					int64_t centreX = sumX * unit / points, centreY = sumY * unit / points;
+					if (config.tuning.meander) {
+						// Sideways swing: smooth random value along the route (lattice every wave steps,
+						// smoothstep between), pushed along the normal of the local direction, zero at both ends
+						// and near junctions. Integer math only.
+						const size_t lattice = k / meanderWave;
+						const int64_t t = int64_t(k % meanderWave) * 1024 / int64_t(meanderWave);
+						const int64_t smooth = t * t * (3 * 1024 - 2 * t) >> 20;
+						const int64_t v0 = int64_t(surfaceLattice(config.seed, meanderStream, routeId, uint32_t(lattice))) - 32768;
+						const int64_t v1 = int64_t(surfaceLattice(config.seed, meanderStream, routeId, uint32_t(lattice + 1))) - 32768;
+						int64_t swing = (v0 * (1024 - smooth) + v1 * smooth) / 1024;     // -32768..32767
+						swing = swing * int64_t(config.tuning.meander) * unit / 32768;   // 1/16 cell
+						const size_t grow = std::min({ meanderRamp, k, length - 1 - k, size_t(junctionDistance[k]) });
+						swing = swing * int64_t(grow) / int64_t(meanderRamp);
+						const size_t k0 = k >= 4 ? k - 4 : 0, k1 = std::min(length - 1, k + 4);
+						const int64_t dx = int64_t(routeCells[begin + k1] % width) - int64_t(routeCells[begin + k0] % width);
+						const int64_t dy = int64_t(routeCells[begin + k1] / width) - int64_t(routeCells[begin + k0] / width);
+						int64_t norm = 0;
+						while ((norm + 1) * (norm + 1) <= dx * dx + dy * dy) ++norm; // integer square root
+						if (norm > 0) {
+							centreX += -dy * swing / norm;
+							centreY += dx * swing / norm;
+						}
+						centreX = std::clamp<int64_t>(centreX, 0, int64_t(width - 1) * unit);
+						centreY = std::clamp<int64_t>(centreY, 0, int64_t(height - 1) * unit);
+					}
 					const int64_t size = int64_t(run[own]) + 15 * (int64_t(flow[own]) - 1);
 					const int64_t radius = unit + std::min<int64_t>(size * unit / 60, unit);
-					const auto firstCell = [&](int64_t centre) { return centre - radius <= 0 ? int64_t(0) : (centre - radius + unit - 1) / unit; };
-					const int64_t xMax = std::min<int64_t>(width - 1, (centreX + radius) / unit);
-					const int64_t yMax = std::min<int64_t>(height - 1, (centreY + radius) / unit);
-					for (int64_t y = firstCell(centreY); y <= yMax; ++y) {
-						for (int64_t x = firstCell(centreX); x <= xMax; ++x) {
-							const size_t target = size_t(y) * width + size_t(x);
-							if (!lake[target]) river[target] = 1;
+					const auto stampAt = [&](int64_t cx, int64_t cy) {
+						const auto firstCell = [&](int64_t centre) { return centre - radius <= 0 ? int64_t(0) : (centre - radius + unit - 1) / unit; };
+						const int64_t xMax = std::min<int64_t>(width - 1, (cx + radius) / unit);
+						const int64_t yMax = std::min<int64_t>(height - 1, (cy + radius) / unit);
+						for (int64_t y = firstCell(cy); y <= yMax; ++y) {
+							for (int64_t x = firstCell(cx); x <= xMax; ++x) {
+								const size_t target = size_t(y) * width + size_t(x);
+								if (!lake[target]) river[target] = 1;
+							}
+						}
+					};
+					if (config.tuning.meander && k > 0) {
+						// A swung line moves sideways as well as along the route; stamp between the two centres at
+						// most half a cell apart so a steep swing cannot leave a gap.
+						const int64_t reach = std::max(std::llabs(centreX - previousX), std::llabs(centreY - previousY));
+						const int64_t between = reach / (unit / 2);
+						for (int64_t step = 1; step < between + 1; ++step) {
+							stampAt(previousX + (centreX - previousX) * step / (between + 1), previousY + (centreY - previousY) * step / (between + 1));
 						}
 					}
+					stampAt(centreX, centreY);
+					previousX = centreX;
+					previousY = centreY;
 				}
 				begin = end;
+			}
+			if (config.tuning.meander) {
+				// A swung line can cross a lake or, rarely, break. Every river body must still reach a lake or the
+				// rectangle border and touch rock (where it springs); a body that does not is dropped.
+				std::vector<uint8_t> visited(count, 0);
+				std::vector<size_t> body, pending;
+				for (size_t first = 0; first < count; ++first) {
+					if (!river[first] || visited[first]) continue;
+					if (stop.stop_requested()) return cancelled();
+					body.clear();
+					pending.assign(1, first);
+					visited[first] = 1;
+					bool reachesWater = false, touchesRock = false;
+					while (!pending.empty()) {
+						const size_t cell = pending.back();
+						pending.pop_back();
+						body.push_back(cell);
+						const uint32_t x = uint32_t(cell % width), y = uint32_t(cell / width);
+						reachesWater |= x == 0 || y == 0 || x + 1 == width || y + 1 == height;
+						forNeighbours(cell, width, height, [&](size_t next) {
+							if (river[next]) {
+								if (!visited[next]) { visited[next] = 1; pending.push_back(next); }
+							} else {
+								reachesWater |= lake[next] != 0;
+								touchesRock |= rock[next] != 0;
+							}
+						});
+					}
+					if (!reachesWater || !touchesRock) for (const size_t cell : body) river[cell] = 0;
+				}
 			}
 		}
 

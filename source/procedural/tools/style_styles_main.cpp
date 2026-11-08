@@ -6,7 +6,7 @@
 //   C  which style target each style profile is closest to (distinguishability)
 //
 // Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
-//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE] [--usable-doodads FILE]]
+//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE] [--usable-doodads FILE] [--meander N]]
 // With --profiles-out each style profile is also written as <style>.profile (g4-profile/4) for the generator dialog.
 
 #include "procedural/core/decor_context.h"
@@ -130,6 +130,7 @@ std::string tuningJson(const SurfaceTuning& t, const DecorTuning& d) {
 int main(int argc, char** argv) {
 	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath, usableBrushesPath, usableDoodadsPath;
 	std::string client, otbSha, datSha;
+	uint32_t meander = 0;
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string key = argv[i];
 		const char* value = argv[i + 1];
@@ -141,6 +142,7 @@ int main(int argc, char** argv) {
 		else if (key == "--keymap") keymapPath = value;
 		else if (key == "--usable-brushes") usableBrushesPath = value;
 		else if (key == "--usable-doodads") usableDoodadsPath = value;
+		else if (key == "--meander") meander = static_cast<uint32_t>(std::strtoul(value, nullptr, 10));
 		else if (key == "--client") client = value;
 		else if (key == "--otb-sha") otbSha = value;
 		else if (key == "--dat-sha") datSha = value;
@@ -383,6 +385,7 @@ int main(int argc, char** argv) {
 			}
 			profile.target = st->target->target;
 			profile.tuning = st->profile.surface;
+			profile.tuning->meander = meander; // river swing fitted on the reference rivers (water_eval); the report above is without it
 			profile.decorTarget = st->decorTarget;
 			profile.decorTuning = st->profile.decor;
 			// Brushes and doodads the style used, from every style map of the family (the thresholds guard small samples).
