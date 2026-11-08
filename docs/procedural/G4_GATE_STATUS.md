@@ -199,3 +199,5 @@ Definicje, wynik 8a i zmiana modelu zapisane przed pomiarem ([G4_METRICS.md](G4_
 **Skutki uboczne 8b (kontrola, nie kryterium).** Udziały rodzajów w granicach ±5 punktów procentowych wobec v10 (m06 Grass 390 ‰, Dirt 173 ‰, Shore 45 ‰; m19 Grass 277 ‰, Dirt 127 ‰, Shore 45 ‰), P′ 5 549 / 5 530 (nadal w paśmie), E4/E16/E64 przy boku 512: m06 604 / 448 / 224 (ref 471 / 394 / 233), m19 647 / 496 / 236 (ref 578 / 425 / 197). Zmiana szumu dotyczy profili z `featureSize` > 24 (m06, m19, winter); dla ≤ 24 wynik bajt w bajt jak dotąd (przypięty odcisk Seed 1729 bez zmian, test PASS).
 
 **Zastrzeżenia.** Dwie referencje; skała M06 to tylko ok. 5 % powierzchni; nie sprawdzono niezmiennika rzek ani regresji G1 po zmianie szumu (rzeki zależą od wysokości, więc wpływ jest możliwy); wygląd oceni użytkownik w GUI. Pozostała luka (granica skały) wymagałaby drobnoziarnistego zaburzenia progu skały, niezapisanego jeszcze.
+
+**Ocena użytkownika (2026-11-08, GUI, m19 500×500 po iteracji 8b):** „wygląda ok” (brzegi, skała i plaża po dodaniu oktaw szumu); ocena subiektywna, nie zmienia wyniku metryk (kryterium iteracji 8 nadal niespełnione).

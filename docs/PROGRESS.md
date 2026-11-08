@@ -2,7 +2,7 @@
 
 ## 2026-11-08 — G4: masywy skalne (iteracja 8) — PARTIAL
 
-Metryki skały (RB, RF, RS) zapisane z góry. Skała generatora jest gładsza i bardziej zlana niż w referencjach (RB 33–49 vs 121–333). Przyczyna: podniesienie `featureSize` do 192 usunęło drobny szczegół szumu (3 oktawy). Zmiana: dodatkowe oktawy szumu wysokości przy `featureSize` > 24 (dla ≤ 24 bajt w bajt jak dotąd): RB 33→47 (m19) i 49→77 (m06), kryterium **nie spełnione**; skutki uboczne w granicach (P′, udziały, E_d). `rme.exe` przebudowany. Nie sprawdzono: niezmiennika rzek i regresji G1 po zmianie szumu, wyglądu. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+Metryki skały (RB, RF, RS) zapisane z góry. Skała generatora jest gładsza i bardziej zlana niż w referencjach (RB 33–49 vs 121–333). Przyczyna: podniesienie `featureSize` do 192 usunęło drobny szczegół szumu (3 oktawy). Zmiana: dodatkowe oktawy szumu wysokości przy `featureSize` > 24 (dla ≤ 24 bajt w bajt jak dotąd): RB 33→47 (m19) i 49→77 (m06), kryterium **nie spełnione**; skutki uboczne w granicach (P′, udziały, E_d). `rme.exe` przebudowany. Użytkownik obejrzał m19 w GUI: „wygląda ok” (ocena subiektywna). Nie sprawdzono: niezmiennika rzek i regresji G1 po zmianie szumu, m06 i winter w GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
 
 ## 2026-11-08 — G4: szersza plaża (iteracja 7c) — PARTIAL
 
