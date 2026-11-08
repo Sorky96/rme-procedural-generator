@@ -3,7 +3,7 @@
 **PARTIAL.** Przyczyna D13 znaleziona i usunięta opcją normalizatora. Pokrycie wzrosło z 5 do 9 użytecznych map na powierzchni. Nowe przypisania (96 kluczy `item …`) są **propozycją czekającą na Twoją akceptację**; wyniki poniżej liczono na tej propozycji.
 
 ## Przyczyna
-Klucz gruntu w mapie semantycznej to nazwa brusha, który posiada ground item (`getGroundBrush()`). W `data/` 10.98 wiele prawdziwych gruntów nie należy do żadnego brusha: warianty `earth` (id 8133, 10164: 156 k kafli w M06), `mountain`, `sand`, `gray sand`, `swamp`, `lava`, `flowing water`, a w mapach jaskiń „ścienne” grunty (`stone wall`, `dirt wall`, `sandstone`). Wszystkie dostawały klucz pusty („bez gruntu”). Zmierzono: 650 różnych item id, 788 876 kafli (z 14 mln) w 19 mapach, 88 % w M06 i M19.
+Klucz gruntu w mapie semantycznej to nazwa brusha, który posiada ground item (`getGroundBrush()`). W `data/` 10.98 wiele prawdziwych gruntów nie należy do żadnego brusha: warianty `earth` (id 8133 i 10164: razem 156 k kafli, każdy id w jednej mapie), `mountain`, `sand`, `gray sand`, `swamp`, `lava`, `flowing water`, a w mapach jaskiń „ścienne” grunty (`stone wall`, `dirt wall`, `sandstone`). Wszystkie dostawały klucz pusty („bez gruntu”). Zmierzono: 650 różnych item id, 788 876 kafli (z 14 mln) w 19 mapach, 88 % w M06 i M19.
 
 ## Naprawa
 - `normalizeReference` ma opcję `NormalizeOptions::nameUnbrushedGrounds` (domyślnie wyłączona): ground bez brusha dostaje klucz `item <nazwa z definicji klienta>`. Nic nie jest zgadywane po id; nazwa pochodzi z załadowanego klienta. Podsumowanie importu zawiera też `groundWithoutBrush` (id, liczba, nazwa, client id, blokowanie); sonda zapisuje je jako `ground-without-brush.csv` (agregaty, bez współrzędnych).
