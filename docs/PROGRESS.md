@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: struktury w dużej skali (iteracja 6) — PARTIAL
+
+Rdzeń `scale_stats` (zgodność rodzajów na odległościach 4/16/64, nadmiar nad losowym układem; test PASS) i kryteria zapisane z góry (`5aa85a0`). Generator miał prawie zerowy nadmiar na odległości 16 i 64 (referencje ok. 400 i 200–230). Zmiana `featureSize` na 192 zamyka E4 i E16, ale E64 przy boku 256 zostaje poniżej pasma: **kryterium 6b nie spełnione**; eksploracyjnie przy boku 512 wszystkie trzy mieszczą się w pasmach (okno 256 ucina lag 64). Profile `g4-profiles/10.98-v8` (m06, m19 z featureSize 192, ręczna zmiana pliku) do oceny wizualnej w GUI. Nie sprawdzono: P1 i niezmiennika rzek dla featureSize 192, wyglądu, zależności od wielkości obszaru. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: porównanie z referencjami i metryka kanałów wodnych (5a) — PARTIAL
 
 Narzędzie `style_render` i eksport map rodzajów z sondy pozwoliły obejrzeć generator obok M06 i M19 ([G4_COMPARE.md](procedural/G4_COMPARE.md)): główna różnica to brak struktur w dużej skali (kontynenty/morze), plam ziemi w trawie i szerokich plaż. Pierwsze wrażenie o rzekach okazało się błędne po pomiarze, a metryka iteracji 4 omijała sieci rzeczne połączone z morzem. Nowa metryka kanałów (otwarcie 13×13, L/W/B/C, zapisana z góry w `f0e04bc`): m06 2 z 4 cech w paśmie (za szeroko), m19 3 z 4 (za długo, 832 vs 302). Dopływy nie są główną luką; 5b (zmiana generatora rzek) nie wykonana. Testy rdzenia PASS. Nie sprawdzono: wyglądu, dużych struktur, M08/M10. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

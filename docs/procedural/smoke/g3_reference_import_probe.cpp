@@ -12,6 +12,7 @@
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/core/decor_context.h"
 #include "procedural/core/png_writer.h"
+#include "procedural/core/scale_stats.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
 #include "procedural/core/water_shape.h"
@@ -351,6 +352,12 @@ void runProbe() {
             const auto waterShapes = extractWaterShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(waterShapes.has_value(), "Water shape extraction failed");
             writeText("water-shapes-surface.txt", serializeWaterShapes(*waterShapes));
+            {
+                const auto lags = lagStatsOf(normalized->map, *keymap, 0, 7, stopSource.get_token());
+                check(lags.has_value(), "Lag statistics failed");
+                const auto excess = lagExcessPermille(*lags);
+                writeText("scale-surface.txt", std::format("excess_4\t{}\nexcess_16\t{}\nexcess_64\t{}\npairs_64\t{}\n", excess[0], excess[1], excess[2], lags->pairs[2]));
+            }
             const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(channels.has_value(), "Channel extraction failed");
             {

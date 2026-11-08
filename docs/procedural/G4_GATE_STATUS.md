@@ -137,3 +137,20 @@ Definicje i kryterium zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), �
 **Wniosek (opis stanu, nie bramka).** Ilość i rozgałęzienie kanałów w generatorze są w tym samym rzędzie wielkości co w referencjach; wyjątki to zbyt szerokie kanały w m06 (4,7 vs 2,9 kafla) i 2,7 razy za dużo długości kanałów w m19. Pomiar nie wskazuje braku dopływów jako głównej różnicy między generatorem a referencjami; wcześniejsze wrażenie z oglądu (rzeki bez sieci) brało się z wycinka wybranego pod kątem największej ilości lądu oraz ze wspólnej skali szumu, której ta metryka nie opisuje.
 
 **Zastrzeżenia.** Dopasowanie in-sample (profil z tej samej mapy). Dwie referencje z rzekami, dwie ocenione. Kanał to przybliżenie (otwarcie 13×13, kwadrat sprzyja osiom; wchodzą też wąskie zatoki i ramiona jezior). Nie oceniano wyglądu, struktur w dużej skali ani rzek w M08/M10. 5b (zmiana generatora) nie została wykonana, bo 5a nie wykazała wyraźnej luki w dopływach.
+
+## Iteracja 6 — struktury w dużej skali (2026-11-08): kryterium NIE spełnione w zapisanym układzie
+
+Definicje i kryterium zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 6”, commit `5aa85a0`); rdzeń `scale_stats` z testem (PASS, wartości policzone ręcznie). Referencje (nadmiar zgodności E_d nad losowym układem, ‰): M06 E4 471, E16 394, E64 233; M19 E4 578, E16 425, E64 197. Seedy 1001–1032, bok 256, dwa przebiegi bajtowo identyczne.
+
+| Wariant | Profil | E4 | E16 | E64 | E16 i E64 w paśmie |
+| --- | --- | --- | --- | --- | --- |
+| 6a (profil v7: featureSize 24 / 12) | m06 | 454 | 147 | −12 | **0 z 2** |
+| | m19 | 310 | 16 | −1 | **0 z 2** |
+| 6b (featureSize dopasowany z siatki do 256 → 192 na seedach 1–6) | m06 | 571 | 399 (w paśmie) | 121 (pasmo 156–350: **poza**) | **1 z 2** |
+| | m19 | 606 | 399 (w paśmie) | 102 (pasmo 132–296: **poza**) | **1 z 2** |
+
+**Wniosek.** 6a pokazało lukę ilościowo: generator ma praktycznie zerową zgodność na odległości 16 i 64 ponad przypadek (referencje ok. 400 i 200–230). Zmiana samego `featureSize` na 192 zamyka lukę dla E4 i E16, ale E64 zostaje poniżej pasma w obu profilach, więc **kryterium 6b nie jest spełnione**.
+
+**Dodatkowa obserwacja (nie była zapisana z góry, jawnie eksploracyjna: bok 512, 8 seedów, bez oceny).** Przy boku 512 featureSize 192 daje E4/E16/E64 = 614/496/261 (m06) i 638/477/247 (m19), czyli wszystkie mieszczą się w pasmach. Zatem niedobór E64 przy boku 256 wynika w dużej części z ucinania odległości 64 przez okno 256 (zastrzeżenie zapisane z góry), a E_d zależy od wielkości obszaru. Wartość 192 nie jest więc ostatecznym wynikiem: dopasowanie zależy od wybranego boku, a w GUI użytkownik wybiera dowolny obszar.
+
+**Zastrzeżenia.** Dopasowanie in-sample na dwóch referencjach; metryka nie odróżnia jednego dużego lądu od wielu dużych płatów; nie sprawdzono P1 (spójność chodzenia) ani niezmiennika rzek dla featureSize 192 (warunki dodatkowe 6b), więc 6b jest niepełne także z tego powodu. Wygląd oceni użytkownik w GUI na profilach `10.98-v8` (tylko m06 i m19 mają featureSize 192; to ręczna zmiana pliku profilu, nie wynik `style_styles`).

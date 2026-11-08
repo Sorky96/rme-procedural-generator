@@ -2,9 +2,10 @@
 // style_render: draws the generator's surface for one style profile as a PNG, one pixel per tile, coloured by kind
 // like the reference kind maps of the probe (kind-map-zNN.png). For a side-by-side look; nothing here is a measurement.
 //
-//   style_render PROFILE OUT_DIR SIDE SEED [SEED...]    writes OUT_DIR/<seed>.png
+//   style_render PROFILE OUT_DIR SIDE [feature=N] SEED [SEED...]    writes OUT_DIR/<seed>.png
 
 #include "procedural/core/png_writer.h"
+#include "procedural/core/scale_stats.h"
 #include "procedural/core/style_profile.h"
 #include "procedural/core/surface.h"
 #include "procedural/core/water_shape.h"
@@ -16,6 +17,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <string_view>
 
 using namespace rme::procedural;
 namespace fs = std::filesystem;
@@ -32,9 +34,15 @@ int main(int argc, char** argv) {
 	constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {40, 90, 200}};
 	const uint64_t cells = uint64_t(side) * side;
 	const SurfaceBudget budget {cells, cells * 8, cells * 64 + (1u << 20)};
-	for (int i = 4; i < argc; ++i) {
+	SurfaceTuning tuning = *profile->tuning;
+	int firstSeed = 4;
+	if (std::string_view(argv[4]).starts_with("feature=")) { // sweep helper: override featureSize
+		tuning.featureSize = static_cast<uint32_t>(std::strtoul(argv[4] + 8, nullptr, 10));
+		firstSeed = 5;
+	}
+	for (int i = firstSeed; i < argc; ++i) {
 		const uint64_t seed = std::strtoull(argv[i], nullptr, 10);
-		const SurfaceConfig config {{100, 100, 7, side, side}, seed, *profile->tuning};
+		const SurfaceConfig config {{100, 100, 7, side, side}, seed, tuning};
 		const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, budget);
 		if (!grid) { std::cerr << "generation failed for seed " << seed << '\n'; return 4; }
 		std::vector<uint8_t> pixels(grid->cells.size());
@@ -50,6 +58,10 @@ int main(int argc, char** argv) {
 		if (const auto channels = channelShapesOf(*grid)) {
 			const ChannelSummary c = summarizeChannels(*channels);
 			std::cout << std::format("channels seed {}: count {} L {} W {} B {} C {}\n", seed, c.count, c.lengthPer64k, c.widthMilli, c.branchesPer100Milli, c.connectedPermille);
+		}
+		{
+			const auto excess = lagExcessPermille(lagStatsOf(*grid));
+			std::cout << std::format("scale seed {}: E4 {} E16 {} E64 {}\n", seed, excess[0], excess[1], excess[2]);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
