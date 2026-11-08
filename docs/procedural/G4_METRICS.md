@@ -162,3 +162,21 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 7b nasyciło siatki i P′ doszło tylko do ok. 2 315 (cel ok. 5 640, pasmo 3 777–8 457). Zamiast nowego parametru (zmiana schematu profilu) zmieniam regułę pierścieni dla wszystkich plaż: próg szumu pierścienia = min(5 + 10 · pierścień, 40) % (było min(5 + 30 · pierścień, 80) %), wymagany rozmiar jeziora = min(30 · 3^(pierścień−1), 90) komórek (było do 270). Pierścień 0 bez zmian. Konsekwencja: wyniki dla `shoreWidth` ≥ 1 zmieniają się (pierścień 1: próg 15 % zamiast 35 %), a profile dopasowane wcześniej mają szerszą plażę bez zmiany pliku.
 
 **Wybór `shoreWidth` per profil** (bez zmiany reszty strojenia): wartość z {0..8}, dla której mediana P′ po seedach 1–4 (bok 512, profil v8) jest najbliższa referencji (M06 5 638, M19 5 656); ocena na seedach 1001–1032. Kryterium: P′ w paśmie [0,67·ref; 1,5·ref] w obu profilach. Warunki dodatkowe: udziały rodzajów (mediana) nie różnią się od bazowych 7a o więcej niż 5 punktów procentowych (Shore oczywiście rośnie, więc dla niego próg to 10 punktów, bo to cel zmiany), niezmiennik rzek 100 % seedów. `transitionWidth` pozostaje, jak w v8 (nie zmieniam ziemi w tym kroku).
+
+## Iteracja 8 — masywy skalne (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Użytkownik wybrał punkt „Góry i skała” z listy dalszych cech D9 ([PROJECT_RME_PROCEDURAL_GENERATOR.md](../PROJECT_RME_PROCEDURAL_GENERATOR.md), FAZA 4). Zakres: kształt masywów skalnych na powierzchni (z ≤ 7). Wielopiętrowe ściany do plateau pozostają w FAZIE 5.
+
+**Definicje (stałe, z góry).** Rodzaje jak w iteracji 6 (komórki naturalne; Rock = rodzaj Rock). Komórki Rock w 4-spójnych składowych.
+- **RB — gęstość granicy skały**: 1000 · (liczba par 4-sąsiednich Rock–(inny rodzaj naturalny)) / (liczba komórek Rock). Mniejsze = zwarta, gładka skała.
+- **RF — zwartość masywów**: ‰ komórek Rock leżących w składowych o polu ≥ 500.
+- **RS — pył skalny**: ‰ komórek Rock leżących w składowych o polu < 20.
+- Cecha N/A, gdy komórek Rock < 1000. Referencja = wartość zbiorcza mapy (piętra 0..7); generator = mediana po seedach.
+
+**Pomiar bazowy (8a).** Profile m06 i m19 w wersji v10, seedy 1001–1032, bok 512; referencje M06 i M19 (in-sample, m06→M06, m19→M19).
+
+**Kryterium (8a i 8b).** Każda nie-N/A cecha *w paśmie* [0,67·ref; 1,5·ref]; profil „zaliczony”, jeśli wszystkie nie-N/A cechy są w paśmie. Pasmo dla cechy o referencji bliskiej 0 (np. RS poniżej 20 ‰) zastępuję progiem bezwzględnym: wartość generatora ≤ ref + 20 ‰. Warunki dodatkowe dla 8b: udziały rodzajów (mediana) wobec 8a ±5 punktów procentowych; niezmiennik rzek w 100 % seedów; testy rdzenia PASS.
+
+**Zmiana modelu (8b, tylko jeśli 8a pokaże lukę).** Dopasowanie z siatek: `rockPermille` zostaje (udział z profilu), `minRockCells` {8, 24, 64, 160}; ewentualnie wygładzanie granicy skały (nowa reguła zapisana osobno przed wykonaniem, jeśli sama zmiana `minRockCells` nie wystarczy). Dopasowanie na seedach 1–4 bok 512, ocena na 1001–1032.
+
+**Zastrzeżenia z góry.** Dwie referencje; M06 ma mało skały (ok. 5 %), więc RB/RF/RS dla niej mogą być niepewne; skała w referencjach obejmuje „mountain”, „rocky ground” i pokrewne brushe wg mapowania, bez ścian i wielopiętrowych struktur; metryki kształtu, nie ocena wizualna (należy do użytkownika).
