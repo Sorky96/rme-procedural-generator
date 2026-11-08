@@ -16,6 +16,14 @@
 - Te same funkcje, które wywołuje okno (`loadedClientAssetIds`, `scanStyleProfiles`), uruchomione w próbniku z prawdziwie załadowanym klientem 10.98: hashe `items.otb` i `Tibia.dat` zgodne z hashami profili, **8 z 8 profili oferowanych**, 0 ukrytych (`g4-offer-20261108a`).
 - Raporty G3 nie zmieniane tą zmianą.
 
+## Paleta brushy w profilu (schemat `g4-profile/4`, po uwadze z testu ręcznego)
+Pierwszy test w RME pokazał, że profile różnią się tylko rozkładem rodzajów gruntu, a wyglądem prawie wcale (winter i swamp podobne, caves to jeden grunt). Profil niesie teraz także **paletę**: dla każdego z pięciu rodzajów brush, którego dany styl używał najczęściej na powierzchni. Wybór profilu w oknie wpisuje te brushe w pola brushy (pola nadal można zmienić); brush, którego klient nie ma, jest pominięty i wymieniony w statusie, niczego się nie zgaduje.
+- Zasady wyboru, zapisane z góry: brush z kluczem bez prefiksu `item ` (czyli prawdziwy brush, nie ground item bez brusha), co najmniej 200 kafli, co najmniej 25 % kafli tego rodzaju w stylu; inaczej brak wpisu (pole brusha zostaje bez zmian). Dane: kafle na klucz dla z ≤ 7 z map niosących cel stylu.
+- Wynik dla 10.98: `m06` (trawa, `jungle dirt`, `mountain top ground`, `sand`, `sea`), `m19` (`grass`, `dirt`, `mountain`, `sand`, `sea`), `m05` (`grass`, `mountain`), `winter` (`snowy mountain`, `sea`), `caves` (`earth`); **`swamp`, `m01`, `m15` bez palety**: ich grunty to prawie wyłącznie ground items bez brusha (D13), więc nie da się ich wyrazić brushami. Różnica widoczna po wyborze profilu jest więc skromna: wyraźna dla zimy (`snowy mountain`), mała dla reszty, żadna dla bagna.
+- Zmiana schematu na v4 unieważnia pliki v3 (okno ukryje je jako „unusable”); trzeba skopiować nowe.
+- Palety nie zmieniają statystyk, dopasowania ani wyników iteracji G4-F (raport `style_styles` bajtowo identyczny).
+- Testy: `test_procedural_style_profile` (wybór palety, remisy, kolejność, próg udziału i kafli, zapis i odczyt) PASS; oferta v4 w próbniku 8 z 8.
+
 ## Czego NIE sprawdzono
 - Samego okna (układ, kolejność tabulacji, mnemoniki, tooltip, zachowanie przy braku folderu), pełnej ścieżki Preview → Validate → Place → Undo/Redo z profilem, ani oferty dla klienta BlackTek (pokryta tylko testem jednostkowym).
 - Wyglądu wyniku (rzeki wciąż prowadzą głównie po osiach, D6; profile sięgają krańców siatek parametrów).

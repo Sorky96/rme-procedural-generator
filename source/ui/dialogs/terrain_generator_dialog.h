@@ -46,6 +46,7 @@ private:
 	};
 
 	void OnInputChanged(wxCommandEvent& event);
+	void OnProfileChosen(wxCommandEvent& event);
 	void OnPreview(wxCommandEvent& event);
 	void OnPreviewTick(wxTimerEvent& event);
 	void OnCancel(wxCommandEvent& event);

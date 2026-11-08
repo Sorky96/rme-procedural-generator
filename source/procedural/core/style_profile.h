@@ -118,7 +118,23 @@ inline constexpr std::string_view statsSchema = "g4-kindstats/1";
 [[nodiscard]] std::string serializeStats(const StyleStats& stats);
 [[nodiscard]] std::expected<StyleStats, ProfileError> parseStats(std::string_view text);
 
-inline constexpr std::string_view profileSchema = "g4-profile/3";
+// Ground brush a style used most for each natural kind, so that choosing the profile can also choose the
+// brushes (winter: snowy mountain). Entry i belongs to StyleKind i (Grass..Water); empty = the style has no
+// brush that clearly carries that kind (most of its tiles are ground items no brush owns, or too few tiles).
+using StylePalette = std::array<std::string, naturalKindCount>;
+
+struct KeyTiles {
+	std::string key;
+	uint64_t tiles = 0;
+};
+
+// Per kind (through `keymap`): the brushed key with the most tiles, but only when it has at least minTiles
+// tiles and at least minSharePercent percent of all tiles of that kind. Keys that start with "item " are
+// ground items without a brush and are never chosen, though they count towards the kind's total.
+[[nodiscard]] StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const KeyTiles> tiles,
+	uint64_t minTiles = 200, uint32_t minSharePercent = 25);
+
+inline constexpr std::string_view profileSchema = "g4-profile/4";
 
 struct StyleProfile {
 	std::string client;
@@ -132,6 +148,7 @@ struct StyleProfile {
 	std::optional<SurfaceTuning> tuning;       // generator parameters fitted to the target
 	std::optional<DecorContext> decorTarget;   // vegetation rates by context, weighted over the sources (virtual units)
 	std::optional<DecorTuning> decorTuning;    // vegetation chances fitted to decorTarget
+	StylePalette palette;                      // brushes the style used (see StylePalette)
 	bool operator==(const StyleProfile&) const = default;
 };
 

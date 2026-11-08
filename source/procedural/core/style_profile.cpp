@@ -171,6 +171,7 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 		if (s.alias.empty()) return std::unexpected(ProfileError::EmptyField);
 		if (bad(s.alias)) return std::unexpected(ProfileError::InvalidKey);
 	}
+	for (const auto& name : p.palette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
 	std::set<std::string_view> seen;
 	for (const auto& e : p.keymap) {
 		if (bad(e.key) || bad(e.rule)) return std::unexpected(ProfileError::InvalidKey);
@@ -191,6 +192,9 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	for (const auto& s : p.sources) out += "source\t" + s.alias + '\t' + std::to_string(s.weightPermille) + '\n';
 	for (const auto& e : p.keymap) out += std::string("key\t") + styleKindName(e.kind) + '\t' + (e.rule.empty() ? "-" : e.rule) + '\t' + e.key + '\n';
 	appendStatLines(out, p.stats);
+	for (size_t k = 0; k < naturalKindCount; ++k) {
+		if (!p.palette[k].empty()) out += std::string("palette\t") + kindNames[k] + '\t' + p.palette[k] + '\n';
+	}
 	if (p.target) {
 		out += "target\tshares";
 		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
@@ -282,6 +286,13 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			for (size_t i = 0; i < styleKindCount; ++i) if (!parseUnsigned(f[3 + i], p.stats.pairs[a][i])) return std::unexpected(ProfileError::BadFormat);
 			havePairs[a] = true;
 		}
+		else if (type == "palette" && f.size() == 3) {
+			StyleKind kind;
+			if (!parseStyleKind(f[1], kind) || static_cast<size_t>(kind) >= naturalKindCount) return std::unexpected(ProfileError::UnknownKind);
+			std::string& slot = p.palette[static_cast<size_t>(kind)];
+			if (!slot.empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
+			slot = f[2];
+		}
 		else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
 			if (!p.target) p.target = StyleTarget {};
 			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[2 + i], p.target->sharesPpm[i])) return std::unexpected(ProfileError::BadFormat);
@@ -327,6 +338,27 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	if (!header || !haveClient || !haveLevel || !haveFloors || !haveOtb || !haveDat || !haveTiles || !allPairs) return std::unexpected(ProfileError::BadFormat);
 	if (auto v = validateProfile(p); !v) return std::unexpected(v.error());
 	return p;
+}
+
+StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const KeyTiles> tiles, uint64_t minTiles, uint32_t minSharePercent) {
+	std::unordered_map<std::string_view, StyleKind> kindOf;
+	for (const auto& e : keymap) kindOf.emplace(e.key, e.kind);
+	std::array<uint64_t, naturalKindCount> total {};
+	std::array<const KeyTiles*, naturalKindCount> best {};
+	for (const KeyTiles& t : tiles) {
+		const auto it = kindOf.find(t.key);
+		if (it == kindOf.end() || static_cast<size_t>(it->second) >= naturalKindCount) continue;
+		const size_t k = static_cast<size_t>(it->second);
+		total[k] += t.tiles;
+		if (t.key.starts_with("item ")) continue;
+		// Most tiles wins; the smaller name on a tie, so the choice does not depend on the order of `tiles`.
+		if (!best[k] || t.tiles > best[k]->tiles || (t.tiles == best[k]->tiles && t.key < best[k]->key)) best[k] = &t;
+	}
+	StylePalette palette;
+	for (size_t k = 0; k < naturalKindCount; ++k) {
+		if (best[k] && best[k]->tiles >= minTiles && best[k]->tiles * 100 >= total[k] * minSharePercent) palette[k] = best[k]->key;
+	}
+	return palette;
 }
 
 std::string serializeStats(const StyleStats& stats) {

@@ -65,6 +65,8 @@ StyleProfile sample() {
 	for (size_t i = 0; i < d.cell.size(); ++i) d.cell[i] = {1000000, i + 1, i + 2, i + 3};
 	p.decorTarget = d;
 	p.decorTuning = DecorTuning {1500, 20, 150, 90, 40, 110};
+	p.palette[static_cast<size_t>(StyleKind::Rock)] = "snowy mountain";
+	p.palette[static_cast<size_t>(StyleKind::Water)] = "sea";
 	return p;
 }
 
@@ -76,9 +78,9 @@ void testSerialization() {
 	const auto back = parseProfile(*text);
 	check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
 	check(back && serializeProfile(*back).value() == *text, "serialization is stable");
-	check(text->starts_with("g4-profile/3\n"), "schema line first");
+	check(text->starts_with("g4-profile/4\n"), "schema line first");
 
-	check(parseProfile("g4-profile/4\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
+	check(parseProfile("g4-profile/5\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");
 	check(parseProfile(text->substr(0, text->find("stat\t"))).error() == ProfileError::BadFormat, "missing statistics refused");
 	std::string unknownKind = *text;
@@ -148,6 +150,40 @@ MapStats mapStats(const char* alias, const char* family, uint64_t grass, uint64_
 	m.stats.pairs[static_cast<size_t>(StyleKind::Grass)][static_cast<size_t>(StyleKind::Grass)] = grassGrass;
 	m.stats.pairs[static_cast<size_t>(StyleKind::Grass)][static_cast<size_t>(StyleKind::Water)] = grassWater;
 	return m;
+}
+
+void testPalette() {
+	const std::vector<std::string> names {"", "grass", "jungle grass", "earth", "item earth", "mountain", "item mountain", "sand", "sea", "snow", "rare brush"};
+	const auto keymap = proposeKeyMap(names, defaultKeyRules());
+	const std::vector<KeyTiles> tiles {{"grass", 600}, {"jungle grass", 300}, {"earth", 100}, {"item earth", 9000}, {"mountain", 500},
+		{"item mountain", 1000}, {"sand", 199}, {"sea", 1000}, {"snow", 5000}, {"rare brush", 900}, {"unknown key", 7000}, {"", 40000}};
+	const StylePalette p = choosePalette(keymap, tiles);
+	check(p[static_cast<size_t>(StyleKind::Grass)] == "grass", "the brushed key with the most tiles wins within its kind");
+	check(p[static_cast<size_t>(StyleKind::Dirt)].empty(), "a kind that is mostly unbrushed items gets no brush (earth is 1 percent of the dirt tiles)");
+	check(p[static_cast<size_t>(StyleKind::Rock)] == "mountain", "share exactly at the threshold (500 of 1500 is above 25 percent) is chosen");
+	check(p[static_cast<size_t>(StyleKind::Shore)].empty(), "fewer than 200 tiles: no brush");
+	check(p[static_cast<size_t>(StyleKind::Water)] == "sea", "single brush of its kind");
+	const StylePalette strict = choosePalette(keymap, tiles, 200, 40);
+	check(strict[static_cast<size_t>(StyleKind::Rock)].empty() && strict[static_cast<size_t>(StyleKind::Grass)] == "grass", "a higher share threshold drops weaker choices");
+	check(choosePalette(keymap, {}, 200, 25) == StylePalette {}, "no tiles: empty palette");
+
+	// Same counts in another order, and a tie between two keys: the smaller name, whatever the order.
+	std::vector<KeyTiles> shuffled(tiles.rbegin(), tiles.rend());
+	check(choosePalette(keymap, shuffled) == p, "the choice does not depend on the order of the tiles");
+	const std::vector<KeyTiles> tie {{"jungle grass", 400}, {"grass", 400}};
+	check(choosePalette(keymap, tie)[static_cast<size_t>(StyleKind::Grass)] == "grass", "tie: the smaller name");
+
+	StyleProfile profile = sample();
+	const auto text = serializeProfile(profile);
+	check(text && text->find("palette\tRock\tsnowy mountain\n") != std::string::npos && text->find("palette\tWater\tsea\n") != std::string::npos, "palette lines written");
+	check(text && text->find("palette\tGrass") == std::string::npos, "empty entries are not written");
+	const auto back = parseProfile(text.value_or(""));
+	check(back && back->palette == profile.palette, "palette round trip");
+	check(parseProfile(*text + "palette\tRock\tother\n").error() == ProfileError::BadFormat, "second palette entry for one kind refused");
+	check(parseProfile(*text + "palette\tOther\tx\n").error() == ProfileError::UnknownKind, "palette for a non-natural kind refused");
+	check(parseProfile(*text + "palette\tGrass\t\n").error() == ProfileError::BadFormat, "empty palette name refused");
+	profile.palette[0] = "a\tb";
+	check(validateProfile(profile).error() == ProfileError::InvalidKey, "tab in a palette name refused");
 }
 
 void testTargetBuild() {
@@ -275,6 +311,7 @@ int main() {
 	testSerialization();
 	testKeyMapText();
 	testTargetAndTuning();
+	testPalette();
 	testTargetBuild();
 	testStatsText();
 	testValidation();

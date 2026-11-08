@@ -251,6 +251,25 @@ void runProbe() {
             }
             writeText("ground-without-brush.csv", csv);
         }
+        // G4 palette: tiles per ground key on the surface floors (z <= 7), names and counts only.
+        {
+            const auto& keyNames = normalized->map.groundKeys();
+            std::vector<uint64_t> perKey(keyNames.size(), 0);
+            for (const auto& floor : normalized->map.floors()) {
+                if (floor.bounds.z > 7) continue;
+                for (size_t i = 0; i < floor.ground.size(); ++i) {
+                    if (floor.traits[i] & bit(Trait::Present)) ++perKey[floor.ground[i]];
+                }
+            }
+            std::string csv = "key,tiles\n";
+            for (size_t k = 0; k < keyNames.size(); ++k) {
+                if (perKey[k] == 0) continue;
+                std::string quoted;
+                for (const char ch : keyNames[k]) { if (ch == '"') quoted += '"'; quoted += ch; }
+                csv += std::format("\"{}\",{}\n", quoted, perKey[k]);
+            }
+            writeText("ground-keys-surface.csv", csv);
+        }
         // G4 GUI wiring: what the generator dialog would offer for this client (same functions, no GUI).
         if (const std::string profilesDir = readSetting("profiles-dir.txt"); !profilesDir.empty()) {
             std::string offerText;

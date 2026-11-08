@@ -550,7 +550,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
-	profile_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	profile_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnProfileChosen, this);
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
@@ -613,6 +613,35 @@ void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 	if (hadPreview) {
 		SetStatus("Settings changed. Press Preview to generate a new preview.", false);
 	}
+}
+
+// A profile also names the ground brushes its style used (winter: snowy mountain). They fill the brush fields
+// the user can still change; a name this client does not have is skipped and reported, never guessed.
+void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
+	OnInputChanged(event);
+	const int picked = profile_choice_->GetSelection();
+	if (picked <= 0 || static_cast<size_t>(picked) > profiles_.size()) return;
+	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
+	wxComboBox* const fields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
+	static_assert(std::size(fields) == rme::procedural::naturalKindCount);
+	static const char* const labels[] = { "Grass", "Dirt", "Rock", "Shore", "Water" };
+	wxString applied, skipped;
+	for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) {
+		const std::string& name = entry.profile.palette[kind];
+		if (name.empty()) continue;
+		const wxString wanted = wxstr(name);
+		wxString& list = ground_names_.Index(wanted) == wxNOT_FOUND ? skipped : applied;
+		if (&list == &applied) {
+			fields[kind]->Clear();
+			fields[kind]->Append(wanted);
+			fields[kind]->SetSelection(0);
+		}
+		list += (list.empty() ? "" : ", ") + wxString(labels[kind]) + ": " + wanted;
+	}
+	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
+	message += applied.empty() ? wxString("tuning only (it names no ground brushes this client offers).") : "brushes set (" + applied + ").";
+	if (!skipped.empty()) message += " Not in this client, left unchanged: " + skipped + ".";
+	SetStatus(message, false);
 }
 
 void TerrainGeneratorDialog::ReleasePreview() {

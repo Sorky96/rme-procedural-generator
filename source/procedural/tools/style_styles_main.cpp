@@ -7,7 +7,7 @@
 //
 // Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
 //                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX]
-// With --profiles-out each style profile is also written as <style>.profile (g4-profile/3) for the generator dialog.
+// With --profiles-out each style profile is also written as <style>.profile (g4-profile/4) for the generator dialog.
 
 #include "procedural/core/decor_context.h"
 #include "procedural/core/reference_split.h"
@@ -41,6 +41,23 @@ bool readFile(const fs::path& path, std::string& out) {
 	if (!in) return false;
 	out.assign(std::istreambuf_iterator<char>(in), {});
 	return true;
+}
+
+// One CSV record: comma separated, optionally double-quoted with "" as an escaped quote.
+std::vector<std::string> csvFields(std::string_view line) {
+	std::vector<std::string> fields(1);
+	bool quoted = false;
+	for (size_t i = 0; i < line.size(); ++i) {
+		const char c = line[i];
+		if (quoted) {
+			if (c == '"' && i + 1 < line.size() && line[i + 1] == '"') { fields.back() += '"'; ++i; }
+			else if (c == '"') quoted = false;
+			else fields.back() += c;
+		} else if (c == '"') quoted = true;
+		else if (c == ',') fields.emplace_back();
+		else fields.back() += c;
+	}
+	return fields;
 }
 
 std::string quote(const std::string& s) { return '"' + s + '"'; }
@@ -138,6 +155,7 @@ int main(int argc, char** argv) {
 	std::vector<Fingerprint> prints;
 	std::vector<MapStats> stats;
 	std::vector<MapDecor> decors;
+	std::vector<std::vector<KeyTiles>> keyTiles; // per map: tiles per ground key on z <= 7 (empty when the file is absent)
 	for (const auto& entry : manifest->entries) {
 		if (!readFile(fingerprintDir / (entry.alias + ".fp"), text)) { std::cerr << "missing fingerprint " << entry.alias << '\n'; return 3; }
 		auto fp = parseFingerprint(text);
@@ -151,6 +169,21 @@ int main(int argc, char** argv) {
 		auto dc = parseDecorContext(text);
 		if (!dc) { std::cerr << "invalid decor context " << entry.alias << '\n'; return 3; }
 		decors.push_back({entry.alias, "", *dc});
+		keyTiles.emplace_back();
+		if (readFile(statsDir / entry.alias / "run" / "analysis" / "ground-keys-surface.csv", text)) {
+			std::string_view rest = text;
+			bool first = true;
+			while (!rest.empty()) {
+				const size_t end = rest.find('\n');
+				std::string_view line = rest.substr(0, end);
+				rest = end == std::string_view::npos ? std::string_view {} : rest.substr(end + 1);
+				if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+				if (first) { first = false; continue; }
+				if (line.empty()) continue;
+				const auto f = csvFields(line);
+				if (f.size() >= 2) keyTiles.back().push_back({f[0], std::strtoull(f[1].c_str(), nullptr, 10)});
+			}
+		}
 	}
 	const FamilyOptions familyOptions;
 	const auto specific = withoutGenericWindows(prints, genericThreshold(prints.size(), 4));
@@ -307,6 +340,18 @@ int main(int argc, char** argv) {
 			profile.tuning = st->profile.surface;
 			profile.decorTarget = st->decorTarget;
 			profile.decorTuning = st->profile.decor;
+			// Brushes the style used, from the tiles per key of the maps that carry its target.
+			std::map<std::string, uint64_t> summed;
+			for (const size_t i : st->usable) {
+				if (keyTiles[i].empty()) { std::cerr << "missing ground-keys-surface.csv for " << manifest->entries[i].alias << '\n'; return 3; }
+				for (const KeyTiles& t : keyTiles[i]) summed[t.key] += t.tiles;
+			}
+			std::vector<KeyTiles> merged;
+			for (const auto& [key, tiles] : summed) merged.push_back({key, tiles});
+			profile.palette = choosePalette(*keymap, merged);
+			std::cout << st->name << " palette:";
+			for (size_t k = 0; k < naturalKindCount; ++k) std::cout << ' ' << styleKindName(static_cast<StyleKind>(k)) << '=' << (profile.palette[k].empty() ? "-" : profile.palette[k]);
+			std::cout << '\n';
 			const auto out = serializeProfile(profile);
 			if (!out) { std::cerr << "cannot serialize profile " << st->name << '\n'; return 4; }
 			std::ofstream f(profilesOut / (st->name + ".profile"), std::ios::binary);

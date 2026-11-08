@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: paleta brushy w profilu (schemat v4)
+
+Po teście ręcznym (profile wyglądały prawie tak samo, caves to jeden grunt): profil niesie brush najczęściej używany dla każdego rodzaju (zasady z góry: brush bez prefiksu `item `, ≥ 200 kafli, ≥ 25 % rodzaju), a okno wpisuje go w pola brushy i raportuje pominięte. Dla 10.98: m06, m19, m05, winter, caves mają paletę, swamp, m01, m15 nie (ich grunty to items bez brusha, D13). Różnica wizualna skromna poza zimą (`snowy mountain`). Schemat v4 unieważnia pliki v3. [G4_GUI.md](procedural/G4_GUI.md).
+
 ## 2026-11-08 — G4: profile stylu w oknie generatora (kod gotowy, test ręczny czeka)
 
 Lista **Style profile** w Map → Generate terrain… (tylko dla „Natural surface”), profile `*.profile` z `procedural/styles` w lokalnym katalogu danych, oferowane wyłącznie dla dokładnie tego klienta i assetów (hashe `items.otb` i `Tibia.dat`). Wybrany profil ustawia strojenie powierzchni i wegetacji w `GenerationConfig`; odcisk podglądu bez zmian dla dotychczasowych konfiguracji. `rme.exe` buduje się, testy PASS, oferta sprawdzona w próbniku z prawdziwym klientem 10.98 (8 z 8). Okno nie było uruchamiane przeze mnie. [G4_GUI.md](procedural/G4_GUI.md).
