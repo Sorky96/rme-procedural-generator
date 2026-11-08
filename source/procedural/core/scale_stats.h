@@ -54,6 +54,8 @@ struct PatchStats {
 	uint64_t rockCells = 0;
 	uint64_t rockPairs = 0;          // 4-adjacent pairs of Rock and another natural kind
 	uint64_t rockInLarge = 0;        // Rock cells in components of at least rockLargePatch cells
+	std::array<uint64_t, 5> rockContact {};   // pairs of a Rock cell with a cell of each other kind (index = kind of the other cell)
+	std::array<uint64_t, 5> dirtContact {};   // same for Dirt
 	uint64_t rockDust = 0;           // Rock cells in components of fewer than rockDustPatch cells
 	uint64_t shoreNearWater = 0;     // Shore cells within beachReach steps through Shore of a Shore cell next to Water (those included)
 	std::array<uint64_t, 5> cells {};
@@ -68,6 +70,7 @@ void addPatchStats(std::span<const uint8_t> kinds, uint32_t width, uint32_t heig
 
 inline constexpr uint64_t minDirtCells = 1000;
 inline constexpr uint64_t minShoreCells = 1000;
+inline constexpr uint64_t minContactPairs = 1000;
 inline constexpr uint64_t minRockCellsForStats = 1000;
 struct PatchSummary {
 	std::optional<uint32_t> boundary;   // D: 1000 * dirtGrassPairs / dirtCells; empty when dirtCells < minDirtCells
@@ -76,6 +79,10 @@ struct PatchSummary {
 	std::optional<uint32_t> rockBoundary; // RB: 1000 * rockPairs / rockCells; empty when rockCells < minRockCellsForStats
 	std::optional<uint32_t> rockCompact;  // RF: permille of Rock cells in large patches
 	std::optional<uint32_t> rockDustShare; // RS: permille of Rock cells in tiny patches
+	// Boundary composition (iteration 10), permille of contact pairs: rock with Dirt, Grass, Shore, Water; dirt with Grass,
+	// Rock, Shore, Water. Empty when there are fewer than minContactPairs pairs.
+	std::optional<std::array<uint32_t, 4>> rockComposition;
+	std::optional<std::array<uint32_t, 4>> dirtComposition;
 	std::array<uint32_t, 5> sharePermille {}; // of natural cells
 	bool operator==(const PatchSummary&) const = default;
 };

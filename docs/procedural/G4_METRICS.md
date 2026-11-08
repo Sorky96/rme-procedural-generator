@@ -244,3 +244,15 @@ Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o poł
 
 **Zastrzeżenia z góry.** Dwie referencje, in-sample; skład granicy nie rozróżnia, czy styk jest gładki, czy poszarpany (to opisuje D/RB z iteracji 7–8); w referencjach przejście przez element „Other” (budynki, drogi) jest poza miarą; wartości, w których większość granicy to woda (Shore/Water), zależą od udziału wody i plaży, już dopasowanych w iteracjach 6–7c.
 
+### Iteracja 10 — wynik 10a i zapis zmiany 10b (2026-11-08, przed jej wykonaniem)
+
+**10a (v10, bok 512, seedy 1001–1032).** Referencje M06 / M19: skład granicy skały RD/RG/RS/RW = 33/938/24/4 i 99/502/251/147; skład granicy ziemi DG/DR/DS/DW = 951/32/12/4 i 728/155/27/88. Generator m06: RD 254, RG 717, RS 0, RW 29; DG 741, DR 55, DS 145, DW 47 — w paśmie 6 z 8 (poza: RD i DS). Generator m19: RD 322, RG 661, RS 0, RW 15; DG 614, DR 148, DS 194, DW 44 — w paśmie 3 z 8 (poza: RD, RS, RW, DS, DW).
+
+**Odczyt luk.** (1) Ziemia w generatorze styka się ze skałą i plażą mniej więcej proporcjonalnie do swojego udziału (RD ≈ udział ziemi w lądzie, ok. 30 %), a w referencjach ziemia **unika** skały (RD 33–99) i plaży (DS 12–27): wokół skały i plaży jest trawa. (2) W M19 skała styka się z plażą i wodą (RS 251, RW 147), w generatorze prawie nigdy (RS 0, RW 15), bo skała to najwyższe, a jezioro najniższe komórki wysokości; tego nie da się naprawić regułą lokalną bez zmiany modelu wysokości, więc 10b tego nie dotyczy.
+
+**Zmiana modelu 10b (tylko punkt 1).** Po wyznaczeniu skały i plaży (przed rzekami) każda komórka Dirt w odległości Czebyszewa ≤ 2 od komórki Rock lub Shore zmienia się w Grass („obwódka trawy”). Parametrów nie ma (stała reguła, dotyczy wszystkich profili); zmienia wyniki Surface (także dla `pathLength` 0), więc przypięty odcisk Seed 1729 100×100 zostanie świadomie zmieniony.
+
+**Kryterium 10b.** RD i DS w paśmie w obu profilach (m06 i m19); cechy będące w paśmie w 10a pozostają w paśmie; udziały rodzajów (mediana) wobec 10a ±5 punktów procentowych; testy rdzenia PASS; niezmienniki rzek i szlaków bez zmian (testy). RS i RW dla M19 nie są kryterium (zob. luka 2).
+
+**Zastrzeżenia z góry.** Obwódka trawy zmniejsza udział ziemi i jej poszarpanie przy skale; ocena wzrokowa należy do użytkownika; in-sample na dwóch referencjach.
+

@@ -74,6 +74,8 @@ int main(int argc, char** argv) {
 			const PatchStats raw = patchStatsOf(*grid);
 			const PatchSummary ps = summarizePatches(raw);
 			auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
+			auto comp = [](const std::optional<std::array<uint32_t, 4>>& v) { return v ? std::format("{} {} {} {}", (*v)[0], (*v)[1], (*v)[2], (*v)[3]) : std::string("NA"); };
+			std::cout << std::format("trans seed {}: R {} | D {}\n", seed, comp(ps.rockComposition), comp(ps.dirtComposition));
 			std::cout << std::format("patch seed {}: D {} F {} P {} RB {} RF {} RS {} shares {} {} {} {} {}\n", seed, opt(ps.boundary), opt(ps.compact), opt(ps.beach), opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]);
 		}
 		if (const auto paths = pathShapesOf(*grid)) {

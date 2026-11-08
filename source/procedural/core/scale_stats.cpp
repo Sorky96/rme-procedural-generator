@@ -111,6 +111,7 @@ std::array<int32_t, 3> lagExcessPermille(const LagStats& stats) {
 }
 
 PatchStats& PatchStats::operator+=(const PatchStats& other) noexcept {
+	for (size_t i = 0; i < 5; ++i) { rockContact[i] += other.rockContact[i]; dirtContact[i] += other.dirtContact[i]; }
 	rockCells += other.rockCells; rockPairs += other.rockPairs; rockInLarge += other.rockInLarge; rockDust += other.rockDust;
 	dirtCells += other.dirtCells; dirtGrassPairs += other.dirtGrassPairs; dirtInLarge += other.dirtInLarge;
 	shoreCells += other.shoreCells; shoreNextToWater += other.shoreNextToWater; shoreNearWater += other.shoreNearWater;
@@ -127,6 +128,13 @@ void addPatchStats(std::span<const uint8_t> kinds, uint32_t width, uint32_t heig
 			if (k >= 5) continue;
 			++out.cells[k];
 			const uint8_t right = x + 1 < width ? kinds[i + 1] : 255, down = y + 1 < height ? kinds[i + width] : 255;
+			for (const uint8_t other : {right, down}) {
+				if (other >= 5 || other == k) continue;
+				if (k == 2) ++out.rockContact[other];
+				if (other == 2) ++out.rockContact[k];
+				if (k == 1) ++out.dirtContact[other];
+				if (other == 1) ++out.dirtContact[k];
+			}
 			if (k == 2) {
 				++out.rockCells;
 				out.rockPairs += (right < 5 && right != 2) + (down < 5 && down != 2);
@@ -227,6 +235,13 @@ PatchSummary summarizePatches(const PatchStats& stats) {
 		s.rockCompact = static_cast<uint32_t>(stats.rockInLarge * 1000 / stats.rockCells);
 		s.rockDustShare = static_cast<uint32_t>(stats.rockDust * 1000 / stats.rockCells);
 	}
+	const auto composition = [](const std::array<uint64_t, 5>& contact, size_t a, size_t b, size_t c, size_t d) -> std::optional<std::array<uint32_t, 4>> {
+		const uint64_t total = contact[a] + contact[b] + contact[c] + contact[d];
+		if (total < minContactPairs) return std::nullopt;
+		return std::array<uint32_t, 4> {uint32_t(contact[a] * 1000 / total), uint32_t(contact[b] * 1000 / total), uint32_t(contact[c] * 1000 / total), uint32_t(contact[d] * 1000 / total)};
+	};
+	s.rockComposition = composition(stats.rockContact, 1, 0, 3, 4); // Dirt, Grass, Shore, Water
+	s.dirtComposition = composition(stats.dirtContact, 0, 2, 3, 4); // Grass, Rock, Shore, Water
 	if (stats.shoreNearWater >= minShoreCells) s.beach = static_cast<uint32_t>(stats.shoreNearWater * 1000 / std::max<uint64_t>(stats.shoreNextToWater, 1));
 	uint64_t n = 0;
 	for (const uint64_t c : stats.cells) n += c;

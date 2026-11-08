@@ -88,6 +88,20 @@ void testPatches() {
 	const PatchSummary rockSummary = summarizePatches(rockBig);
 	check(rockSummary.rockBoundary == 150u && rockSummary.rockCompact == 750u && rockSummary.rockDustShare == 50u, "rock summary");
 	check(!summarizePatches(rock).rockBoundary, "103 rock cells are below the minimum: not applicable");
+	// Contact composition: a row  R R G G D D W W  (Rock, Grass, Dirt, Water); pairs: R-G, G-D, D-W.
+	std::vector<uint8_t> contact {2, 2, 0, 0, 1, 1, 4, 4};
+	PatchStats touch;
+	addPatchStats(contact, 8, 1, touch);
+	check(touch.rockContact[0] == 1 && touch.rockContact[1] == 0 && touch.dirtContact[0] == 1 && touch.dirtContact[4] == 1, "contact pairs counted by hand");
+	PatchStats many;
+	many.rockContact = {300, 100, 0, 50, 50};   // Grass 300, Dirt 100, Shore 50, Water 50
+	many.dirtContact = {200, 400, 0, 100, 300}; // Grass 200, Rock 400, Shore 100, Water 300
+	many.rockContact[0] = 1000; many.rockContact[1] = 500; many.rockContact[3] = 250; many.rockContact[4] = 250;
+	many.dirtContact[0] = 400; many.dirtContact[2] = 800; many.dirtContact[3] = 200; many.dirtContact[4] = 600;
+	const PatchSummary mix = summarizePatches(many);
+	check(mix.rockComposition && (*mix.rockComposition == std::array<uint32_t, 4> {250, 500, 125, 125}), "rock composition: Dirt, Grass, Shore, Water");
+	check(mix.dirtComposition && (*mix.dirtComposition == std::array<uint32_t, 4> {200, 400, 100, 300}), "dirt composition: Grass, Rock, Shore, Water");
+	check(!summarizePatches(touch).rockComposition, "a handful of contact pairs is not applicable");
 	// One row: 5 water, 3 shore, 4 grass. Only the first shore cell touches water.
 	std::vector<uint8_t> row {4, 4, 4, 4, 4, 3, 3, 3, 0, 0, 0, 0};
 	PatchStats beach;

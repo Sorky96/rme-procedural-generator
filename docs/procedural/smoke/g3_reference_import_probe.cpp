@@ -363,6 +363,9 @@ void runProbe() {
                 check(patches.has_value(), "Patch statistics failed");
                 const PatchSummary ps = summarizePatches(*patches);
                 auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
+                auto comp = [](const std::optional<std::array<uint32_t, 4>>& v) { return v ? std::format("{} {} {} {}", (*v)[0], (*v)[1], (*v)[2], (*v)[3]) : std::string("NA"); };
+                writeText("transitions-surface.txt", std::format("rock_comp\t{}\ndirt_comp\t{}\nrock_pairs\t{}\ndirt_pairs\t{}\n", comp(ps.rockComposition), comp(ps.dirtComposition),
+                    patches->rockContact[0] + patches->rockContact[1] + patches->rockContact[3] + patches->rockContact[4], patches->dirtContact[0] + patches->dirtContact[2] + patches->dirtContact[3] + patches->dirtContact[4]));
                 writeText("patches-surface.txt", std::format("boundary\t{}\ncompact\t{}\nbeach\t{}\ndirt_cells\t{}\nshore_cells\t{}\nrock_boundary\t{}\nrock_compact\t{}\nrock_dust\t{}\nrock_cells\t{}\nshares\t{} {} {} {} {}\n",
                     opt(ps.boundary), opt(ps.compact), opt(ps.beach), patches->dirtCells, patches->shoreCells, opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), patches->rockCells, ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]));
             }
