@@ -264,3 +264,13 @@ Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o poł
 
 **Kryterium 10c.** Jak w 10b: RD i DS w paśmie w obu profilach, cechy będące w paśmie w 10a pozostają w paśmie (m.in. DR w m19), udziały ±5 punktów procentowych, testy rdzenia PASS. Jeśli DR w m19 wypadnie z pasma (możliwe: RD i DR zależą od tego samego styku, ale mają różne mianowniki), zgłaszam to jako niespełnione i **nie** szukam dalszych parametrów dla metryk; wybór między pełną a częściową obwódką przechodzi wtedy do oceny wzrokowej użytkownika.
 
+## Iteracja 11 — osady i struktury, część 1: pomiar budynków w referencjach (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Użytkownik wybrał „osady i struktury” (ostatni punkt z listy; FAZA 5 planu: struktury, osady, ruiny, obozowiska). Generator nie tworzy żadnych budowli, więc stan bazowy jest zerowy z definicji. Ten krok (11a) ustala, **jak wyglądają budynki w referencjach i czy da się je zmierzyć**; decyzja o zakresie generowania (ściany, drzwi, podłogi przez pędzle RME) zapada dopiero po jego wyniku.
+
+**Definicje (stałe, z góry).** Piętra z ≤ 7. *Komórka muru*: kafel z cechą Wall lub Door. *Budynek*: 8-spójna składowa komórek muru; zaliczona, jeśli ma ≥ 12 komórek i obwiednię ≥ 4 × 4. Cechy na mapę: liczba budynków; **Bd** = budynki na 65 536 obecnych kafli; mediana dłuższego i krótszego boku obwiedni (**Bl**, **Bs**); mediana liczby komórek muru (**Bw**); średnia liczba komórek Door na budynek (**Bdoor**, ×1000); udział budynków z ≥ 1 drzwiami (‰, **Bdp**). Mapa referencyjna *kwalifikuje się*, gdy ma ≥ 5 budynków; bez ≥ 2 takich map pomiar jest niemożliwy i generowanie struktur nie ma podstaw z danych.
+
+**Pomiar 11a.** Wszystkie 19 map referencyjnych, tylko opis; wynik określa zakres ewentualnego 11b (zapis osobno przed wykonaniem). Bez oceny generatora.
+
+**Zastrzeżenia z góry.** Cecha Wall pochodzi z definicji itemów klienta (brusha ściany); mur wolnostojący, płot i ściana jaskini też ją mają, więc „budynek” to heurystyka kształtu; wnętrza, dachy (piętra wyżej) i meble są poza miarą; referencje to głównie M06 i M19.
+
