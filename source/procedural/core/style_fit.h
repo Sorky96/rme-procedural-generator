@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <vector>
@@ -33,6 +34,10 @@ enum class FitError : uint8_t { InvalidSpec, Generator, Cancelled, AllocationFai
 // Summed counts over the seeds. Generator failures (invalid tuning) are reported, never skipped.
 [[nodiscard]] std::expected<StyleStats, FitError> evaluateTuning(
 	const SurfaceTuning& tuning, const EvalSpec& spec, std::stop_token stop);
+
+// Share of walkable cells (Grass, Dirt, Shore) that lie in the largest 4-connected walkable component,
+// in ppm; nullopt when the grid has no walkable cell. Lake, River, Rock and Preserve are not walkable.
+[[nodiscard]] std::optional<uint32_t> walkableConnectivityPpm(const SurfaceGrid& grid);
 
 // L1 distances between two targets, in ppm: shares over the 5 kinds, adjacency over the 25 cells.
 struct TargetDistance {

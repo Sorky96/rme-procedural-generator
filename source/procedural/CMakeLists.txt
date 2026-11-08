@@ -79,3 +79,6 @@ target_link_libraries(style_fit PRIVATE rme_procedural_core)
 add_executable(test_procedural_decor ${PROJECT_SOURCE_DIR}/tests/test_procedural_decor.cpp)
 target_link_libraries(test_procedural_decor PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_decor COMMAND test_procedural_decor)
+
+add_executable(style_eval ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_eval_main.cpp)
+target_link_libraries(style_eval PRIVATE rme_procedural_core)

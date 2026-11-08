@@ -61,6 +61,40 @@ StyleStats statsOfSurface(const SurfaceGrid& grid) {
 	return stats;
 }
 
+std::optional<uint32_t> walkableConnectivityPpm(const SurfaceGrid& grid) {
+	const size_t w = grid.region.width, h = grid.region.height;
+	auto walkable = [&](size_t i) {
+		const SurfaceKind k = grid.cells[i];
+		return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore;
+	};
+	std::vector<uint8_t> seen(grid.cells.size(), 0);
+	std::vector<size_t> stack;
+	uint64_t total = 0, largest = 0;
+	for (size_t start = 0; start < grid.cells.size(); ++start) {
+		if (seen[start] || !walkable(start)) continue;
+		uint64_t size = 0;
+		seen[start] = 1;
+		stack.push_back(start);
+		while (!stack.empty()) {
+			const size_t i = stack.back();
+			stack.pop_back();
+			++size;
+			const size_t x = i % w, y = i / w;
+			auto visit = [&](size_t j) {
+				if (!seen[j] && walkable(j)) { seen[j] = 1; stack.push_back(j); }
+			};
+			if (x > 0) visit(i - 1);
+			if (x + 1 < w) visit(i + 1);
+			if (y > 0) visit(i - w);
+			if (y + 1 < h) visit(i + w);
+		}
+		total += size;
+		largest = std::max(largest, size);
+	}
+	if (total == 0) return std::nullopt;
+	return static_cast<uint32_t>(largest * 1'000'000 / total);
+}
+
 std::expected<StyleStats, FitError> evaluateTuning(const SurfaceTuning& tuning, const EvalSpec& spec, std::stop_token stop) {
 	if (spec.side < 8 || spec.side > 2048 || spec.seeds.empty()) return std::unexpected(FitError::InvalidSpec);
 	const uint64_t cells = static_cast<uint64_t>(spec.side) * spec.side;

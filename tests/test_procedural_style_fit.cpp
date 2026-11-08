@@ -33,6 +33,25 @@ void testProjection() {
 	check(pairs == 4, "no pair with a preserved cell");
 }
 
+void testConnectivity() {
+	// G D W S     walkable: 4 cells in two components (3 and 1) -> 750000;
+	// G R W K     (R = River, K = Rock); water, rock and Preserve are not walkable.
+	SurfaceGrid grid;
+	grid.region = {0, 0, 7, 4, 2};
+	grid.cells = {SurfaceKind::Grass, SurfaceKind::Dirt, SurfaceKind::Lake, SurfaceKind::Shore,
+		SurfaceKind::Grass, SurfaceKind::River, SurfaceKind::Lake, SurfaceKind::Rock};
+	check(walkableConnectivityPpm(grid) == 750000, "largest component is G D G (3 of 4 walkable cells)");
+	grid.cells[4] = SurfaceKind::Preserve;
+	check(walkableConnectivityPpm(grid) == 666666, "a preserved cell is not walkable: components of 2 and 1");
+	grid.cells = std::vector<SurfaceKind>(8, SurfaceKind::Lake);
+	check(!walkableConnectivityPpm(grid).has_value(), "no walkable cell: nullopt");
+	grid.cells = std::vector<SurfaceKind>(8, SurfaceKind::Grass);
+	check(walkableConnectivityPpm(grid) == 1'000'000, "one component: everything");
+	grid.cells = {SurfaceKind::Grass, SurfaceKind::Lake, SurfaceKind::Grass, SurfaceKind::Lake,
+		SurfaceKind::Lake, SurfaceKind::Grass, SurfaceKind::Lake, SurfaceKind::Grass};
+	check(walkableConnectivityPpm(grid) == 250000, "diagonal neighbours do not connect: four singletons");
+}
+
 void testDistance() {
 	StyleTarget a, b;
 	a.sharesPpm = {500000, 500000, 0, 0, 0};
@@ -118,6 +137,7 @@ void testSelect() {
 int main() {
 	testProjection();
 	testDistance();
+	testConnectivity();
 	testEvaluate();
 	testSelect();
 	testFit();
