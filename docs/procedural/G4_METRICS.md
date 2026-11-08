@@ -229,3 +229,18 @@ Zmiana: koszt komórki w A* rośnie z bliskością skały zamiast stałych +25 d
 
 Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o połowę niższy niż w stanie bazowym; (2) L i W nadal w paśmie referencji (jak w 9b); (3) testy rdzenia PASS, szlak nigdy na Rock/Lake/River, wyłączone = bajt w bajt. B nie wchodzi do kryterium (artefakt szkieletowania opisany w 9c). Zastrzeżenie: mediana jest niska już w stanie bazowym (szlak przy skale to rzadki przypadek), więc „połowa” dotyczy małej liczby; ocena wzrokowa należy do użytkownika.
 
+## Iteracja 10 — przejścia między rodzajami (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Użytkownik wybrał „przejścia” (FAZA 4: przejścia biomów, [PROJECT_RME_PROCEDURAL_GENERATOR.md](../PROJECT_RME_PROCEDURAL_GENERATOR.md)). Obecna miara G4 porównuje tylko sąsiedztwo ogólne (rozkład par rodzajów w całej mapie). Przejście oznacza tu: **z czym graniczy dany rodzaj** (np. czy skała styka się z ziemią, trawą, piaskiem czy wodą).
+
+**Definicje (stałe, z góry).** Rodzaje jak w iteracji 6 (komórki naturalne; Lake i River jako Water). Para = dwie 4-sąsiednie komórki obu naturalnych, o różnych rodzajach.
+- *Skład granicy skały*: wśród par, w których jedna komórka jest Rock, udział (‰) par, w których druga to Dirt (**RD**), Grass (**RG**), Shore (**RS**), Water (**RW**).
+- *Skład granicy ziemi*: wśród par z komórką Dirt (druga komórka inna niż Dirt) udział (‰) par z Grass (**DG**), Rock (**DR**), Shore (**DS**), Water (**DW**).
+- Skład N/A, gdy liczba par danej granicy < 1000. Referencja = wartość zbiorcza mapy (piętra 0..7); generator = mediana po seedach.
+
+**Pomiar bazowy (10a).** Profile m06 i m19 v10, seedy 1001–1032, bok 512; referencje M06 i M19 (m06→M06, m19→M19, in-sample). Najpierw tylko opis i ocena luk, bez zmiany generatora.
+
+**Kryterium (dla 10a i ewentualnego 10b).** Cecha *w paśmie*, gdy mediana generatora leży w [0,67·ref; 1,5·ref], a dla cechy o ref < 50 ‰ gdy |gen − ref| ≤ 50 ‰. Profil „zaliczony”, jeśli ≥ 6 z (nie-N/A) 8 cech jest w paśmie. Ewentualna zmiana generatora (10b) zostanie zapisana osobno przed wykonaniem; warunki dodatkowe dla niej: udziały rodzajów ±5 punktów procentowych, testy rdzenia, przypięty odcisk Seed 1729 bez zmian dla `pathLength` 0 (chyba że zmiana jest jawnie zapisana jako zmieniająca wyniki).
+
+**Zastrzeżenia z góry.** Dwie referencje, in-sample; skład granicy nie rozróżnia, czy styk jest gładki, czy poszarpany (to opisuje D/RB z iteracji 7–8); w referencjach przejście przez element „Other” (budynki, drogi) jest poza miarą; wartości, w których większość granicy to woda (Shore/Water), zależą od udziału wody i plaży, już dopasowanych w iteracjach 6–7c.
+
