@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4-F iteracja 2: ograniczenie spójności lądu, bramka nadal NIE spełniona
+
+Dopasowanie z ograniczeniem (kandydat odrzucany poniżej 97 % spójności lądu ręcznych parametrów), kryteria zapisane przed uruchomieniem, wynik „po zmianie modelu”: spójność lądu we wszystkich foldach ≥ 95 % ręcznej (krytyczna metryka naprawiona), ale styl nadal lepszy tylko w 3 z 7 foldów (M06, M19, swamp), gorszy w 2 (caves, M05), a wegetacja 2 : 2. Foldy testowe użyte po raz drugi, więc wynik jest mniej niezależny. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md#iteracja-2--dopasowanie-z-ograniczeniem-spójności-lądu-2026-11-08-po-zmianie-modelu).
+
 ## 2026-11-08 — G4-F: bramka G4 NIE spełniona
 
 Ocena na foldach testowych, kryteria z [G4_METRICS.md](procedural/G4_METRICS.md) zapisane przed uruchomieniem, dwa przebiegi bajtowo identyczne. 7 ocenianych foldów: styl lepszy w 3 (M06, M19, swamp), gorszy w 2 (caves, M05), bez zmian w 2; spójność lądu (krytyczna) gorsza w 5 foldach (do 69 % mediany baseline w swamp). Wynik: nie spełniona. Funkcja celu nie ma ograniczenia grywalności, więc dopasowanie tnie ląd jeziorami i rzekami. Propozycje na kolejną iterację (nowe kryteria przed uruchomieniem), brak podpięcia profilu do GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
