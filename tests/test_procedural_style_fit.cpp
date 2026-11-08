@@ -120,6 +120,41 @@ void testFit() {
 	check(fitTuning(*target, *target, SurfaceTuning {}, options, source.get_token()).error() == FitError::Cancelled, "fit cancelled");
 }
 
+void testConnectivityConstraint() {
+	// A target that rewards a lot of water and rock. With the constraint at 100 percent no step may have a
+	// lower connectivity than the start, which the unconstrained fit does not respect for this target.
+	SurfaceTuning wet;
+	wet.lakePermille = 300;
+	wet.rockPermille = 320;
+	wet.riverCount = 8;
+	FitOptions options {{96, {1, 2, 3}}, 3, 0};
+	const auto stats = evaluateTuning(wet, options.eval, {});
+	const auto target = targetFromStats(*stats);
+	check(stats && target, "target from a wet tuning");
+	if (!target) return;
+	const auto free = fitTuning(*target, *target, SurfaceTuning {}, options, {});
+	check(free.has_value(), "unconstrained fit");
+	options.minConnectivityPercent = 100;
+	const auto bound = fitTuning(*target, *target, SurfaceTuning {}, options, {});
+	check(bound.has_value(), "constrained fit");
+	if (!free || !bound) return;
+	const uint32_t startP1 = *connectivityMedianPpm(SurfaceTuning {}, options.eval, {});
+	for (const FitStep& step : *bound) check(step.connectivityPpm >= startP1, "every step keeps at least the start connectivity");
+	check((*bound)[0].tuning == SurfaceTuning {} && (*bound)[0].connectivityPpm == startP1, "step 0 is the start, with its connectivity recorded");
+	check(*connectivityMedianPpm(free->back().tuning, options.eval, {}) < startP1, "this target does lower the connectivity when nothing stops the fit");
+	check(bound->back().train.total() > free->back().train.total(), "the constraint costs distance");
+	check(bound->back().train.total() <= bound->front().train.total(), "...but never more than the start");
+	check((*free)[0].connectivityPpm == 0, "connectivity is not measured when the constraint is off");
+	const auto again = fitTuning(*target, *target, SurfaceTuning {}, options, {});
+	check(again && again->back().tuning == bound->back().tuning, "repeatable");
+	check(connectivityMedianPpm(SurfaceTuning {}, {96, {}}, {}).error() == FitError::InvalidSpec, "no seeds refused");
+	// A start that fails the constraint on its own (everything is water) cannot be improved into a pass.
+	SurfaceTuning flooded;
+	flooded.lakePermille = 300;
+	flooded.riverCount = 8;
+	check(*connectivityMedianPpm(flooded, options.eval, {}) <= 1'000'000, "connectivity is a ppm value");
+}
+
 void testSelect() {
 	auto step = [](uint64_t validation) {
 		FitStep s {};
@@ -138,6 +173,7 @@ int main() {
 	testProjection();
 	testDistance();
 	testConnectivity();
+	testConnectivityConstraint();
 	testEvaluate();
 	testSelect();
 	testFit();

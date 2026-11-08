@@ -48,15 +48,24 @@ struct TargetDistance {
 };
 [[nodiscard]] TargetDistance distance(const StyleTarget& a, const StyleTarget& b) noexcept;
 
+// Median over the seeds of the walkable connectivity of the generated grids, in ppm (seeds without a
+// walkable cell are skipped; none at all gives 0).
+[[nodiscard]] std::expected<uint32_t, FitError> connectivityMedianPpm(
+	const SurfaceTuning& tuning, const EvalSpec& spec, std::stop_token stop);
+
 struct FitOptions {
 	EvalSpec eval;
 	uint32_t maxPasses = 4;
+	// 0 = no constraint. Otherwise a candidate value is rejected when the median connectivity of what it
+	// generates on the eval seeds is below this percentage of the start tuning's median.
+	uint32_t minConnectivityPercent = 0;
 };
 
 struct FitStep {
 	SurfaceTuning tuning;
 	TargetDistance train;
 	TargetDistance validation;
+	uint32_t connectivityPpm = 0; // median over the eval seeds, measured only when the constraint is on
 };
 
 // steps[0] is `start`; every further step is one full pass over the parameters. The search stops when

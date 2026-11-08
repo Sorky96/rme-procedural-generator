@@ -4,7 +4,7 @@
 // style maps. It never reads the test maps' statistics: held-out evaluation is a separate step (G4-F).
 //
 // Usage: style_fit --manifest FILE --fingerprints DIR --stats DIR --keymap FILE --client ID --otb-sha HEX
-//                  --dat-sha HEX --out-dir DIR [--side N] [--min-natural N]
+//                  --dat-sha HEX --out-dir DIR [--side N] [--min-natural N] [--min-connectivity PERCENT]
 // DIR for --stats holds <alias>/run/analysis/kind-stats-surface.txt (written by the reference import probe).
 
 #include "procedural/core/decor_context.h"
@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
 	std::string client, otbSha, datSha;
 	uint32_t side = 160;
 	uint64_t minNatural = 1000;
+	uint32_t minConnectivity = 0; // percent of the manual tuning's median walkable connectivity; 0 = no constraint
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string key = argv[i];
 		const char* value = argv[i + 1];
@@ -63,6 +64,7 @@ int main(int argc, char** argv) {
 		else if (key == "--out-dir") outDir = value;
 		else if (key == "--side") side = static_cast<uint32_t>(std::strtoul(value, nullptr, 10));
 		else if (key == "--min-natural") minNatural = std::strtoull(value, nullptr, 10);
+		else if (key == "--min-connectivity") minConnectivity = static_cast<uint32_t>(std::strtoul(value, nullptr, 10));
 		else { std::cerr << "unknown option " << key << '\n'; return 2; }
 	}
 	if (manifestPath.empty() || fingerprintDir.empty() || statsDir.empty() || keymapPath.empty() || client.empty() || otbSha.empty() || datSha.empty() || outDir.empty()) {
@@ -111,6 +113,7 @@ int main(int argc, char** argv) {
 	FitOptions fit;
 	fit.eval = {side, {1, 2, 3, 4, 5, 6}};
 	fit.maxPasses = 4;
+	fit.minConnectivityPercent = minConnectivity;
 	const SurfaceTuning baseline;
 	fs::create_directories(outDir);
 
@@ -165,7 +168,7 @@ int main(int argc, char** argv) {
 	};
 
 	std::string report = "{\n  \"schema\": \"g4-fit-report/1\",\n";
-	report += std::format("  \"client\": {}, \"side\": {}, \"fit_seeds\": [1, 2, 3, 4, 5, 6], \"min_natural_tiles\": {}, \"max_passes\": {},\n", quote(client), side, minNatural, fit.maxPasses);
+	report += std::format("  \"client\": {}, \"side\": {}, \"fit_seeds\": [1, 2, 3, 4, 5, 6], \"min_natural_tiles\": {}, \"max_passes\": {}, \"min_connectivity_percent\": {},\n", quote(client), side, minNatural, fit.maxPasses, minConnectivity);
 	report += std::format("  \"baseline\": {},\n  \"folds\": [\n", tuningJson(baseline));
 	for (size_t f = 0; f < folds->size(); ++f) {
 		const Fold& fold = (*folds)[f];
@@ -198,7 +201,7 @@ int main(int argc, char** argv) {
 			f, quote(fold.testFamily), quote(fold.validationFamily), fold.test.size(), aliases(train->used), train->excluded.size(), aliases(validation->used), validation->excluded.size());
 		for (size_t s = 0; s < steps->size(); ++s) {
 			const FitStep& step = (*steps)[s];
-			report += std::format("      {{\"pass\": {}, \"tuning\": {}, \"train\": {}, \"validation\": {}}}{}\n", s, tuningJson(step.tuning), distanceJson(step.train), distanceJson(step.validation), s + 1 < steps->size() ? "," : "");
+			report += std::format("      {{\"pass\": {}, \"tuning\": {}, \"train\": {}, \"validation\": {}, \"connectivity_ppm\": {}}}{}\n", s, tuningJson(step.tuning), distanceJson(step.train), distanceJson(step.validation), step.connectivityPpm, s + 1 < steps->size() ? "," : "");
 		}
 		report += std::format("    ], \"selected_pass\": {}, \"decor\": {{\"tuning\": {}, \"validation_terms\": {}, \"validation_baseline_sum\": {}, \"validation_fitted_sum\": {}}}}}{}\n",
 			chosen, decorJson(*decorFit), decorBefore.terms, decorBefore.sumPermille, decorAfter.sumPermille, f + 1 < folds->size() ? "," : "");

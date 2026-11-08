@@ -95,6 +95,28 @@ std::optional<uint32_t> walkableConnectivityPpm(const SurfaceGrid& grid) {
 	return static_cast<uint32_t>(largest * 1'000'000 / total);
 }
 
+std::expected<uint32_t, FitError> connectivityMedianPpm(const SurfaceTuning& tuning, const EvalSpec& spec, std::stop_token stop) {
+	if (spec.side < 8 || spec.side > 2048 || spec.seeds.empty()) return std::unexpected(FitError::InvalidSpec);
+	const uint64_t cells = static_cast<uint64_t>(spec.side) * spec.side;
+	const SurfaceBudget budget {cells, cells * 8, cells * 64 + (1u << 20)};
+	std::vector<uint32_t> values;
+	try {
+		for (const uint64_t seed : spec.seeds) {
+			if (stop.stop_requested()) return std::unexpected(FitError::Cancelled);
+			SurfaceConfig config {{100, 100, 7, spec.side, spec.side}, seed, tuning};
+			const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, budget, {}, {}, stop);
+			if (!grid) return std::unexpected(grid.error() == SurfaceError::Cancelled ? FitError::Cancelled : FitError::Generator);
+			if (const auto p = walkableConnectivityPpm(*grid)) values.push_back(*p);
+		}
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(FitError::AllocationFailed);
+	}
+	if (values.empty()) return 0u;
+	std::sort(values.begin(), values.end());
+	const size_t n = values.size();
+	return n % 2 ? values[n / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
+}
+
 std::expected<StyleStats, FitError> evaluateTuning(const SurfaceTuning& tuning, const EvalSpec& spec, std::stop_token stop) {
 	if (spec.side < 8 || spec.side > 2048 || spec.seeds.empty()) return std::unexpected(FitError::InvalidSpec);
 	const uint64_t cells = static_cast<uint64_t>(spec.side) * spec.side;
@@ -147,12 +169,24 @@ std::expected<std::vector<FitStep>, FitError> fitTuning(
 	try {
 		std::vector<FitStep> steps;
 		SurfaceTuning current = start;
+		uint64_t connectivityFloor = 0;
+		if (options.minConnectivityPercent > 0) {
+			const auto startMedian = connectivityMedianPpm(start, options.eval, stop);
+			if (!startMedian) return std::unexpected(startMedian.error());
+			connectivityFloor = static_cast<uint64_t>(*startMedian) * options.minConnectivityPercent / 100;
+		}
 		auto record = [&]() -> std::expected<void, FitError> {
 			const auto t = measure(current, train, options.eval, stop);
 			if (!t) return std::unexpected(t.error());
 			const auto v = measure(current, validation, options.eval, stop);
 			if (!v) return std::unexpected(v.error());
-			steps.push_back({current, *t, *v});
+			uint32_t connectivity = 0;
+			if (options.minConnectivityPercent > 0) {
+				const auto c = connectivityMedianPpm(current, options.eval, stop);
+				if (!c) return std::unexpected(c.error());
+				connectivity = *c;
+			}
+			steps.push_back({current, *t, *v, connectivity});
 			return {};
 		};
 		if (auto r = record(); !r) return std::unexpected(r.error());
@@ -168,7 +202,14 @@ std::expected<std::vector<FitStep>, FitError> fitTuning(
 					candidate.*axis.field = value;
 					const auto d = measure(candidate, train, options.eval, stop);
 					if (!d) return std::unexpected(d.error());
-					if (d->total() < best) { best = d->total(); chosen = value; }
+					if (d->total() >= best) continue;
+					if (options.minConnectivityPercent > 0) {
+						const auto c = connectivityMedianPpm(candidate, options.eval, stop);
+						if (!c) return std::unexpected(c.error());
+						if (*c < connectivityFloor) continue;
+					}
+					best = d->total();
+					chosen = value;
 				}
 				if (chosen != keep) { current.*axis.field = chosen; changed = true; }
 			}
