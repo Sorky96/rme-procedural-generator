@@ -102,3 +102,21 @@ Kryteria zapisane przed uruchomieniem ([G4_METRICS.md](G4_METRICS.md), „Iterac
 - Nadal nie mierzono: podziemi, BlackTek, memoryzacji generatora względem referencji (D10), `border_error_rate`, 100 % poprawnych ID i zera zmian poza maską w pełnym potoku.
 
 **Stan bramki G4 z planu (mapy niewidziane):** nie wykazana. Jedyny dowód na niewidzianej mapie (B, swamp, n = 2) jest korzystny, ale zbyt wąski. Aby ją wykazać, potrzeba co najmniej kilku stylów z ≥ 2 niezależnymi mapami z celem.
+
+## Iteracja 4 — kształt rzek (D9 część wodna, D6) (2026-11-08): kryterium D6 NIE spełnione
+
+Kryteria zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 4”, commit `59b860c`); implementacja `99f617c`. Referencje z rzekami (≥ 5 składowych): tylko M06 (29 rzek, T 1626 ‰, S 0 ‰) i M19 (8 rzek, T 1669 ‰, S 0 ‰); pozostałe 10 map z ekstrakcją wody nie kwalifikuje się (kwalifikują się 2, więc ocena jest możliwa, ale na dwóch mapach, w dwóch foldach krzyżowych). Generator bez meandrowania: T 1361 ‰, S 181 ‰ (31 z 32 seedów z rzeką).
+
+| Wariant | Meander (dopasowany) | T mediana | S mediana | T: lepszych/gorszych seedów (werdykt) | S: lepszych/gorszych (werdykt) | P1 (kandydat/baseline) | rzeka-wyspa |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 4a (pierwszy model) | 8 (maks. siatki) | 1398 | 70 | 18/9 (undecided) | 15/6 (undecided) | 99,997 % | 0 |
+| 4b (po zmianie modelu) | 8 (maks. siatki) | 1514 | 24 | 22/6 (undecided) | 16/5 (undecided) | 99,972 % | 0 |
+
+Mediany różnic odległości od referencji (4b, fold M06→M19): T −58 ‰ (p10 −219, p90 +54), S −77 ‰ (p10 −281, p90 +79); fold M19→M06 analogicznie (−56 / −77). Wniosek mierzalny: rzeki są bardziej kręte (T +153 ‰ do referencji 1626–1669) i prawie bez długich odcinków prostych (S 181 → 24 ‰ przy referencji 0), ale kryterium (lepszy w T i S wg reguły: mediana < 0 i ≥ 75 % seedów) nie jest spełnione w żadnym z dwóch foldów: najlepszy udział seedów to 22/31 = 71 %, a nierozstrzygnięte przypadki wynikają głównie z remisów. Spełnione: P1 ≥ 95 % (kandydat ≈ baseline) i niezmiennik (0 porażek w 1200/1200 seedach: rzeka zawsze dochodzi do jeziora/krawędzi).
+
+**Zastrzeżenia (istotne).**
+- 4b to zmiana modelu po zobaczeniu wyniku 4a (zmiana fali, ciągłość, stemplowanie interpolowane, czyszczenie rzek-wysp); kryterium i seedy te same, ale to adaptacyjne ponowne użycie tych samych dwóch map. 4a jest wynikiem pierwotnym; 4b nie zastępuje go jako dowodu.
+- Fold jest dwuwarstwowy: dopasowanie na jednej mapie z rzekami, test na drugiej; obie dały meander 8, czyli dopasowanie nasyca się na krańcu siatki, więc optimum nie zostało znalezione.
+- Pomiar to szkielet kratowy (przybliżenie); progi (odcinek ≥ 12, składowa rzeczna) wybrane przed pomiarem bez wiedzy o czułości.
+- Nie oceniano wyglądu (ślepe A/B), rozwidleń, rozmiarów jezior, podziemi ani BlackTek. Referencja S = 0 oznacza, że w referencjach nie ma 12-kafelkowych prostych szkieletu; część tej różnicy może wynikać z samego szkieletowania.
+- Rzeki w profilach v6 mają meander 8 (profile v5 nie są już wspierane).

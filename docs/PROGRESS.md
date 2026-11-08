@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: kształt rzek (D9 część wodna) i meandrowanie rzek (D6) — PARTIAL
+
+Rdzeń `water_shape` (szkielet Zhang-Suen, krętość T, udział odcinków prostych S, szerokość) z testami; `SurfaceTuning::meander` (poprzeczny rozkołys trasy rzeki, rampa przy ujściach, czyszczenie rzek-wysp; meander 0 = poprzedni wynik bajt w bajt); profil v6 niesie dopasowany meander, odcisk podglądu go uwzględnia. Referencje z rzekami: tylko M06 i M19. Wynik: T 1361 → 1514 ‰ (ref. 1626–1669), S 181 → 24 ‰ (ref. 0), P1 bez spadku, 0 rzek-wysp w 1200 seedach, ale **kryterium D6 z góry zapisane nie spełnione** (22/31 seedów lepszych < 75 %; dopasowanie nasycone na meander 8; model zmieniony po zobaczeniu 4a, te same dwie mapy). Testy rdzenia PASS, regresja G1 `--commit` passed. Nie sprawdzono: wyglądu (A/B), okna GUI z nowym meandrem (rme.exe czeka na przebudowę), rozwidleń, jaskiń, gór. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), D6/D9 w [TECH_DEBT.md](procedural/TECH_DEBT.md).
+
 ## 2026-11-08 — G4: brushe z zewnętrzną bordurą (pierścień) i paleta dekoracji (schemat v5)
 
 Brushe z zewnętrzną bordurą do niczego (`earth`, `mountain`, `snowy mountain` i inne) rysują krawędź poza generowanym obszarem; przy takich brushach pole przylegające do niezapisywalnego sąsiada bez gruntu zostaje puste, a bordura ląduje wewnątrz obszaru (pierścień 1 kafla); odcisk podglądu przyjmuje kafle tylko z borderem. Pełne przygotowanie: 31 z 31 brushy gruntu przechodzi (było 21). Profil niesie także paletę dekoracji (drzewo, krzak, kamień); okno wpisuje ją w pola Tree/Bush/Stone. Korekta: `snowy mountain` nie jest stubem. Regresja G1 `--surface` i `--commit` PASS. [G4_GUI.md](procedural/G4_GUI.md).
