@@ -7,6 +7,7 @@
 #include "procedural/core/png_writer.h"
 #include "procedural/core/style_profile.h"
 #include "procedural/core/surface.h"
+#include "procedural/core/water_shape.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -40,6 +41,12 @@ int main(int argc, char** argv) {
 		for (size_t c = 0; c < pixels.size(); ++c) pixels[c] = static_cast<uint8_t>(grid->cells[c]);
 		const auto png = encodeIndexedPng(side, side, colors, pixels);
 		if (!png) { std::cerr << "cannot encode\n"; return 5; }
+		if (const auto shapes = waterShapesOf(*grid)) {
+			const RiverSummary r = summarizeRivers(shapes->rivers);
+			uint64_t skeleton = 0;
+			for (const auto& river : shapes->rivers) skeleton += river.skeleton;
+			std::cout << std::format("seed {}: rivers {} skeleton {} T {} S {} W {} lakes {}\n", seed, r.count, skeleton, r.tortuosityPermille, r.straightPermille, r.widthMilli, shapes->lakeAreas.size());
+		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
 	}

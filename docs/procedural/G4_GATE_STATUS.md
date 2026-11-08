@@ -120,3 +120,4 @@ Mediany różnic odległości od referencji (4b, fold M06→M19): T −58 ‰ (p
 - Pomiar to szkielet kratowy (przybliżenie); progi (odcinek ≥ 12, składowa rzeczna) wybrane przed pomiarem bez wiedzy o czułości.
 - Nie oceniano wyglądu (ślepe A/B), rozwidleń, rozmiarów jezior, podziemi ani BlackTek. Referencja S = 0 oznacza, że w referencjach nie ma 12-kafelkowych prostych szkieletu; część tej różnicy może wynikać z samego szkieletowania.
 - Rzeki w profilach v6 mają meander 8 (profile v5 nie są już wspierane).
+- **Korekta (2026-11-08, [G4_COMPARE.md](G4_COMPARE.md)):** metryka rzek iteracji 4 pomija składowe wody ≥ 20 000 kafli (morze), więc duże rzeki połączone z morzem nie weszły ani do referencji, ani do dopasowania meandru. Referencje (M06 W ≈ 1,6) opisują wąskie strumienie, a rzeki generatora są szersze (W ≈ 4,4–6,6). Wynik iteracji 4 dotyczy tylko takich strumieni.
