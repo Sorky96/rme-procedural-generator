@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — Regresja G1/G2 po zmianach G4 (iteracje 3–9) — PASS z długiem
+
+Na bieżącym kodzie: sonda `--commit` `passed: true` (stderr pusty), sonda `--surface` wszystkie asercje PASS; `passed: false` tylko przez 7 znanych ostrzeżeń `SetFocus` (identyczne z przebiegiem G2 z 2026-11-07, dług D1/D2). Szlaki (7 pędzli) potwierdzone w GUI przez użytkownika, bez osobnej sondy. Użytkownik uznał szlaki po odepchnięciu od skały za dobre. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: opcjonalne szlaki (iteracja 9) — PARTIAL
 
 Pomiar 9a: szlaki (bruk, żwir, chodnik) da się zmierzyć tylko w M06 i M19 (0,5–0,7 % powierzchni). Zaimplementowano opcjonalne szlaki (domyślnie wyłączone): `SurfaceKind::Path`, `pathLength`, trasy A* po lądzie, resolver z 7. pędzlem, pola w oknie generatora. Metryka L/W/B w paśmie referencji dla m06 i m19 (3 z 3). Testy rdzenia PASS. Wygładzenie (9c) i odpychanie od skały (9d, szlak przy skale −80 %). Użytkownik potwierdził w GUI: Preview, Validate, Place i Undo/Redo ze szlakami działają. **Niezweryfikowane: regresja G1 `--commit`, warunek udziałów rodzajów, metryka B poza pasmem (artefakt).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

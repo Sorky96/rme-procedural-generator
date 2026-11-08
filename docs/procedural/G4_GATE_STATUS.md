@@ -247,3 +247,11 @@ Kryterium zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9d
 | m19 | 87,5 → 10 ‰ | 99,4 → 16,7 ‰ | 91,0 (78), w paśmie | 4 655 (4 606), w paśmie |
 
 Spadek średniej: m19 ok. 83 %, m06 ok. 78 %. Testy rdzenia PASS. **Potwierdzone przez użytkownika w GUI (2026-11-08):** Validate i Undo/Redo ze szlakami przeszły; użytkownik wybrał własny brush szlaku (ciemny), co wyjaśnia wygląd na zrzutach 9c. Zastrzeżenia: mediana w stanie bazowym była już niska (przypadek rzadki, stąd kontrola średnią); B nadal poza pasmem (artefakt opisany w 9c); ocena wzrokowa po 9d należy do użytkownika; udziały rodzajów po dodaniu szlaków nie były mierzone osobno.
+
+### Regresja G1/G2 po zmianach iteracji 3–9 (2026-11-08)
+
+Sondy na rzeczywistym kliencie 10.98 z prywatnego profilu (`g1_run_resolver_probe.py`, bieżący kod: profile v6–v10, meander, szlaki, nowa reguła plaży, więcej oktaw szumu):
+- `--commit` (`g4-reg-commit-20261108a`): `"passed": true`, `input_assets_unchanged: true`, `stderr` pusty; PREVIEW_PASS, COMMIT_PASS, COMMIT_SIZE_PASS ×2, PREVIEW_BASE_GROUND/EXCLUDED/MASK_EPOCH_PASS, testy błędów (preparation, validation, selection) PASS.
+- `--surface` (`g4-reg-surface-20261108a`): wszystkie asercje PASS (SURFACE_RESOLVER_PASS, SURFACE_RESOLVER_SIZE_PASS ×6, SURFACE_E2E_PASS ×2, SURFACE_VEGETATION_E2E_PASS ×2, SURFACE_NEXT_TO_TERRAIN_PASS ×3, SURFACE_BORDER_STATS ×6 bez par bez borderu); `"passed": false` wyłącznie dlatego, że `stderr` nie jest pusty: 7 ostrzeżeń wxWidgets `SetFocus` (błąd Win32 87), **identycznych co do liczby i rozmiaru (1 113 bajtów) jak w historycznym przebiegu G2 `g2g-surface-182831`**, czyli znany dług D1/D2, a nie skutek tych zmian.
+
+**Co regresja NIE obejmuje.** Sondy używają profilu z 6 pędzlami (bez szlaków); ścieżkę z 7 pędzlami (szlaki) potwierdził użytkownik w GUI (Preview, Validate, Place, Undo/Redo), bez osobnej sondy. Nie powtarzano pomiarów wydajności.
