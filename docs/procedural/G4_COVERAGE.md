@@ -1,6 +1,6 @@
 # G4 — pokrycie gruntu (D13), 2026-11-08
 
-**PARTIAL.** Przyczyna D13 znaleziona i usunięta opcją normalizatora. Pokrycie wzrosło z 5 do 9 użytecznych map na powierzchni. Nowe przypisania (96 kluczy `item …`) są **propozycją czekającą na Twoją akceptację**; wyniki poniżej liczono na tej propozycji.
+**PARTIAL.** Przyczyna D13 znaleziona i usunięta opcją normalizatora. Pokrycie wzrosło z 5 do 9 użytecznych map na powierzchni. Nowe przypisania (96 kluczy `item …`) **zaakceptował użytkownik 2026-11-08** (plik lokalny `g4-keymap/accepted-10.98-v2.tsv`, SHA-256 `406f21ab…`, identyczny z propozycją, na której liczono wyniki poniżej); to jego akceptacja heurystyki po nazwach, nie weryfikacja w definicjach klienta.
 
 ## Przyczyna
 Klucz gruntu w mapie semantycznej to nazwa brusha, który posiada ground item (`getGroundBrush()`). W `data/` 10.98 wiele prawdziwych gruntów nie należy do żadnego brusha: warianty `earth` (id 8133 i 10164: razem 156 k kafli, każdy id w jednej mapie), `mountain`, `sand`, `gray sand`, `swamp`, `lava`, `flowing water`, a w mapach jaskiń „ścienne” grunty (`stone wall`, `dirt wall`, `sandstone`). Wszystkie dostawały klucz pusty („bez gruntu”). Zmierzono: 650 różnych item id, 788 876 kafli (z 14 mln) w 19 mapach, 88 % w M06 i M19.
@@ -30,7 +30,7 @@ Klucz gruntu w mapie semantycznej to nazwa brusha, który posiada ground item (`
 
 - Wartości dopasowane nadal sięgają krańców siatek (jezioro 300 ‰, skała 320 ‰); to dopasowanie udziałów, nie ocena wyglądu.
 
-## Do akceptacji
+## Zaakceptowane 2026-11-08
 96 kluczy `item …` w `local-data/procedural-smoke/g4-keymap/proposed-10.98-v2.tsv` (przegląd: `…/c/keymap-review.md`). Tak jak w G4-B: kafle w naturalnych rodzajach to Grass 790 733, Dirt 4 566 080, Rock 728 390, Shore 213 570, Water 1 666 777, Other 1 489 624, Unmapped 49 920. Do decyzji: `item gray sand` i `item sand` = Shore (jak `sand`), `item earth` = Dirt, `item mud` = Dirt, `item flowing water` = Water, `item swamp`/`item lava` = Other, `item rock soil` = Unmapped.
 
 ## Czego NIE zweryfikowano
