@@ -125,3 +125,22 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 **Zmiana modelu (6b, tylko jeśli 6a pokaże lukę).** Dopasowanie `SurfaceTuning::featureSize` z poszerzonej siatki {24, 32, 48, 64, 96, 128, 192, 256} na seedach 1–6, minimalizując |E_16 − ref| + |E_64 − ref| (reszta strojenia bez zmian). Ocena na seedach 1001–1032. Jeśli sama zmiana wielkości cechy nie wystarczy, kolejne kroki (np. dodatkowa skala szumu) zapisuję tutaj osobno przed ich wykonaniem. Warunki dodatkowe 6b: P1 (spójność chodzenia) mediana ≥ 95 % bazowej, niezmiennik rzek w 100 % seedów.
 
 **Zastrzeżenia z góry.** Dwie referencje, dopasowanie in-sample, brak oceny wizualnej (zgodność przy lagu nie rozróżnia „jeden duży ląd” od „wiele dużych płatów”), referencje to duże mapy z elementami ludzkimi (poza naturalnymi komórkami), a okno generatora (256) ucina lag 64 przy brzegu. Jeśli 6a pokaże, że wartości referencji zależą silnie od wybranego fragmentu mapy, zgłaszam to i zmieniam definicję przed 6b.
+
+## Iteracja 7 — plamy ziemi i szerokość plaży (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Oględziny użytkownika w GUI (profile v8, obszar 500×500): ziemia w trawie jest zazębioną „kropkowaną” plamą zamiast zwartych plam; plaże są cienkie (w referencji M19 szerokie). Użytkownik zlecił poprawę obu punktów.
+
+**Definicje (stałe, z góry).** Rodzaje jak w iteracji 6 (komórki naturalne: Grass, Dirt, Rock, Shore, Water; reszta pomijana; Lake i River jako Water).
+- **D — gęstość granicy ziemi**: 1000 · (liczba par 4-sąsiednich komórek Dirt–Grass) / (liczba komórek Dirt), zbiorczo. Duże D = poszarpana, zazębiona ziemia.
+- **F — zwartość ziemi**: ‰ komórek Dirt leżących w 4-spójnych składowych Dirt o polu ≥ 100.
+- **P — grubość plaży**: 1000 · (liczba komórek Shore) / (liczba komórek Shore mających 4-sąsiada Water). 1000 = plaża o grubości jednej komórki.
+- Cecha N/A, jeśli mianownik jest mały: Dirt < 1000 komórek (D, F), Shore < 1000 komórek (P).
+- Referencja = wartość zbiorcza mapy (piętra 0..7, komórki obecne); generator = mediana po seedach.
+
+**Pomiar bazowy (7a).** Profile m06 i m19 w wersji v8 (featureSize 192), seedy 1001–1032, **bok 512** (bliżej użycia w GUI i zgodnie z obserwacją z iteracji 6, że bok 256 ucina skalę); referencje M06 i M19 (m06→M06, m19→M19; in-sample).
+
+**Kryterium (dla 7a i 7b).** Cecha D, F, P (jeśli nie N/A) *w paśmie*, gdy mediana generatora leży w [0,67·ref; 1,5·ref]. Profil „zaliczony”, jeśli wszystkie nie-N/A cechy są w paśmie. Warunki dodatkowe dla 7b: (1) udział każdego z 5 rodzajów w medianie generatora różni się od bazowego (7a) najwyżej o 5 punktów procentowych; (2) niezmiennik rzek w 100 % seedów; (3) P1 (spójność chodzenia) mediana ≥ 95 % bazowej, jeśli narzędzie pomiaru P1 jest dostępne dla boku 512, a jeśli nie, zgłaszam to jako niesprawdzone.
+
+**Zmiana modelu (7b, tylko jeśli 7a pokaże lukę).** Dopasowanie `transitionWidth` z siatki {0, 500, 1000, 2000, 4000, 8000, 16000} oraz `shoreWidth` z siatki {0..8} (podniesienie górnego limitu walidacji z 4 do 8, zewnętrzne pierścienie jak dotąd losowane szumem), osobno dla każdego profilu, na seedach 1–4 bok 512, minimalizując sumę względnych błędów |gen − ref| / ref po nie-N/A cechach. Ocena na seedach 1001–1032. Jeśli samo strojenie nie wystarczy, kolejną zmianę (np. szum wygładzający brzeg ziemi) zapisuję tutaj osobno przed wykonaniem.
+
+**Zastrzeżenia z góry.** Dwie referencje, in-sample; D i F to miary kształtu, nie ocena wizualna; zawężenie przejścia trawa/ziemia zmienia sąsiedztwo rodzajów dopasowane wcześniej (warunek 1 to tylko udziały, nie sąsiedztwo); „plaża” to rodzaj Shore z mapowania klucz→rodzaj (piasek), w referencjach także piasek poza wodą wchodzi do Shore (np. pustynie), więc P mierzy tylko komórki Shore przy wodzie względem wszystkich.
