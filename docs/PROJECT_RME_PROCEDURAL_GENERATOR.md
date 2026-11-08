@@ -366,7 +366,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 - [x] Profile stylu i manifest referencji z wersjonowanym schematem. `g4-manifest/1`, `g4-profile/6` z `checkProfile`, testy rdzenia PASS, powtarzalność dwóch przebiegów; [G4_PROFILE.md](procedural/G4_PROFILE.md), [G4_SPLIT.md](procedural/G4_SPLIT.md). Profile pochodzą z prywatnych map i nie są w repo.
 - [~] Dopasowanie rozkładów ground, adjacency, clustering, biome transitions. Rozkłady, sąsiedztwa i przejście trawa/ziemia dopasowane ([G4_FIT.md](procedural/G4_FIT.md)); clustering i skala struktur tylko częściowo (iteracja 6, kryterium nie spełnione); biomy bez nazw (D9).
-- [~] Reguły zależne od kontekstu: las przy wodzie, kamienie przy górach, ścieżki, przejścia. Las i kamienie kontekstowe są ([G4_DECOR.md](procedural/G4_DECOR.md)); szlaki opcjonalne (iteracja 9, metryka w paśmie, GUI niezweryfikowane); przejść biomów nie ma (D9, D15).
+- [~] Reguły zależne od kontekstu: las przy wodzie, kamienie przy górach, ścieżki, przejścia. Las i kamienie kontekstowe są ([G4_DECOR.md](procedural/G4_DECOR.md)); szlaki opcjonalne (iteracja 9, metryka w paśmie, GUI niezweryfikowane); przejścia między rodzajami częściowo (obwódka trawy wokół skały i plaży, iteracja 10: m06 8 z 8, m19 2 z 8); przejść biomów jako takich nie ma (D9, D15).
 - [~] Profile niezależne dla powierzchni / podziemi / wersji assetów. Profil per klient i hash assetów (oferta w GUI); tylko powierzchnia z ≤ 7, bez podziemi.
 - [~] Holdout evaluation: porównanie z baseline na mapach niewidzianych. Wykonana w iteracjach 1–3 ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md)); poprawa na mapach niewidzianych nie wykazana (jedyny dowód: swamp, n = 2).
 

@@ -173,7 +173,7 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 9975948746684599016ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 17159159863505677800ULL, "Seed 1729 100x100 surface output changed");
 }
 
 struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; std::array<size_t, 5> shoreAt {}; };
@@ -488,12 +488,35 @@ void paths(uint32_t side, uint64_t seeds) {
 	}
 }
 
+// Grass rim (G4 iteration 10): no Dirt cell lies within two cells of Shore, and rock keeps some, but not all, dirt contact.
+void grassRimRule(uint32_t side, uint64_t seeds) {
+	size_t dirtBesideRock = 0;
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		const auto grid = generateSurface(makeConfig(side, seed), extent, budget);
+		require(grid.has_value(), "surface for the rim test");
+		for (uint32_t y = 0; y < side; ++y) {
+			for (uint32_t x = 0; x < side; ++x) {
+				if (grid->cells[size_t(y) * side + x] != SurfaceKind::Dirt) continue;
+				for (int32_t dy = -2; dy <= 2; ++dy) {
+					for (int32_t dx = -2; dx <= 2; ++dx) {
+						const int32_t nx = int32_t(x) + dx, ny = int32_t(y) + dy;
+						if (nx < 0 || ny < 0 || nx >= int32_t(side) || ny >= int32_t(side)) continue;
+						require(grid->cells[size_t(ny) * side + size_t(nx)] != SurfaceKind::Shore, "dirt within two cells of the shore");
+						dirtBesideRock += std::abs(dx) + std::abs(dy) == 1 && grid->cells[size_t(ny) * side + size_t(nx)] == SurfaceKind::Rock;
+					}
+				}
+			}
+		}
+	}
+	require(dirtBesideRock > 0, "the rim removed every contact between dirt and rock");
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3);
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24);
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {

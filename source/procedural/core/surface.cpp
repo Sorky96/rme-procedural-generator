@@ -18,6 +18,7 @@ constexpr uint64_t ditherStream = 0x6469746865725f32ULL;   // "dither_2"
 constexpr uint64_t riverStream = 0x72697665725f7332ULL;    // "river_s2"
 constexpr uint64_t shoreStream = 0x73686f72655f7332ULL;    // "shore_s2"
 constexpr uint64_t meanderStream = 0x6d65616e6465725fULL;  // "meander_"
+constexpr uint64_t rimStream = 0x72696d5f73733130ULL;      // "rim_ss10"
 constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
@@ -69,6 +70,29 @@ uint16_t fractalNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, ui
 		sum += valueNoise(seed, stream + octave * 0x1000193ULL, x, y, octaveStep) << (octaves - 1 - octave);
 	}
 	return uint16_t(sum / ((1u << octaves) - 1));
+}
+
+// Grass rim (G4 iteration 10): dirt does not touch rock or beach in the reference maps. Every Dirt cell within two cells
+// (Chebyshev) of Shore becomes Grass; next to Rock about three in four do, picked by smooth noise so some contact stays.
+void grassRim(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config) {
+	std::vector<uint8_t> rim(kinds.size(), 0);
+	for (size_t i = 0; i < kinds.size(); ++i) {
+		if (kinds[i] != SurfaceKind::Rock && kinds[i] != SurfaceKind::Shore) continue;
+		const uint8_t mark = kinds[i] == SurfaceKind::Rock ? 1 : 2;
+		const int32_t x = int32_t(i % width), y = int32_t(i / width);
+		for (int32_t dy = -2; dy <= 2; ++dy) {
+			for (int32_t dx = -2; dx <= 2; ++dx) {
+				const int32_t nx = x + dx, ny = y + dy;
+				if (nx >= 0 && ny >= 0 && nx < int32_t(width) && ny < int32_t(height)) rim[size_t(ny) * width + size_t(nx)] |= mark;
+			}
+		}
+	}
+	for (size_t i = 0; i < kinds.size(); ++i) {
+		if (!rim[i] || kinds[i] != SurfaceKind::Dirt) continue;
+		const bool nearShore = rim[i] & 2;
+		const uint32_t noise = valueNoise(config.seed, rimStream, uint32_t(config.region.x) + uint32_t(i % width), uint32_t(config.region.y) + uint32_t(i / width), 4);
+		if (nearShore || noise < noiseBins * 3 / 4) kinds[i] = SurfaceKind::Grass;
+	}
 }
 
 // Optional paths (G4 iteration 9): winding routes over Grass, Dirt and Shore between random land cells, 3 to 4 cells
@@ -665,6 +689,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				}
 			}
 		}
+		grassRim(kinds, width, height, config);
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop)) return cancelled();
 

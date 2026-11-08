@@ -255,3 +255,19 @@ Sondy na rzeczywistym kliencie 10.98 z prywatnego profilu (`g1_run_resolver_prob
 - `--surface` (`g4-reg-surface-20261108a`): wszystkie asercje PASS (SURFACE_RESOLVER_PASS, SURFACE_RESOLVER_SIZE_PASS ×6, SURFACE_E2E_PASS ×2, SURFACE_VEGETATION_E2E_PASS ×2, SURFACE_NEXT_TO_TERRAIN_PASS ×3, SURFACE_BORDER_STATS ×6 bez par bez borderu); `"passed": false` wyłącznie dlatego, że `stderr` nie jest pusty: 7 ostrzeżeń wxWidgets `SetFocus` (błąd Win32 87), **identycznych co do liczby i rozmiaru (1 113 bajtów) jak w historycznym przebiegu G2 `g2g-surface-182831`**, czyli znany dług D1/D2, a nie skutek tych zmian.
 
 **Co regresja NIE obejmuje.** Sondy używają profilu z 6 pędzlami (bez szlaków); ścieżkę z 7 pędzlami (szlaki) potwierdził użytkownik w GUI (Preview, Validate, Place, Undo/Redo), bez osobnej sondy. Nie powtarzano pomiarów wydajności.
+
+## Iteracja 10 — przejścia między rodzajami (2026-11-08): m06 8 z 8, m19 2 z 8; kryterium NIE spełnione dla m19
+
+Definicje i kolejne zmiany zapisane przed wykonaniem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 10”, commity `4f5ff75`, `5ec7c07`, `354d9a7`); rdzeń `PatchStats` rozszerzony o skład granic skały i ziemi (test PASS, wartości policzone ręcznie).
+
+**Referencje (skład granicy):** M06 skała RD/RG/RS/RW 33/938/24/4, ziemia DG/DR/DS/DW 951/32/12/4; M19 skała 99/502/251/147, ziemia 728/155/27/88.
+
+| Wariant (v10, bok 512, seedy 1001–1032) | m06 w paśmie | m19 w paśmie | uwagi |
+| --- | --- | --- | --- |
+| 10a (bez zmian) | 6 z 8 | 3 z 8 | ziemia styka się ze skałą i plażą proporcjonalnie do udziału (RD 254–322 wobec 33–99; DS 145–194 wobec 12–27) |
+| 10b (pełna obwódka trawy 2 komórki wokół Rock i Shore) | 8 z 8 | 2 z 8 | RD 0 (m19 ref. 99) poza pasmem, DR 0 (155) wypadło z pasma |
+| 10c (obwódka częściowa wokół Rock, ok. 75 %; pełna wokół Shore) | **8 z 8** (RD 36 wobec 33) | **2 z 8** (RD 43 wobec 99 poza pasmem; DR 21 wobec 155 poza; DS 0 w paśmie) | wybrany wariant, stały, bez parametrów |
+
+**Wniosek.** Dla m06 reguła „ziemia nie styka się ze skałą i plażą” odtwarza skład granic (8 z 8, RD 36 wobec 33). Dla m19 jej nie wystarcza: referencja M19 ma znacznie więcej styku skały z ziemią i, przede wszystkim, **skała styka się z plażą i wodą (RS 251, RW 147)**, czego generator nie robi (RS 0), bo skała to najwyższe, a jezioro najniższe komórki wysokości. To wymagałoby zmiany modelu wysokości, nie reguły lokalnej, więc **nie** została wykonana. Kryterium z zapisu (RD i DS w paśmie w obu profilach) nie jest spełnione dla m19; zgodnie z zapisem nie szukano dalszych parametrów dla metryk. Udziały rodzajów w granicach (m06 Grass 403, Dirt 161; m19 294 / 115; zmiana < 5 punktów procentowych).
+
+**Zmiana zachowania.** Reguła obwódki zmienia wyniki Surface dla wszystkich profili i dla `pathLength` 0; przypięty odcisk Seed 1729 100×100 zmieniono z 9975948746684599016 na 17159159863505677800 (test PASS, dodany test reguły obwódki: brak Dirt w odległości 2 od Shore, część styku Dirt–Rock zostaje). **Nie sprawdzono:** wyglądu w GUI, regresji G1 po tej zmianie (zmiana jest w rdzeniu, nie w resolverze), in-sample na dwóch referencjach.
