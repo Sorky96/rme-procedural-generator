@@ -188,3 +188,17 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 **Przyczyna (z kodu, zapisana przed zmianą).** Szum wysokości ma stałe 3 oktawy: krok, krok/2, krok/4 (wagi 4:2:1). Po podniesieniu `featureSize` do 192 w iteracji 6 najdrobniejsza oktawa ma krok 48 i wagę 1/7, więc brzegi skały, jezior i plaży straciły drobny szczegół; to skutek uboczny iteracji 6, nie zmierzony wcześniej.
 
 **Zmiana modelu 8b.** Szum wysokości dostaje dodatkowe oktawy, gdy `featureSize` > 24: liczba oktaw = min(8, max(3, ⌊log2(featureSize/6)⌋ + 1)), wagi 2^(n−1−oktawa), dzielnik 2^n − 1; dla `featureSize` ≤ 24 wynik bajt w bajt jak dotąd (3 oktawy 4:2:1). Szum wilgotności (ziemia/trawa) bez zmian, żeby nie zwiększać poszarpania ziemi, które użytkownik ocenił negatywnie. Ocena na seedach 1001–1032, bok 512; kryterium jak w 8a; warunki dodatkowe: udziały ±5 punktów procentowych wobec v10, niezmiennik rzek, testy rdzenia PASS; dodatkowo raportuję ponownie E4/E16/E64 z iteracji 6 i P′ z iteracji 7c (nie jako kryterium, jako kontrolę skutków ubocznych).
+
+## Iteracja 9 — szlaki (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Użytkownik wybrał „szlaki” z listy dalszych cech (D9, D15; [PROJECT_RME_PROCEDURAL_GENERATOR.md](../PROJECT_RME_PROCEDURAL_GENERATOR.md), FAZA 4: ścieżki). Generator nie tworzy szlaków w ogóle, więc pomiar bazowy generatora jest zerowy z definicji. Ten krok (9a) ustala, **czy szlaki da się zmierzyć w referencjach** i jak wyglądają, zanim cokolwiek zostanie zaprojektowane.
+
+**Definicje (stałe, z góry).**
+- *Kafel szlaku*: kafel, którego klucz gruntu (nazwa brusha lub `item <nazwa>` dla gruntu bez brusha) jest jednym z: `cobblestone`, `dark cobblestone`, `grassy cobblestone`, `item cobblestone`, `white gravel`, `pavement`, `item pavement`. Lista wybrana z nazw kluczy występujących w referencjach (nie z obejrzanych kształtów); celowo bez podłóg i płytek (`stone floor`, `gray stone tiles`, `wooden floor`, `tiles`, dachy), bo to podłogi budynków, a nie szlaki.
+- *Składowa szlaku*: 4-spójna składowa kafli szlaku, per piętro (z ≤ 7); zaliczona, jeśli pole ≥ 40 kafli, długość szkieletu (Zhang-Suen, jak w iteracjach 4–5) L ≥ 20 i szerokość pole/L ≤ 7 (kształt wąski i długi; szersze płaty to place, nie szlaki).
+- Cechy na mapę (zbiorczo): liczba składowych; **Ls** = suma długości szkieletów na 65 536 obecnych kafli; **Ws** = 1000 · pole / L; **Bs** = rozgałęzienia na 100 kafli szkieletu (×1000); **Us** = udział kafli szlaku w obecnych kaflach (‰).
+- Mapa referencyjna *kwalifikuje się*, jeśli ma ≥ 5 zaliczonych składowych. Jeśli mniej niż dwie mapy się kwalifikują, ocena szlaków jest niemożliwa i **nie zaczynam implementacji generatora** (zgłaszam to).
+
+**Pomiar 9a.** Wszystkie 19 map referencyjnych (mapowanie v3), bez oceny, tylko opis; wynik decyduje, czy 9b (generowanie szlaków i ocena z pasmami jak w iteracji 5) w ogóle ma podstawy.
+
+**Zastrzeżenia z góry.** Rozpoznanie szlaku po nazwie brusha jest heurystyką (płytka brukowa może być też placem lub wnętrzem); szlak w referencji może być z innego gruntu (np. ubita ziemia) i wtedy nie jest widoczny; tylko M06 i M19 mają takie grunty w większej ilości.
