@@ -72,16 +72,23 @@ uint16_t fractalNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, ui
 }
 
 // Optional paths (G4 iteration 9): winding routes over Grass, Dirt and Shore between random land cells, 3 to 4 cells
-// wide. Rivers, lakes and rock are never crossed. Returns false when cancelled.
+// wide, smoothed so they do not turn at right angles and kept off the edge of rock. Rivers, lakes and rock are never
+// crossed. Returns false when cancelled.
 bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
 	const size_t count = kinds.size();
 	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
 	const auto land = [&](size_t i) { return kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt; };
+	const auto nextToRock = [&](size_t i) {
+		const size_t x = i % width, y = i / width;
+		return (x > 0 && kinds[i - 1] == SurfaceKind::Rock) || (x + 1 < width && kinds[i + 1] == SurfaceKind::Rock) ||
+			(y > 0 && kinds[i - width] == SurfaceKind::Rock) || (y + 1 < height && kinds[i + width] == SurfaceKind::Rock);
+	};
 	StableRandom random(config.seed, pathStream);
 	std::vector<uint32_t> cost(count, std::numeric_limits<uint32_t>::max());
 	std::vector<int32_t> parent(count, -1);
 	std::vector<uint8_t> closed(count, 0);
 	std::vector<size_t> touched, route;
+	std::vector<std::pair<int32_t, int32_t>> smooth;
 	uint64_t placed = 0;
 	const uint32_t span = std::max(width, height);
 	const uint32_t minDistance = std::min<uint32_t>(48, span / 3), maxDistance = std::max<uint32_t>(minDistance + 1, std::min<uint32_t>(160, span));
@@ -106,7 +113,11 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 		}
 		if (goal == count) continue;
 		const int32_t gx = int32_t(goal % width), gy = int32_t(goal / width);
-		const auto heuristic = [&](size_t i) { return 10u * uint32_t(std::abs(int32_t(i % width) - gx) + std::abs(int32_t(i / width) - gy)); };
+		// Octile distance: 10 per straight step, 14 per diagonal one; never above the real cost of a step.
+		const auto heuristic = [&](size_t i) {
+			const uint32_t dx = uint32_t(std::abs(int32_t(i % width) - gx)), dy = uint32_t(std::abs(int32_t(i / width) - gy));
+			return 10u * (dx + dy) - 6u * std::min(dx, dy);
+		};
 		using Entry = std::pair<uint32_t, uint32_t>; // estimated total, cell
 		std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
 		for (const size_t i : touched) { cost[i] = std::numeric_limits<uint32_t>::max(); parent[i] = -1; closed[i] = 0; }
@@ -123,42 +134,59 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 			closed[current] = 1;
 			++expanded;
 			if (current == goal) { found = true; break; }
-			const size_t x = current % width, y = current / width;
-			const auto relax = [&](size_t next) {
-				const SurfaceKind kind = kinds[next];
-				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) return;
-				if (closed[next]) return;
-				const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(next % width),
-					uint32_t(config.region.y) + uint32_t(next / width), 5)) * 10 / noiseBins);
-				const uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) - (kind == SurfaceKind::Path ? 8 : 0);
-				const uint32_t candidate = cost[current] + step;
-				if (candidate >= cost[next]) return;
-				if (cost[next] == std::numeric_limits<uint32_t>::max()) touched.push_back(next);
-				cost[next] = candidate;
-				parent[next] = int32_t(current);
-				open.push({candidate + heuristic(next), uint32_t(next)});
-			};
-			if (x > 0) relax(current - 1);
-			if (x + 1 < width) relax(current + 1);
-			if (y > 0) relax(current - width);
-			if (y + 1 < height) relax(current + width);
+			const int32_t x = int32_t(current % width), y = int32_t(current / width);
+			for (int32_t dy = -1; dy <= 1; ++dy) {
+				for (int32_t dx = -1; dx <= 1; ++dx) {
+					if (!dx && !dy) continue;
+					const int32_t nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
+					const size_t next = size_t(ny) * width + size_t(nx);
+					const SurfaceKind kind = kinds[next];
+					if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
+					if (closed[next]) continue;
+					const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(nx),
+						uint32_t(config.region.y) + uint32_t(ny), 5)) * 10 / noiseBins);
+					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + (nextToRock(next) ? 25 : 0);
+					if (dx && dy) step = step * 14 / 10;
+					const uint32_t candidate = cost[current] + step;
+					if (candidate >= cost[next]) continue;
+					if (cost[next] == std::numeric_limits<uint32_t>::max()) touched.push_back(next);
+					cost[next] = candidate;
+					parent[next] = int32_t(current);
+					open.push({candidate + heuristic(next), uint32_t(next)});
+				}
+			}
 		}
 		if (!found) continue;
 		route.clear();
 		for (int32_t cell = int32_t(goal); cell != -1; cell = parent[size_t(cell)]) route.push_back(size_t(cell));
-		const uint32_t manhattan = uint32_t(std::abs(sx - gx) + std::abs(sy - gy));
-		if (route.size() > 4u * std::max<uint32_t>(manhattan, 1)) continue;
-		for (const size_t cell : route) {
-			const size_t x = cell % width, y = cell / width;
+		const uint32_t chebyshev = uint32_t(std::max(std::abs(sx - gx), std::abs(sy - gy)));
+		if (route.size() > 3u * std::max<uint32_t>(chebyshev, 1)) continue;
+		// Moving average of the route points rounds the corners; the line between smoothed points is stamped.
+		constexpr int32_t window = 6;
+		smooth.clear();
+		for (int32_t k = 0; k < int32_t(route.size()); ++k) {
+			const int32_t lo = std::max(0, k - window), hi = std::min(int32_t(route.size()) - 1, k + window);
+			int64_t sumX = 0, sumY = 0;
+			for (int32_t j = lo; j <= hi; ++j) { sumX += int64_t(route[size_t(j)] % width); sumY += int64_t(route[size_t(j)] / width); }
+			smooth.emplace_back(int32_t(sumX / (hi - lo + 1)), int32_t(sumY / (hi - lo + 1)));
+		}
+		const auto stamp = [&](int32_t x, int32_t y) {
 			const uint32_t swell = valueNoise(config.seed, pathStream + 2, uint32_t(config.region.x) + uint32_t(x), uint32_t(config.region.y) + uint32_t(y), 7) >> 15;
 			for (int32_t dy = -1; dy <= 1 + int32_t(swell); ++dy) {
 				for (int32_t dx = -1; dx <= 1 + int32_t(swell); ++dx) {
-					const int32_t px = int32_t(x) + dx, py = int32_t(y) + dy;
+					const int32_t px = x + dx, py = y + dy;
 					if (px < 0 || py < 0 || px >= int32_t(width) || py >= int32_t(height)) continue;
 					const size_t i = size_t(py) * width + size_t(px);
 					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore) kinds[i] = SurfaceKind::Path;
 				}
 			}
+		};
+		for (size_t k = 0; k + 1 < smooth.size(); ++k) {
+			const auto [ax, ay] = smooth[k];
+			const auto [bx, by] = smooth[k + 1];
+			const int32_t steps = std::max(1, std::max(std::abs(bx - ax), std::abs(by - ay)));
+			for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
 		}
 		placed += route.size();
 	}

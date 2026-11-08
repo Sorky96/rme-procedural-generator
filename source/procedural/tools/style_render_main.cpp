@@ -78,7 +78,14 @@ int main(int argc, char** argv) {
 		}
 		if (const auto paths = pathShapesOf(*grid)) {
 			const ChannelSummary p = summarizeChannels(*paths);
-			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells);
+			uint64_t nextToRock = 0;
+			for (size_t c = 0; c < grid->cells.size(); ++c) {
+				if (grid->cells[c] != SurfaceKind::Path) continue;
+				const size_t x = c % side, y = c / side;
+				nextToRock += (x > 0 && grid->cells[c - 1] == SurfaceKind::Rock) || (x + 1 < side && grid->cells[c + 1] == SurfaceKind::Rock) ||
+					(y > 0 && grid->cells[c - side] == SurfaceKind::Rock) || (y + 1 < side && grid->cells[c + side] == SurfaceKind::Rock);
+			}
+			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {} rockadj {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells, paths->maskCells ? nextToRock * 1000 / paths->maskCells : 0);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
