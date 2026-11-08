@@ -343,10 +343,10 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 2 - Sensowna powierzchnia i border
 
-- [ ] Naturalne rzeki, jeziora, teren skalny i brzegi; strefy przejściowe biomów. Wielopiętrowe góry pozostają w FAZIE 5.
-- [ ] Rozszerzenie mapowania semantycznego i testy istniejącego autoborder: wielokierunkowe krawędzie, zachowanie okolicy; bez drugiego silnika borderowania.
-- [ ] Roślinność i detale warunkowe zależne od terenu.
-- [ ] Testy rozkładów, brak nieobsługiwanych itemów, testy wizualne na kilku seedach.
+- [~] Naturalne rzeki, jeziora, teren skalny i brzegi; strefy przejściowe biomów. Wielopiętrowe góry pozostają w FAZIE 5. G2 zamknięte z długiem 2026-11-07 ([G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md)); dalsze zmiany w G4 (2026-11-08): meander rzek (D6 częściowo, kryterium nie spełnione), duże struktury (`featureSize`, kryterium E64 nie spełnione przy boku 256), szersza plaża (P′ w paśmie w m06 i m19), ziemia bez zmiany metryką; [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), [G4_COMPARE.md](procedural/G4_COMPARE.md). Rzeki nadal bez rozwidleń z danych (D9).
+- [~] Rozszerzenie mapowania semantycznego i testy istniejącego autoborder: wielokierunkowe krawędzie, zachowanie okolicy; bez drugiego silnika borderowania. Dowody G2-B w [G2_BORDERS.md](procedural/G2_BORDERS.md) (`pairs_without_border=0`, tylko klient 1098-BlackTek); nie weryfikowane ponownie po zmianach G4 poza jednym profilem w GUI; brushe z zewnętrzną bordurą obsłużone pierścieniem w G4.
+- [x] Roślinność i detale warunkowe zależne od terenu. G2-C (testy rdzenia, ocena GUI użytkownika) i G4-D (wegetacja kontekstowa z profilu, [G4_DECOR.md](procedural/G4_DECOR.md)); ocena wegetacji względem referencji niejednoznaczna (2 z 4 foldów gorsze).
+- [~] Testy rozkładów, brak nieobsługiwanych itemów, testy wizualne na kilku seedach. Testy rozkładów i seedów w rdzeniu PASS; oceny wizualne to oceny użytkownika z GUI (pojedyncze podglądy), bez ślepego A/B.
 
 **G2:** wygenerowany teren czytelny w RME, brak znanych krytycznych błędów borderów.
 
@@ -364,11 +364,11 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 4 - Uczenie stylu L1/L2
 
-- [ ] Profile stylu i manifest referencji z wersjonowanym schematem.
-- [ ] Dopasowanie rozkładów ground, adjacency, clustering, biome transitions.
-- [ ] Reguły zależne od kontekstu: las przy wodzie, kamienie przy górach, ścieżki, przejścia.
-- [ ] Profile niezależne dla powierzchni / podziemi / wersji assetów.
-- [ ] Holdout evaluation: porównanie z baseline na mapach niewidzianych.
+- [x] Profile stylu i manifest referencji z wersjonowanym schematem. `g4-manifest/1`, `g4-profile/6` z `checkProfile`, testy rdzenia PASS, powtarzalność dwóch przebiegów; [G4_PROFILE.md](procedural/G4_PROFILE.md), [G4_SPLIT.md](procedural/G4_SPLIT.md). Profile pochodzą z prywatnych map i nie są w repo.
+- [~] Dopasowanie rozkładów ground, adjacency, clustering, biome transitions. Rozkłady, sąsiedztwa i przejście trawa/ziemia dopasowane ([G4_FIT.md](procedural/G4_FIT.md)); clustering i skala struktur tylko częściowo (iteracja 6, kryterium nie spełnione); biomy bez nazw (D9).
+- [~] Reguły zależne od kontekstu: las przy wodzie, kamienie przy górach, ścieżki, przejścia. Las i kamienie kontekstowe są ([G4_DECOR.md](procedural/G4_DECOR.md)); ścieżki i przejścia biomów nie ma (D9, D15).
+- [~] Profile niezależne dla powierzchni / podziemi / wersji assetów. Profil per klient i hash assetów (oferta w GUI); tylko powierzchnia z ≤ 7, bez podziemi.
+- [~] Holdout evaluation: porównanie z baseline na mapach niewidzianych. Wykonana w iteracjach 1–3 ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md)); poprawa na mapach niewidzianych nie wykazana (jedyny dowód: swamp, n = 2).
 
 **G4:** mierzalna i powtarzalna poprawa wybranych metryk stylu nad ręcznymi presetami, bez pogorszenia krytycznych metryk grywalności.
 
@@ -501,11 +501,11 @@ W `docs/PROGRESS.md` trzymaj aktualny stan. Poniżej szablon startowy, nie rapor
 
 | Phase | Status | Commit | Dowody/testy | Blokery | Następne zadanie |
 |---|---|---|---|---|---|
-| 0 | TODO | - | - | - | Audyt repozytorium |
-| 1 | TODO | - | - | - | Po G0 |
-| 2 | TODO | - | - | - | Po G1 |
-| 3 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 | G3_GATE_STATUS.md | D8 (resztki), D9–D11 | G4 |
-| 4 | TODO | - | - | - | G3 zamknięte z długiem 2026-11-07, start G4 |
+| 0 | VERIFIED | 2026-11-02 | [G0_FINAL_20261102.md](procedural/G0_FINAL_20261102.md) | - | G1 |
+| 1 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-06 (PR #1, `54cec96`) | [G1_GATE_STATUS.md](procedural/G1_GATE_STATUS.md) | pozostałe awarie alokacji, `SetFocus` przy aktywacji | G2 |
+| 2 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 (PR #3, `794b068`) | [G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md) | D5, D6 | G3 |
+| 3 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 (PR #4, `33b5c88`) | G3_GATE_STATUS.md | D8 (resztki), D9–D11 | G4 |
+| 4 | W TOKU, bramka G4 NIE spełniona | 2026-11-08 (gałąź `feature/procedural-g4-style-learning`, bez PR) | [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), [G4_COMPARE.md](procedural/G4_COMPARE.md) | brak poprawy na mapach niewidzianych, wąskie dane (caves, swamp), D9 | Cechy D9 (struktury wielkoskalowe, góry, szlaki), więcej map |
 | 5 | TODO | - | - | - | Po G4 |
 | 6 | TODO | - | - | - | Po G5 |
 | 7 | TODO | - | - | - | Po G6 |
