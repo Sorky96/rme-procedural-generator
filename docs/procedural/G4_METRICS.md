@@ -256,3 +256,11 @@ Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o poł
 
 **Zastrzeżenia z góry.** Obwódka trawy zmniejsza udział ziemi i jej poszarpanie przy skale; ocena wzrokowa należy do użytkownika; in-sample na dwóch referencjach.
 
+### Iteracja 10 — wynik 10b i zapis 10c (2026-11-08, przed wykonaniem 10c)
+
+**10b (pełna obwódka trawy 2 komórki wokół Rock i Shore; v10, bok 512, seedy 1001–1032).** m06: 8 z 8 cech w paśmie (RD 0, DS 0 i DR 0 mieszczą się w paśmie bezwzględnym ±50 ‰ wokół referencji 33/12/32). m19: 2 z 8 (RD 0 wobec ref. 99 poza pasmem [66, 148]; DR 0 wobec 155 poza pasmem, a w 10a było w paśmie; DS 0 w paśmie bezwzględnym). **Kryterium 10b nie spełnione dla m19**: obwódka całkowicie usuwa styk ziemi ze skałą, a w M19 jest on niezerowy. Udziały rodzajów w granicach (m06: Grass 403, Dirt 160, Shore 45; m19: 295 / 114 / 45 ‰; zmiana < 5 punktów procentowych wobec 10a).
+
+**Zmiana 10c.** Obwódka wokół Rock jest częściowa: komórka Dirt w odległości Czebyszewa ≤ 2 od Rock zmienia się w Grass, gdy szum wartościowy (krok 4) komórki jest poniżej 75 % zakresu (prawdopodobieństwo zmiany ok. 75 %); obwódka wokół Shore pozostaje pełna (ref. DS 12–27 jest bliskie zeru). Wartość 75 % wybrana tak, by zostawić ok. jedną czwartą styku (referencje RD 33–99 przy 254–322 w 10a); wybrana po zobaczeniu 10a i 10b (adaptacyjnie, jedna wartość, bez przeszukiwania siatki).
+
+**Kryterium 10c.** Jak w 10b: RD i DS w paśmie w obu profilach, cechy będące w paśmie w 10a pozostają w paśmie (m.in. DR w m19), udziały ±5 punktów procentowych, testy rdzenia PASS. Jeśli DR w m19 wypadnie z pasma (możliwe: RD i DR zależą od tego samego styku, ale mają różne mianowniki), zgłaszam to jako niespełnione i **nie** szukam dalszych parametrów dla metryk; wybór między pełną a częściową obwódką przechodzi wtedy do oceny wzrokowej użytkownika.
+
