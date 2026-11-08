@@ -184,3 +184,18 @@ Udział Shore rośnie z ok. 1 % do 3,4 % (cel zmiany); pozostałe udziały spada
 ### Korekta profilu m19 (2026-11-08, na prośbę użytkownika po ocenie wzrokowej)
 
 Po oglądzie v9 użytkownik uznał, że trawa i ziemia w m19 tworzą „wąskie paski” (kropkowaną mozaikę), w m06 zwarte plamy. `transitionWidth` m19 obniżony z 16 000 (górna granica siatki dopasowania) do 6 000 jak w m06: profile `g4-profiles/10.98-v10` (ręczna zmiana pliku, nie wynik `style_styles`). Decyzja wzrokowa użytkownika ma pierwszeństwo przed metryką: D (granica trawa/ziemia) m19 spada względem 7a/7c, czyli dalej od referencji M19 (451), co jest świadomą zgodą. Inne profile z `transitionWidth` 16 000 (m05, winter) nie zostały zmienione.
+
+## Iteracja 8 — masywy skalne (2026-11-08): kryterium NIE spełnione
+
+Definicje, wynik 8a i zmiana modelu zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 8”, commity `ee52877`, `76a859e`); rdzeń `PatchStats` rozszerzony o skałę (test PASS, wartości policzone ręcznie). Referencje M06 / M19: RB (granica skały) 333 / 121, RF (zwartość ≥ 500) 167 / 862, RS (pył < 20) 36 / 15.
+
+| Wariant (v10, bok 512, seedy 1001–1032) | m06 RB / RF / RS | m19 RB / RF / RS | w paśmie |
+| --- | --- | --- | --- |
+| 8a (3 oktawy szumu wysokości) | 49 / 998 / 0 | 33 / 1000 / 0 | m06 0 z 3, m19 2 z 3 |
+| 8b (więcej oktaw przy `featureSize` > 24, do 8; 6 dla 192) | 77 / 988 / 0 | 47 / 993 / 0 | m06 0 z 3, m19 2 z 3 |
+
+**Wniosek.** Skała generatora jest gładka i zlana w duże bryły (granica 3–10 razy krótsza niż w referencjach; referencyjna skała M06 jest rozdrobniona, M19 zwarta, ale z nierówną krawędzią). Dodatkowe oktawy podniosły RB o ok. 40–55 %, ale nie wystarczyły do pasma; **kryterium nie spełnione**. Przyczyną luki było to, że podniesienie `featureSize` do 192 w iteracji 6 usunęło drobny szczegół z brzegów skały, jezior i plaż (szum miał 3 oktawy).
+
+**Skutki uboczne 8b (kontrola, nie kryterium).** Udziały rodzajów w granicach ±5 punktów procentowych wobec v10 (m06 Grass 390 ‰, Dirt 173 ‰, Shore 45 ‰; m19 Grass 277 ‰, Dirt 127 ‰, Shore 45 ‰), P′ 5 549 / 5 530 (nadal w paśmie), E4/E16/E64 przy boku 512: m06 604 / 448 / 224 (ref 471 / 394 / 233), m19 647 / 496 / 236 (ref 578 / 425 / 197). Zmiana szumu dotyczy profili z `featureSize` > 24 (m06, m19, winter); dla ≤ 24 wynik bajt w bajt jak dotąd (przypięty odcisk Seed 1729 bez zmian, test PASS).
+
+**Zastrzeżenia.** Dwie referencje; skała M06 to tylko ok. 5 % powierzchni; nie sprawdzono niezmiennika rzek ani regresji G1 po zmianie szumu (rzeki zależą od wysokości, więc wpływ jest możliwy); wygląd oceni użytkownik w GUI. Pozostała luka (granica skały) wymagałaby drobnoziarnistego zaburzenia progu skały, niezapisanego jeszcze.

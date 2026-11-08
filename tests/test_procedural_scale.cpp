@@ -75,6 +75,19 @@ void testPatches() {
 	PatchStats notched;
 	addPatchStats(kinds, 20, 20, notched);
 	check(notched.dirtCells == 99 && notched.dirtInLarge == 0, "99 cells is below the large-patch size");
+	// Rock: a 10 x 10 square (100 cells, 40 rock-grass pairs, small and not dust) and three single cells (dust).
+	std::vector<uint8_t> rocks(400, 0);
+	for (size_t y = 5; y < 15; ++y) for (size_t x = 5; x < 15; ++x) rocks[y * 20 + x] = 2;
+	rocks[0] = 2; rocks[19] = 2; rocks[19 * 20] = 2;
+	PatchStats rock;
+	addPatchStats(rocks, 20, 20, rock);
+	check(rock.rockCells == 103 && rock.rockDust == 3 && rock.rockInLarge == 0, "rock cells, dust and large patches counted by hand");
+	check(rock.rockPairs == 40 + 2 + 2 + 2, "rock-grass pairs: square 40, corner cells 2 each");
+	PatchStats rockBig;
+	rockBig.rockCells = 2000; rockBig.rockPairs = 300; rockBig.rockInLarge = 1500; rockBig.rockDust = 100;
+	const PatchSummary rockSummary = summarizePatches(rockBig);
+	check(rockSummary.rockBoundary == 150u && rockSummary.rockCompact == 750u && rockSummary.rockDustShare == 50u, "rock summary");
+	check(!summarizePatches(rock).rockBoundary, "103 rock cells are below the minimum: not applicable");
 	// One row: 5 water, 3 shore, 4 grass. Only the first shore cell touches water.
 	std::vector<uint8_t> row {4, 4, 4, 4, 4, 3, 3, 3, 0, 0, 0, 0};
 	PatchStats beach;

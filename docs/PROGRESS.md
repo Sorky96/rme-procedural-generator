@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: masywy skalne (iteracja 8) — PARTIAL
+
+Metryki skały (RB, RF, RS) zapisane z góry. Skała generatora jest gładsza i bardziej zlana niż w referencjach (RB 33–49 vs 121–333). Przyczyna: podniesienie `featureSize` do 192 usunęło drobny szczegół szumu (3 oktawy). Zmiana: dodatkowe oktawy szumu wysokości przy `featureSize` > 24 (dla ≤ 24 bajt w bajt jak dotąd): RB 33→47 (m19) i 49→77 (m06), kryterium **nie spełnione**; skutki uboczne w granicach (P′, udziały, E_d). `rme.exe` przebudowany. Nie sprawdzono: niezmiennika rzek i regresji G1 po zmianie szumu, wyglądu. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: szersza plaża (iteracja 7c) — PARTIAL
 
 Reguła pierścieni plaży zmieniona (próg szumu ≤ 40 %, jezioro ≥ 90 komórek, `shoreWidth` do 8): P′ (grubość plaży) w paśmie referencji w m06 (5 912 vs 5 638) i m19 (5 871 vs 5 656). Profile `g4-profiles/10.98-v9` (m06 i m19 `shoreWidth` 8) do oceny wzrokowej w GUI; przypięty odcisk Seed 1729 zmieniony (zmiana reguły). Nie sprawdzono: wyglądu, niezmiennika rzek i regresji G1 po zmianie, plaż wokół rzek. Ziemia (D, F) bez zmian. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

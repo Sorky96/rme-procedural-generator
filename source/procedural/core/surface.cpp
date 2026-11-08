@@ -52,14 +52,22 @@ uint32_t valueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint
 	return uint32_t(lerp(top, bottom, ty));
 }
 
-// Three octaves weighted 4:2:1, each at half the lattice step of the previous one.
-uint16_t fractalNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step) {
+// Octaves weighted 2^(n-1-o), each at half the lattice step of the previous one. Three octaves (4:2:1) as long as
+// the finest step stays at 6 cells or more with three; a coarser step gets more octaves, up to eight, so the
+// edges keep fine detail (G4 iteration 8).
+uint32_t octavesFor(uint32_t step) {
+	uint32_t octaves = 1;
+	while (octaves < 8 && (step >> octaves) >= 6) ++octaves;
+	return std::max<uint32_t>(3, octaves);
+}
+
+uint16_t fractalNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step, uint32_t octaves = 3) {
 	uint32_t sum = 0;
-	for (uint32_t octave = 0; octave < 3; ++octave) {
+	for (uint32_t octave = 0; octave < octaves; ++octave) {
 		const uint32_t octaveStep = std::max<uint32_t>(1, step >> octave);
-		sum += valueNoise(seed, stream + octave * 0x1000193ULL, x, y, octaveStep) << (2 - octave);
+		sum += valueNoise(seed, stream + octave * 0x1000193ULL, x, y, octaveStep) << (octaves - 1 - octave);
 	}
-	return uint16_t(sum / 7);
+	return uint16_t(sum / ((1u << octaves) - 1));
 }
 
 // Smallest bin whose cumulative count exceeds permille of the cells; fewer than or
@@ -244,11 +252,12 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 	const auto cancelled = [&] { return std::unexpected(SurfaceError::Cancelled); };
 	try {
 		std::vector<uint16_t> elevation(count), moisture(count);
+		const uint32_t octaves = octavesFor(config.tuning.featureSize);
 		for (uint32_t y = 0; y < height; ++y) {
 			if (stop.stop_requested()) return cancelled();
 			for (uint32_t x = 0; x < width; ++x) {
 				const uint32_t ax = uint32_t(config.region.x) + x, ay = uint32_t(config.region.y) + y;
-				elevation[size_t(y) * width + x] = fractalNoise(config.seed, heightStream, ax, ay, config.tuning.featureSize);
+				elevation[size_t(y) * width + x] = fractalNoise(config.seed, heightStream, ax, ay, config.tuning.featureSize, octaves);
 				moisture[size_t(y) * width + x] = fractalNoise(config.seed, moistureStream, ax, ay,
 					std::min<uint32_t>(config.tuning.featureSize * 2, 8192));
 			}

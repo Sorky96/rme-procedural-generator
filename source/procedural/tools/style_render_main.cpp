@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
 			const PatchStats raw = patchStatsOf(*grid);
 			const PatchSummary ps = summarizePatches(raw);
 			auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
-			std::cout << std::format("patch seed {}: D {} F {} P {} shares {} {} {} {} {}\n", seed, opt(ps.boundary), opt(ps.compact), opt(ps.beach), ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]);
+			std::cout << std::format("patch seed {}: D {} F {} P {} RB {} RF {} RS {} shares {} {} {} {} {}\n", seed, opt(ps.boundary), opt(ps.compact), opt(ps.beach), opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

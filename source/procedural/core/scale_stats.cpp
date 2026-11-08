@@ -111,6 +111,7 @@ std::array<int32_t, 3> lagExcessPermille(const LagStats& stats) {
 }
 
 PatchStats& PatchStats::operator+=(const PatchStats& other) noexcept {
+	rockCells += other.rockCells; rockPairs += other.rockPairs; rockInLarge += other.rockInLarge; rockDust += other.rockDust;
 	dirtCells += other.dirtCells; dirtGrassPairs += other.dirtGrassPairs; dirtInLarge += other.dirtInLarge;
 	shoreCells += other.shoreCells; shoreNextToWater += other.shoreNextToWater; shoreNearWater += other.shoreNearWater;
 	for (size_t i = 0; i < cells.size(); ++i) cells[i] += other.cells[i];
@@ -126,6 +127,13 @@ void addPatchStats(std::span<const uint8_t> kinds, uint32_t width, uint32_t heig
 			if (k >= 5) continue;
 			++out.cells[k];
 			const uint8_t right = x + 1 < width ? kinds[i + 1] : 255, down = y + 1 < height ? kinds[i + width] : 255;
+			if (k == 2) {
+				++out.rockCells;
+				out.rockPairs += (right < 5 && right != 2) + (down < 5 && down != 2);
+			} else if (right == 2 && k < 5) {
+				++out.rockPairs;
+			}
+			if (down == 2 && k < 5 && k != 2) ++out.rockPairs;
 			if (k == 1) {
 				++out.dirtCells;
 				out.dirtGrassPairs += (right == 0) + (down == 0);
@@ -169,7 +177,8 @@ void addPatchStats(std::span<const uint8_t> kinds, uint32_t width, uint32_t heig
 	std::vector<uint8_t> seen(kinds.size(), 0);
 	std::vector<size_t> stack;
 	for (size_t start = 0; start < kinds.size(); ++start) {
-		if (kinds[start] != 1 || seen[start]) continue;
+		const uint8_t kind = kinds[start];
+		if ((kind != 1 && kind != 2) || seen[start]) continue;
 		size_t size = 0;
 		stack.assign(1, start);
 		seen[start] = 1;
@@ -178,13 +187,18 @@ void addPatchStats(std::span<const uint8_t> kinds, uint32_t width, uint32_t heig
 			stack.pop_back();
 			++size;
 			const size_t x = i % width, y = i / width;
-			auto visit = [&](size_t j) { if (kinds[j] == 1 && !seen[j]) { seen[j] = 1; stack.push_back(j); } };
+			auto visit = [&](size_t j) { if (kinds[j] == kind && !seen[j]) { seen[j] = 1; stack.push_back(j); } };
 			if (x > 0) visit(i - 1);
 			if (x + 1 < width) visit(i + 1);
 			if (y > 0) visit(i - width);
 			if (y + 1 < height) visit(i + width);
 		}
-		if (size >= dirtLargePatch) out.dirtInLarge += size;
+		if (kind == 1) {
+			if (size >= dirtLargePatch) out.dirtInLarge += size;
+		} else {
+			if (size >= rockLargePatch) out.rockInLarge += size;
+			if (size < rockDustPatch) out.rockDust += size;
+		}
 	}
 }
 
@@ -207,6 +221,11 @@ PatchSummary summarizePatches(const PatchStats& stats) {
 	if (stats.dirtCells >= minDirtCells) {
 		s.boundary = static_cast<uint32_t>(stats.dirtGrassPairs * 1000 / stats.dirtCells);
 		s.compact = static_cast<uint32_t>(stats.dirtInLarge * 1000 / stats.dirtCells);
+	}
+	if (stats.rockCells >= minRockCellsForStats) {
+		s.rockBoundary = static_cast<uint32_t>(stats.rockPairs * 1000 / stats.rockCells);
+		s.rockCompact = static_cast<uint32_t>(stats.rockInLarge * 1000 / stats.rockCells);
+		s.rockDustShare = static_cast<uint32_t>(stats.rockDust * 1000 / stats.rockCells);
 	}
 	if (stats.shoreNearWater >= minShoreCells) s.beach = static_cast<uint32_t>(stats.shoreNearWater * 1000 / std::max<uint64_t>(stats.shoreNextToWater, 1));
 	uint64_t n = 0;
