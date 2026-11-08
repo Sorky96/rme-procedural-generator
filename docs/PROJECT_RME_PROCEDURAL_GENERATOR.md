@@ -372,6 +372,8 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 **G4:** mierzalna i powtarzalna poprawa wybranych metryk stylu nad ręcznymi presetami, bez pogorszenia krytycznych metryk grywalności.
 
+**G4 NIE SPEŁNIONA (2026-11-08):** mechanizmy z listy powyżej istnieją i są powtarzalne (manifest, podział po rodzinach, profile, dopasowanie rozkładów, reguły wegetacji, ewaluacja na foldach), ale ocena na mapach niewidzianych nie wykazała poprawy ponad ręczne presety bez pogorszenia spójności lądu. Kryteria, wyniki i luki: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ### FAZA 5 - Topologia i wielopiętrowe światy
 
 - [ ] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze.

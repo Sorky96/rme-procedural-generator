@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4-F: bramka G4 NIE spełniona
+
+Ocena na foldach testowych, kryteria z [G4_METRICS.md](procedural/G4_METRICS.md) zapisane przed uruchomieniem, dwa przebiegi bajtowo identyczne. 7 ocenianych foldów: styl lepszy w 3 (M06, M19, swamp), gorszy w 2 (caves, M05), bez zmian w 2; spójność lądu (krytyczna) gorsza w 5 foldach (do 69 % mediany baseline w swamp). Wynik: nie spełniona. Funkcja celu nie ma ograniczenia grywalności, więc dopasowanie tnie ląd jeziorami i rzekami. Propozycje na kolejną iterację (nowe kryteria przed uruchomieniem), brak podpięcia profilu do GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4-D: wegetacja kontekstowa i metryki G4-F zapisane z góry (PARTIAL)
 
 Klasyfikacja doodadów po nazwie brusha (Tree 13, Bush 19, Stone 13 brushy na 247), statystyki kontekstowe (trawa/ziemia × woda × skała), `DecorTuning` w generatorze (domyślny bajtowo bez zmian) i dopasowanie zamknięte; profil `g4-profile/3`. Dowody wegetacji pochodzą w praktyce z 3 map (M05, M06, M19); na walidacji dopasowanie poprawia 2 z 4 porównywalnych foldów, 2 pogarsza. G3 bez regresji (190 plików identycznych). Metryki, seedy 1001–1032, agregacja i kryterium G4 zapisane w [G4_METRICS.md](procedural/G4_METRICS.md) przed jakimkolwiek liczeniem na zbiorze testowym. [G4_DECOR.md](procedural/G4_DECOR.md).
