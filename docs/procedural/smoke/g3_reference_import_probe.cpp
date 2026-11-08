@@ -159,7 +159,9 @@ void runProbe() {
             });
         }
         ImportMeasurements measurements;
-        const auto normalized = normalizeReference(map, limits, SemanticBudget {100'000'000}, &measurements);
+        NormalizeOptions normalizeOptions;
+        normalizeOptions.nameUnbrushedGrounds = !readSetting("name-unbrushed.txt").empty();
+        const auto normalized = normalizeReference(map, limits, SemanticBudget {100'000'000}, &measurements, normalizeOptions);
         const long long returnedAt = std::chrono::steady_clock::now().time_since_epoch().count();
         canceller = {};
         const auto mib = [](uint64_t bytes) { return bytes >> 20; };
@@ -237,6 +239,16 @@ void runProbe() {
         const auto fingerprint = computeFingerprint(normalized->map, FingerprintOptions {}, stopSource.get_token());
         check(fingerprint.has_value(), "Fingerprint failed");
         writeText("fingerprint.fp", serializeFingerprint(*fingerprint));
+        // G4-D13: which ground items no ground brush owns (aggregated per item type, no coordinates).
+        {
+            std::string csv = "server_id,count,client_id,blocking,name\n";
+            for (const auto& [id, use] : summary.groundWithoutBrush) {
+                std::string quoted;
+                for (const char ch : use.name) { if (ch == '"') quoted += '"'; quoted += ch; }
+                csv += std::format("{},{},{},{},\"{}\"\n", id, use.count, use.clientId, use.blocking ? 1 : 0, quoted);
+            }
+            writeText("ground-without-brush.csv", csv);
+        }
         // G4-C: kind statistics through the accepted key map (surface floors 0..7, underground 8..15).
         const std::string keymapText = [&] { std::ifstream f(root / "keymap.tsv", std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); }();
         if (!keymapText.empty()) {

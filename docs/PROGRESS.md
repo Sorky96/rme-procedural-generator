@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — D13: pokrycie gruntu (PARTIAL, mapowanie 96 nowych kluczy czeka na akceptację)
+
+Przyczyna: ground bez brusha w `data/` 10.98 dostawał pusty klucz (650 item id, 789 tys. kafli). Naprawa: opcja normalizatora nadaje klucz `item <nazwa z definicji klienta>`; G3 bez regresji (190 plików bajtowo identycznych z opcją wyłączoną). Bez gruntu: 116 ‰ → 37 ‰ kafli; użytecznych map na powierzchni 5 → 9; podział po treści bez scaleń (poprzednie scalenia były artefaktem pustych kluczy), 9 rodzin; dopasowanie poprawia walidację w 6 z 8 foldów (wcześniej 2 z 4), baseline wygrywa w 2. [G4_COVERAGE.md](procedural/G4_COVERAGE.md).
+
 ## 2026-11-08 — G4-C: cel stylu i dopasowanie parametrów (PARTIAL, wynik w dużej mierze negatywny)
 
 Mapowanie z G4-B zaakceptowane. Cel z map treningowych (waga równa na rodzinę), deterministyczne dopasowanie 7 parametrów `SurfaceTuning` po stałych siatkach, profile `g4-profile/2`; testy PASS, dwie serie bajtowo identyczne. Z 12 map stylu tylko 5 (M05, M06, M11, M14, M19) ma kafle w gruntach z brushy na powierzchni; reszta to prawie wyłącznie „ground bez brusha”. Dopasowanie obniża dystans do celu treningowego 2–10×, ale na rodzinie walidacyjnej poprawia 3–7 % lub pogarsza (2 z 4 foldów wybiera baseline). Nic nie liczono na zbiorze testowym. [G4_FIT.md](procedural/G4_FIT.md).
