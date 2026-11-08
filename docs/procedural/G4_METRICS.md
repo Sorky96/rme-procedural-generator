@@ -66,3 +66,27 @@ Podobieństwa wizualnego, naturalności rzek i gór, klastrowania na skalach 16/
 - B: bez progu; jeśli którykolwiek z dwóch przypadków jest „gorszy” w S1 i S2 naraz, zapisuję to jako zawód.
 
 **Interpretacja z góry:** spełnienie A, C i P1 oznacza wyłącznie, że profile per styl odwzorowują style, z których powstały, bez utraty spójności lądu. **Nie** dowodzi poprawy na mapach niewidzianych i **nie** spełnia bramki G4 z planu; ta pozostaje oceniana przez część B, która z n = 2 niczego nie rozstrzyga. Wynik jest oznaczany „po zmianie modelu”, foldy testowe z iteracji 1–2 pozostają użyte.
+
+## Iteracja 4 — kształt rzek (D9 część wodna, D6), zapisana 2026-11-08 przed implementacją i przed jakimkolwiek pomiarem rzek
+
+**Zakres.** D9 tylko dla ciał wodnych: rzeki (długość, szerokość, krętość, odcinki proste) i rozmiary jezior. Nadal poza zakresem (dług D9 zostaje): rozwidlenia, jaskinie (komory, korytarze), góry (ściany do plateau), szlaki, osady, mikrostruktury, wąskie gardła, piętra. D6: rzeki generatora prowadzone po osiach.
+
+**Definicje (stałe, z góry).**
+- Woda = rodzaj Water (jezioro, rzeka, morze; bez Shore) na z ≤ 7. W referencjach przez zaakceptowane mapowanie, w generatorze Lake i River.
+- Składowa wody = 4-spójna składowa, per piętro. *Szkielet* = ścienianie Zhang-Suen (standardowe, dwa podprzebiegi, sąsiedztwo 8) składowej.
+- *Składowa rzeczna*: pole ≥ 40 kafli, długość szkieletu L ≥ 20 kafli, średnia szerokość pole / L ≤ 7. Inne składowe: jeziora (pole < 20 000) i morze (pole ≥ 20 000; pomijane).
+- Cechy składowej rzecznej: krętość T = 1000 · L / max(bok pudełka) w ‰; udział odcinków prostych S = ‰ kafli szkieletu leżących w ciągu ≥ 12 kolejnych kafli w jednym wierszu lub kolumnie; szerokość W = 1000 · pole / L (tysięczne kafla).
+- Wartość referencyjna cechy = mediana po wszystkich składowych rzecznych map (zbiorczo). Wartość wygenerowana dla seeda = mediana po składowych rzecznych tego seeda; seed bez składowej rzecznej jest raportowany jako „bez rzeki” i nie wchodzi do porównań.
+- Mapa referencyjna *kwalifikuje się*, jeśli ma ≥ 5 składowych rzecznych. Jeśli nie ma co najmniej dwóch takich map, ocena D6 jest raportowana jako niemożliwa, nie jako zaliczona.
+
+**Zmiana modelu.** Nowy parametr `SurfaceTuning::meander` (0..8 kafli, domyślnie 0 = dotychczasowy wynik bez zmian bajt w bajt): poprzeczne przesunięcie linii środkowej trasy rzeki o gładki szum wzdłuż trasy, zerowe przy końcach i w pobliżu ujść dopływów. Dopasowanie `meander` z siatki {0,1,2,3,4,5,6,8}: minimalizuje |T_gen − T_ref| + |S_gen − S_ref| na seedach 1–6, bok 160.
+
+**Ocena (dwa foldy krzyżowe: dopasowanie na jednej kwalifikującej się mapie, ocena na drugiej).** Seedy 1001–1032, bok 256, pary baseline (meander 0) / kandydat; różnica odległości |gen − ref| dla T oraz dla S; reguła „lepszy/gorszy” jak w iteracji 1 (mediana różnicy i ≥ 75 % seedów).
+
+**Kryterium D6 (wszystkie jednocześnie, w obu foldach):**
+1. kandydat lepszy od baseline w T i w S;
+2. spójność chodzenia P1 mediana kandydata ≥ 95 % mediany baseline;
+3. niezmiennik generatora: każda komórka rzeki jest 4-połączona przez komórki rzeki z jeziorem lub krawędzią obszaru, w 100 % seedów (rzeka nie zostaje wyspą).
+Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obiektywnych cechach nie zastępuje oceny wizualnej (ślepe A/B jest osobnym krokiem).
+
+**Zastrzeżenia z góry:** dowód z co najwyżej kilku referencji (prawdopodobnie M06 i M19), pomiar kształtu to szkielet kratowy (przybliżenie), próg „prosty odcinek ≥ 12” i definicja składowej rzecznej wybrane przed pomiarem, ale bez wiedzy o ich czułości.
