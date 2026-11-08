@@ -2,7 +2,7 @@
 
 ## 2026-11-08 — G4: ściany budynków (iteracja 11c) — PARTIAL
 
-Na prośbę użytkownika podłogi budynków dostały ściany (bez drzwi): warstwa przedmiotów ścian w planie (`GroundPlan::walls`, `GroundProfile::wall`), walidacja w resolverze i podglądzie, wyrównanie elementów istniejącym `WallBrush::doWalls`, pola w oknie generatora. Mediana komórek obrysu w paśmie referencji (28 vs 30 / 24). Regresja G1 `--commit` PASS. **Niezweryfikowane: GUI (Preview/Validate/Place/Undo ze ścianami), poprawność narożników na kliencie, e2e na rzeczywistym kliencie.** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+Na prośbę użytkownika podłogi budynków dostały ściany (bez drzwi): warstwa przedmiotów ścian w planie (`GroundPlan::walls`, `GroundProfile::wall`), walidacja w resolverze i podglądzie, wyrównanie elementów istniejącym `WallBrush::doWalls`, pola w oknie generatora. Mediana komórek obrysu w paśmie referencji (28 vs 30 / 24). Regresja G1 `--commit` PASS. Użytkownik potwierdził w GUI: budynki wyglądają jak realne, Preview/Validate/Place/Undo/Redo bez problemu. **Niezweryfikowane: e2e sondą na rzeczywistym kliencie (sonda G1 bez ścian).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
 
 ## 2026-11-08 — G4: osady i struktury, podstawy budynków (iteracja 11) — PARTIAL
 
