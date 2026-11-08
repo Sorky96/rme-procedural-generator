@@ -98,3 +98,6 @@ add_test(NAME test_procedural_water COMMAND test_procedural_water)
 
 add_executable(water_eval ${CMAKE_CURRENT_SOURCE_DIR}/tools/water_eval_main.cpp)
 target_link_libraries(water_eval PRIVATE rme_procedural_core)
+
+add_executable(style_render ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_render_main.cpp)
+target_link_libraries(style_render PRIVATE rme_procedural_core)

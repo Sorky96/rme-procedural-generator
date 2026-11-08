@@ -11,6 +11,7 @@
 #include "procedural/adapter/style_profile_store.h"
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/core/decor_context.h"
+#include "procedural/core/png_writer.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
 #include "procedural/core/water_shape.h"
@@ -23,6 +24,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <unordered_map>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -349,6 +351,28 @@ void runProbe() {
             const auto waterShapes = extractWaterShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(waterShapes.has_value(), "Water shape extraction failed");
             writeText("water-shapes-surface.txt", serializeWaterShapes(*waterShapes));
+            {
+                // One pixel per tile, coloured by style kind, for a side-by-side look at a floor with the generator.
+                constexpr PngColor kindColors[] = {{70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {230, 230, 230}, {255, 0, 255}, {70, 70, 70}, {0, 0, 0}};
+                std::unordered_map<std::string_view, uint8_t> kindOfKey;
+                for (const auto& e : *keymap) kindOfKey.emplace(e.key, static_cast<uint8_t>(e.kind));
+                const auto& names = normalized->map.groundKeys();
+                std::vector<uint8_t> kindOfIndex(names.size(), 6);
+                for (size_t i = 0; i < names.size(); ++i) {
+                    const auto it = kindOfKey.find(names[i]);
+                    if (it != kindOfKey.end()) kindOfIndex[i] = it->second;
+                }
+                for (const SemanticFloor& floor : normalized->map.floors()) {
+                    if (floor.bounds.z > 7 || floor.ground.size() < 4000) continue;
+                    std::vector<uint8_t> pixels(floor.ground.size(), 8);
+                    for (size_t i = 0; i < pixels.size(); ++i)
+                        if (floor.traits[i] & bit(Trait::Present)) pixels[i] = kindOfIndex[floor.ground[i]];
+                    const auto png = encodeIndexedPng(static_cast<uint32_t>(floor.bounds.width), static_cast<uint32_t>(floor.bounds.height), kindColors, pixels);
+                    if (!png) continue;
+                    std::ofstream file(root / "analysis" / std::format("kind-map-z{:02}.png", floor.bounds.z), std::ios::binary);
+                    file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
+                }
+            }
             writeText("kind-stats-surface.txt", serializeStats(*surface));
             writeText("kind-stats-underground.txt", serializeStats(*underground));
         }
