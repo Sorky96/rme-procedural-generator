@@ -32,3 +32,14 @@ W przeciwnym razie wynik to **nie spełniony** (z wyliczeniem, które warunki za
 
 ## Czego ta ewaluacja nie obejmuje
 Podobieństwa wizualnego, naturalności rzek i gór, klastrowania na skalach 16/32/64, ocen człowieka, podziemi, klienta BlackTek, reguł kontekstowych poza wegetacją, oraz testu memoryzacji wyniku generatora względem referencji.
+
+## Iteracja 2 (zapisana 2026-11-08 po obejrzeniu wyniku iteracji 1; przed jej uruchomieniem)
+
+**Co się zmienia: model, nie metryki ani kryterium bramki.** Metryki S1, S2, S3, P1, seedy 1001–1032, agregacja, reguła „lepszy/gorszy”, kryterium G4 i zestaw foldów są dokładnie te z iteracji 1. Zmienia się dopasowanie `SurfaceTuning`:
+- **Ograniczenie spójności lądu w dopasowaniu:** kandydat (wartość jednego parametru w przeszukiwaniu) jest odrzucany, jeśli mediana spójności lądu P1 na seedach dopasowania (1–6, bok 160) jest niższa niż **97 %** mediany P1 ręcznych (domyślnych) parametrów na tych samych seedach. Margines 97 % (zamiast 95 % z kryterium) wybrany z góry, żeby zostawić zapas na zmianę boku i seedów. Odrzucony kandydat nie uczestniczy w wyborze; start (ręczne parametry) zawsze spełnia ograniczenie.
+- Cel treningowy, wybór kroku po walidacji i dopasowanie wegetacji bez zmian.
+
+**Zastrzeżenia, które ta iteracja dziedziczy i pogłębia:**
+- Iteracja 2 została zaprojektowana po zobaczeniu wyników iteracji 1 na tych samych foldach testowych. Foldy testowe są więc używane po raz drugi i wynik nie jest niezależnym testem w sensie G4; to ocena po adaptacji modelu do znanych słabości. Wynik zostanie oznaczony „po zmianie modelu” i nie zastępuje iteracji 1, tylko leży obok niej.
+- Seedy testowe są te same, mapy testowe te same; różnica dotyczy wyłącznie strojenia.
+- Jeśli kandydat nie przejdzie ograniczenia w żadnym kroku, profil foldu jest identyczny z ręcznymi parametrami (wynik „bez rozstrzygnięcia”), co jest dozwolonym i uczciwym rezultatem.
