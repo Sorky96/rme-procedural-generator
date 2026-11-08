@@ -107,3 +107,21 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 **Kryterium (dla 5a i 5b, jednakowe).** Dla profilu stylu X z referencją M_X (m06→M06, m19→M19; to jest dopasowanie in-sample, nie test na mapie niewidzianej): cecha jest *w paśmie*, jeśli mediana generatora leży w [0,67·ref; 1,5·ref]. Profil „zaliczony”, jeśli ≥ 3 z 4 cech jest w paśmie i seedów z kanałem jest ≥ 75 %. Wynik 5a to opis stanu, nie bramka. Zmiana generatora 5b jest zaliczona, jeśli oba profile są zaliczone oraz spełnione pozostają: P1 (spójność chodzenia) mediana ≥ 95 % bazowej i niezmiennik „każda komórka rzeki dochodzi do jeziora lub krawędzi” w 100 % seedów (jeśli 5b zmienia ten niezmiennik, nowy zapisuję przed zmianą).
 
 **Zastrzeżenia z góry.** Dwie referencje z rzekami (M06, M19), próg 13×13 i progi pasma wybrane bez znajomości wartości, kanał to przybliżenie (też małe jeziora ≤ 12 szerokości i zatoki wejdą do pomiaru), brak oceny wizualnej. Jeśli 5a pokaże, że definicja kanału nie oddziela rzek od zatok na wycinku, który oglądałem, zgłaszam to i zmieniam definicję **przed** 5b z zapisem w tym pliku.
+
+## Iteracja 6 — struktury w dużej skali (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Porównanie wizualne ([G4_COMPARE.md](G4_COMPARE.md)): generator daje jednolitą mozaikę w jednej skali, referencje mają duże masy lądu, morza i skały. Obecna miara G4 (udziały, sąsiedztwo o odległości 1) tego nie opisuje.
+
+**Definicje (stałe, z góry).**
+- Rodzaje naturalne: Grass, Dirt, Rock, Shore, Water (w generatorze Lake i River razem jako Water). Komórki innego rodzaju (Other, Unmapped, NoGround, brak kafla, Preserve) nie biorą udziału w żadnej parze.
+- *Zgodność na odległości d*: ‰ par komórek (x, y) i (x+d, y) oraz (x, y) i (x, y+d), obu naturalnych, o tym samym rodzaju, d ∈ {4, 16, 64}; liczona na piętrach 0..7 zbiorczo dla referencji i na jednym obszarze dla seeda generatora.
+- *Zgodność przypadkowa* A0 = Σ_k s_k² ‰, gdzie s_k to udział rodzaju k wśród komórek naturalnych. *Nadmiar* E_d = zgodność(d) − A0, w ‰ (różnica zgodności ponad losowy układ o tych samych udziałach), więc miara nie zależy od samych udziałów gruntu.
+- Referencja = wartość E_d mapy; generator = mediana E_d po seedach.
+
+**Pomiar bazowy (6a).** Profile m06 i m19, seedy 1001–1032, bok 256, profil v7; referencje M06 i M19 (m06→M06, m19→M19, in-sample jak w iteracji 5).
+
+**Kryterium (dla 6a i 6b).** Cecha E_16 i E_64 *w paśmie*, jeśli mediana generatora leży w [0,67·ref; 1,5·ref]. Profil „zaliczony”, jeśli oba E_16 i E_64 są w paśmie. E_4 raportuję bez oceny (kontrola, że drobna skala się nie psuje: mediana E_4 generatora w paśmie jak wyżej to warunek dodatkowy dla 6b).
+
+**Zmiana modelu (6b, tylko jeśli 6a pokaże lukę).** Dopasowanie `SurfaceTuning::featureSize` z poszerzonej siatki {24, 32, 48, 64, 96, 128, 192, 256} na seedach 1–6, minimalizując |E_16 − ref| + |E_64 − ref| (reszta strojenia bez zmian). Ocena na seedach 1001–1032. Jeśli sama zmiana wielkości cechy nie wystarczy, kolejne kroki (np. dodatkowa skala szumu) zapisuję tutaj osobno przed ich wykonaniem. Warunki dodatkowe 6b: P1 (spójność chodzenia) mediana ≥ 95 % bazowej, niezmiennik rzek w 100 % seedów.
+
+**Zastrzeżenia z góry.** Dwie referencje, dopasowanie in-sample, brak oceny wizualnej (zgodność przy lagu nie rozróżnia „jeden duży ląd” od „wiele dużych płatów”), referencje to duże mapy z elementami ludzkimi (poza naturalnymi komórkami), a okno generatora (256) ucina lag 64 przy brzegu. Jeśli 6a pokaże, że wartości referencji zależą silnie od wybranego fragmentu mapy, zgłaszam to i zmieniam definicję przed 6b.
