@@ -286,3 +286,13 @@ Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o poł
 
 **Zastrzeżenia z góry.** Podłoga bez ścian nie jest budynkiem; porównanie obwiedni podłogi z obwiednią muru referencji to przybliżenie (mur obejmuje obrys, podłoga wnętrze, więc podłoga bywa o 2 komórki mniejsza); rozmieszczenie jest losowe (bez dróg, bez skupisk osad); liczba budynków z dwóch map.
 
+### Iteracja 11c — ściany budynków (zapisana 2026-11-08 przed implementacją; decyzja użytkownika: „wolę razem ze ścianami, drzwi niewymagane”)
+
+**Zakres.** Do podstaw budynków (11b) dochodzi obrys ścian. Ściany to przedmioty na kaflu (nie grunt): plan zyskuje warstwę przedmiotów ścian, kładzionych jak roślinność po obliczeniu borderów gruntu, a dopasowanie elementów ściany (poziome, pionowe, narożniki) robi istniejący mechanizm RME (`WallBrush::doWalls`) na buforze podglądu, bez drugiego silnika. Drzwi: poza zakresem (budynek ma ciągły obrys).
+
+**Model.** `GroundProfile::wall` = nazwa pędzla ściany (puste = bez ścian; dozwolone tylko przy włączonych podstawach); `GroundPlan::walls` = identyfikator przedmiotu ściany (pierwszy element pędzla, `WallBrush::getPlacementItemId`) dla każdej *komórki obrysu*: komórki Floor mającej 4-sąsiada innego rodzaju (dla prostokąta 9×7: 28 komórek). Resolver sprawdza, że pędzel istnieje, daje niezerowy identyfikator i że przedmiot nie jest gruntem ani meta-itemem; podgląd sprawdza, że każdy przedmiot ściany należy do pędzla profilu (`hasWall`), leży na komórce z gruntem planu i że plan nie ma ściany poza maską. Okno generatora: pole wyboru „Walls” i pędzel ściany; ściany tylko przy „Buildings” > 0. Odcisk podglądu i plan zawierają warstwę ścian.
+
+**Ocena.** (1) Metryka rdzenia: mediana liczby komórek obrysu na budynek (komórki Floor z 4-sąsiadem nie-Floor) w paśmie [0,67·ref; 1,5·ref] względem mediany komórek muru w referencjach (m06 30, m19 24), seedy 1001–1032, bok 512, gęstość jak w 11b (30 / 40). (2) Test rdzenia: obrys ma 2·(dłuższy+krótszy)−4 komórek dla każdego prostokąta. (3) Weryfikacja na rzeczywistym kliencie w GUI przez użytkownika (Preview, Validate, Place, Undo/Redo ze ścianami; poprawność narożników). (4) Regresja G1 `--commit` i `--surface` bez zmian wyników. Warunek dodatkowy: brak ścian poza maską i na komórkach chronionych (kontrola podglądu).
+
+**Zastrzeżenia z góry.** Metryka (1) wynika z rozmiarów zadanych w 11b (dla prostokąta obrys to 28 komórek) i jest sprawdzeniem implementacji, nie niezależnym dowodem; dopasowanie ścian (narożniki, T) zależy od mechanizmu RME i klienta, który zweryfikuje użytkownik; budynek bez drzwi nie jest wejściem do rozgrywki; dachów i wnętrz brak; sonda G1 nie obejmuje jeszcze ścieżki ze ścianami.
+
