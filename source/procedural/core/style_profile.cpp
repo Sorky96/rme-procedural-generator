@@ -340,7 +340,11 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 		else if (type == "tuning" && f.size() == 12 && !p.tuning) {
 			uint32_t v[11];
 			for (size_t i = 0; i < 11; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
-			p.tuning = SurfaceTuning {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]};
+			SurfaceTuning tuning;
+			tuning.featureSize = v[0]; tuning.lakePermille = v[1]; tuning.minLakeCells = v[2]; tuning.riverCount = v[3];
+			tuning.minRiverLength = v[4]; tuning.shoreWidth = v[5]; tuning.rockPermille = v[6]; tuning.minRockCells = v[7];
+			tuning.dirtPermille = v[8]; tuning.transitionWidth = v[9]; tuning.meander = v[10];
+			p.tuning = tuning;
 		}
 		else return std::unexpected(ProfileError::BadFormat);
 	}

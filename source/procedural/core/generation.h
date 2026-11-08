@@ -28,6 +28,8 @@ enum class GenerationAlgorithm : uint8_t { GroundRoll = 1, Surface = 2 };
 
 // Tunables of the surface algorithm (v2), ignored by GroundRoll. Ranges are enforced by
 // validateSurface.
+// The first eleven members are the ones a style profile stores, in that order (positional initialisation in tests and in
+// the profile parser relies on it); the members after them are set by the user in the generator dialog only.
 struct SurfaceTuning {
 	uint32_t featureSize = 24;        // coarsest noise lattice step in cells, 1..4096
 	uint32_t lakePermille = 60;       // share of lowest cells that start as lake, 0..500
@@ -39,9 +41,9 @@ struct SurfaceTuning {
 	uint32_t minRockCells = 8;        // smaller 4-connected rock patches become land
 	uint32_t dirtPermille = 300;      // share of driest cells that are dirt, 0..1000
 	uint32_t transitionWidth = 6000;  // half width of the grass/dirt dithered band, 0..32768
-	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
-	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
+	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
+	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
 	bool operator==(const SurfaceTuning&) const = default;
 };
 
