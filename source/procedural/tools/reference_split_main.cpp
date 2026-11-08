@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
 		if (!parsed) { std::cerr << "invalid fingerprint for " << entry.alias << '\n'; return 3; }
 		prints.push_back(std::move(*parsed));
 	}
-	const uint32_t genericAtLeast = genericDivisor == 0 ? 0 : std::max<uint32_t>(2, static_cast<uint32_t>((prints.size() + genericDivisor - 1) / genericDivisor));
+	const uint32_t genericAtLeast = genericThreshold(prints.size(), genericDivisor);
 	const std::vector<Fingerprint> specific = withoutGenericWindows(prints, genericAtLeast);
 	const auto families = assignFamilies(*manifest, specific, options);
 	const auto folds = makeFolds(*manifest, families, specific, options);

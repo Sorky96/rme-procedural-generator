@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "procedural/core/generation.h"
 #include "procedural/core/semantic_map.h"
 
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -76,7 +78,45 @@ struct ProfileSource {
 	bool operator==(const ProfileSource&) const = default;
 };
 
-inline constexpr std::string_view profileSchema = "g4-profile/1";
+// The five natural kinds (Grass..Water) are the ones the surface generator can produce and a
+// target is defined on. Other, Unmapped and NoGround are left out of shares and adjacency.
+inline constexpr size_t naturalKindCount = 5;
+
+// Distribution a generator is fitted to, in parts per million of natural tiles / natural neighbour pairs.
+struct StyleTarget {
+	std::array<uint32_t, naturalKindCount> sharesPpm {};
+	// Symmetric: adjacencyPpm[a][b] == adjacencyPpm[b][a]; all entries sum to about 1 000 000.
+	std::array<std::array<uint32_t, naturalKindCount>, naturalKindCount> adjacencyPpm {};
+	bool operator==(const StyleTarget&) const = default;
+};
+
+// Target of one set of counts, or nullopt when it has no natural tile or no natural neighbour pair.
+[[nodiscard]] std::optional<StyleTarget> targetFromStats(const StyleStats& stats) noexcept;
+
+struct MapStats {
+	std::string alias;
+	std::string family;
+	StyleStats stats;
+};
+
+struct TargetBuild {
+	StyleTarget target;
+	std::vector<ProfileSource> used;     // weightPermille of each map that counted, in input order
+	std::vector<std::string> excluded;   // aliases with too few natural tiles or no pairs
+	uint32_t familyCount = 0;
+};
+
+enum class TargetError : uint8_t { NothingUsable, AllocationFailed };
+
+// Every family counts the same, every map inside a family the same, so a large map or a family with
+// many maps does not dominate. A map counts only with at least minNaturalTiles natural tiles.
+[[nodiscard]] std::expected<TargetBuild, TargetError> buildTarget(std::span<const MapStats> maps, uint64_t minNaturalTiles);
+
+inline constexpr std::string_view statsSchema = "g4-kindstats/1";
+[[nodiscard]] std::string serializeStats(const StyleStats& stats);
+[[nodiscard]] std::expected<StyleStats, ProfileError> parseStats(std::string_view text);
+
+inline constexpr std::string_view profileSchema = "g4-profile/2";
 
 struct StyleProfile {
 	std::string client;
@@ -85,7 +125,9 @@ struct StyleProfile {
 	int zMin = 0, zMax = 7;             // Tibia floors: 0..7 surface, 8..15 underground
 	std::vector<ProfileSource> sources;
 	std::vector<KeyMapEntry> keymap;
-	StyleStats stats;
+	StyleStats stats;                          // raw sums over the sources
+	std::optional<StyleTarget> target;         // weighted over the sources
+	std::optional<SurfaceTuning> tuning;       // generator parameters fitted to the target
 	bool operator==(const StyleProfile&) const = default;
 };
 

@@ -76,6 +76,10 @@ struct Fold {
 	uint32_t maxLeakPermille = 0; // largest containment between test and (validation + train) maps
 };
 
+// Number of maps a window must occur in to count as a generic pattern: ceil(mapCount / divisor), at
+// least 2; 0 when divisor is 0 (nothing is generic).
+[[nodiscard]] uint32_t genericThreshold(size_t mapCount, uint32_t divisor) noexcept;
+
 enum class SplitError : uint8_t { TooFewFamilies, InvalidInput };
 
 // Needs at least three style families. maxLeakPermille counts only pairs with at least minSharedWindows

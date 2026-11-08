@@ -227,6 +227,9 @@ void testFamiliesAndFolds() {
 	check(makeFolds(few, fewFamilies, std::span<const Fingerprint>(c.prints).first(2), {}).error() == SplitError::TooFewFamilies, "fewer than three families refused");
 	check(makeFolds(c.manifest, families, std::span<const Fingerprint>(c.prints).first(3), {}).error() == SplitError::InvalidInput, "mismatched inputs refused");
 
+	check(genericThreshold(19, 4) == 5 && genericThreshold(3, 4) == 2 && genericThreshold(8, 4) == 2 && genericThreshold(9, 4) == 3, "generic threshold is ceil(maps / divisor), at least 2");
+	check(genericThreshold(19, 0) == 0, "divisor 0: nothing is generic");
+
 	// A threshold above any overlap merges nothing; one near zero merges the overlapping pairs only.
 	check(assignFamilies(c.manifest, c.prints, {1001, 16}).byOverlap.empty(), "threshold above 1000 merges nothing");
 }

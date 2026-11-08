@@ -53,6 +53,12 @@ StyleProfile sample() {
 	p.stats.kindTiles[7] = 3;
 	p.stats.pairs[0][0] = 9;
 	p.stats.pairs[0][4] = 1;
+	StyleTarget t;
+	t.sharesPpm = {600000, 200000, 100000, 50000, 50000};
+	t.adjacencyPpm[0][0] = 500000;
+	t.adjacencyPpm[0][4] = t.adjacencyPpm[4][0] = 30000;
+	p.target = t;
+	p.tuning = SurfaceTuning {20, 70, 12, 2, 20, 3, 90, 8, 250, 5000};
 	return p;
 }
 
@@ -64,9 +70,9 @@ void testSerialization() {
 	const auto back = parseProfile(*text);
 	check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
 	check(back && serializeProfile(*back).value() == *text, "serialization is stable");
-	check(text->starts_with("g4-profile/1\n"), "schema line first");
+	check(text->starts_with("g4-profile/2\n"), "schema line first");
 
-	check(parseProfile("g4-profile/2\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
+	check(parseProfile("g4-profile/3\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");
 	check(parseProfile(text->substr(0, text->find("stat\t"))).error() == ProfileError::BadFormat, "missing statistics refused");
 	std::string unknownKind = *text;
@@ -95,6 +101,78 @@ void testKeyMapText() {
 	check(parseKeyMap("g4-keymap/1\nkey\tMoss\t-\tx\n").error() == ProfileError::UnknownKind, "unknown kind refused");
 	check(parseKeyMap("g4-keymap/1\nkey\tGrass\t-\tx\nkey\tDirt\t-\tx\n").error() == ProfileError::DuplicateKey, "duplicate key refused");
 	check(parseKeyMap("g4-keymap/1\n# note\nkey\tGrass\t-\tx\n").has_value(), "comments skipped");
+}
+
+void testTargetAndTuning() {
+	StyleProfile p = sample();
+	const auto text = serializeProfile(p);
+	check(text && text->find("target\tshares\t600000") != std::string::npos && text->find("tuning\t20\t70") != std::string::npos, "target and tuning written");
+	const auto back = parseProfile(text.value_or(""));
+	check(back && back->target == p.target && back->tuning == p.tuning, "target and tuning round trip");
+	p.target.reset();
+	p.tuning.reset();
+	const auto plain = serializeProfile(p);
+	const auto plainBack = parseProfile(plain.value_or(""));
+	check(plainBack && !plainBack->target && !plainBack->tuning && *plainBack == p, "a profile without them is valid");
+	std::string cut = *text;
+	cut.erase(cut.find("target\tadjacency\tDirt"), cut.find("target\tadjacency\tRock") - cut.find("target\tadjacency\tDirt"));
+	check(parseProfile(cut).error() == ProfileError::BadFormat, "target with a missing adjacency row refused");
+	check(parseProfile(*text + "tuning\t1\t2\t3\t4\t5\t6\t7\t8\t9\t10\n").error() == ProfileError::BadFormat, "second tuning line refused");
+	std::string overflow = *text;
+	overflow.replace(overflow.find("600000"), 6, "4294967296");
+	check(parseProfile(overflow).error() == ProfileError::BadFormat, "share beyond 32 bits refused");
+}
+
+MapStats mapStats(const char* alias, const char* family, uint64_t grass, uint64_t water, uint64_t grassGrass, uint64_t grassWater) {
+	MapStats m {alias, family, {}};
+	m.stats.kindTiles[static_cast<size_t>(StyleKind::Grass)] = grass;
+	m.stats.kindTiles[static_cast<size_t>(StyleKind::Water)] = water;
+	m.stats.kindTiles[static_cast<size_t>(StyleKind::Other)] = 999;
+	m.stats.pairs[static_cast<size_t>(StyleKind::Grass)][static_cast<size_t>(StyleKind::Grass)] = grassGrass;
+	m.stats.pairs[static_cast<size_t>(StyleKind::Grass)][static_cast<size_t>(StyleKind::Water)] = grassWater;
+	return m;
+}
+
+void testTargetBuild() {
+	const auto one = targetFromStats(mapStats("a", "f", 750, 250, 600, 100).stats);
+	check(one && one->sharesPpm[0] == 750000 && one->sharesPpm[4] == 250000 && one->sharesPpm[1] == 0, "shares of natural tiles only (Other ignored)");
+	// 700 pairs: GG 600 (counted in both cells of the diagonal), GW 100 (one cell each way).
+	check(one && one->adjacencyPpm[0][0] == 600 * 2 * 1'000'000 / 1400 && one->adjacencyPpm[0][4] == one->adjacencyPpm[4][0] && one->adjacencyPpm[0][4] == 100 * 1'000'000 / 1400, "adjacency is symmetric");
+	uint64_t sum = 0;
+	for (const auto& row : one->adjacencyPpm) for (const uint32_t v : row) sum += v;
+	check(sum >= 999'990 && sum <= 1'000'000, "adjacency sums to one million");
+	StyleStats empty;
+	check(!targetFromStats(empty), "no tiles: no target");
+	empty.kindTiles[0] = 5;
+	check(!targetFromStats(empty), "no pairs: no target");
+
+	// Two maps of family F (all grass / all water) and one of family G (half and half): each family counts as one half.
+	const std::vector<MapStats> maps {
+		mapStats("a1", "F", 1000, 0, 100, 0), mapStats("a2", "F", 0, 1000, 0, 0), mapStats("b1", "G", 500, 500, 100, 100), mapStats("tiny", "H", 3, 0, 1, 0)};
+	// a2 has no pairs: unusable. tiny is below the tile minimum.
+	const auto build = buildTarget(maps, 100);
+	check(build.has_value() && build->excluded == std::vector<std::string> {"a2", "tiny"} && build->used.size() == 2, "unusable and tiny maps are excluded and named");
+	check(build && build->familyCount == 2 && build->used[0].weightPermille == 500 && build->used[1].weightPermille == 500, "families weigh the same");
+	check(build && build->target.sharesPpm[0] == 750000 && build->target.sharesPpm[4] == 250000, "weighted shares: (1.0 + 0.5) / 2 grass");
+	const std::vector<MapStats> many {mapStats("a", "F", 1000, 0, 100, 1), mapStats("b", "F", 1000, 0, 100, 1), mapStats("c", "F", 1000, 0, 100, 1), mapStats("d", "G", 0, 1000, 0, 0)};
+	const auto weighted = buildTarget(std::vector<MapStats>(many.begin(), many.begin() + 3), 100);
+	check(weighted && weighted->familyCount == 1 && weighted->used[0].weightPermille == 333, "three maps of one family share the weight");
+	check(buildTarget(std::vector<MapStats> {mapStats("tiny", "H", 3, 0, 1, 0)}, 100).error() == TargetError::NothingUsable, "nothing usable is an error");
+	check(buildTarget({}, 0).error() == TargetError::NothingUsable, "no maps is an error");
+}
+
+void testStatsText() {
+	StyleStats stats;
+	stats.kindTiles[2] = 77;
+	stats.pairs[2][3] = 5;
+	stats.pairs[7][7] = 9;
+	const std::string text = serializeStats(stats);
+	check(text.starts_with("g4-kindstats/1\n"), "stats schema line");
+	const auto back = parseStats(text);
+	check(back && *back == stats && serializeStats(*back) == text, "stats round trip, stable");
+	check(parseStats("g4-kindstats/2\n").error() == ProfileError::UnsupportedSchema, "other stats version refused");
+	check(parseStats(text.substr(0, text.size() - 30)).error() == ProfileError::BadFormat, "cut stats refused");
+	check(parseStats(text + "stat\tkind_tiles\t1\t2\t3\t4\t5\t6\t7\t8\n").error() == ProfileError::BadFormat, "duplicate kind_tiles refused");
 }
 
 void testValidation() {
@@ -179,6 +257,9 @@ int main() {
 	testRules();
 	testSerialization();
 	testKeyMapText();
+	testTargetAndTuning();
+	testTargetBuild();
+	testStatsText();
 	testValidation();
 	testCompatibility();
 	testStats();

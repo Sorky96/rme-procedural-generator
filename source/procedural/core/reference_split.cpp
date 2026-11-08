@@ -82,6 +82,11 @@ std::string renderManifest(const Manifest& manifest) {
 	return out;
 }
 
+uint32_t genericThreshold(size_t mapCount, uint32_t divisor) noexcept {
+	if (divisor == 0) return 0;
+	return std::max<uint32_t>(2, static_cast<uint32_t>((mapCount + divisor - 1) / divisor));
+}
+
 FamilyAssignment assignFamilies(const Manifest& manifest, std::span<const Fingerprint> fingerprints, const FamilyOptions& options) {
 	const size_t n = manifest.entries.size();
 	UnionFind sets(n);

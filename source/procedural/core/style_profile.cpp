@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/style_profile.h"
 
+#include <algorithm>
 #include <charconv>
+#include <map>
 #include <new>
 #include <set>
 #include <unordered_map>
@@ -28,6 +30,17 @@ constexpr KeyRule defaultRules[] = {
 	{"sand", StyleKind::Shore},
 };
 
+void appendStatLines(std::string& out, const StyleStats& stats) {
+	out += "stat\tkind_tiles";
+	for (const uint64_t v : stats.kindTiles) out += '\t' + std::to_string(v);
+	out += '\n';
+	for (size_t a = 0; a < styleKindCount; ++a) {
+		out += std::string("stat\tpairs\t") + kindNames[a];
+		for (const uint64_t v : stats.pairs[a]) out += '\t' + std::to_string(v);
+		out += '\n';
+	}
+}
+
 std::vector<std::string_view> splitTabs(std::string_view line, size_t maxFields) {
 	std::vector<std::string_view> fields;
 	while (fields.size() + 1 < maxFields) {
@@ -43,6 +56,13 @@ std::vector<std::string_view> splitTabs(std::string_view line, size_t maxFields)
 bool parseUnsigned(std::string_view text, uint64_t& out) {
 	const auto r = std::from_chars(text.data(), text.data() + text.size(), out);
 	return r.ec == std::errc {} && r.ptr == text.data() + text.size();
+}
+
+bool parseU32(std::string_view text, uint32_t& out) {
+	uint64_t v = 0;
+	if (!parseUnsigned(text, v) || v > UINT32_MAX) return false;
+	out = static_cast<uint32_t>(v);
+	return true;
 }
 
 bool parseInt(std::string_view text, int& out) {
@@ -170,12 +190,22 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	out += "assets\tdat_sha256\t" + p.datSha256 + '\n';
 	for (const auto& s : p.sources) out += "source\t" + s.alias + '\t' + std::to_string(s.weightPermille) + '\n';
 	for (const auto& e : p.keymap) out += std::string("key\t") + styleKindName(e.kind) + '\t' + (e.rule.empty() ? "-" : e.rule) + '\t' + e.key + '\n';
-	out += "stat\tkind_tiles";
-	for (const uint64_t v : p.stats.kindTiles) out += '\t' + std::to_string(v);
-	out += '\n';
-	for (size_t a = 0; a < styleKindCount; ++a) {
-		out += std::string("stat\tpairs\t") + kindNames[a];
-		for (const uint64_t v : p.stats.pairs[a]) out += '\t' + std::to_string(v);
+	appendStatLines(out, p.stats);
+	if (p.target) {
+		out += "target\tshares";
+		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
+		out += '\n';
+		for (size_t a = 0; a < naturalKindCount; ++a) {
+			out += std::string("target\tadjacency\t") + kindNames[a];
+			for (const uint32_t v : p.target->adjacencyPpm[a]) out += '\t' + std::to_string(v);
+			out += '\n';
+		}
+	}
+	if (p.tuning) {
+		const SurfaceTuning& t = *p.tuning;
+		out += "tuning";
+		for (const uint32_t v : {t.featureSize, t.lakePermille, t.minLakeCells, t.riverCount, t.minRiverLength, t.shoreWidth,
+			t.rockPermille, t.minRockCells, t.dirtPermille, t.transitionWidth}) out += '\t' + std::to_string(v);
 		out += '\n';
 	}
 	return out;
@@ -185,6 +215,8 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	StyleProfile p;
 	bool header = false, haveClient = false, haveLevel = false, haveFloors = false, haveOtb = false, haveDat = false, haveTiles = false;
 	std::array<bool, styleKindCount> havePairs {};
+	std::array<bool, naturalKindCount> haveAdjacency {};
+	bool haveShares = false;
 	while (!text.empty()) {
 		const size_t end = text.find('\n');
 		std::string_view line = text.substr(0, end);
@@ -234,13 +266,137 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			for (size_t i = 0; i < styleKindCount; ++i) if (!parseUnsigned(f[3 + i], p.stats.pairs[a][i])) return std::unexpected(ProfileError::BadFormat);
 			havePairs[a] = true;
 		}
+		else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
+			if (!p.target) p.target = StyleTarget {};
+			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[2 + i], p.target->sharesPpm[i])) return std::unexpected(ProfileError::BadFormat);
+			haveShares = true;
+		}
+		else if (type == "target" && f.size() == 3 + naturalKindCount && f[1] == "adjacency") {
+			StyleKind row;
+			if (!parseStyleKind(f[2], row) || static_cast<size_t>(row) >= naturalKindCount) return std::unexpected(ProfileError::UnknownKind);
+			const size_t a = static_cast<size_t>(row);
+			if (haveAdjacency[a]) return std::unexpected(ProfileError::BadFormat);
+			if (!p.target) p.target = StyleTarget {};
+			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[3 + i], p.target->adjacencyPpm[a][i])) return std::unexpected(ProfileError::BadFormat);
+			haveAdjacency[a] = true;
+		}
+		else if (type == "tuning" && f.size() == 11 && !p.tuning) {
+			uint32_t v[10];
+			for (size_t i = 0; i < 10; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
+			p.tuning = SurfaceTuning {v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9]};
+		}
 		else return std::unexpected(ProfileError::BadFormat);
 	}
+	bool allAdjacency = true;
+	for (const bool b : haveAdjacency) allAdjacency = allAdjacency && b;
+	if (p.target && (!haveShares || !allAdjacency)) return std::unexpected(ProfileError::BadFormat);
 	bool allPairs = true;
 	for (const bool b : havePairs) allPairs = allPairs && b;
 	if (!header || !haveClient || !haveLevel || !haveFloors || !haveOtb || !haveDat || !haveTiles || !allPairs) return std::unexpected(ProfileError::BadFormat);
 	if (auto v = validateProfile(p); !v) return std::unexpected(v.error());
 	return p;
+}
+
+std::string serializeStats(const StyleStats& stats) {
+	std::string out(statsSchema);
+	out += '\n';
+	appendStatLines(out, stats);
+	return out;
+}
+
+std::expected<StyleStats, ProfileError> parseStats(std::string_view text) {
+	StyleStats stats;
+	bool header = false, haveTiles = false;
+	std::array<bool, styleKindCount> havePairs {};
+	while (!text.empty()) {
+		const size_t end = text.find('\n');
+		std::string_view line = text.substr(0, end);
+		text = end == std::string_view::npos ? std::string_view {} : text.substr(end + 1);
+		if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+		if (line.empty()) continue;
+		if (!header) {
+			if (line == statsSchema) { header = true; continue; }
+			return std::unexpected(line.starts_with("g4-kindstats/") ? ProfileError::UnsupportedSchema : ProfileError::BadFormat);
+		}
+		const auto f = splitTabs(line, 12);
+		if (f.size() == 2 + styleKindCount && f[0] == "stat" && f[1] == "kind_tiles" && !haveTiles) {
+			for (size_t i = 0; i < styleKindCount; ++i) if (!parseUnsigned(f[2 + i], stats.kindTiles[i])) return std::unexpected(ProfileError::BadFormat);
+			haveTiles = true;
+		} else if (f.size() == 3 + styleKindCount && f[0] == "stat" && f[1] == "pairs") {
+			StyleKind row;
+			if (!parseStyleKind(f[2], row)) return std::unexpected(ProfileError::UnknownKind);
+			const size_t a = static_cast<size_t>(row);
+			if (havePairs[a]) return std::unexpected(ProfileError::BadFormat);
+			for (size_t i = 0; i < styleKindCount; ++i) if (!parseUnsigned(f[3 + i], stats.pairs[a][i])) return std::unexpected(ProfileError::BadFormat);
+			havePairs[a] = true;
+		} else return std::unexpected(ProfileError::BadFormat);
+	}
+	bool all = header && haveTiles;
+	for (const bool b : havePairs) all = all && b;
+	if (!all) return std::unexpected(ProfileError::BadFormat);
+	return stats;
+}
+
+std::optional<StyleTarget> targetFromStats(const StyleStats& stats) noexcept {
+	uint64_t tiles = 0, pairTotal = 0;
+	for (size_t a = 0; a < naturalKindCount; ++a) {
+		tiles += stats.kindTiles[a];
+		for (size_t b = 0; b < naturalKindCount; ++b) pairTotal += stats.pairs[a][b];
+	}
+	if (tiles == 0 || pairTotal == 0) return std::nullopt;
+	StyleTarget t;
+	for (size_t a = 0; a < naturalKindCount; ++a) {
+		t.sharesPpm[a] = static_cast<uint32_t>(stats.kindTiles[a] * 1'000'000 / tiles);
+		for (size_t b = 0; b < naturalKindCount; ++b) {
+			// A pair is stored once as (a, b) in one direction; the symmetric matrix counts it in both cells.
+			const uint64_t cell = a == b ? stats.pairs[a][a] * 2 : stats.pairs[a][b] + stats.pairs[b][a];
+			t.adjacencyPpm[a][b] = static_cast<uint32_t>(cell * 1'000'000 / (pairTotal * 2));
+		}
+	}
+	return t;
+}
+
+std::expected<TargetBuild, TargetError> buildTarget(std::span<const MapStats> maps, uint64_t minNaturalTiles) {
+	try {
+		struct Usable { size_t index; StyleTarget target; };
+		std::vector<Usable> usable;
+		TargetBuild build;
+		std::map<std::string, std::vector<size_t>> byFamily; // positions in `usable`
+		for (size_t i = 0; i < maps.size(); ++i) {
+			uint64_t natural = 0;
+			for (size_t k = 0; k < naturalKindCount; ++k) natural += maps[i].stats.kindTiles[k];
+			const auto target = natural >= minNaturalTiles ? targetFromStats(maps[i].stats) : std::nullopt;
+			if (!target) { build.excluded.push_back(maps[i].alias); continue; }
+			byFamily[maps[i].family].push_back(usable.size());
+			usable.push_back({i, *target});
+		}
+		if (usable.empty()) return std::unexpected(TargetError::NothingUsable);
+		build.familyCount = static_cast<uint32_t>(byFamily.size());
+		std::vector<uint64_t> weight(usable.size()); // ppm, floor of 1e6 / (families * maps in family)
+		for (const auto& [family, members] : byFamily) {
+			for (const size_t m : members) weight[m] = 1'000'000 / (byFamily.size() * members.size());
+		}
+		std::array<uint64_t, naturalKindCount> shares {};
+		std::array<std::array<uint64_t, naturalKindCount>, naturalKindCount> adjacency {};
+		uint64_t weightSum = 0;
+		for (size_t m = 0; m < usable.size(); ++m) {
+			weightSum += weight[m];
+			for (size_t a = 0; a < naturalKindCount; ++a) {
+				shares[a] += weight[m] * usable[m].target.sharesPpm[a];
+				for (size_t b = 0; b < naturalKindCount; ++b) adjacency[a][b] += weight[m] * usable[m].target.adjacencyPpm[a][b];
+			}
+		}
+		for (size_t a = 0; a < naturalKindCount; ++a) {
+			build.target.sharesPpm[a] = static_cast<uint32_t>(shares[a] / weightSum);
+			for (size_t b = 0; b < naturalKindCount; ++b) build.target.adjacencyPpm[a][b] = static_cast<uint32_t>(adjacency[a][b] / weightSum);
+		}
+		for (size_t m = 0; m < usable.size(); ++m) {
+			build.used.push_back({maps[usable[m].index].alias, static_cast<uint32_t>(weight[m] * 1000 / weightSum)});
+		}
+		return build;
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(TargetError::AllocationFailed);
+	}
 }
 
 ProfileCompatibility checkProfile(const StyleProfile& p, std::string_view client, std::string_view otb, std::string_view dat, int floorZ) noexcept {
