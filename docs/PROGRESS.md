@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4-C: cel stylu i dopasowanie parametrów (PARTIAL, wynik w dużej mierze negatywny)
+
+Mapowanie z G4-B zaakceptowane. Cel z map treningowych (waga równa na rodzinę), deterministyczne dopasowanie 7 parametrów `SurfaceTuning` po stałych siatkach, profile `g4-profile/2`; testy PASS, dwie serie bajtowo identyczne. Z 12 map stylu tylko 5 (M05, M06, M11, M14, M19) ma kafle w gruntach z brushy na powierzchni; reszta to prawie wyłącznie „ground bez brusha”. Dopasowanie obniża dystans do celu treningowego 2–10×, ale na rodzinie walidacyjnej poprawia 3–7 % lub pogarsza (2 z 4 foldów wybiera baseline). Nic nie liczono na zbiorze testowym. [G4_FIT.md](procedural/G4_FIT.md).
+
 ## 2026-11-07 — G4-B: schemat profilu i mapowanie klucz→rodzaj (PARTIAL)
 
 `g4-profile/1` (klient, hashe `items.otb`/`Tibia.dat`, poziom i piętra, źródła z wagami, mapowanie, statystyki całkowitoliczbowe) z walidacją, odmową niezgodnego klienta/assetów/poziomu i projekcją statystyk przez mapowanie; mapowanie po całych słowach nazwy brusha, bez ID. Test PASS. Propozycja mapowania dla 10.98 (108 kluczy, 5 Unmapped = 2 ‰ kafli) **czeka na akceptację użytkownika**; profile nie są jeszcze wypełniane (G4-C). [G4_PROFILE.md](procedural/G4_PROFILE.md).

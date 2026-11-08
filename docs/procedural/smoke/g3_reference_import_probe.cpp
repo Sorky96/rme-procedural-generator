@@ -10,6 +10,7 @@
 #include "procedural/core/features.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
+#include "procedural/core/style_profile.h"
 #include "procedural/core/topology.h"
 #include <wx/module.h>
 #include <wx/log.h>
@@ -19,6 +20,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -235,6 +237,18 @@ void runProbe() {
         const auto fingerprint = computeFingerprint(normalized->map, FingerprintOptions {}, stopSource.get_token());
         check(fingerprint.has_value(), "Fingerprint failed");
         writeText("fingerprint.fp", serializeFingerprint(*fingerprint));
+        // G4-C: kind statistics through the accepted key map (surface floors 0..7, underground 8..15).
+        const std::string keymapText = [&] { std::ifstream f(root / "keymap.tsv", std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); }();
+        if (!keymapText.empty()) {
+            const auto keymap = parseKeyMap(keymapText);
+            check(keymap.has_value(), "keymap.tsv is not a valid key map");
+            const auto surface = accumulateKindStats(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(surface.has_value(), "Surface kind statistics failed (a ground key is missing from the key map?)");
+            const auto underground = accumulateKindStats(normalized->map, *keymap, 8, 15, stopSource.get_token());
+            check(underground.has_value(), "Underground kind statistics failed");
+            writeText("kind-stats-surface.txt", serializeStats(*surface));
+            writeText("kind-stats-underground.txt", serializeStats(*underground));
+        }
         log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();
         std::_Exit(0);
