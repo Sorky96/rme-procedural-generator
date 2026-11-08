@@ -167,6 +167,15 @@ void testPalette() {
 	check(strict[static_cast<size_t>(StyleKind::Rock)].empty() && strict[static_cast<size_t>(StyleKind::Grass)] == "grass", "a higher share threshold drops weaker choices");
 	check(choosePalette(keymap, {}, 200, 25) == StylePalette {}, "no tiles: empty palette");
 
+	// Only brushes the generator can place: the next best usable one wins, and shares still count every tile.
+	const std::set<std::string> usable {"jungle grass", "sea", "sand"};
+	const StylePalette limited = choosePalette(keymap, tiles, 200, 25, &usable);
+	check(limited[static_cast<size_t>(StyleKind::Grass)] == "jungle grass", "grass is not usable, jungle grass (30 percent of the grass tiles) is");
+	check(limited[static_cast<size_t>(StyleKind::Rock)].empty(), "no usable rock brush: no entry");
+	check(limited[static_cast<size_t>(StyleKind::Water)] == "sea" && limited[static_cast<size_t>(StyleKind::Shore)].empty(), "usable water kept; shore still below the tile minimum");
+	const std::set<std::string> none;
+	check(choosePalette(keymap, tiles, 200, 25, &none) == StylePalette {}, "an empty list of usable brushes allows nothing");
+
 	// Same counts in another order, and a tie between two keys: the smaller name, whatever the order.
 	std::vector<KeyTiles> shuffled(tiles.rbegin(), tiles.rend());
 	check(choosePalette(keymap, shuffled) == p, "the choice does not depend on the order of the tiles");

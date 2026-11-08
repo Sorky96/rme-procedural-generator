@@ -6,7 +6,7 @@
 //   C  which style target each style profile is closest to (distinguishability)
 //
 // Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
-//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX]
+//                     [--profiles-out DIR --keymap FILE --client ID --otb-sha HEX --dat-sha HEX [--usable-brushes FILE]]
 // With --profiles-out each style profile is also written as <style>.profile (g4-profile/4) for the generator dialog.
 
 #include "procedural/core/decor_context.h"
@@ -22,6 +22,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <set>
 #include <string>
 
 using namespace rme::procedural;
@@ -127,7 +128,7 @@ std::string tuningJson(const SurfaceTuning& t, const DecorTuning& d) {
 } // namespace
 
 int main(int argc, char** argv) {
-	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath;
+	fs::path manifestPath, fingerprintDir, statsDir, outPath, profilesOut, keymapPath, usableBrushesPath;
 	std::string client, otbSha, datSha;
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string key = argv[i];
@@ -138,6 +139,7 @@ int main(int argc, char** argv) {
 		else if (key == "--out") outPath = value;
 		else if (key == "--profiles-out") profilesOut = value;
 		else if (key == "--keymap") keymapPath = value;
+		else if (key == "--usable-brushes") usableBrushesPath = value;
 		else if (key == "--client") client = value;
 		else if (key == "--otb-sha") otbSha = value;
 		else if (key == "--dat-sha") datSha = value;
@@ -319,6 +321,19 @@ int main(int argc, char** argv) {
 		if (!readFile(keymapPath, text)) { std::cerr << "cannot read key map\n"; return 2; }
 		const auto keymap = parseKeyMap(text);
 		if (!keymap) { std::cerr << "invalid key map\n"; return 3; }
+		std::optional<std::set<std::string>> usableBrushes;
+		if (!usableBrushesPath.empty()) {
+			if (!readFile(usableBrushesPath, text)) { std::cerr << "cannot read the list of usable brushes\n"; return 2; }
+			usableBrushes.emplace();
+			std::string_view rest = text;
+			while (!rest.empty()) {
+				const size_t end = rest.find('\n');
+				std::string_view line = rest.substr(0, end);
+				rest = end == std::string_view::npos ? std::string_view {} : rest.substr(end + 1);
+				if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+				if (!line.empty()) usableBrushes->insert(std::string(line));
+			}
+		}
 		fs::create_directories(profilesOut);
 		for (const Style* st : styles) {
 			StyleProfile profile;
@@ -348,7 +363,7 @@ int main(int argc, char** argv) {
 			}
 			std::vector<KeyTiles> merged;
 			for (const auto& [key, tiles] : summed) merged.push_back({key, tiles});
-			profile.palette = choosePalette(*keymap, merged);
+			profile.palette = choosePalette(*keymap, merged, 200, 25, usableBrushes ? &*usableBrushes : nullptr);
 			std::cout << st->name << " palette:";
 			for (size_t k = 0; k < naturalKindCount; ++k) std::cout << ' ' << styleKindName(static_cast<StyleKind>(k)) << '=' << (profile.palette[k].empty() ? "-" : profile.palette[k]);
 			std::cout << '\n';

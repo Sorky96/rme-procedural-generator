@@ -9,6 +9,7 @@
 #include "procedural/core/feature_report.h"
 #include "procedural/core/features.h"
 #include "procedural/adapter/style_profile_store.h"
+#include "procedural/adapter/terrain_preparation.h"
 #include "procedural/core/decor_context.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
@@ -23,6 +24,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -250,6 +252,36 @@ void runProbe() {
                 csv += std::format("{},{},{},{},\"{}\"\n", id, use.count, use.clientId, use.blocking ? 1 : 0, quoted);
             }
             writeText("ground-without-brush.csv", csv);
+        }
+        // G4 palette check: runs the dialog's full preparation (surface, resolver, borders, mask guard) on an empty
+        // map for every brush set listed in palette-probe.txt (tab separated: label, grass, dirt, rock, shore, water).
+        if (const std::string rows = [&] { std::ifstream f(root / "palette-probe.txt", std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); }(); !rows.empty()) {
+            std::string result;
+            std::istringstream lines(rows);
+            for (std::string line; std::getline(lines, line);) {
+                if (line.empty()) continue;
+                std::vector<std::string> f;
+                std::istringstream cells(line);
+                for (std::string cell; std::getline(cells, cell, '\t');) f.push_back(cell);
+                if (f.size() != 6) continue;
+                GroundProfile profile;
+                profile.count = GroundProfile::surfaceCount;
+                const std::string order[] = {f[1], f[2], f[3], f[4], f[5], f[5]}; // grass, dirt, rock, shore, lake, river
+                for (size_t i = 0; i < GroundProfile::surfaceCount; ++i) profile.brushes[i] = order[i];
+                Map paletteMap;
+                paletteMap.initializeEmpty();
+                GenerationConfig config;
+                config.region = {1000, 1000, 7, 100, 100};
+                config.seed = 1729;
+                config.algorithm = GenerationAlgorithm::Surface;
+                const auto prepared = prepareTerrain(paletteMap, config, profile, PreparationBudget {250000, 254016, 250000, 512ull << 20});
+                std::string outcome = "ok";
+                if (!prepared) {
+                    std::visit([&](auto error) { outcome = std::format("error variant={} code={}", prepared.error().index(), static_cast<int>(error)); }, prepared.error());
+                }
+                result += std::format("{}\t{}\n", f[0], outcome);
+            }
+            writeText("palette-probe-result.txt", result);
         }
         // G4 palette: tiles per ground key on the surface floors (z <= 7), names and counts only.
         {

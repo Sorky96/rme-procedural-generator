@@ -24,6 +24,13 @@ Pierwszy test w RME pokazał, że profile różnią się tylko rozkładem rodzaj
 - Palety nie zmieniają statystyk, dopasowania ani wyników iteracji G4-F (raport `style_styles` bajtowo identyczny).
 - Testy: `test_procedural_style_profile` (wybór palety, remisy, kolejność, próg udziału i kafli, zapis i odczyt) PASS; oferta v4 w próbniku 8 z 8.
 
+## Błąd z testu ręcznego: „Borders would extend outside the allowed area” (2026-11-08)
+Po wyborze profilu każdy Preview kończył się tym błędem. Dwie przyczyny:
+1. **Brushe z palety, których generator nie umie położyć.** Pełne przygotowanie (to samo, co robi okno) na pustej mapie 10.98 odrzuca (`PreviewError::OutOfMask`) brushe `earth`, `earth (stone border)`, `mountain`, `snowy mountain`, `icy mountain`, `dirt mountain ground` (+ thick border), `frozen mud (thick border)`, `grass (alternate border)`, `sand (thick border)`: ich krawędzie wychodzą poza wygenerowany obszar, a okno zmienia tylko dozwolony obszar. `snowy mountain` jest dodatkowo pustym stubem w danych (bez itemów). Przechodzą m.in. `grass`, `jungle grass`, `dirt`, `jungle dirt`, `mountain top ground`, `rocky ground`, `sand`, `sea`, `clear water`. Dotyczy to też ręcznego wyboru tych brushy w dotychczasowym oknie (lista ich nie odfiltrowuje).
+2. **Brushe poprzedniego profilu zostawały w polach** po zmianie profilu (np. `snowy mountain` z `winter` psuło `swamp`).
+Poprawki: (a) każdy wybór profilu (także „Built-in”) zaczyna od brushy domyślnych, a dopiero potem wpisuje paletę; wpis stosowany tylko, gdy klient ma brush i ma on itemy; (b) narzędzie dobiera paletę wyłącznie spośród brushy, które przeszły to samo przygotowanie na tym kliencie (lista 21 brushy, `--usable-brushes`, wynik próbnika `--palette-probe`); wynik: dla wszystkich 8 profili pełne przygotowanie przechodzi (`ok`), oferta 8 z 8.
+**Skutek uboczny:** po tym filtrze palety prawie nie różnicują stylów. `m06`: `grass`, `jungle dirt`, `mountain top ground`, `sand`, `sea`; `m19`: `grass`, `dirt`, `sand`, `sea`; `m05`: `grass`; `winter`: `sea`; `caves`, `m01`, `m15`, `swamp`: brak. Zima nie dostanie `snowy mountain`, bo generator takiego brusha nie położy. Prawdziwe zróżnicowanie wyglądu wymagałoby albo zmiany zasady „zmieniamy tylko dozwolony obszar” dla krawędzi brushy z zewnętrznymi bordurami (decyzja poza tym etapem), albo nowych rodzajów gruntu.
+
 ## Czego NIE sprawdzono
 - Samego okna (układ, kolejność tabulacji, mnemoniki, tooltip, zachowanie przy braku folderu), pełnej ścieżki Preview → Validate → Place → Undo/Redo z profilem, ani oferty dla klienta BlackTek (pokryta tylko testem jednostkowym).
 - Wyglądu wyniku (rzeki wciąż prowadzą głównie po osiach, D6; profile sięgają krańców siatek parametrów).

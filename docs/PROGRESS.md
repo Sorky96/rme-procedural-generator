@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: poprawka palety po błędzie „Borders would extend outside the allowed area”
+
+Przyczyny: brushe z palety, które generator odrzuca (`earth`, `mountain`, `snowy mountain` i 7 innych: ich krawędzie wychodzą poza obszar), oraz brushe poprzedniego profilu zostające w polach. Okno zaczyna teraz od brushy domyślnych i stosuje tylko brushe, które klient ma i mają itemy; narzędzie dobiera paletę spośród brushy, które przeszły pełne przygotowanie (próbnik, 21 z 31). Wszystkie 8 profili przechodzi pełne przygotowanie, ale palety prawie nie różnicują stylów (zima: tylko `sea`). [G4_GUI.md](procedural/G4_GUI.md).
+
 ## 2026-11-08 — G4: paleta brushy w profilu (schemat v4)
 
 Po teście ręcznym (profile wyglądały prawie tak samo, caves to jeden grunt): profil niesie brush najczęściej używany dla każdego rodzaju (zasady z góry: brush bez prefiksu `item `, ≥ 200 kafli, ≥ 25 % rodzaju), a okno wpisuje go w pola brushy i raportuje pominięte. Dla 10.98: m06, m19, m05, winter, caves mają paletę, swamp, m01, m15 nie (ich grunty to items bez brusha, D13). Różnica wizualna skromna poza zimą (`snowy mountain`). Schemat v4 unieważnia pliki v3. [G4_GUI.md](procedural/G4_GUI.md).

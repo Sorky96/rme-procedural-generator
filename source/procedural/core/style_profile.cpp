@@ -340,7 +340,8 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	return p;
 }
 
-StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const KeyTiles> tiles, uint64_t minTiles, uint32_t minSharePercent) {
+StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const KeyTiles> tiles, uint64_t minTiles, uint32_t minSharePercent,
+	const std::set<std::string>* usable) {
 	std::unordered_map<std::string_view, StyleKind> kindOf;
 	for (const auto& e : keymap) kindOf.emplace(e.key, e.kind);
 	std::array<uint64_t, naturalKindCount> total {};
@@ -350,7 +351,7 @@ StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const 
 		if (it == kindOf.end() || static_cast<size_t>(it->second) >= naturalKindCount) continue;
 		const size_t k = static_cast<size_t>(it->second);
 		total[k] += t.tiles;
-		if (t.key.starts_with("item ")) continue;
+		if (t.key.starts_with("item ") || (usable && !usable->contains(t.key))) continue;
 		// Most tiles wins; the smaller name on a tie, so the choice does not depend on the order of `tiles`.
 		if (!best[k] || t.tiles > best[k]->tiles || (t.tiles == best[k]->tiles && t.key < best[k]->key)) best[k] = &t;
 	}

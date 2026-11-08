@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <set>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -131,8 +132,11 @@ struct KeyTiles {
 // Per kind (through `keymap`): the brushed key with the most tiles, but only when it has at least minTiles
 // tiles and at least minSharePercent percent of all tiles of that kind. Keys that start with "item " are
 // ground items without a brush and are never chosen, though they count towards the kind's total.
+// `usable`, when given, lists the brush names this client's generator can place at all (some brushes, e.g.
+// ones with outer borders, always draw outside the generated area and are refused); only those are chosen,
+// though every tile still counts towards the kind's total.
 [[nodiscard]] StylePalette choosePalette(std::span<const KeyMapEntry> keymap, std::span<const KeyTiles> tiles,
-	uint64_t minTiles = 200, uint32_t minSharePercent = 25);
+	uint64_t minTiles = 200, uint32_t minSharePercent = 25, const std::set<std::string>* usable = nullptr);
 
 inline constexpr std::string_view profileSchema = "g4-profile/4";
 

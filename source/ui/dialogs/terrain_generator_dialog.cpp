@@ -537,6 +537,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		status_text_->Wrap(std::max(event.GetSize().GetWidth(), Theme::Grid(60)));
 		event.Skip();
 	});
+	// The brushes the dialog opened with: a profile choice always starts from them.
+	{
+		wxComboBox* const fields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
+		for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) default_brushes_[kind] = fields[kind]->GetValue();
+	}
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
@@ -615,32 +620,45 @@ void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 	}
 }
 
-// A profile also names the ground brushes its style used (winter: snowy mountain). They fill the brush fields
-// the user can still change; a name this client does not have is skipped and reported, never guessed.
+// A profile also names the ground brushes its style used (winter: snowy mountain). Every choice starts from the
+// brushes the dialog opened with, so brushes of a previously chosen profile do not carry over; then the
+// profile's brushes are set. A name is applied only when this client has the brush and it has ground items
+// (some brushes in the data are empty stubs that only exist to be named by borders and cannot be placed).
+// Anything else is skipped and reported, never guessed. The fields stay editable.
 void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	OnInputChanged(event);
-	const int picked = profile_choice_->GetSelection();
-	if (picked <= 0 || static_cast<size_t>(picked) > profiles_.size()) return;
-	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
 	wxComboBox* const fields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
 	static_assert(std::size(fields) == rme::procedural::naturalKindCount);
 	static const char* const labels[] = { "Grass", "Dirt", "Rock", "Shore", "Water" };
+	const auto setBrush = [](wxComboBox* field, const wxString& name) {
+		field->Clear();
+		field->Append(name);
+		field->SetSelection(0);
+	};
+	for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) {
+		if (!default_brushes_[kind].empty()) setBrush(fields[kind], default_brushes_[kind]);
+	}
+	const int picked = profile_choice_->GetSelection();
+	if (picked <= 0 || static_cast<size_t>(picked) > profiles_.size()) {
+		SetStatus("Built-in settings: brushes set back to the defaults.", false);
+		return;
+	}
+	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
 	wxString applied, skipped;
 	for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) {
 		const std::string& name = entry.profile.palette[kind];
 		if (name.empty()) continue;
 		const wxString wanted = wxstr(name);
-		wxString& list = ground_names_.Index(wanted) == wxNOT_FOUND ? skipped : applied;
-		if (&list == &applied) {
-			fields[kind]->Clear();
-			fields[kind]->Append(wanted);
-			fields[kind]->SetSelection(0);
-		}
+		const Brush* brush = ground_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
+		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+		const bool placeable = ground && ground->getTotalChance() > 0;
+		wxString& list = placeable ? applied : skipped;
+		if (placeable) setBrush(fields[kind], wanted);
 		list += (list.empty() ? "" : ", ") + wxString(labels[kind]) + ": " + wanted;
 	}
 	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
-	message += applied.empty() ? wxString("tuning only (it names no ground brushes this client offers).") : "brushes set (" + applied + ").";
-	if (!skipped.empty()) message += " Not in this client, left unchanged: " + skipped + ".";
+	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
+	if (!skipped.empty()) message += " Not usable in this client (missing or no ground items), kept the default: " + skipped + ".";
 	SetStatus(message, false);
 }
 
