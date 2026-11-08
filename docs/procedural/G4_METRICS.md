@@ -220,3 +220,12 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 **Zastrzeżenie dotyczące procesu.** Zapis kryteriów 9c miał powstać przed zmianą kodu, ale polecenie, które go zapisywało, zakończyło się błędem składni i niczego nie zapisało; zauważyłem to dopiero po pomiarze. Treść poniżej była przedstawiona użytkownikowi w czacie przed zmianą (zgoda: „Tak.”), a kryteria są te same co w 9b, więc nie zostały dobrane pod wynik, ale formalnie **nie jest to wcześniejsza rejestracja**.
 
 Powód: oględziny użytkownika w GUI (m19, `pathLength` 80) pokazały szlaki skręcające schodkowo pod kątem prostym i jeden biegnący krawędzią skały. Zmiana: (1) ruchy po przekątnej w A* (koszt 14 zamiast 10, heurystyka oktylowa), (2) dodatkowy koszt komórek sąsiadujących ze skałą, (3) wygładzenie trasy średnią ruchomą (okno ±6) i stemplowanie wzdłuż odcinków między wygładzonymi punktami. Szlak nadal nadpisuje tylko Grass, Dirt, Shore. Ocena: kryteria jak w 9b (L, W, B w paśmie referencji, `pathLength` dobierany na seedach 1–4 z {40, 80, 160, 320}, ocena na seedach 1001–1032, bok 512), plus kontrola udziału komórek szlaku przy skale.
+
+### Iteracja 9d — silniejsze odpychanie szlaków od skały (zapisana 2026-11-08 przed zmianą, po pomiarze stanu bazowego)
+
+Powód: użytkownik (po GUI 9c): szlak wokół masywu biegnie tuż przy skale; „ma bardziej odpychać”. Użytkownik potwierdził też, że Validate i Undo/Redo ze szlakami przeszły. Stan bazowy (v10, seedy 1001–1032, bok 512, po 9c): udział komórek szlaku z komórką Rock w promieniu 3 (Czebyszew), mediana po seedach: m06 0 ‰, m19 87,5 ‰ (kontrola „rocknear”).
+
+Zmiana: koszt komórki w A* rośnie z bliskością skały zamiast stałych +25 dla sąsiedztwa 4: dodatek 60 / 40 / 25 / 12 dla odległości 1 / 2 / 3 / 4 od Rock (odległość Czebyszewa, wyznaczona raz na obszar). Reszta bez zmian.
+
+Kryterium: (1) rocknear (średnia i mediana po seedach) w m19 co najmniej o połowę niższy niż w stanie bazowym; (2) L i W nadal w paśmie referencji (jak w 9b); (3) testy rdzenia PASS, szlak nigdy na Rock/Lake/River, wyłączone = bajt w bajt. B nie wchodzi do kryterium (artefakt szkieletowania opisany w 9c). Zastrzeżenie: mediana jest niska już w stanie bazowym (szlak przy skale to rzadki przypadek), więc „połowa” dotyczy małej liczby; ocena wzrokowa należy do użytkownika.
+
