@@ -90,3 +90,20 @@ Podobieństwa wizualnego, naturalności rzek i gór, klastrowania na skalach 16/
 Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obiektywnych cechach nie zastępuje oceny wizualnej (ślepe A/B jest osobnym krokiem).
 
 **Zastrzeżenia z góry:** dowód z co najwyżej kilku referencji (prawdopodobnie M06 i M19), pomiar kształtu to szkielet kratowy (przybliżenie), próg „prosty odcinek ≥ 12” i definicja składowej rzecznej wybrane przed pomiarem, ale bez wiedzy o ich czułości.
+
+## Iteracja 5 — kanały wodne wraz z rzekami połączonymi z morzem (zapisana 2026-11-08 przed implementacją i przed pomiarem)
+
+**Powód.** Metryka iteracji 4 pomijała składowe wody ≥ 20 000 kafli (morze), więc duże rzeki połączone z morzem nie weszły do referencji ([G4_COMPARE.md](G4_COMPARE.md)). Iteracja 5 mierzy *kanały*: wąskie części wody niezależnie od tego, czy łączą się z morzem. Najpierw pomiar bazowy referencji i generatora (5a), potem ewentualna zmiana generatora (5b) oceniana tymi samymi kryteriami.
+
+**Definicje (stałe, z góry).**
+- Woda = rodzaj Water (jezioro, rzeka, morze; bez Shore) na z ≤ 7, per piętro. Przy referencjach przez zaakceptowane mapowanie v3, w generatorze Lake i River.
+- *Woda otwarta* = otwarcie morfologiczne maski wody kwadratem 13×13 (erozja, potem dylatacja; kafle poza obszarem liczą się jako brak wody). *Kanał* = woda minus woda otwarta (wąskie części, szerokość ≤ 12). Kwadrat sprzyja osiom; to przybliżenie.
+- *Składowa kanału*: 4-spójna składowa kanału; zaliczana, jeśli pole ≥ 40 kafli, a długość szkieletu (Zhang-Suen, jak w iteracji 4) L ≥ 20.
+- Cechy (na składowych zaliczonych, zbiorczo na mapę lub seed): **L** = suma długości szkieletów na 65 536 kafli obszaru (kafle obecne w referencji; komórki obszaru w generatorze); **W** = 1000 · pole / L (tysięczne kafla); **B** = liczba rozgałęzień szkieletu (kafel szkieletu z ≥ 3 sąsiadami szkieletu w sąsiedztwie 8) na 100 kafli szkieletu; **C** = udział składowych kanału, które stykają się z wodą otwartą lub krawędzią obszaru, w ‰.
+- Mapa referencyjna *kwalifikuje się*, jeśli ma ≥ 5 zaliczonych składowych. Bez co najmniej dwóch takich map ocena jest niemożliwa, nie zaliczona.
+
+**Pomiar bazowy (5a).** Referencje: wartości L, W, B, C każdej kwalifikującej się mapy (bez uśredniania poza zakresem). Generator: profile m06 i m19, seedy 1001–1032, bok 256, mediana po seedach (seed bez składowej kanału: „bez kanału”, osobno policzony).
+
+**Kryterium (dla 5a i 5b, jednakowe).** Dla profilu stylu X z referencją M_X (m06→M06, m19→M19; to jest dopasowanie in-sample, nie test na mapie niewidzianej): cecha jest *w paśmie*, jeśli mediana generatora leży w [0,67·ref; 1,5·ref]. Profil „zaliczony”, jeśli ≥ 3 z 4 cech jest w paśmie i seedów z kanałem jest ≥ 75 %. Wynik 5a to opis stanu, nie bramka. Zmiana generatora 5b jest zaliczona, jeśli oba profile są zaliczone oraz spełnione pozostają: P1 (spójność chodzenia) mediana ≥ 95 % bazowej i niezmiennik „każda komórka rzeki dochodzi do jeziora lub krawędzi” w 100 % seedów (jeśli 5b zmienia ten niezmiennik, nowy zapisuję przed zmianą).
+
+**Zastrzeżenia z góry.** Dwie referencje z rzekami (M06, M19), próg 13×13 i progi pasma wybrane bez znajomości wartości, kanał to przybliżenie (też małe jeziora ≤ 12 szerokości i zatoki wejdą do pomiaru), brak oceny wizualnej. Jeśli 5a pokaże, że definicja kanału nie oddziela rzek od zatok na wycinku, który oglądałem, zgłaszam to i zmieniam definicję **przed** 5b z zapisem w tym pliku.
