@@ -215,7 +215,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 4 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -488,13 +488,13 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			for (uint32_t ring = 0; ring < config.tuning.shoreWidth; ++ring) {
 				const auto previous = wet;
 				const auto previousSize = wetSize;
-				// Ring r (r >= 1) needs a lake of at least 30 * 3^(r-1) cells: 30, 90, 270.
+				// Ring r (r >= 1) needs a lake of at least 30 * 3^(r-1) cells: 30, 90, 270, and 270 for every ring after.
 				uint32_t neededLake = 30;
-				for (uint32_t step = 1; step < ring; ++step) neededLake *= 3;
+				for (uint32_t step = 1; step < ring && neededLake < 270; ++step) neededLake *= 3;
 				// The first ring always exists; every further ring needs smooth noise above a threshold
 				// that rises with the ring, so the beach is wide in some places and grass reaches in
 				// elsewhere instead of forming an even band.
-				const uint32_t cut = ring == 0 ? 0 : uint32_t(uint64_t(noiseBins) * (5 + 30 * ring) / 100);
+				const uint32_t cut = ring == 0 ? 0 : uint32_t(uint64_t(noiseBins) * std::min<uint32_t>(5 + 30 * ring, 80) / 100);
 				for (size_t i = 0; i < count; ++i) {
 					if (previous[i] || kinds[i] == SurfaceKind::Rock) continue;
 					bool touches = false;

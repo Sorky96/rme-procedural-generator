@@ -2,7 +2,7 @@
 // style_render: draws the generator's surface for one style profile as a PNG, one pixel per tile, coloured by kind
 // like the reference kind maps of the probe (kind-map-zNN.png). For a side-by-side look; nothing here is a measurement.
 //
-//   style_render PROFILE OUT_DIR SIDE [feature=N] SEED [SEED...]    writes OUT_DIR/<seed>.png
+//   style_render PROFILE OUT_DIR SIDE [featureSize=N|transitionWidth=N|shoreWidth=N]... SEED [SEED...]    writes OUT_DIR/<seed>.png
 
 #include "procedural/core/png_writer.h"
 #include "procedural/core/scale_stats.h"
@@ -36,9 +36,15 @@ int main(int argc, char** argv) {
 	const SurfaceBudget budget {cells, cells * 8, cells * 64 + (1u << 20)};
 	SurfaceTuning tuning = *profile->tuning;
 	int firstSeed = 4;
-	if (std::string_view(argv[4]).starts_with("feature=")) { // sweep helper: override featureSize
-		tuning.featureSize = static_cast<uint32_t>(std::strtoul(argv[4] + 8, nullptr, 10));
-		firstSeed = 5;
+	// Sweep helper: leading name=value arguments override featureSize, transitionWidth or shoreWidth.
+	for (; firstSeed < argc && std::string_view(argv[firstSeed]).find('=') != std::string_view::npos; ++firstSeed) {
+		const std::string_view arg = argv[firstSeed];
+		const std::string_view name = arg.substr(0, arg.find('='));
+		const uint32_t value = static_cast<uint32_t>(std::strtoul(argv[firstSeed] + name.size() + 1, nullptr, 10));
+		if (name == "featureSize") tuning.featureSize = value;
+		else if (name == "transitionWidth") tuning.transitionWidth = value;
+		else if (name == "shoreWidth") tuning.shoreWidth = value;
+		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
 	for (int i = firstSeed; i < argc; ++i) {
 		const uint64_t seed = std::strtoull(argv[i], nullptr, 10);
@@ -62,6 +68,12 @@ int main(int argc, char** argv) {
 		{
 			const auto excess = lagExcessPermille(lagStatsOf(*grid));
 			std::cout << std::format("scale seed {}: E4 {} E16 {} E64 {}\n", seed, excess[0], excess[1], excess[2]);
+		}
+		{
+			const PatchStats raw = patchStatsOf(*grid);
+			const PatchSummary ps = summarizePatches(raw);
+			auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
+			std::cout << std::format("patch seed {}: D {} F {} P {} shares {} {} {} {} {}\n", seed, opt(ps.boundary), opt(ps.compact), opt(ps.beach), ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

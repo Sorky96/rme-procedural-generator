@@ -98,8 +98,8 @@ void parametersAndLimits() {
 	expectError(bad, budget, SurfaceError::InvalidParameters, "meander 9 accepted");
 	bad = base; bad.tuning.meander = 8;
 	require(bool(generateSurface(bad, extent, budget)), "meander 8 refused");
-	bad = base; bad.tuning.shoreWidth = 5;
-	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 5 accepted");
+	bad = base; bad.tuning.shoreWidth = 9;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 9 accepted");
 	bad = base; bad.tuning.dirtPermille = 1001;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "dirtPermille 1001 accepted");
 	bad = base; bad.tuning.transitionWidth = 32769;

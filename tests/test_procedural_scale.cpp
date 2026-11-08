@@ -62,6 +62,43 @@ void testAdd() {
 	a += b;
 	check(a.same[1] == 4 && a.pairs[1] == 7 && a.cells[2] == 8, "sums add up");
 }
+// 20 x 20 grass with a 10 x 10 dirt square: 100 dirt cells, 4 * 10 dirt-grass pairs, one component of exactly 100.
+void testPatches() {
+	std::vector<uint8_t> kinds(400, 0);
+	for (size_t y = 5; y < 15; ++y) for (size_t x = 5; x < 15; ++x) kinds[y * 20 + x] = 1;
+	PatchStats stats;
+	addPatchStats(kinds, 20, 20, stats);
+	check(stats.dirtCells == 100 && stats.dirtGrassPairs == 40 && stats.dirtInLarge == 100, "dirt square counted by hand");
+	check(stats.cells[0] == 300 && stats.cells[1] == 100, "cells per kind");
+	check(!summarizePatches(stats).boundary && !summarizePatches(stats).compact, "100 dirt cells are below the minimum: not applicable");
+	kinds[5 * 20 + 5] = 0; // a notch splits nothing but removes 1 cell and changes the border by 0 (corner)
+	PatchStats notched;
+	addPatchStats(kinds, 20, 20, notched);
+	check(notched.dirtCells == 99 && notched.dirtInLarge == 0, "99 cells is below the large-patch size");
+	// One row: 5 water, 3 shore, 4 grass. Only the first shore cell touches water.
+	std::vector<uint8_t> row {4, 4, 4, 4, 4, 3, 3, 3, 0, 0, 0, 0};
+	PatchStats beach;
+	addPatchStats(row, 12, 1, beach);
+	check(beach.shoreCells == 3 && beach.shoreNextToWater == 1 && beach.shoreNearWater == 3, "beach cells counted by hand: all 3 are reached through shore");
+	std::vector<uint8_t> farSand(40, 3);
+	for (size_t i = 0; i < 5; ++i) farSand[i] = 4;
+	PatchStats desert;
+	addPatchStats(farSand, 40, 1, desert);
+	check(desert.shoreCells == 35 && desert.shoreNextToWater == 1 && desert.shoreNearWater == beachReach, "sand farther than beachReach steps from the water is not beach");
+	PatchStats big;
+	big.dirtCells = 2000; big.dirtGrassPairs = 500; big.dirtInLarge = 1500; big.shoreCells = 9000; big.shoreNearWater = 3000; big.shoreNextToWater = 1000;
+	big.cells = {100, 2000, 100, 3000, 100};
+	const PatchSummary summary = summarizePatches(big);
+	check(summary.boundary == 250u && summary.compact == 750u && summary.beach == 3000u, "summary of large counts");
+	check(summary.sharePermille[1] == 2000 * 1000 / 5300, "shares of natural cells");
+	SurfaceGrid grid;
+	grid.region = {0, 0, 7, 12, 1};
+	grid.cells = {SurfaceKind::Lake, SurfaceKind::River, SurfaceKind::Shore, SurfaceKind::Preserve, SurfaceKind::Dirt, SurfaceKind::Grass,
+		SurfaceKind::Grass, SurfaceKind::Grass, SurfaceKind::Grass, SurfaceKind::Grass, SurfaceKind::Grass, SurfaceKind::Grass};
+	const PatchStats fromGrid = patchStatsOf(grid);
+	check(fromGrid.cells[4] == 2 && fromGrid.shoreNextToWater == 1 && fromGrid.dirtGrassPairs == 1, "grid kinds map to the same counts");
+}
+
 } // namespace
 
 int main() {
@@ -69,6 +106,7 @@ int main() {
 	testSkippedCells();
 	testSurface();
 	testAdd();
+	testPatches();
 	if (failures) return 1;
 	std::cout << "OK\n";
 	return 0;

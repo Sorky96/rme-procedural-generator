@@ -154,3 +154,16 @@ Definicje i kryterium zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), �
 **Dodatkowa obserwacja (nie była zapisana z góry, jawnie eksploracyjna: bok 512, 8 seedów, bez oceny).** Przy boku 512 featureSize 192 daje E4/E16/E64 = 614/496/261 (m06) i 638/477/247 (m19), czyli wszystkie mieszczą się w pasmach. Zatem niedobór E64 przy boku 256 wynika w dużej części z ucinania odległości 64 przez okno 256 (zastrzeżenie zapisane z góry), a E_d zależy od wielkości obszaru. Wartość 192 nie jest więc ostatecznym wynikiem: dopasowanie zależy od wybranego boku, a w GUI użytkownik wybiera dowolny obszar.
 
 **Zastrzeżenia.** Dopasowanie in-sample na dwóch referencjach; metryka nie odróżnia jednego dużego lądu od wielu dużych płatów; nie sprawdzono P1 (spójność chodzenia) ani niezmiennika rzek dla featureSize 192 (warunki dodatkowe 6b), więc 6b jest niepełne także z tego powodu. Wygląd oceni użytkownik w GUI na profilach `10.98-v8` (tylko m06 i m19 mają featureSize 192; to ręczna zmiana pliku profilu, nie wynik `style_styles`).
+
+## Iteracja 7 — plamy ziemi i szerokość plaży (2026-11-08): kryterium NIE spełnione
+
+Definicje, zmiana P na P′ i zmiana modelu zapisane przed pomiarami ([G4_METRICS.md](G4_METRICS.md), „Iteracja 7”, commity `6aa735e`, `1073167`, `79e54ad`); rdzeń `PatchStats` w `scale_stats` z testem (PASS, wartości policzone ręcznie).
+
+**7a (bok 512, seedy 1001–1032, profile v8).** Referencje M06 / M19: D 421 / 451, F 749 / 625, P′ 5 638 / 5 656. Generator m06: D 112, F 975, P′ 1 987; m19: D 203, F 951, P′ 1 979. W paśmie: m06 1 z 3 (F), m19 0 z 3. Pierwotna definicja P (grubość plaży względem wszystkich komórek Shore) dała dla referencji 33 795 i 22 366 (piasek daleko od wody), więc ją zastąpiono P′ przed oceną generatora.
+
+**7b (dopasowanie na seedach 1–4, bok 512, zmiana reguły pierścieni plaży: próg szumu ≤ 80 %, wymagane jezioro ≤ 270 komórek, limit `shoreWidth` 8).** Spadek współrzędnych wskazał oba profile na granice siatek: `transitionWidth` 16 000 i `shoreWidth` 8. Wartości po dopasowaniu: m06 D 210, F 948, P′ 2 316; m19 D 206, F 939, P′ 2 315. **Pasma nadal niespełnione**: D (pasmo 282–632 i 302–676) jest poniżej, P′ (3 777–8 457 i 3 790–8 484) jest poniżej. Zmiana zapisanej reguły pierścieni podniosła P′ tylko z ok. 1 980 do ok. 2 315, bo pierścienie powyżej trzeciego powstają z małym prawdopodobieństwem (próg szumu 80 %). Do referencji (≈ 5 600, czyli plaża ok. 5–6 komórek) brakuje jeszcze więcej niż dwukrotnie.
+
+**Wnioski i zastrzeżenia.**
+- Metryki D i F pokazują, że granica ziemi w generatorze jest **gładsza** (D niższe), a nie bardziej poszarpana niż w referencjach (które mają wiele małych plam ziemi). To nie zgadza się z oceną wizualną „kropkowana ziemia”; D i F nie mierzą drobnych „kropek” (składowych ≤ 4 komórek). Dopasowanie względem D zwiększyłoby poszarpanie, więc nie jest oczywiste, że poprawia wygląd dla użytkownika.
+- Beach: pełne dopasowanie wymaga zmiany modelu (nowy parametr lub inna reguła pierścieni, zmiana schematu profilu), niezapisana jeszcze.
+- Dopasowanie in-sample na dwóch referencjach; testy rdzenia PASS (w tym zmieniony limit `shoreWidth` ≤ 8); profile v8 w `local-data` nie zostały zmienione.

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: plamy ziemi i szerokość plaży (iteracja 7) — PARTIAL
+
+Na prośbę użytkownika (ziemia „kropkowana”, plaże cienkie): metryki D (granica ziemi), F (zwartość), P′ (grubość plaży) zapisane z góry. Pomiar: generator ma ziemię **gładszą** niż referencje (D 112–203 vs 421–451), więc diagnoza wzrokowa nie potwierdza się metryką; plaża jest ok. 2,8× cieńsza (P′ ok. 1 980 vs 5 640). Zmiana reguły pierścieni plaży (`shoreWidth` do 8, próg szumu ≤ 80 %) i dopasowanie `transitionWidth`/`shoreWidth` daje D ok. 206 i P′ ok. 2 315: **kryterium nie spełnione**, siatki nasycone. Dalsza poprawa plaży wymaga zmiany modelu (nowy parametr, schemat profilu). Testy rdzenia PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: struktury w dużej skali (iteracja 6) — PARTIAL
 
 Rdzeń `scale_stats` (zgodność rodzajów na odległościach 4/16/64, nadmiar nad losowym układem; test PASS) i kryteria zapisane z góry (`5aa85a0`). Generator miał prawie zerowy nadmiar na odległości 16 i 64 (referencje ok. 400 i 200–230). Zmiana `featureSize` na 192 zamyka E4 i E16, ale E64 przy boku 256 zostaje poniżej pasma: **kryterium 6b nie spełnione**; eksploracyjnie przy boku 512 wszystkie trzy mieszczą się w pasmach (okno 256 ucina lag 64). Profile `g4-profiles/10.98-v8` (m06, m19 z featureSize 192, ręczna zmiana pliku) do oceny wizualnej w GUI. Nie sprawdzono: P1 i niezmiennika rzek dla featureSize 192, wyglądu, zależności od wielkości obszaru. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

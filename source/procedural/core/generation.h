@@ -34,7 +34,7 @@ struct SurfaceTuning {
 	uint32_t minLakeCells = 12;       // smaller 4-connected lakes become land
 	uint32_t riverCount = 3;          // sources drawn from rock cells, 0..1024
 	uint32_t minRiverLength = 20;     // own cells of an accepted river; shorter ones are dropped
-	uint32_t shoreWidth = 3;          // rings of Shore around lakes, 0..4; ring 0 always, outer rings by noise
+	uint32_t shoreWidth = 3;          // rings of Shore around lakes, 0..8; ring 0 always, outer rings by noise
 	uint32_t rockPermille = 80;       // at least this share of highest cells is rock, 0..500
 	uint32_t minRockCells = 8;        // smaller 4-connected rock patches become land
 	uint32_t dirtPermille = 300;      // share of driest cells that are dirt, 0..1000
