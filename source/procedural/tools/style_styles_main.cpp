@@ -5,7 +5,7 @@
 //   B  leave-one-map-out inside styles that have at least two maps with a target
 //   C  which style target each style profile is closest to (distinguishability)
 //
-// Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE [--profiles-out DIR]
+// Usage: style_styles --manifest FILE --fingerprints DIR --stats DIR --out FILE
 
 #include "procedural/core/decor_context.h"
 #include "procedural/core/reference_split.h"

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4-F iteracja 3: profile per styl (kryterium iteracji spełnione in-sample, G4 z planu nadal niewykazana)
+
+Osiem stylów (rodzin z celem), profil na styl z ograniczeniem spójności lądu; kryteria zapisane przed uruchomieniem. A: profil lepszy w S1 i S2 w 8 z 8 stylów (in-sample), C: 6 z 8 rozpoznanych, P1 ≥ 95 % wszędzie; B (jedyny przypadek na mapie niewidzianej, swamp, n = 2): lepszy w obu. Interpretacja zapisana z góry: to dowodzi odtwarzania rozkładu rodzajów stylu przez generator, nie poprawy na mapach niewidzianych. Dwa przebiegi bajtowo identyczne. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4-F iteracja 2: ograniczenie spójności lądu, bramka nadal NIE spełniona
 
 Dopasowanie z ograniczeniem (kandydat odrzucany poniżej 97 % spójności lądu ręcznych parametrów), kryteria zapisane przed uruchomieniem, wynik „po zmianie modelu”: spójność lądu we wszystkich foldach ≥ 95 % ręcznej (krytyczna metryka naprawiona), ale styl nadal lepszy tylko w 3 z 7 foldów (M06, M19, swamp), gorszy w 2 (caves, M05), a wegetacja 2 : 2. Foldy testowe użyte po raz drugi, więc wynik jest mniej niezależny. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md#iteracja-2--dopasowanie-z-ograniczeniem-spójności-lądu-2026-11-08-po-zmianie-modelu).

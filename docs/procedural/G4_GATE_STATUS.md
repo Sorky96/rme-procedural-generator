@@ -76,3 +76,29 @@ M01 i zima: wybrany krok walidacji to baseline, więc kandydat jest tym samym ge
 **Wniosek:** ograniczenie naprawiło krytyczną grywalność (spójność lądu ≥ 95,8 % ręcznej we wszystkich foldach, wcześniej do 69 %), nie niszcząc poprawy w tych trzech foldach, gdzie cel testowy przypomina mieszankę treningową (M06, M19, swamp: nadal −0,3 do −0,8 mln ppm). Nie poprawiło dwóch foldów, w których styl się nie poprawia: caves (cel to tylko ziemia) i M05 (cel to prawie sama trawa), gdzie dopasowany do mieszanki generator jest dalej od celu niż ręczne parametry; w M06 wegetacja zmieniła się z lepszej na gorszą (+2 523 przy rozrzucie −3 286…+6 381, czyli blisko zera). Zwykły zlepek stylów nie opisuje pojedynczej rodziny, co potwierdza kierunek „profile per styl”.
 
 **Zastrzeżenia iteracji 2:** foldy testowe użyte po raz drugi, po adaptacji modelu do wyniku iteracji 1; wartość 97 % wybrana z góry, ale cały pomysł ograniczenia wynika z oglądania wyniku iteracji 1. Pozostałe zastrzeżenia jak w iteracji 1 (jedna–dwie mapy na fold, przeciek walidacja/test, brak oceny wizualnej, podziemi, BlackTek, memoryzacji generatora, brak podpięcia do GUI).
+
+## Iteracja 3 — profile per styl (2026-11-08, „po zmianie modelu”)
+
+Kryteria zapisane przed uruchomieniem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 3”, commit `975fba4`; narzędzie `269da1b`). Dwa przebiegi (44 s) bajtowo identyczne. **Kryterium iteracji 3 spełnione w mierzonym zakresie, ale to wynik in-sample i nie spełnia bramki G4 z planu** (interpretacja zapisana z góry).
+
+**A — własny styl (in-sample), 8 stylów:** profil lepszy od ręcznych parametrów w S1 i S2 we **wszystkich 8** (32/32 seedów w każdym), żaden gorszy; wegetacja (S3) lepsza we wszystkich 4 stylach z porównywalnym kontekstem (caves, m05, m06, m19). Spójność lądu P1 ≥ 95 % we wszystkich 8 (95,2–100 %).
+
+**B — mapa wyłączona z uczenia w obrębie stylu (jedyny przypadek, swamp, n = 2):** profil z M13 na M12 i z M12 na M13 jest lepszy od ręcznych w S1 i S2 (32/32 seedów; −320 252 / −307 163 oraz −493 180 / −487 248 ppm), P1 95,9 % i 95,2 % (tuż nad progiem 95 %). To jedyny wynik na mapie niewidzianej, ale M12 i M13 to ta sama deklarowana rodzina (nazwy plików), dwa przypadki nie wystarczają do wniosku o uogólnieniu.
+
+**C — rozróżnialność:** rozpoznanych 6 z 8 stylów (własny profil najbliższy własnemu celowi). Nie rozpoznane: m01 i swamp (profile m06 i m19 są o włos bliżej: m01: 2 821 743 własny vs 2 811 131 profil m06). Profile m15, m19, swamp i winter są do siebie podobne, bo dopasowanie dochodzi do krańców siatek (jezioro 300 ‰, skała do 320 ‰, rzeki 0–8, brzeg 3–4).
+
+| Kryterium iteracji 3 | Wymaganie | Wynik |
+| --- | --- | --- |
+| A | ≥ 2/3 stylów lepszych w S1 i S2, żaden gorszy w obu | 8 z 8, 0 gorszych: tak |
+| C | ≥ 2/3 rozpoznanych | 6 z 8: tak |
+| P1 | każdy profil ≥ 95 % baseline | 0 poniżej: tak |
+| B | bez progu, zawód jeśli gorszy w S1 i S2 | 0 zawodów |
+
+**Jak to czytać (zastrzeżenia, z których żadne nie jest drobne):**
+- A i C to dopasowanie do danych, z których profil powstał. Ręczne parametry są dalekie od większości celów (np. cel „caves” to prawie sama ziemia: 3,0 mln ppm baseline vs 12 712 profilu), więc „lepszy” jest łatwe do osiągnięcia; to dowodzi, że **generator potrafi odtworzyć rozkład rodzajów danego stylu**, nie że styl jest wiernie naśladowany.
+- Wynik mierzy rozkład udziałów, sąsiedztwa rodzajów, wegetację i spójność lądu. **Nie ocenia wyglądu** (kształty rzek i gór, klastry, naturalność), a rzeki wciąż prowadzą głównie po osiach (D6). Dopasowane wartości sięgają krańców siatek, więc profil jest granicą możliwości siatki, nie optimum.
+- Pięć stylów ma jedną mapę z celem; m01 to sama woda, caves to sam grunt ziemi, więc profil takiego stylu opisuje jeden rodzaj gruntu.
+- Nie ma jeszcze zapisanych plików profili stylów (narzędzie raportuje strojenia w JSON), ani podpięcia do GUI/`GenerationConfig`.
+- Nadal nie mierzono: podziemi, BlackTek, memoryzacji generatora względem referencji (D10), `border_error_rate`, 100 % poprawnych ID i zera zmian poza maską w pełnym potoku.
+
+**Stan bramki G4 z planu (mapy niewidziane):** nie wykazana. Jedyny dowód na niewidzianej mapie (B, swamp, n = 2) jest korzystny, ale zbyt wąski. Aby ją wykazać, potrzeba co najmniej kilku stylów z ≥ 2 niezależnymi mapami z celem.
