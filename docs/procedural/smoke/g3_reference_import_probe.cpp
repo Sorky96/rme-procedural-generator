@@ -8,6 +8,7 @@
 #include "procedural/adapter/reference_import.h"
 #include "procedural/core/feature_report.h"
 #include "procedural/core/features.h"
+#include "procedural/core/decor_context.h"
 #include "procedural/core/semantic_image.h"
 #include "procedural/core/similarity.h"
 #include "procedural/core/style_profile.h"
@@ -249,6 +250,16 @@ void runProbe() {
             }
             writeText("ground-without-brush.csv", csv);
         }
+        // G4-D: doodad brushes in use (names and item counts only).
+        {
+            std::string csv = "brush,surface_items,underground_items\n";
+            for (const auto& [name, use] : summary.doodadBrushes) {
+                std::string quoted;
+                for (const char ch : name) { if (ch == '"') quoted += '"'; quoted += ch; }
+                csv += std::format("\"{}\",{},{}\n", quoted, use.surfaceItems, use.undergroundItems);
+            }
+            writeText("doodad-brushes.csv", csv);
+        }
         // G4-C: kind statistics through the accepted key map (surface floors 0..7, underground 8..15).
         const std::string keymapText = [&] { std::ifstream f(root / "keymap.tsv", std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); }();
         if (!keymapText.empty()) {
@@ -258,6 +269,9 @@ void runProbe() {
             check(surface.has_value(), "Surface kind statistics failed (a ground key is missing from the key map?)");
             const auto underground = accumulateKindStats(normalized->map, *keymap, 8, 15, stopSource.get_token());
             check(underground.has_value(), "Underground kind statistics failed");
+            const auto decorContext = extractDecorContext(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(decorContext.has_value(), "Decor context failed");
+            writeText("decor-context-surface.txt", serializeDecorContext(*decorContext));
             writeText("kind-stats-surface.txt", serializeStats(*surface));
             writeText("kind-stats-underground.txt", serializeStats(*underground));
         }

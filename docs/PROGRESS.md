@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4-D: wegetacja kontekstowa i metryki G4-F zapisane z góry (PARTIAL)
+
+Klasyfikacja doodadów po nazwie brusha (Tree 13, Bush 19, Stone 13 brushy na 247), statystyki kontekstowe (trawa/ziemia × woda × skała), `DecorTuning` w generatorze (domyślny bajtowo bez zmian) i dopasowanie zamknięte; profil `g4-profile/3`. Dowody wegetacji pochodzą w praktyce z 3 map (M05, M06, M19); na walidacji dopasowanie poprawia 2 z 4 porównywalnych foldów, 2 pogarsza. G3 bez regresji (190 plików identycznych). Metryki, seedy 1001–1032, agregacja i kryterium G4 zapisane w [G4_METRICS.md](procedural/G4_METRICS.md) przed jakimkolwiek liczeniem na zbiorze testowym. [G4_DECOR.md](procedural/G4_DECOR.md).
+
 ## 2026-11-08 — D13: pokrycie gruntu (PARTIAL, 96 nowych kluczy zaakceptowanych 2026-11-08)
 
 Przyczyna: ground bez brusha w `data/` 10.98 dostawał pusty klucz (650 item id, 789 tys. kafli). Naprawa: opcja normalizatora nadaje klucz `item <nazwa z definicji klienta>`; G3 bez regresji (190 plików bajtowo identycznych z opcją wyłączoną). Bez gruntu: 116 ‰ → 37 ‰ kafli; użytecznych map na powierzchni 5 → 9; podział po treści bez scaleń (poprzednie scalenia były artefaktem pustych kluczy), 9 rodzin; dopasowanie poprawia walidację w 6 z 8 foldów (wcześniej 2 z 4), baseline wygrywa w 2. [G4_COVERAGE.md](procedural/G4_COVERAGE.md).
