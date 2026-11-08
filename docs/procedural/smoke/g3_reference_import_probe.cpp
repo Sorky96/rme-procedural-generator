@@ -363,8 +363,8 @@ void runProbe() {
                 check(patches.has_value(), "Patch statistics failed");
                 const PatchSummary ps = summarizePatches(*patches);
                 auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
-                writeText("patches-surface.txt", std::format("boundary\t{}\ncompact\t{}\nbeach\t{}\ndirt_cells\t{}\nshore_cells\t{}\nshares\t{} {} {} {} {}\n",
-                    opt(ps.boundary), opt(ps.compact), opt(ps.beach), patches->dirtCells, patches->shoreCells, ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]));
+                writeText("patches-surface.txt", std::format("boundary\t{}\ncompact\t{}\nbeach\t{}\ndirt_cells\t{}\nshore_cells\t{}\nrock_boundary\t{}\nrock_compact\t{}\nrock_dust\t{}\nrock_cells\t{}\nshares\t{} {} {} {} {}\n",
+                    opt(ps.boundary), opt(ps.compact), opt(ps.beach), patches->dirtCells, patches->shoreCells, opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), patches->rockCells, ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]));
             }
             const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(channels.has_value(), "Channel extraction failed");

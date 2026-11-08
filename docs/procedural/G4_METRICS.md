@@ -180,3 +180,11 @@ Brak spełnienia któregokolwiek = D6 niezamknięty, z wyliczeniem. Ocena w obie
 **Zmiana modelu (8b, tylko jeśli 8a pokaże lukę).** Dopasowanie z siatek: `rockPermille` zostaje (udział z profilu), `minRockCells` {8, 24, 64, 160}; ewentualnie wygładzanie granicy skały (nowa reguła zapisana osobno przed wykonaniem, jeśli sama zmiana `minRockCells` nie wystarczy). Dopasowanie na seedach 1–4 bok 512, ocena na 1001–1032.
 
 **Zastrzeżenia z góry.** Dwie referencje; M06 ma mało skały (ok. 5 %), więc RB/RF/RS dla niej mogą być niepewne; skała w referencjach obejmuje „mountain”, „rocky ground” i pokrewne brushe wg mapowania, bez ścian i wielopiętrowych struktur; metryki kształtu, nie ocena wizualna (należy do użytkownika).
+
+### Iteracja 8 — wynik 8a i zapis zmiany modelu 8b (2026-11-08, przed jej wykonaniem)
+
+**8a (v10, bok 512, seedy 1001–1032).** Referencje M06 / M19: RB 333 / 121, RF 167 / 862, RS 36 / 15. Generator m06: RB 49, RF 998, RS 0; m19: RB 33, RF 1000, RS 0. W paśmie: m06 0 z 3, m19 2 z 3 (RF, RS). Skała generatora jest **bardzo gładka i zlana w duże bryły** (granica 3–7 razy mniejsza niż w referencjach); referencyjna skała M06 jest rozdrobniona (RF 167), M19 zwarta, ale z 3,7 razy dłuższą granicą.
+
+**Przyczyna (z kodu, zapisana przed zmianą).** Szum wysokości ma stałe 3 oktawy: krok, krok/2, krok/4 (wagi 4:2:1). Po podniesieniu `featureSize` do 192 w iteracji 6 najdrobniejsza oktawa ma krok 48 i wagę 1/7, więc brzegi skały, jezior i plaży straciły drobny szczegół; to skutek uboczny iteracji 6, nie zmierzony wcześniej.
+
+**Zmiana modelu 8b.** Szum wysokości dostaje dodatkowe oktawy, gdy `featureSize` > 24: liczba oktaw = min(8, max(3, ⌊log2(featureSize/6)⌋ + 1)), wagi 2^(n−1−oktawa), dzielnik 2^n − 1; dla `featureSize` ≤ 24 wynik bajt w bajt jak dotąd (3 oktawy 4:2:1). Szum wilgotności (ziemia/trawa) bez zmian, żeby nie zwiększać poszarpania ziemi, które użytkownik ocenił negatywnie. Ocena na seedach 1001–1032, bok 512; kryterium jak w 8a; warunki dodatkowe: udziały ±5 punktów procentowych wobec v10, niezmiennik rzek, testy rdzenia PASS; dodatkowo raportuję ponownie E4/E16/E64 z iteracji 6 i P′ z iteracji 7c (nie jako kryterium, jako kontrolę skutków ubocznych).
