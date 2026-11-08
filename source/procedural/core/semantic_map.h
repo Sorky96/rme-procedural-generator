@@ -31,7 +31,12 @@ enum class Trait : uint32_t {
 	Doodad = 1 << 13,        // stacked item owned by a doodad brush
 	LooseItem = 1 << 14,     // moveable stacked item
 	Unknown = 1 << 15,       // missing definition or invalid OTBM item
-	Present = 1 << 16        // the tile exists; set by SemanticMap::set, not reported as a trait
+	Present = 1 << 16,       // the tile exists; set by SemanticMap::set, not reported as a trait
+	// Not reported (traitCount stays 16), so reports are unchanged. Set by the importer from the name of
+	// the doodad brush (classifyDoodadBrush); a tile may carry several.
+	TreeDoodad = 1 << 17,
+	BushDoodad = 1 << 18,
+	StoneDoodad = 1 << 19
 };
 inline constexpr size_t traitCount = 16; // reportable traits; Present is not one of them
 

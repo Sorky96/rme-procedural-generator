@@ -8,7 +8,15 @@
 #include "procedural/adapter/reference_import.h"
 #include "procedural/core/feature_report.h"
 #include "procedural/core/features.h"
+#include "procedural/adapter/style_profile_store.h"
+#include "procedural/adapter/terrain_preparation.h"
+#include "procedural/core/decor_context.h"
+#include "procedural/core/png_writer.h"
+#include "procedural/core/scale_stats.h"
 #include "procedural/core/semantic_image.h"
+#include "procedural/core/similarity.h"
+#include "procedural/core/water_shape.h"
+#include "procedural/core/style_profile.h"
 #include "procedural/core/topology.h"
 #include <wx/module.h>
 #include <wx/log.h>
@@ -17,7 +25,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <unordered_map>
 #include <fstream>
+#include <iterator>
+#include <sstream>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -156,7 +167,9 @@ void runProbe() {
             });
         }
         ImportMeasurements measurements;
-        const auto normalized = normalizeReference(map, limits, SemanticBudget {100'000'000}, &measurements);
+        NormalizeOptions normalizeOptions;
+        normalizeOptions.nameUnbrushedGrounds = !readSetting("name-unbrushed.txt").empty();
+        const auto normalized = normalizeReference(map, limits, SemanticBudget {100'000'000}, &measurements, normalizeOptions);
         const long long returnedAt = std::chrono::steady_clock::now().time_since_epoch().count();
         canceller = {};
         const auto mib = [](uint64_t bytes) { return bytes >> 20; };
@@ -229,6 +242,179 @@ void runProbe() {
         for (const auto& floorImage : images->floors) {
             writeText(std::format("semantic/floor-{:02}.png", floorImage.bounds.z),
                 std::string(floorImage.png.begin(), floorImage.png.end()));
+        }
+        // G4-A: shift-invariant window fingerprint for the similarity test and the family split.
+        const auto fingerprint = computeFingerprint(normalized->map, FingerprintOptions {}, stopSource.get_token());
+        check(fingerprint.has_value(), "Fingerprint failed");
+        writeText("fingerprint.fp", serializeFingerprint(*fingerprint));
+        // G4-D13: which ground items no ground brush owns (aggregated per item type, no coordinates).
+        {
+            std::string csv = "server_id,count,client_id,blocking,name\n";
+            for (const auto& [id, use] : summary.groundWithoutBrush) {
+                std::string quoted;
+                for (const char ch : use.name) { if (ch == '"') quoted += '"'; quoted += ch; }
+                csv += std::format("{},{},{},{},\"{}\"\n", id, use.count, use.clientId, use.blocking ? 1 : 0, quoted);
+            }
+            writeText("ground-without-brush.csv", csv);
+        }
+        // G4 palette check: runs the dialog's full preparation (surface, resolver, borders, mask guard) on an empty
+        // map for every brush set listed in palette-probe.txt (tab separated: label, grass, dirt, rock, shore, water).
+        if (const std::string rows = [&] { std::ifstream f(root / "palette-probe.txt", std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); }(); !rows.empty()) {
+            std::string result;
+            std::istringstream lines(rows);
+            for (std::string line; std::getline(lines, line);) {
+                if (line.empty()) continue;
+                std::vector<std::string> f;
+                std::istringstream cells(line);
+                for (std::string cell; std::getline(cells, cell, '\t');) f.push_back(cell);
+                if (f.size() != 6 && f.size() != 9 && f.size() != 10) continue; // 9+ columns: also tree, bush, stone doodad brushes (vegetation on); 10: and the river meander
+                GroundProfile profile;
+                profile.count = GroundProfile::surfaceCount;
+                const std::string order[] = {f[1], f[2], f[3], f[4], f[5], f[5]}; // grass, dirt, rock, shore, lake, river
+                for (size_t i = 0; i < GroundProfile::surfaceCount; ++i) profile.brushes[i] = order[i];
+                if (f.size() >= 9) {
+                    profile.decorCount = GroundProfile::decorationCount;
+                    for (size_t i = 0; i < GroundProfile::decorationCount; ++i) profile.decor[i] = f[6 + i];
+                }
+                Map paletteMap;
+                paletteMap.initializeEmpty();
+                GenerationConfig config;
+                config.vegetation = f.size() >= 9;
+                if (f.size() == 10) config.surface.meander = static_cast<uint32_t>(std::stoul(f[9]));
+                config.region = {1000, 1000, 7, 100, 100};
+                config.seed = 1729;
+                config.algorithm = GenerationAlgorithm::Surface;
+                const auto prepared = prepareTerrain(paletteMap, config, profile, PreparationBudget {250000, 254016, 250000, 512ull << 20});
+                std::string outcome = "ok";
+                if (!prepared) {
+                    std::visit([&](auto error) { outcome = std::format("error variant={} code={}", prepared.error().index(), static_cast<int>(error)); }, prepared.error());
+                }
+                result += std::format("{}\t{}\n", f[0], outcome);
+            }
+            writeText("palette-probe-result.txt", result);
+        }
+        // G4 palette: tiles per ground key on the surface floors (z <= 7), names and counts only.
+        {
+            const auto& keyNames = normalized->map.groundKeys();
+            std::vector<uint64_t> perKey(keyNames.size(), 0);
+            for (const auto& floor : normalized->map.floors()) {
+                if (floor.bounds.z > 7) continue;
+                for (size_t i = 0; i < floor.ground.size(); ++i) {
+                    if (floor.traits[i] & bit(Trait::Present)) ++perKey[floor.ground[i]];
+                }
+            }
+            std::string csv = "key,tiles\n";
+            for (size_t k = 0; k < keyNames.size(); ++k) {
+                if (perKey[k] == 0) continue;
+                std::string quoted;
+                for (const char ch : keyNames[k]) { if (ch == '"') quoted += '"'; quoted += ch; }
+                csv += std::format("\"{}\",{}\n", quoted, perKey[k]);
+            }
+            writeText("ground-keys-surface.csv", csv);
+        }
+        // G4 GUI wiring: what the generator dialog would offer for this client (same functions, no GUI).
+        if (const std::string profilesDir = readSetting("profiles-dir.txt"); !profilesDir.empty()) {
+            std::string offerText;
+            const auto ids = loadedClientAssetIds();
+            if (!ids) {
+                offerText = "no asset ids\n";
+            } else {
+                const auto folder = scanStyleProfiles(profilesDir, *ids);
+                offerText = std::format("client={}\notb={}\ndat={}\nfolder_exists={}\noffered={}\nother_client={}\nother_assets={}\nnot_usable={}\nunreadable={}\n",
+                    ids->client, ids->otbSha256, ids->datSha256, folder.exists, folder.offer.offered.size(), folder.offer.otherClient,
+                    folder.offer.otherAssets, folder.offer.notUsable, folder.unreadable);
+                for (const auto& entry : folder.offer.offered) offerText += std::format("profile={}\n", entry.name);
+            }
+            writeText("profile-offer.txt", offerText);
+        }
+        // G4-D: doodad brushes in use (names and item counts only).
+        {
+            std::string csv = "brush,surface_items,underground_items\n";
+            for (const auto& [name, use] : summary.doodadBrushes) {
+                std::string quoted;
+                for (const char ch : name) { if (ch == '"') quoted += '"'; quoted += ch; }
+                csv += std::format("\"{}\",{},{}\n", quoted, use.surfaceItems, use.undergroundItems);
+            }
+            writeText("doodad-brushes.csv", csv);
+        }
+        // G4-C: kind statistics through the accepted key map (surface floors 0..7, underground 8..15).
+        const std::string keymapText = [&] { std::ifstream f(root / "keymap.tsv", std::ios::binary); return std::string(std::istreambuf_iterator<char>(f), {}); }();
+        if (!keymapText.empty()) {
+            const auto keymap = parseKeyMap(keymapText);
+            check(keymap.has_value(), "keymap.tsv is not a valid key map");
+            const auto surface = accumulateKindStats(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(surface.has_value(), "Surface kind statistics failed (a ground key is missing from the key map?)");
+            const auto underground = accumulateKindStats(normalized->map, *keymap, 8, 15, stopSource.get_token());
+            check(underground.has_value(), "Underground kind statistics failed");
+            const auto decorContext = extractDecorContext(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(decorContext.has_value(), "Decor context failed");
+            writeText("decor-context-surface.txt", serializeDecorContext(*decorContext));
+            const auto waterShapes = extractWaterShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(waterShapes.has_value(), "Water shape extraction failed");
+            writeText("water-shapes-surface.txt", serializeWaterShapes(*waterShapes));
+            {
+                const auto lags = lagStatsOf(normalized->map, *keymap, 0, 7, stopSource.get_token());
+                check(lags.has_value(), "Lag statistics failed");
+                const auto excess = lagExcessPermille(*lags);
+                writeText("scale-surface.txt", std::format("excess_4\t{}\nexcess_16\t{}\nexcess_64\t{}\npairs_64\t{}\n", excess[0], excess[1], excess[2], lags->pairs[2]));
+            }
+            {
+                const auto patches = patchStatsOf(normalized->map, *keymap, 0, 7, stopSource.get_token());
+                check(patches.has_value(), "Patch statistics failed");
+                const PatchSummary ps = summarizePatches(*patches);
+                auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
+                auto comp = [](const std::optional<std::array<uint32_t, 4>>& v) { return v ? std::format("{} {} {} {}", (*v)[0], (*v)[1], (*v)[2], (*v)[3]) : std::string("NA"); };
+                writeText("transitions-surface.txt", std::format("rock_comp\t{}\ndirt_comp\t{}\nrock_pairs\t{}\ndirt_pairs\t{}\n", comp(ps.rockComposition), comp(ps.dirtComposition),
+                    patches->rockContact[0] + patches->rockContact[1] + patches->rockContact[3] + patches->rockContact[4], patches->dirtContact[0] + patches->dirtContact[2] + patches->dirtContact[3] + patches->dirtContact[4]));
+                writeText("patches-surface.txt", std::format("boundary\t{}\ncompact\t{}\nbeach\t{}\ndirt_cells\t{}\nshore_cells\t{}\nrock_boundary\t{}\nrock_compact\t{}\nrock_dust\t{}\nrock_cells\t{}\nshares\t{} {} {} {} {}\n",
+                    opt(ps.boundary), opt(ps.compact), opt(ps.beach), patches->dirtCells, patches->shoreCells, opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), patches->rockCells, ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]));
+            }
+            {
+                static constexpr std::string_view pathKeys[] = {"cobblestone", "dark cobblestone", "grassy cobblestone", "item cobblestone", "white gravel", "pavement", "item pavement"};
+                const auto paths = extractKeyShapes(normalized->map, pathKeys, 0, 7, stopSource.get_token());
+                check(paths.has_value(), "Path extraction failed");
+                const ChannelSummary ps = summarizeChannels(*paths);
+                writeText("paths-surface.txt", std::format("count\t{}\nlength_per_64k\t{}\nwidth_milli\t{}\nbranches_per_100_milli\t{}\npath_cells\t{}\nregion_cells\t{}\n",
+                    ps.count, ps.lengthPer64k, ps.widthMilli, ps.branchesPer100Milli, paths->maskCells, paths->regionCells));
+            }
+            {
+                const auto buildings = extractBuildingShapes(normalized->map, 0, 7, stopSource.get_token());
+                check(buildings.has_value(), "Building extraction failed");
+                const BuildingSummary b = summarizeBuildings(*buildings);
+                writeText("buildings-surface.txt", std::format("count\t{}\nper_64k\t{}\nlong_median\t{}\nshort_median\t{}\nwall_median\t{}\ndoors_per_building_milli\t{}\nwith_door_permille\t{}\nregion_cells\t{}\n",
+                    b.count, b.per64k, b.longMedian, b.shortMedian, b.wallMedian, b.doorsPerBuildingMilli, b.withDoorPermille, buildings->regionCells));
+            }
+            const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
+            check(channels.has_value(), "Channel extraction failed");
+            {
+                const ChannelSummary c = summarizeChannels(*channels);
+                writeText("channels-surface.txt", std::format("count\t{}\nlength_per_64k\t{}\nwidth_milli\t{}\nbranches_per_100_milli\t{}\nconnected_permille\t{}\nregion_cells\t{}\n",
+                    c.count, c.lengthPer64k, c.widthMilli, c.branchesPer100Milli, c.connectedPermille, channels->regionCells));
+            }
+            {
+                // One pixel per tile, coloured by style kind, for a side-by-side look at a floor with the generator.
+                constexpr PngColor kindColors[] = {{70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {230, 230, 230}, {255, 0, 255}, {70, 70, 70}, {0, 0, 0}};
+                std::unordered_map<std::string_view, uint8_t> kindOfKey;
+                for (const auto& e : *keymap) kindOfKey.emplace(e.key, static_cast<uint8_t>(e.kind));
+                const auto& names = normalized->map.groundKeys();
+                std::vector<uint8_t> kindOfIndex(names.size(), 6);
+                for (size_t i = 0; i < names.size(); ++i) {
+                    const auto it = kindOfKey.find(names[i]);
+                    if (it != kindOfKey.end()) kindOfIndex[i] = it->second;
+                }
+                for (const SemanticFloor& floor : normalized->map.floors()) {
+                    if (floor.bounds.z > 7 || floor.ground.size() < 4000) continue;
+                    std::vector<uint8_t> pixels(floor.ground.size(), 8);
+                    for (size_t i = 0; i < pixels.size(); ++i)
+                        if (floor.traits[i] & bit(Trait::Present)) pixels[i] = kindOfIndex[floor.ground[i]];
+                    const auto png = encodeIndexedPng(static_cast<uint32_t>(floor.bounds.width), static_cast<uint32_t>(floor.bounds.height), kindColors, pixels);
+                    if (!png) continue;
+                    std::ofstream file(root / "analysis" / std::format("kind-map-z{:02}.png", floor.bounds.z), std::ios::binary);
+                    file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
+                }
+            }
+            writeText("kind-stats-surface.txt", serializeStats(*surface));
+            writeText("kind-stats-underground.txt", serializeStats(*underground));
         }
         log << "IMPORT_PASS\t" << compatibilityName(summary.compatibility) << '\n';
         log.close();

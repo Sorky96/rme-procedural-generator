@@ -7,6 +7,7 @@
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
+#include "brushes/wall/wall_brush.h"
 #include "item_definitions/core/item_definition_store.h"
 #include "map/map.h"
 #include "map/tile_operations.h"
@@ -74,6 +75,15 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			for (const auto value : {c.surface.featureSize, c.surface.lakePermille, c.surface.minLakeCells, c.surface.riverCount,
 				c.surface.minRiverLength, c.surface.shoreWidth, c.surface.rockPermille, c.surface.minRockCells,
 				c.surface.dirtPermille, c.surface.transitionWidth}) hashField(hash, value, 4);
+			// Appended only when set, so plans with the original river routes keep their fingerprint.
+			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
+			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
+			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
+			// Appended only when it differs from the built-in rules, so other plans keep their original fingerprint.
+			if (c.vegetation && !(c.decor == DecorTuning {})) {
+				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,
+					c.decor.waterBushPermille, c.decor.dirtStonePermille, c.decor.rockStonePermille}) hashField(hash, value, 4);
+			}
 		}
 	};
 	const auto string = [&](std::string_view value) {
@@ -110,6 +120,10 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	hashField(hash, plan.decor.size());
 	for (const auto id : plan.decor) hashField(hash, id, 2);
+	if (!plan.walls.empty()) {
+		hashField(hash, plan.walls.size());
+		for (const auto id : plan.walls) hashField(hash, id, 2);
+	}
 	return hash;
 }
 
@@ -168,7 +182,14 @@ std::optional<uint64_t> TerrainPreview::currentFingerprint() const noexcept {
 		hashField(hash, uint32_t(position.z), 4);
 		hashField(hash, tile->statflags, 2);
 		hashField(hash, tile->minimapColor, 1);
-		if (!hashItem(hash, tile->ground.get(), true, decorIds_)) return std::nullopt;
+		// A tile kept clear beside the area's edge (surfaceKeepClear) carries only the outer border of its neighbour:
+		// no ground, at least one item, and every item is checked below. Any other tile must have a valid ground.
+		if (tile->ground) {
+			if (!hashItem(hash, tile->ground.get(), true, decorIds_)) return std::nullopt;
+		} else {
+			if (tile->items.empty()) return std::nullopt;
+			hashField(hash, 0, 2);
+		}
 		hashField(hash, tile->items.size(), 4);
 		for (const auto& item : tile->items) if (!hashItem(hash, item.get(), false, decorIds_)) return std::nullopt;
 	}
@@ -213,10 +234,11 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	const int64_t bottom = std::min<int64_t>(int64_t(MAP_MAX_HEIGHT) + 1, int64_t(r.y) + r.height + 2);
 	if (c != GenerationRegion{left, top, r.z, uint32_t(right-left), uint32_t(bottom-top)}) co_return std::unexpected(PreviewError::InvalidPlan);
 	const auto contextIndex = [&](int x, int y) { return size_t(y-c.y) * c.width + size_t(x-c.x); };
-	if (plan.profile.count != GroundProfile::groundRollCount && plan.profile.count != GroundProfile::surfaceCount) {
+	if (plan.profile.count != GroundProfile::groundRollCount && plan.profile.count != GroundProfile::surfaceCount &&
+		plan.profile.count != GroundProfile::surfaceWithPathCount && plan.profile.count != GroundProfile::surfaceWithFloorCount) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	std::array<const GroundBrush*, GroundProfile::surfaceCount> brushes {};
+	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
 		const auto* brush = g_brushes.getBrush(plan.profile.brushes[i]);
@@ -240,18 +262,37 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			decorIds.push_back(item->getID());
 		}
 	}
+	// Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
+	std::vector<uint16_t> wallIds;
+	const WallBrush* wallBrush = nullptr;
+	if (!plan.profile.wall.empty()) {
+		const auto* brush = plan.profile.wall.size() <= 256 ? g_brushes.getBrush(plan.profile.wall) : nullptr;
+		wallBrush = brush ? brush->as<WallBrush>() : nullptr;
+		if (!wallBrush || plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
+		const_cast<WallBrush*>(wallBrush)->getRelatedItems(wallIds);
+		std::ranges::sort(wallIds);
+		wallIds.erase(std::ranges::unique(wallIds).begin(), wallIds.end());
+		decorIds.insert(decorIds.end(), wallIds.begin(), wallIds.end());
+	} else if (!plan.walls.empty()) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
 	std::ranges::sort(decorIds);
 	decorIds.erase(std::ranges::unique(decorIds).begin(), decorIds.end());
 	uint64_t decorPlacements = 0;
 	uint64_t placements = 0;
 	// Surface leaves writable cells beside existing ground empty; every other cell must be placed.
-	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot) : std::vector<uint8_t>();
+	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot, profileNeedsEdgeClearance(plan.profile)) : std::vector<uint8_t>();
 	for (size_t i = 0; i < plan.items.size(); ++i) {
 		if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
 		if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x,y)]) ||
 			bool(plan.items[i]) != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (plan.decor.empty() ? false : bool(plan.decor[i]) && !plan.items[i]) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (!plan.walls.empty() && plan.walls[i]) {
+			if (!plan.items[i] || !std::ranges::binary_search(wallIds, plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+			const auto wallDefinition = g_item_definitions.get(plan.walls[i]);
+			if (!wallDefinition || !wallDefinition.clientId() || wallDefinition.isMetaItem() || wallDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
+		}
 		if (!plan.items[i]) continue;
 		++placements;
 		if (!plan.decor.empty() && plan.decor[i]) {
@@ -386,6 +427,19 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.decor[i]));
+		}
+		// Walls follow the vegetation: the pieces are placed with the brush's first item and RME's own wall logic then
+		// picks the right piece (straight, corner) from the neighbouring walls.
+		for (size_t i = 0; i < plan.walls.size(); ++i) {
+			if (!plan.walls[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->addItem(Item::Create(plan.walls[i]));
+		}
+		for (size_t i = 0; i < plan.walls.size(); ++i) {
+			if (!plan.walls[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			WallBrush::doWalls(result.buffer_.get(), tile);
 		}
 		// Classify actual values, ignoring only derived caches. Even a border on
 		// an unselected neighbour rejects the whole candidate; never clip it away.

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/decoration.h"
+#include "procedural/core/scale_stats.h"
 #include "procedural/core/surface.h"
 
 #include <algorithm>
@@ -94,8 +95,16 @@ void parametersAndLimits() {
 	expectError(bad, budget, SurfaceError::InvalidParameters, "rockPermille 501 accepted");
 	bad = base; bad.tuning.riverCount = 1025;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "riverCount 1025 accepted");
-	bad = base; bad.tuning.shoreWidth = 5;
-	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 5 accepted");
+	bad = base; bad.tuning.meander = 9;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "meander 9 accepted");
+	bad = base; bad.tuning.meander = 8;
+	require(bool(generateSurface(bad, extent, budget)), "meander 8 refused");
+	bad = base; bad.tuning.shoreWidth = 9;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 9 accepted");
+	bad = base; bad.tuning.buildingDensity = 101;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "buildingDensity 101 accepted");
+	bad = base; bad.tuning.pathLength = 401;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "pathLength 401 accepted");
 	bad = base; bad.tuning.dirtPermille = 1001;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "dirtPermille 1001 accepted");
 	bad = base; bad.tuning.transitionWidth = 32769;
@@ -167,7 +176,7 @@ void deterministicAndMaskIndependent() {
 	const SurfaceGrid tiny { { 1, 2, 3, 1, 1 }, { SurfaceKind::Lake } };
 	// Pinned from the first passing run of algorithm v2; a change means output or wire layout changed.
 	require(tiny.fingerprint() == 17245445524122864401ULL, "Surface fingerprint wire layout changed");
-	require(first->fingerprint() == 6783381837833077004ULL, "Seed 1729 100x100 surface output changed");
+	require(first->fingerprint() == 17159159863505677800ULL, "Seed 1729 100x100 surface output changed");
 }
 
 struct Tally { size_t cells = 0, grass = 0, dirt = 0, rock = 0, shore = 0, lake = 0, river = 0; std::array<size_t, 5> shoreAt {}; };
@@ -257,6 +266,37 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		if (grid.cells[cell] == SurfaceKind::Shore && distance[cell] < tally.shoreAt.size()) ++tally.shoreAt[distance[cell]];
 	}
 	return tally;
+}
+
+// Rivers with a sideways swing keep every structural rule (they end at a lake or the border, start at rock, are
+// never one cell wide, tributaries stay joined) and stay deterministic; meander 0 is the original output.
+void meanderingRivers(uint32_t side, uint32_t seeds) {
+	size_t seedsWithRiver = 0, changed = 0;
+	for (const uint32_t meander : {2u, 5u, 8u}) {
+		for (uint32_t seed = 1; seed <= seeds; ++seed) {
+			auto config = makeConfig(side, seed);
+			const auto plain = generateSurface(config, extent, budget);
+			require(plain && plain->valid(), "Surface generation failed");
+			config.tuning.meander = meander;
+			const auto first = generateSurface(config, extent, budget);
+			const auto again = generateSurface(config, extent, budget);
+			require(first && first->valid() && again && first->cells == again->cells, "Meandering surface is not repeatable");
+			(void)structure(config, *first);
+			require(countOf(*first, SurfaceKind::River) > 0 || countOf(*plain, SurfaceKind::River) == 0 || meander > 0,
+				"A river disappeared");
+			if (meander == 5) {
+				seedsWithRiver += countOf(*plain, SurfaceKind::River) > 0;
+				changed += first->cells != plain->cells;
+			}
+			// Lakes and rock do not depend on the river swing.
+			require(countOf(*first, SurfaceKind::Lake) == countOf(*plain, SurfaceKind::Lake), "Meander changed the lakes");
+			auto zero = config; zero.tuning.meander = 0;
+			const auto restored = generateSurface(zero, extent, budget);
+			require(restored && restored->cells == plain->cells, "Meander 0 is not the original surface");
+		}
+	}
+	require(seedsWithRiver > 0 && changed > 0, "Meander never changed a river");
+	std::cout << "meander side=" << side << " seeds=" << seeds << " with_river=" << seedsWithRiver << " changed=" << changed << '\n';
 }
 
 void distributions(uint32_t side, uint32_t seeds) {
@@ -428,12 +468,94 @@ void decorationFailures() {
 }
 } // namespace
 
+// Optional paths (G4 iteration 9): off by default and bit-identical to the output without paths; when on, a path only
+// replaces Grass, Dirt or Shore, so rock, lakes and rivers keep their cells, and the result is deterministic.
+void paths(uint32_t side, uint64_t seeds) {
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		auto config = makeConfig(side, seed);
+		const auto plain = generateSurface(config, extent, budget);
+		require(plain.has_value(), "plain surface");
+		require(countOf(*plain, SurfaceKind::Path) == 0, "paths appeared with pathLength 0");
+		config.tuning.pathLength = 80;
+		const auto first = generateSurface(config, extent, budget);
+		const auto second = generateSurface(config, extent, budget);
+		require(first.has_value() && second.has_value() && first->cells == second->cells, "paths are not deterministic");
+		require(countOf(*first, SurfaceKind::Path) > 0, "pathLength 80 produced no path");
+		for (size_t i = 0; i < first->cells.size(); ++i) {
+			if (first->cells[i] == plain->cells[i]) continue;
+			require(first->cells[i] == SurfaceKind::Path, "a path run changed a cell to something other than a path");
+			const auto old = plain->cells[i];
+			require(old == SurfaceKind::Grass || old == SurfaceKind::Dirt || old == SurfaceKind::Shore, "a path replaced rock, a lake or a river");
+		}
+		require(first->valid(), "grid with paths is not valid");
+	}
+}
+
+// Grass rim (G4 iteration 10): no Dirt cell lies within two cells of Shore, and rock keeps some, but not all, dirt contact.
+void grassRimRule(uint32_t side, uint64_t seeds) {
+	size_t dirtBesideRock = 0;
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		const auto grid = generateSurface(makeConfig(side, seed), extent, budget);
+		require(grid.has_value(), "surface for the rim test");
+		for (uint32_t y = 0; y < side; ++y) {
+			for (uint32_t x = 0; x < side; ++x) {
+				if (grid->cells[size_t(y) * side + x] != SurfaceKind::Dirt) continue;
+				for (int32_t dy = -2; dy <= 2; ++dy) {
+					for (int32_t dx = -2; dx <= 2; ++dx) {
+						const int32_t nx = int32_t(x) + dx, ny = int32_t(y) + dy;
+						if (nx < 0 || ny < 0 || nx >= int32_t(side) || ny >= int32_t(side)) continue;
+						require(grid->cells[size_t(ny) * side + size_t(nx)] != SurfaceKind::Shore, "dirt within two cells of the shore");
+						dirtBesideRock += std::abs(dx) + std::abs(dy) == 1 && grid->cells[size_t(ny) * side + size_t(nx)] == SurfaceKind::Rock;
+					}
+				}
+			}
+		}
+	}
+	require(dirtBesideRock > 0, "the rim removed every contact between dirt and rock");
+}
+
+// Optional building foundations (G4 iteration 11): off by default; when on, only Grass and Dirt become Floor, every
+// foundation is a solid rectangle of 7-11 by 5-9 cells, and no two foundations or a foundation and another kind touch.
+void buildings(uint32_t side, uint64_t seeds) {
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		auto config = makeConfig(side, seed);
+		const auto plain = generateSurface(config, extent, budget);
+		require(plain.has_value() && countOf(*plain, SurfaceKind::Floor) == 0, "floors appeared with buildingDensity 0");
+		config.tuning.buildingDensity = 40;
+		const auto first = generateSurface(config, extent, budget);
+		const auto second = generateSurface(config, extent, budget);
+		require(first.has_value() && second.has_value() && first->cells == second->cells, "buildings are not deterministic");
+		require(first->valid(), "grid with buildings is not valid");
+		for (size_t i = 0; i < first->cells.size(); ++i) {
+			if (first->cells[i] == plain->cells[i]) continue;
+			require(first->cells[i] == SurfaceKind::Floor, "a building run changed a cell to something other than a floor");
+			require(plain->cells[i] == SurfaceKind::Grass || plain->cells[i] == SurfaceKind::Dirt, "a foundation replaced water, rock, shore or a river");
+		}
+		const auto shapes = floorBuildingsOf(*first);
+		for (const Building& b : shapes.buildings) {
+			require(b.cells == b.longSide * b.shortSide, "a foundation is not a solid rectangle");
+			require(b.longSide >= 7 && b.longSide <= 11 && b.shortSide >= 5 && b.shortSide <= 9 || b.longSide >= 5 && b.longSide <= 9 && b.shortSide >= 5, "a foundation has an unexpected size");
+		}
+		// The wall outline the resolver derives (Floor cells beside another kind) is 2 * (long + short) - 4 per foundation.
+		size_t outlineCells = 0, expectedOutline = 0;
+		for (size_t i = 0; i < first->cells.size(); ++i) {
+			if (first->cells[i] != SurfaceKind::Floor) continue;
+			const size_t x = i % side, y = i / side;
+			outlineCells += x == 0 || y == 0 || x + 1 == side || y + 1 == side || first->cells[i - 1] != SurfaceKind::Floor ||
+				first->cells[i + 1] != SurfaceKind::Floor || first->cells[i - side] != SurfaceKind::Floor || first->cells[i + side] != SurfaceKind::Floor;
+		}
+		for (const Building& b : shapes.buildings) expectedOutline += 2 * (b.longSide + b.shortSide) - 4;
+		require(outlineCells == expectedOutline, "the outline of the foundations is not 2 * (long + short) - 4 per building");
+		if (side >= 250) require(!shapes.buildings.empty(), "buildingDensity 40 produced no foundation");
+	}
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
-		distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
+		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures();
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3);
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {

@@ -15,10 +15,6 @@ constexpr uint32_t forestStep = 20;
 constexpr uint32_t forestThreshold = 36000;  // of 65536; higher values are dense forest
 constexpr uint32_t forestTreePermille = 110;
 constexpr uint32_t clearingTreePermille = 6;
-constexpr uint32_t bushPermille = 40;
-constexpr uint32_t waterBushPermille = 60;
-constexpr uint32_t dirtStonePermille = 30;
-constexpr uint32_t rockStonePermille = 80;
 constexpr uint32_t waterReach = 2;
 constexpr uint32_t rockReach = 2;
 
@@ -51,8 +47,16 @@ bool DecorGrid::valid() const noexcept {
 }
 
 std::expected<DecorGrid, SurfaceError> generateDecoration(const SurfaceGrid& grid, uint64_t seed, std::stop_token stop) {
+	return generateDecoration(grid, seed, DecorTuning {}, stop);
+}
+
+std::expected<DecorGrid, SurfaceError> generateDecoration(
+	const SurfaceGrid& grid, uint64_t seed, const DecorTuning& tuning, std::stop_token stop) {
 	if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
 	if (!grid.valid()) return std::unexpected(SurfaceError::InvalidRegion);
+	if (!valid(tuning)) return std::unexpected(SurfaceError::InvalidParameters);
+	const uint32_t bushPermille = tuning.bushPermille, waterBushPermille = tuning.waterBushPermille;
+	const uint32_t dirtStonePermille = tuning.dirtStonePermille, rockStonePermille = tuning.rockStonePermille;
 	try {
 		const auto nearWater = grow(grid, isWater, waterReach);
 		const auto nearRock = grow(grid, [](SurfaceKind kind) { return kind == SurfaceKind::Rock; }, rockReach);
@@ -68,7 +72,8 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(const SurfaceGrid& gri
 			const uint32_t detailRoll = permille(surfaceLattice(seed, detailStream, ax, ay));
 			if (kind == SurfaceKind::Grass) {
 				const bool forest = surfaceValueNoise(seed, forestStream, ax, ay, forestStep) >= forestThreshold;
-				const uint32_t treeChance = nearWater[i] ? 0 : (forest ? forestTreePermille : clearingTreePermille);
+				const uint32_t treeChance = nearWater[i] ? tuning.waterTreePermille
+					: std::min<uint32_t>(1000, (forest ? forestTreePermille : clearingTreePermille) * tuning.treeScalePermille / 1000);
 				const uint32_t bushChance = nearWater[i] ? waterBushPermille : bushPermille;
 				if (treeRoll < treeChance) cells[i] = DecorKind::Tree;
 				else if (detailRoll < bushChance) cells[i] = DecorKind::Bush;

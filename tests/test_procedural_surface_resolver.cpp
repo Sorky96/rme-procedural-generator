@@ -279,6 +279,81 @@ void endToEnd(uint32_t side, std::ostream& report, bool vegetation = false) {
 		<< std::ranges::count_if(expectedDecor, [](uint16_t id) { return id != 0; }) << "\tchanges=" << receipt->changes << "\tbytes=" << receipt->totalBytes << '\n';
 }
 
+// Paths, building foundations and their walls through the real client: a profile with eight brushes plus a wall brush
+// is prepared, validated, committed, undone and redone; every planned wall ends up as a wall item on its tile and
+// nothing else is left behind after Undo. Profiles that do not match the tuning are refused.
+void structures(uint32_t side, std::ostream& report) {
+	UndoLimits undoLimits;
+	check(g_gui.NewMap(), "Editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	GenerationConfig config {{100, 100, 7, side, side}, 1729};
+	config.algorithm = GenerationAlgorithm::Surface;
+	config.surface.pathLength = 80;
+	config.surface.buildingDensity = 40;
+	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+	profile.wall = "stone wall";
+	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	const auto baselineTiles = editor.map.getTileCount();
+	const auto prior = editor.actionQueue->getCurrentIndex();
+	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(prepared), "Structure preparation failed, error index " + std::to_string(prepared ? 0 : prepared.error().index()) +
+		(prepared || prepared.error().index() != 0 ? std::string() : " value " + std::to_string(int(std::get<PreparationInputError>(prepared.error())))));
+	check(bool(validatePreparedTerrain(editor.map, *prepared, config, profile)), "Structure validation failed");
+	check(prepared->plan.walls.size() == prepared->plan.items.size(), "The plan has no wall layer");
+	const size_t plannedWalls = size_t(std::ranges::count_if(prepared->plan.walls, [](uint16_t id) { return id != 0; }));
+	check(plannedWalls > 0, "No wall was planned");
+	auto sixBrushes = profile;
+	sixBrushes.count = GroundProfile::surfaceCount;
+	sixBrushes.wall.clear();
+	check(!prepareTerrain(editor.map, config, sixBrushes, preparation), "Buildings accepted a six-brush profile");
+	auto noBuildings = config;
+	noBuildings.surface.buildingDensity = 0;
+	check(!prepareTerrain(editor.map, noBuildings, profile, preparation), "Walls accepted without buildings");
+	auto badWall = profile;
+	badWall.wall = "grass";
+	check(!prepareTerrain(editor.map, config, badWall, preparation), "A ground brush was accepted as a wall brush");
+	auto sevenBrushes = profile;
+	sevenBrushes.count = GroundProfile::surfaceWithPathCount;
+	sevenBrushes.wall.clear();
+	check(!prepareTerrain(editor.map, config, sevenBrushes, preparation), "Buildings accepted a seven-brush profile");
+	const auto expected = prepared->plan.items;
+	const auto expectedWalls = prepared->plan.walls;
+	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+	check(bool(receipt), "Structure commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
+	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Commit is not one history step");
+	const auto checkPlaced = [&](bool placed) {
+		size_t walls = 0;
+		for (size_t i = 0; i < expected.size(); ++i) {
+			const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
+			if (placed) {
+				check(tile && tile->ground && tile->ground->getID() == expected[i], "Committed ground differs from the plan");
+				size_t plain = 0;
+				for (const auto& item : tile->items) {
+					if (item->isBorder()) continue;
+					++plain;
+					check(item->isWall(), "Committed tile holds a plain item that is not a wall");
+				}
+				check(plain == (expectedWalls[i] ? 1u : 0u), "Wall count differs from the plan");
+				walls += plain;
+			} else {
+				check(!tile || (!tile->ground && tile->items.empty()), "Undo left generated content");
+			}
+		}
+		check(!placed || walls == plannedWalls, "The number of walls differs from the plan");
+	};
+	checkPlaced(true);
+	const auto committedTiles = editor.map.getTileCount();
+	check(editor.actionQueue->undo(), "Structure Undo refused");
+	checkPlaced(false);
+	check(editor.map.getTileCount() == baselineTiles, "Undo changed the tile count");
+	check(editor.actionQueue->redo(), "Structure Redo refused");
+	checkPlaced(true);
+	check(editor.map.getTileCount() == committedTiles, "Redo changed the tile count");
+	editor.map.clearChanges();
+	report << "SURFACE_STRUCTURES_E2E_PASS" << '\t' << side << '\t' << "walls=" << plannedWalls << '\t' << "changes=" << receipt->changes << '\n';
+}
+
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
 // tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
 void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
@@ -352,6 +427,8 @@ void run() {
 		endToEnd(250, report);
 		endToEnd(100, report, true);
 		endToEnd(250, report, true);
+		structures(100, report);
+		structures(250, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
 		nextToTerrain(250, 1729, false, report);

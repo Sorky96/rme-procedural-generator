@@ -18,10 +18,15 @@ struct DecorGrid {
 	[[nodiscard]] bool valid() const noexcept;
 };
 
+
 // Working memory estimate (flags and output), not a measurement.
 inline constexpr uint64_t decorationBytesPerCell = 4;
 
 std::expected<DecorGrid, SurfaceError> generateDecoration(
 	const SurfaceGrid& grid, uint64_t seed, std::stop_token stop = {});
+
+// A chance above 1000 (treeScalePermille above maxTreeScalePermille) is SurfaceError::InvalidParameters.
+std::expected<DecorGrid, SurfaceError> generateDecoration(
+	const SurfaceGrid& grid, uint64_t seed, const DecorTuning& tuning, std::stop_token stop = {});
 
 } // namespace rme::procedural

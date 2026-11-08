@@ -46,7 +46,11 @@ std::expected<GenerationSnapshot, SnapshotError> captureGenerationSnapshot(
 // A cell qualifies when one of its eight neighbours is not writable (outside the area, masked out or
 // protected) and holds ground. One byte per cell, row-major over the region; computed from the
 // snapshot alone, so capture and preview agree.
-[[nodiscard]] std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot);
+// With outerBorderBrushes (some brush of the profile draws an outer border onto empty neighbours, see
+// profileNeedsEdgeClearance) a cell also qualifies beside a non-writable neighbour that holds no ground:
+// that empty tile would otherwise receive the border. The cleared cells are inside the area, so the
+// border lands on them, and nothing outside the allowed area is touched.
+[[nodiscard]] std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool outerBorderBrushes = false);
 
 // Re-checks owned tile values and location metadata as well as revision stamps.
 [[nodiscard]] bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noexcept;

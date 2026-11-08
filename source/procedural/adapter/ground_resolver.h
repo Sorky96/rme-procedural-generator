@@ -9,12 +9,16 @@
 namespace rme::procedural {
 
 struct GroundProfile {
-	// GroundRoll: Grass, Dirt, Water (count 3). Surface: Grass, Dirt, Rock, Shore, Lake, River (count 6).
+	// GroundRoll: Grass, Dirt, Water (count 3). Surface: Grass, Dirt, Rock, Shore, Lake, River (count 6), or with a
+	// seventh brush for Path cells (count 7), or with an eighth for Floor cells as well (count 8). A grid may only
+	// contain the kinds its profile has brushes for.
 	// Names are resolved in loaded assets; the same brush may serve several kinds. Entries past
 	// `count` are unused and must stay empty.
 	static constexpr uint8_t groundRollCount = 3;
 	static constexpr uint8_t surfaceCount = 6;
-	std::array<std::string, 6> brushes;
+	static constexpr uint8_t surfaceWithPathCount = 7;
+	static constexpr uint8_t surfaceWithFloorCount = 8; // Path brush at index 6 (always filled), Floor brush at index 7
+	std::array<std::string, 8> brushes;
 	uint8_t count = groundRollCount;
 	[[nodiscard]] std::span<const std::string> active() const noexcept { return std::span(brushes).first(count); }
 	// Vegetation doodad brushes in DecorKind order after None: Tree, Bush, Stone. decorCount is 0 (none)
@@ -22,6 +26,8 @@ struct GroundProfile {
 	static constexpr uint8_t decorationCount = 3;
 	std::array<std::string, 3> decor;
 	uint8_t decorCount = 0;
+	// Wall brush for the outline of Floor foundations; empty = no walls. Only valid with a profile of eight brushes.
+	std::string wall;
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
 };
@@ -39,8 +45,16 @@ struct GroundPlan {
 	// Row-major vegetation item IDs placed on top of the ground; empty when vegetation is off,
 	// otherwise one entry per cell with 0 meaning none.
 	std::vector<uint16_t> decor;
+	// Wall item per cell for the outline of a Floor foundation (the brush's first item; the real alignment is fixed by
+	// RME's wall logic on the preview buffer); empty when the profile has no wall brush, otherwise one entry per cell.
+	std::vector<uint16_t> walls;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
+
+// True when a ground brush of the profile has an outer border to "nothing": the border calculator then draws
+// it onto empty neighbour tiles, which for a generated area means outside it. Such profiles need
+// surfaceKeepClear(snapshot, true). Brushes that do not resolve count as false; resolution reports them.
+[[nodiscard]] bool profileNeedsEdgeClearance(const GroundProfile& profile);
 
 enum class ResolveError {
 	WrongThread, NoClient, StaleAssets, InvalidInput, InvalidProfile, InvalidItem,

@@ -1,4 +1,4 @@
-add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp)
+add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp core/similarity.cpp core/reference_split.cpp core/style_profile.cpp core/style_fit.cpp core/doodad_class.cpp core/decor_context.cpp core/style_profile_set.cpp core/water_shape.cpp core/scale_stats.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
 target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rme PRIVATE rme_procedural_core)
@@ -54,3 +54,54 @@ add_test(NAME test_procedural_features COMMAND test_procedural_features)
 add_executable(test_procedural_semantic_image ${PROJECT_SOURCE_DIR}/tests/test_procedural_semantic_image.cpp)
 target_link_libraries(test_procedural_semantic_image PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_semantic_image COMMAND test_procedural_semantic_image)
+
+add_executable(test_procedural_similarity ${PROJECT_SOURCE_DIR}/tests/test_procedural_similarity.cpp)
+target_link_libraries(test_procedural_similarity PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_similarity COMMAND test_procedural_similarity)
+
+add_executable(test_procedural_style_profile ${PROJECT_SOURCE_DIR}/tests/test_procedural_style_profile.cpp)
+target_link_libraries(test_procedural_style_profile PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_style_profile COMMAND test_procedural_style_profile)
+
+add_executable(test_procedural_style_fit ${PROJECT_SOURCE_DIR}/tests/test_procedural_style_fit.cpp)
+target_link_libraries(test_procedural_style_fit PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_style_fit COMMAND test_procedural_style_fit)
+
+add_executable(reference_split ${CMAKE_CURRENT_SOURCE_DIR}/tools/reference_split_main.cpp)
+target_link_libraries(reference_split PRIVATE rme_procedural_core)
+
+add_executable(style_keymap ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_keymap_main.cpp)
+target_link_libraries(style_keymap PRIVATE rme_procedural_core)
+
+add_executable(style_fit ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_fit_main.cpp)
+target_link_libraries(style_fit PRIVATE rme_procedural_core)
+
+add_executable(test_procedural_decor ${PROJECT_SOURCE_DIR}/tests/test_procedural_decor.cpp)
+target_link_libraries(test_procedural_decor PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_decor COMMAND test_procedural_decor)
+
+add_executable(style_eval ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_eval_main.cpp)
+target_link_libraries(style_eval PRIVATE rme_procedural_core)
+
+add_executable(style_styles ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_styles_main.cpp)
+target_link_libraries(style_styles PRIVATE rme_procedural_core)
+
+add_executable(test_procedural_style_profile_set ${PROJECT_SOURCE_DIR}/tests/test_procedural_style_profile_set.cpp)
+target_link_libraries(test_procedural_style_profile_set PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_style_profile_set COMMAND test_procedural_style_profile_set)
+
+target_sources(rme PRIVATE adapter/style_profile_store.cpp adapter/style_profile_store.h)
+
+add_executable(test_procedural_water ${PROJECT_SOURCE_DIR}/tests/test_procedural_water.cpp)
+target_link_libraries(test_procedural_water PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_water COMMAND test_procedural_water)
+
+add_executable(water_eval ${CMAKE_CURRENT_SOURCE_DIR}/tools/water_eval_main.cpp)
+target_link_libraries(water_eval PRIVATE rme_procedural_core)
+
+add_executable(style_render ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_render_main.cpp)
+target_link_libraries(style_render PRIVATE rme_procedural_core)
+
+add_executable(test_procedural_scale ${PROJECT_SOURCE_DIR}/tests/test_procedural_scale.cpp)
+target_link_libraries(test_procedural_scale PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_scale COMMAND test_procedural_scale)

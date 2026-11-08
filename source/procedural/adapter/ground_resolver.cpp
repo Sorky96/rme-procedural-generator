@@ -26,7 +26,24 @@ uint64_t GroundPlan::fingerprint() const {
 			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
 		}
 	}
+	// Appended only with walls, so plans without them keep their fingerprint.
+	if (!walls.empty()) {
+		hash = (hash ^ 0x77) * 1099511628211ULL;
+		for (const auto id : walls) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
 	return hash;
+}
+
+bool profileNeedsEdgeClearance(const GroundProfile& profile) {
+	for (const std::string& name : profile.active()) {
+		const auto* brush = name.empty() ? nullptr : g_brushes.getBrush(name);
+		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+		if (ground && ground->hasOuterZilchBorder()) return true;
+	}
+	return false;
 }
 
 std::expected<GroundPlan, ResolveError> resolveGroundPlan(

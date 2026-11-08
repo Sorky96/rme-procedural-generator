@@ -122,7 +122,7 @@ bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noex
 }
 
 
-std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot) {
+std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool outerBorderBrushes) {
 	const auto& input = snapshot.input;
 	const auto& region = input.config.region;
 	const auto& context = snapshot.context;
@@ -143,7 +143,7 @@ std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot) {
 			if (!writableAt(x, y)) continue;
 			for (int64_t dy = -1; dy <= 1; ++dy) {
 				for (int64_t dx = -1; dx <= 1; ++dx) {
-					if ((dx || dy) && !writableAt(x + dx, y + dy) && holdsGround(x + dx, y + dy)) {
+					if ((dx || dy) && !writableAt(x + dx, y + dy) && (outerBorderBrushes || holdsGround(x + dx, y + dy))) {
 						result[size_t(y) * region.width + size_t(x)] = 1;
 					}
 				}

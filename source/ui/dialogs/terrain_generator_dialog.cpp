@@ -10,6 +10,7 @@
 #include "brushes/brush.h"
 #include "brushes/doodad/doodad_brush.h"
 #include "brushes/ground/ground_brush.h"
+#include "brushes/wall/wall_brush.h"
 #include "editor/action_queue.h"
 #include "editor/editor.h"
 #include "editor/operations/draw_operations.h"
@@ -321,6 +322,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 				if (brushName == previousGround) continue;
 				previousGround = brushName;
 				ground_names_.Add(wxstr(brushName));
+			} else if (brush->is<WallBrush>() && !brush->is<WallDecorationBrush>()) {
+				wall_names_.Add(wxstr(brushName));
 			} else if (const auto* doodad = brush->as<DoodadBrush>()) {
 				// The resolver only places single items of variation 0.
 				if (brushName == previousDoodad || !doodad->hasSingleObjects(0)) continue;
@@ -329,8 +332,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			}
 		}
 	}
-	const auto brushChoice = [&](const wxString& name, const wxString& preferred, bool doodad) {
-		const wxArrayString& names = doodad ? doodad_names_ : ground_names_;
+	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes.
+	const auto brushChoice = [&](const wxString& name, const wxString& preferred, int listKind) {
+		const wxArrayString& names = listKind == 2 ? wall_names_ : listKind == 1 ? doodad_names_ : ground_names_;
 		// Only the preferred (or first) entry exists until the list is first opened: filling
 		// thousands of entries into eight lists made opening the dialog slow.
 		wxString initial = names.Index(preferred) != wxNOT_FOUND ? preferred : (names.IsEmpty() ? wxString() : names[0]);
@@ -428,6 +432,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	style_choice_->SetSelection(0);
 	form->Add(style_choice_, 1, wxEXPAND);
 
+	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
+	profile_choice_ = newd wxChoice(this, wxID_ANY);
+	profile_choice_->SetName("terrain-profile");
+	profile_choice_->Append("Built-in (manual settings)");
+	profile_choice_->SetSelection(0);
+	LoadStyleProfiles();
+	form->Add(profile_choice_, 1, wxEXPAND);
+
 	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_brush_choice_ = brushChoice("terrain-rock-brush", "rocky ground", false);
 	form->Add(rock_brush_choice_, 1, wxEXPAND);
@@ -435,6 +447,34 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("S&hore brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
 	form->Add(shore_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Pat&h length:"), 0, wxALIGN_CENTER_VERTICAL);
+	path_length_spin_ = spin("terrain-path-length", 0, 400, 0);
+	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
+	form->Add(path_length_spin_, 1, wxEXPAND);
+
+	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
+	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
+	form->Add(path_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
+	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
+	building_density_spin_->SetToolTip("Building foundations (floor rectangles, no walls) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
+	form->Add(building_density_spin_, 1, wxEXPAND);
+
+	form->Add(label("Floor brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
+	floor_brush_choice_ = brushChoice("terrain-floor-brush", "stone floor", false);
+	form->Add(floor_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("&Walls:"), 0, wxALIGN_CENTER_VERTICAL);
+	walls_check_ = newd wxCheckBox(this, wxID_ANY, "Add walls around the buildings");
+	walls_check_->SetName("terrain-walls");
+	walls_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	form->Add(walls_check_, 1, wxEXPAND);
+
+	form->Add(label("Wall brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
+	wall_brush_choice_ = brushChoice("terrain-wall-brush", "stone wall", 2);
+	form->Add(wall_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
@@ -529,20 +569,28 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		status_text_->Wrap(std::max(event.GetSize().GetWidth(), Theme::Grid(60)));
 		event.Skip();
 	});
+	// The brushes the dialog opened with: a profile choice always starts from them.
+	{
+		wxComboBox* const fields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
+		for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) default_brushes_[kind] = fields[kind]->GetValue();		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
+		for (size_t kind = 0; kind < std::size(decorFields); ++kind) default_decor_brushes_[kind] = decorFields[kind]->GetValue();
+	}
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
-	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) {
+	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, building_density_spin_ }) {
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
+	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
 		control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	profile_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnProfileChosen, this);
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	walls_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
 	place_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPlace, this);
@@ -568,6 +616,34 @@ bool TerrainGeneratorDialog::NaturalSurface() const {
 	return style_choice_->GetSelection() == 1;
 }
 
+// Offers the style profiles that were learned for exactly the loaded client and its assets. Read-only: the
+// folder is never created and a profile that does not match is not listed, only counted in the tooltip.
+void TerrainGeneratorDialog::LoadStyleProfiles() {
+	namespace rp = rme::procedural;
+	const auto folder = rp::styleProfileDirectory();
+	const auto ids = rp::loadedClientAssetIds();
+	wxString hint;
+	if (!ids) {
+		hint = "Style profiles need a loaded client with items.otb.";
+	} else {
+		auto scan = rp::scanStyleProfiles(folder, *ids);
+		const wxString where(folder.generic_wstring());
+		if (!scan.exists) {
+			hint = "No style profiles. Put *.profile files in:\n" + where;
+		} else {
+			profiles_ = std::move(scan.offer.offered);
+			for (const auto& entry : profiles_) profile_choice_->Append(wxstr(entry.name));
+			hint = wxstr(std::format("{} style profile(s) offered from:\n", profiles_.size())) + where;
+			const size_t hidden = scan.offer.otherClient + scan.offer.otherAssets + scan.offer.notUsable + scan.unreadable;
+			if (hidden > 0) {
+				hint += wxstr(std::format("\nHidden: {} for another client, {} for other items.otb or Tibia.dat, {} unusable.",
+					scan.offer.otherClient, scan.offer.otherAssets, scan.offer.notUsable + scan.unreadable));
+			}
+		}
+	}
+	profile_choice_->SetToolTip(hint);
+}
+
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 	event.Skip();
 	const bool hadPreview = preview_steps_ || prepared_ || preview_bitmap_.IsOk();
@@ -576,6 +652,61 @@ void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 	if (hadPreview) {
 		SetStatus("Settings changed. Press Preview to generate a new preview.", false);
 	}
+}
+
+// A profile also names the ground and doodad brushes its style used (winter: small snowy rocks). Every choice
+// starts from the brushes the dialog opened with, so brushes of a previously chosen profile do not carry over;
+// then the profile's brushes are set. A name is applied only when this client has the brush and the generator
+// can use it (a ground brush needs ground items, a doodad brush single items). Anything else is skipped and
+// reported, never guessed. The fields stay editable; the vegetation check box is left as the user set it.
+void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
+	OnInputChanged(event);
+	wxComboBox* const groundFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
+	wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
+	static_assert(std::size(groundFields) == rme::procedural::naturalKindCount);
+	static const char* const groundLabels[] = { "Grass", "Dirt", "Rock", "Shore", "Water" };
+	static const char* const decorLabels[] = { "Tree", "Bush", "Stone" };
+	const auto setBrush = [](wxComboBox* field, const wxString& name) {
+		field->Clear();
+		field->Append(name);
+		field->SetSelection(0);
+	};
+	for (size_t i = 0; i < std::size(groundFields); ++i) if (!default_brushes_[i].empty()) setBrush(groundFields[i], default_brushes_[i]);
+	for (size_t i = 0; i < std::size(decorFields); ++i) if (!default_decor_brushes_[i].empty()) setBrush(decorFields[i], default_decor_brushes_[i]);
+	const int picked = profile_choice_->GetSelection();
+	if (picked <= 0 || static_cast<size_t>(picked) > profiles_.size()) {
+		SetStatus("Built-in settings: brushes set back to the defaults.", false);
+		return;
+	}
+	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
+	wxString applied, skipped;
+	const auto note = [](wxString& list, const char* label, const wxString& name) {
+		list += (list.empty() ? "" : ", ") + wxString(label) + ": " + name;
+	};
+	for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) {
+		const std::string& name = entry.profile.palette[kind];
+		if (name.empty()) continue;
+		const wxString wanted = wxstr(name);
+		const Brush* brush = ground_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
+		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+		const bool usable = ground && ground->getTotalChance() > 0;
+		if (usable) setBrush(groundFields[kind], wanted);
+		note(usable ? applied : skipped, groundLabels[kind], wanted);
+	}
+	for (size_t kind = 0; kind < std::size(decorFields); ++kind) {
+		const std::string& name = entry.profile.decorPalette[kind];
+		if (name.empty()) continue;
+		const wxString wanted = wxstr(name);
+		const Brush* brush = doodad_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
+		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
+		const bool usable = doodad && doodad->hasSingleObjects(0);
+		if (usable) setBrush(decorFields[kind], wanted);
+		note(usable ? applied : skipped, decorLabels[kind], wanted);
+	}
+	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
+	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
+	if (!skipped.empty()) message += " Not usable in this client, kept the default: " + skipped + ".";
+	SetStatus(message, false);
 }
 
 void TerrainGeneratorDialog::ReleasePreview() {
@@ -594,7 +725,14 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	const bool natural = NaturalSurface();
 	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
+	path_length_spin_->Enable(natural);
+	building_density_spin_->Enable(natural);
+	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
+	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
+	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
+	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
 	vegetation_check_->Enable(natural);
+	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
 	const bool rectangle = !SelectionMode();
 	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_ }) {
@@ -657,6 +795,14 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	if (natural) {
 		// Weights belong to the classic mix only; the surface algorithm keeps the defaults.
 		config.algorithm = GenerationAlgorithm::Surface;
+		// A style profile replaces the built-in tuning; the choice was listed only for this client and these assets.
+		if (const int picked = profile_choice_->GetSelection(); picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
+			const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
+			config.surface = *profile.tuning;
+			if (profile.decorTuning) config.decor = *profile.decorTuning;
+		}
+		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
+		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
@@ -671,13 +817,27 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	// Surface order: Grass, Dirt, Rock, Shore, Lake, River. Lake and river share the water brush.
 	wxComboBox* const classicFields[] = { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_ };
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
-	wxComboBox* const* const brushFields = natural ? surfaceFields : classicFields;
-	request.profile.count = natural ? GroundProfile::surfaceCount : GroundProfile::groundRollCount;
+	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
+	const bool withFloors = natural && config.surface.buildingDensity > 0;
+	const bool withPaths = natural && config.surface.pathLength > 0;
+	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
+		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
+	wxComboBox* const surfaceWithFloorFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_, path_brush_choice_, floor_brush_choice_ };
+	if (withPaths || withFloors) brushFields = surfaceWithFloorFields;
 	for (size_t i = 0; i < request.profile.count; ++i) {
 		request.profile.brushes[i] = std::string(brushFields[i]->GetValue().utf8_str());
 		if (request.profile.brushes[i].empty()) {
 			SetStatus("Choose a ground brush for every terrain field.", true);
 			brushFields[i]->SetFocus();
+			return std::nullopt;
+		}
+	}
+
+	if (withFloors && walls_check_->GetValue()) {
+		request.profile.wall = std::string(wall_brush_choice_->GetValue().utf8_str());
+		if (request.profile.wall.empty()) {
+			SetStatus("Choose a wall brush or untick Walls.", true);
+			wall_brush_choice_->SetFocus();
 			return std::nullopt;
 		}
 	}

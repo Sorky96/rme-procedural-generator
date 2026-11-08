@@ -7,11 +7,13 @@
 
 #include "app/main.h"
 #include "procedural/adapter/generation_selection.h"
+#include "procedural/adapter/style_profile_store.h"
 #include "procedural/adapter/terrain_preparation.h"
 
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 #include <wx/arrstr.h>
 #include <wx/bitmap.h>
 #include <wx/checkbox.h>
@@ -44,6 +46,7 @@ private:
 	};
 
 	void OnInputChanged(wxCommandEvent& event);
+	void OnProfileChosen(wxCommandEvent& event);
 	void OnPreview(wxCommandEvent& event);
 	void OnPreviewTick(wxTimerEvent& event);
 	void OnCancel(wxCommandEvent& event);
@@ -60,6 +63,7 @@ private:
 	void ReleasePreview();
 	void UpdateControlStates();
 	void UpdateClientLabel();
+	void LoadStyleProfiles();
 	void SetStatus(const wxString& text, bool error);
 
 	uint64_t source_map_generation_ = 0;
@@ -87,11 +91,22 @@ private:
 	wxComboBox* dirt_brush_choice_ = nullptr;
 	wxComboBox* water_brush_choice_ = nullptr;
 	wxChoice* style_choice_ = nullptr;
+	wxChoice* profile_choice_ = nullptr;
+	std::vector<rme::procedural::OfferedProfile> profiles_; // entry i is choice i + 1
+	std::array<wxString, rme::procedural::naturalKindCount> default_brushes_; // grass, dirt, rock, shore, water
+	std::array<wxString, 3> default_decor_brushes_;                            // tree, bush, stone
 	wxComboBox* rock_brush_choice_ = nullptr;
 	wxComboBox* shore_brush_choice_ = nullptr;
+	wxComboBox* path_brush_choice_ = nullptr;
+	wxSpinCtrl* building_density_spin_ = nullptr;
+	wxComboBox* floor_brush_choice_ = nullptr;
+	wxCheckBox* walls_check_ = nullptr;
+	wxComboBox* wall_brush_choice_ = nullptr;
+	wxSpinCtrl* path_length_spin_ = nullptr;
 	wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;
 	wxArrayString doodad_names_;
+	wxArrayString wall_names_;
 	wxComboBox* tree_brush_choice_ = nullptr;
 	wxComboBox* bush_brush_choice_ = nullptr;
 	wxComboBox* stone_brush_choice_ = nullptr;

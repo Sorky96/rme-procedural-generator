@@ -44,6 +44,20 @@ struct ImportMeasurements {
 	uint32_t normalizeMs = 0;
 };
 
+// A valid ground item that no ground brush owns (key "" in the semantic map). Aggregates per item type.
+struct UnbrushedGround {
+	uint64_t count = 0;
+	std::string name;       // from the loaded client's definition
+	uint32_t clientId = 0;
+	bool blocking = false;
+};
+
+// Stacked items owned by one doodad brush, split by surface (z <= 7) and underground floors.
+struct DoodadUse {
+	uint64_t surfaceItems = 0;
+	uint64_t undergroundItems = 0;
+};
+
 // Aggregates only: no tile coordinates and no raw tile content.
 struct ReferenceImportSummary {
 	std::string sha256;
@@ -57,6 +71,8 @@ struct ReferenceImportSummary {
 	uint64_t loaderWarnings = 0;
 	std::array<uint64_t, 16> tilesPerFloor {};
 	std::map<uint32_t, uint64_t> unknownIds; // server id -> occurrences, ordered by id
+	std::map<uint32_t, UnbrushedGround> groundWithoutBrush; // server id -> use; filled by normalizeReference only
+	std::map<std::string, DoodadUse> doodadBrushes;         // doodad brush name -> items; filled by normalizeReference only
 };
 
 enum class ReferenceImportError : uint8_t {
@@ -97,9 +113,15 @@ struct NormalizedReference {
 	SemanticSummary semantic;
 };
 
+struct NormalizeOptions {
+	// A ground item that no ground brush owns gets the key "item <name>", the name from the loaded
+	// client's definition, instead of the empty key. Off by default so earlier reports stay unchanged.
+	bool nameUnbrushedGrounds = false;
+};
+
 [[nodiscard]] std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	const std::filesystem::path& file, const ReferenceImportLimits& limits, const SemanticBudget& budget,
-	ImportMeasurements* measurements = nullptr);
+	ImportMeasurements* measurements = nullptr, const NormalizeOptions& options = {});
 
 // Fills the consolidated report input from an import. The referenced objects must outlive it.
 [[nodiscard]] ReportInput makeReportInput(const NormalizedReference& normalized, const TopologyReport& topology,

@@ -1,5 +1,105 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: ściany budynków (iteracja 11c) — PARTIAL
+
+Na prośbę użytkownika podłogi budynków dostały ściany (bez drzwi): warstwa przedmiotów ścian w planie (`GroundPlan::walls`, `GroundProfile::wall`), walidacja w resolverze i podglądzie, wyrównanie elementów istniejącym `WallBrush::doWalls`, pola w oknie generatora. Mediana komórek obrysu w paśmie referencji (28 vs 30 / 24). Regresja G1 `--commit` PASS. Użytkownik potwierdził w GUI: budynki wyglądają jak realne, Preview/Validate/Place/Undo/Redo bez problemu. **Niezweryfikowane: e2e sondą na rzeczywistym kliencie (sonda G1 bez ścian).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: osady i struktury, podstawy budynków (iteracja 11) — PARTIAL
+
+Pomiar 11a: budynki (obrysy murów) są w M06 i M19 liczne (ok. 31–37 na 65 536 kafli, mediana 9 × 7, połowa z drzwiami). Zakres wybrany przez użytkownika: same podstawy. Zaimplementowano opcjonalne prostokąty podłogi (`SurfaceKind::Floor`, `buildingDensity`, ośmiu pędzli w profilu, pola w oknie generatora): liczba i rozmiar w paśmie referencji, udziały rodzajów spełnione dla m06, nie dla m19 (1,8 vs 1 punkt procentowy). Regresja G1 `--commit` PASS. **Niezweryfikowane: GUI (okno, Preview/Place/Undo z podłogami), wygląd; brak ścian, drzwi i dachów (nie jest to budynek).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: przejścia między rodzajami (iteracja 10) — PARTIAL
+
+Nowa miara: skład granic skały i ziemi (z czym graniczą). Generator miał ziemię stykającą się ze skałą i plażą proporcjonalnie do udziału, w referencjach ziemia ich unika. Dodana obwódka trawy (2 komórki wokół plaży w całości, wokół skały w ok. 75 %): m06 8 z 8 cech w paśmie, m19 2 z 8 (kryterium nie spełnione; M19 ma skałę stykającą się z plażą i wodą, czego model wysokości nie daje). Zmieniony przypięty odcisk Seed 1729. Testy rdzenia PASS, `rme.exe` przebudowany. Nie sprawdzono: wyglądu w GUI, regresji G1. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — Regresja G1/G2 po zmianach G4 (iteracje 3–9) — PASS z długiem
+
+Na bieżącym kodzie: sonda `--commit` `passed: true` (stderr pusty), sonda `--surface` wszystkie asercje PASS; `passed: false` tylko przez 7 znanych ostrzeżeń `SetFocus` (identyczne z przebiegiem G2 z 2026-11-07, dług D1/D2). Szlaki (7 pędzli) potwierdzone w GUI przez użytkownika, bez osobnej sondy. Użytkownik uznał szlaki po odepchnięciu od skały za dobre. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: opcjonalne szlaki (iteracja 9) — PARTIAL
+
+Pomiar 9a: szlaki (bruk, żwir, chodnik) da się zmierzyć tylko w M06 i M19 (0,5–0,7 % powierzchni). Zaimplementowano opcjonalne szlaki (domyślnie wyłączone): `SurfaceKind::Path`, `pathLength`, trasy A* po lądzie, resolver z 7. pędzlem, pola w oknie generatora. Metryka L/W/B w paśmie referencji dla m06 i m19 (3 z 3). Testy rdzenia PASS. Wygładzenie (9c) i odpychanie od skały (9d, szlak przy skale −80 %). Użytkownik potwierdził w GUI: Preview, Validate, Place i Undo/Redo ze szlakami działają. **Niezweryfikowane: regresja G1 `--commit`, warunek udziałów rodzajów, metryka B poza pasmem (artefakt).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: masywy skalne (iteracja 8) — PARTIAL
+
+Metryki skały (RB, RF, RS) zapisane z góry. Skała generatora jest gładsza i bardziej zlana niż w referencjach (RB 33–49 vs 121–333). Przyczyna: podniesienie `featureSize` do 192 usunęło drobny szczegół szumu (3 oktawy). Zmiana: dodatkowe oktawy szumu wysokości przy `featureSize` > 24 (dla ≤ 24 bajt w bajt jak dotąd): RB 33→47 (m19) i 49→77 (m06), kryterium **nie spełnione**; skutki uboczne w granicach (P′, udziały, E_d). `rme.exe` przebudowany. Użytkownik obejrzał m19 w GUI: „wygląda ok” (ocena subiektywna). Nie sprawdzono: niezmiennika rzek i regresji G1 po zmianie szumu, m06 i winter w GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: szersza plaża (iteracja 7c) — PARTIAL
+
+Reguła pierścieni plaży zmieniona (próg szumu ≤ 40 %, jezioro ≥ 90 komórek, `shoreWidth` do 8): P′ (grubość plaży) w paśmie referencji w m06 (5 912 vs 5 638) i m19 (5 871 vs 5 656). Profile `g4-profiles/10.98-v9` (m06 i m19 `shoreWidth` 8) do oceny wzrokowej w GUI; przypięty odcisk Seed 1729 zmieniony (zmiana reguły). Nie sprawdzono: wyglądu, niezmiennika rzek i regresji G1 po zmianie, plaż wokół rzek. Ziemia (D, F) bez zmian. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: plamy ziemi i szerokość plaży (iteracja 7) — PARTIAL
+
+Na prośbę użytkownika (ziemia „kropkowana”, plaże cienkie): metryki D (granica ziemi), F (zwartość), P′ (grubość plaży) zapisane z góry. Pomiar: generator ma ziemię **gładszą** niż referencje (D 112–203 vs 421–451), więc diagnoza wzrokowa nie potwierdza się metryką; plaża jest ok. 2,8× cieńsza (P′ ok. 1 980 vs 5 640). Zmiana reguły pierścieni plaży (`shoreWidth` do 8, próg szumu ≤ 80 %) i dopasowanie `transitionWidth`/`shoreWidth` daje D ok. 206 i P′ ok. 2 315: **kryterium nie spełnione**, siatki nasycone. Dalsza poprawa plaży wymaga zmiany modelu (nowy parametr, schemat profilu). Testy rdzenia PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: struktury w dużej skali (iteracja 6) — PARTIAL
+
+Rdzeń `scale_stats` (zgodność rodzajów na odległościach 4/16/64, nadmiar nad losowym układem; test PASS) i kryteria zapisane z góry (`5aa85a0`). Generator miał prawie zerowy nadmiar na odległości 16 i 64 (referencje ok. 400 i 200–230). Zmiana `featureSize` na 192 zamyka E4 i E16, ale E64 przy boku 256 zostaje poniżej pasma: **kryterium 6b nie spełnione**; eksploracyjnie przy boku 512 wszystkie trzy mieszczą się w pasmach (okno 256 ucina lag 64). Profile `g4-profiles/10.98-v8` (m06, m19 z featureSize 192, ręczna zmiana pliku) do oceny wizualnej w GUI. Nie sprawdzono: P1 i niezmiennika rzek dla featureSize 192, wyglądu, zależności od wielkości obszaru. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: porównanie z referencjami i metryka kanałów wodnych (5a) — PARTIAL
+
+Narzędzie `style_render` i eksport map rodzajów z sondy pozwoliły obejrzeć generator obok M06 i M19 ([G4_COMPARE.md](procedural/G4_COMPARE.md)): główna różnica to brak struktur w dużej skali (kontynenty/morze), plam ziemi w trawie i szerokich plaż. Pierwsze wrażenie o rzekach okazało się błędne po pomiarze, a metryka iteracji 4 omijała sieci rzeczne połączone z morzem. Nowa metryka kanałów (otwarcie 13×13, L/W/B/C, zapisana z góry w `f0e04bc`): m06 2 z 4 cech w paśmie (za szeroko), m19 3 z 4 (za długo, 832 vs 302). Dopływy nie są główną luką; 5b (zmiana generatora rzek) nie wykonana. Testy rdzenia PASS. Nie sprawdzono: wyglądu, dużych struktur, M08/M10. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4: mapowanie `cave` i `swamp`, profile v7 (po teście GUI)
+
+Test GUI pokazał, że `caves` to sama ziemia, a `swamp` ma zwykłą wodę. Przyczyna: brushe `cave` i `swamp` były w mapowaniu `Other`, więc generator ich nie znał (swamp: 21 344 kafli `item swamp` poza modelem, profil dopasował się do reszty, czyli głównie skały). Zmiana na życzenie użytkownika: `cave`→Rock (paleta `dirt mountain ground`), `swamp`, `dark swamp`, `walkable swamp`, `item swamp`→Water (paleta `swamp`). Narzędzie `style_styles` dostało opcję `--palette-alias KEY=BRUSH`. Nowe mapowanie v3 (lokalnie), statystyki 19 map przeliczone, profile v7: caves Dirt=earth/Rock=dirt mountain ground, swamp Water=swamp (64 % kafli wody). Pełne przygotowanie z brushem `swamp` jako wodą: ok. Test GUI użytkownika (caves, swamp, jeden podgląd każdy): „wygląda lepiej”, zaakceptowane (ocena subiektywna, bez metryki). Pozostałe profile v7 użytkownik również zaakceptował po obejrzeniu w GUI (subiektywnie). Nie sprawdzono: wpływu na ocenę G4 (wyniki iteracji 1–4 dotyczą keymapy v2, nieprzeliczone), poprawności `cave` jako ściany (w M14 to ok. 1 510 kafli). Dowody dla caves (M14: ok. 5 tys. kafli na z ≤ 7, bez podziemi) i swamp (M12/M13) pozostają bardzo wąskie.
+
+## 2026-11-08 — G4: kształt rzek (D9 część wodna) i meandrowanie rzek (D6) — PARTIAL
+
+Rdzeń `water_shape` (szkielet Zhang-Suen, krętość T, udział odcinków prostych S, szerokość) z testami; `SurfaceTuning::meander` (poprzeczny rozkołys trasy rzeki, rampa przy ujściach, czyszczenie rzek-wysp; meander 0 = poprzedni wynik bajt w bajt); profil v6 niesie dopasowany meander, odcisk podglądu go uwzględnia. Referencje z rzekami: tylko M06 i M19. Wynik: T 1361 → 1514 ‰ (ref. 1626–1669), S 181 → 24 ‰ (ref. 0), P1 bez spadku, 0 rzek-wysp w 1200 seedach, ale **kryterium D6 z góry zapisane nie spełnione** (22/31 seedów lepszych < 75 %; dopasowanie nasycone na meander 8; model zmieniony po zobaczeniu 4a, te same dwie mapy). Testy rdzenia PASS, regresja G1 `--commit` passed. Nie sprawdzono: wyglądu (A/B), okna GUI z nowym meandrem (rme.exe czeka na przebudowę), rozwidleń, jaskiń, gór. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), D6/D9 w [TECH_DEBT.md](procedural/TECH_DEBT.md).
+
+## 2026-11-08 — G4: brushe z zewnętrzną bordurą (pierścień) i paleta dekoracji (schemat v5)
+
+Brushe z zewnętrzną bordurą do niczego (`earth`, `mountain`, `snowy mountain` i inne) rysują krawędź poza generowanym obszarem; przy takich brushach pole przylegające do niezapisywalnego sąsiada bez gruntu zostaje puste, a bordura ląduje wewnątrz obszaru (pierścień 1 kafla); odcisk podglądu przyjmuje kafle tylko z borderem. Pełne przygotowanie: 31 z 31 brushy gruntu przechodzi (było 21). Profil niesie także paletę dekoracji (drzewo, krzak, kamień); okno wpisuje ją w pola Tree/Bush/Stone. Korekta: `snowy mountain` nie jest stubem. Regresja G1 `--surface` i `--commit` PASS. [G4_GUI.md](procedural/G4_GUI.md).
+
+## 2026-11-08 — G4: poprawka palety po błędzie „Borders would extend outside the allowed area”
+
+Przyczyny: brushe z palety, które generator odrzuca (`earth`, `mountain`, `snowy mountain` i 7 innych: ich krawędzie wychodzą poza obszar), oraz brushe poprzedniego profilu zostające w polach. Okno zaczyna teraz od brushy domyślnych i stosuje tylko brushe, które klient ma i mają itemy; narzędzie dobiera paletę spośród brushy, które przeszły pełne przygotowanie (próbnik, 21 z 31). Wszystkie 8 profili przechodzi pełne przygotowanie, ale palety prawie nie różnicują stylów (zima: tylko `sea`). [G4_GUI.md](procedural/G4_GUI.md).
+
+## 2026-11-08 — G4: paleta brushy w profilu (schemat v4)
+
+Po teście ręcznym (profile wyglądały prawie tak samo, caves to jeden grunt): profil niesie brush najczęściej używany dla każdego rodzaju (zasady z góry: brush bez prefiksu `item `, ≥ 200 kafli, ≥ 25 % rodzaju), a okno wpisuje go w pola brushy i raportuje pominięte. Dla 10.98: m06, m19, m05, winter, caves mają paletę, swamp, m01, m15 nie (ich grunty to items bez brusha, D13). Różnica wizualna skromna poza zimą (`snowy mountain`). Schemat v4 unieważnia pliki v3. [G4_GUI.md](procedural/G4_GUI.md).
+
+## 2026-11-08 — G4: profile stylu w oknie generatora (kod gotowy, test ręczny czeka)
+
+Lista **Style profile** w Map → Generate terrain… (tylko dla „Natural surface”), profile `*.profile` z `procedural/styles` w lokalnym katalogu danych, oferowane wyłącznie dla dokładnie tego klienta i assetów (hashe `items.otb` i `Tibia.dat`). Wybrany profil ustawia strojenie powierzchni i wegetacji w `GenerationConfig`; odcisk podglądu bez zmian dla dotychczasowych konfiguracji. `rme.exe` buduje się, testy PASS, oferta sprawdzona w próbniku z prawdziwym klientem 10.98 (8 z 8). Okno nie było uruchamiane przeze mnie. [G4_GUI.md](procedural/G4_GUI.md).
+
+## 2026-11-08 — G4-F iteracja 3: profile per styl (kryterium iteracji spełnione in-sample, G4 z planu nadal niewykazana)
+
+Osiem stylów (rodzin z celem), profil na styl z ograniczeniem spójności lądu; kryteria zapisane przed uruchomieniem. A: profil lepszy w S1 i S2 w 8 z 8 stylów (in-sample), C: 6 z 8 rozpoznanych, P1 ≥ 95 % wszędzie; B (jedyny przypadek na mapie niewidzianej, swamp, n = 2): lepszy w obu. Interpretacja zapisana z góry: to dowodzi odtwarzania rozkładu rodzajów stylu przez generator, nie poprawy na mapach niewidzianych. Dwa przebiegi bajtowo identyczne. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4-F iteracja 2: ograniczenie spójności lądu, bramka nadal NIE spełniona
+
+Dopasowanie z ograniczeniem (kandydat odrzucany poniżej 97 % spójności lądu ręcznych parametrów), kryteria zapisane przed uruchomieniem, wynik „po zmianie modelu”: spójność lądu we wszystkich foldach ≥ 95 % ręcznej (krytyczna metryka naprawiona), ale styl nadal lepszy tylko w 3 z 7 foldów (M06, M19, swamp), gorszy w 2 (caves, M05), a wegetacja 2 : 2. Foldy testowe użyte po raz drugi, więc wynik jest mniej niezależny. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md#iteracja-2--dopasowanie-z-ograniczeniem-spójności-lądu-2026-11-08-po-zmianie-modelu).
+
+## 2026-11-08 — G4-F: bramka G4 NIE spełniona
+
+Ocena na foldach testowych, kryteria z [G4_METRICS.md](procedural/G4_METRICS.md) zapisane przed uruchomieniem, dwa przebiegi bajtowo identyczne. 7 ocenianych foldów: styl lepszy w 3 (M06, M19, swamp), gorszy w 2 (caves, M05), bez zmian w 2; spójność lądu (krytyczna) gorsza w 5 foldach (do 69 % mediany baseline w swamp). Wynik: nie spełniona. Funkcja celu nie ma ograniczenia grywalności, więc dopasowanie tnie ląd jeziorami i rzekami. Propozycje na kolejną iterację (nowe kryteria przed uruchomieniem), brak podpięcia profilu do GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
+## 2026-11-08 — G4-D: wegetacja kontekstowa i metryki G4-F zapisane z góry (PARTIAL)
+
+Klasyfikacja doodadów po nazwie brusha (Tree 13, Bush 19, Stone 13 brushy na 247), statystyki kontekstowe (trawa/ziemia × woda × skała), `DecorTuning` w generatorze (domyślny bajtowo bez zmian) i dopasowanie zamknięte; profil `g4-profile/3`. Dowody wegetacji pochodzą w praktyce z 3 map (M05, M06, M19); na walidacji dopasowanie poprawia 2 z 4 porównywalnych foldów, 2 pogarsza. G3 bez regresji (190 plików identycznych). Metryki, seedy 1001–1032, agregacja i kryterium G4 zapisane w [G4_METRICS.md](procedural/G4_METRICS.md) przed jakimkolwiek liczeniem na zbiorze testowym. [G4_DECOR.md](procedural/G4_DECOR.md).
+
+## 2026-11-08 — D13: pokrycie gruntu (PARTIAL, 96 nowych kluczy zaakceptowanych 2026-11-08)
+
+Przyczyna: ground bez brusha w `data/` 10.98 dostawał pusty klucz (650 item id, 789 tys. kafli). Naprawa: opcja normalizatora nadaje klucz `item <nazwa z definicji klienta>`; G3 bez regresji (190 plików bajtowo identycznych z opcją wyłączoną). Bez gruntu: 116 ‰ → 37 ‰ kafli; użytecznych map na powierzchni 5 → 9; podział po treści bez scaleń (poprzednie scalenia były artefaktem pustych kluczy), 9 rodzin; dopasowanie poprawia walidację w 6 z 8 foldów (wcześniej 2 z 4), baseline wygrywa w 2. [G4_COVERAGE.md](procedural/G4_COVERAGE.md).
+
+## 2026-11-08 — G4-C: cel stylu i dopasowanie parametrów (PARTIAL, wynik w dużej mierze negatywny)
+
+Mapowanie z G4-B zaakceptowane. Cel z map treningowych (waga równa na rodzinę), deterministyczne dopasowanie 7 parametrów `SurfaceTuning` po stałych siatkach, profile `g4-profile/2`; testy PASS, dwie serie bajtowo identyczne. Z 12 map stylu tylko 5 (M05, M06, M11, M14, M19) ma kafle w gruntach z brushy na powierzchni; reszta to prawie wyłącznie „ground bez brusha”. Dopasowanie obniża dystans do celu treningowego 2–10×, ale na rodzinie walidacyjnej poprawia 3–7 % lub pogarsza (2 z 4 foldów wybiera baseline). Nic nie liczono na zbiorze testowym. [G4_FIT.md](procedural/G4_FIT.md).
+
+## 2026-11-07 — G4-B: schemat profilu i mapowanie klucz→rodzaj (PARTIAL)
+
+`g4-profile/1` (klient, hashe `items.otb`/`Tibia.dat`, poziom i piętra, źródła z wagami, mapowanie, statystyki całkowitoliczbowe) z walidacją, odmową niezgodnego klienta/assetów/poziomu i projekcją statystyk przez mapowanie; mapowanie po całych słowach nazwy brusha, bez ID. Test PASS. Propozycja mapowania dla 10.98 (108 kluczy, 5 Unmapped = 2 ‰ kafli) **czeka na akceptację użytkownika**; profile nie są jeszcze wypełniane (G4-C). [G4_PROFILE.md](procedural/G4_PROFILE.md).
+
+## 2026-11-07 — G4-A: manifest, podział po rodzinach, test podobieństwa (PARTIAL)
+
+Rdzeń: odciski okien 16×16 (shift-niezmiennicze, bez pozycji i piętra), zawieranie w ‰, filtr okien ogólnych, manifest `g4-manifest/1`, rodziny po treści i 5 foldów leave-one-family-out; narzędzie `reference_split`. Test rdzenia PASS. Na 19 mapach 10.98: pary shape 1000 ‰ (kontrola pozytywna), 5 foldów z przeciekiem ≤ 45 ‰; dwie serie bajtowo identyczne, raporty G3 bez zmian. Pierwszy przebieg zdegenerował się (9 map w jednej rodzinie), więc dodano filtr okien ogólnych (jawnie opisane). Nie ma testu memoryzacji wyniku generatora ani podziału BlackTek. [G4_SPLIT.md](procedural/G4_SPLIT.md). Następne: G4-B (schemat profilu, mapowanie klucz→rodzaj).
+
+## 2026-11-07 — G4-0: zgodność items.otb z klientem 10.98 (PARTIAL)
+
+Gałąź `feature/procedural-g4-style-learning` z `origin/master` (PR #4 scalony). Niezależny skrypt porównał 25 548 itemów `data/1098/items.otb` z `Tibia.dat` zwykłego 10.98 w sześciu cechach: 0 niezgodności; nagłówek 3.57 na wszystkich 19 mapach; dwie serie bajtowo identyczne. Nie dowiedziono, że mapy powstały z tym konkretnym OTB (brak drugiego pliku). [G4_ITEMS_OTB.md](procedural/G4_ITEMS_OTB.md), D11 zaktualizowany. Następne: G4-A (manifest, podział po rodzinach, test memoryzacji).
+
 ## 2026-11-07 — G3 zamknięte z długiem (decyzja użytkownika)
 
 Bramka G3 „Import i analiza map referencyjnych” zamknięta jako PASS z długiem, bez twierdzenia, że wszystko zweryfikowano: D8 (resztki: ładowanie `Map` to ok. 94 % szczytu pamięci, anulowanie przy normalizacji ok. 1,2 s), D9 (cechy z 4.2: rzeki, jaskinie, szlaki, osady, mikrostruktury, wąskie gardła), D10 (brak testu podobieństwa/memoryzacji i podziału zbiorów), D11 (companion XML, kontenery, niepotwierdzony `items.otb`, brak HTML, jedna maszyna). Kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek): powtarzalne raporty (dwie serie, bajtowo identyczne), statystyki i mapa semantyczna (PNG na piętro, niezależnie zweryfikowany). Kontrola niezależna: Map Statistics w RME zgodne co do kafli, itemów i kafli nieprzechodnich. [Stan bramki](procedural/G3_GATE_STATUS.md), [dług](procedural/TECH_DEBT.md). Następne: G4 (profile stylu, dopasowanie rozkładów, holdout), najpierw D10.

@@ -98,9 +98,17 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 
 	const uint8_t expectedBrushes = config.algorithm == GenerationAlgorithm::Surface ?
 		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
-	if (profile.count != expectedBrushes) return fail(PreparationInputError::InvalidProfile);
+	if (config.algorithm == GenerationAlgorithm::Surface) {
+		const uint8_t required = config.surface.buildingDensity ? GroundProfile::surfaceWithFloorCount :
+			config.surface.pathLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
+		if (profile.count != required) return fail(PreparationInputError::InvalidProfile);
+		if (!profile.wall.empty() && !config.surface.buildingDensity) return fail(PreparationInputError::InvalidProfile);
+	} else if (profile.count != expectedBrushes) {
+		return fail(PreparationInputError::InvalidProfile);
+	}
 	const bool vegetation = config.vegetation;
 	if (vegetation && config.algorithm != GenerationAlgorithm::Surface) return fail(PreparationInputError::InvalidParameters);
+	if (vegetation && !valid(config.decor)) return fail(PreparationInputError::InvalidParameters);
 	if (profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) return fail(PreparationInputError::InvalidProfile);
 	uint64_t profileBytes = 0;
 	for (const auto& name : profile.activeDecor()) {
@@ -110,6 +118,10 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	for (const auto& name : profile.active()) {
 		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name.size());
+	}
+	if (!profile.wall.empty()) {
+		if (!validName(profile.wall.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(profile.wall.size());
 	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
 	// stage copies it. The view is used only here and never stored.
@@ -127,7 +139,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * (vegetation ? 2 : 1);
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1));
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -206,7 +218,7 @@ TerrainPreparationSteps runPreparation(
 		GroundPlan plan;
 		{
 			if (input.config.algorithm == GenerationAlgorithm::Surface) {
-				const auto keepClear = surfaceKeepClear(*snapshot);
+				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
 				std::vector<uint8_t> protection = input.protection;
 				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
 				auto grid = generateSurface({ input.config.region, input.config.seed, input.config.surface }, input.extent,
@@ -214,7 +226,7 @@ TerrainPreparationSteps runPreparation(
 				if (!grid) co_return fail(fromSurface(grid.error()));
 				std::optional<DecorGrid> decor;
 				if (input.config.vegetation) {
-					auto generated = generateDecoration(*grid, input.config.seed, stop);
+					auto generated = generateDecoration(*grid, input.config.seed, input.config.decor, stop);
 					if (!generated) co_return fail(fromSurface(generated.error()));
 					decor = std::move(*generated);
 				}
