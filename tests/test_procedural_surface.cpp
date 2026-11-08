@@ -100,6 +100,8 @@ void parametersAndLimits() {
 	require(bool(generateSurface(bad, extent, budget)), "meander 8 refused");
 	bad = base; bad.tuning.shoreWidth = 9;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 9 accepted");
+	bad = base; bad.tuning.pathLength = 401;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "pathLength 401 accepted");
 	bad = base; bad.tuning.dirtPermille = 1001;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "dirtPermille 1001 accepted");
 	bad = base; bad.tuning.transitionWidth = 32769;
@@ -463,12 +465,35 @@ void decorationFailures() {
 }
 } // namespace
 
+// Optional paths (G4 iteration 9): off by default and bit-identical to the output without paths; when on, a path only
+// replaces Grass, Dirt or Shore, so rock, lakes and rivers keep their cells, and the result is deterministic.
+void paths(uint32_t side, uint64_t seeds) {
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		auto config = makeConfig(side, seed);
+		const auto plain = generateSurface(config, extent, budget);
+		require(plain.has_value(), "plain surface");
+		require(countOf(*plain, SurfaceKind::Path) == 0, "paths appeared with pathLength 0");
+		config.tuning.pathLength = 80;
+		const auto first = generateSurface(config, extent, budget);
+		const auto second = generateSurface(config, extent, budget);
+		require(first.has_value() && second.has_value() && first->cells == second->cells, "paths are not deterministic");
+		require(countOf(*first, SurfaceKind::Path) > 0, "pathLength 80 produced no path");
+		for (size_t i = 0; i < first->cells.size(); ++i) {
+			if (first->cells[i] == plain->cells[i]) continue;
+			require(first->cells[i] == SurfaceKind::Path, "a path run changed a cell to something other than a path");
+			const auto old = plain->cells[i];
+			require(old == SurfaceKind::Grass || old == SurfaceKind::Dirt || old == SurfaceKind::Shore, "a path replaced rock, a lake or a river");
+		}
+		require(first->valid(), "grid with paths is not valid");
+	}
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures();
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3);
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {

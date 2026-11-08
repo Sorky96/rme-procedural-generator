@@ -47,7 +47,7 @@ std::vector<uint8_t> kindsOfGrid(const SurfaceGrid& grid) {
 			case SurfaceKind::Rock: kinds[i] = 2; break;
 			case SurfaceKind::Shore: kinds[i] = 3; break;
 			case SurfaceKind::Lake: case SurfaceKind::River: kinds[i] = 4; break;
-			case SurfaceKind::Preserve: break;
+			case SurfaceKind::Preserve: case SurfaceKind::Path: break;
 		}
 	}
 	return kinds;

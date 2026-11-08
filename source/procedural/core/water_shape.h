@@ -61,6 +61,8 @@ void openWaterMask(std::span<const uint8_t> water, uint32_t width, uint32_t heig
 // component definition as the rivers. `shapes.rivers` are the accepted components, `touchesOpen` is not filled.
 [[nodiscard]] std::expected<ChannelShapes, StatsError> extractKeyShapes(
 	const SemanticMap& map, std::span<const std::string_view> keys, int zMin, int zMax, std::stop_token stop);
+// Generator side: Path cells, same component definition as extractKeyShapes.
+[[nodiscard]] std::expected<ChannelShapes, StatsError> pathShapesOf(const SurfaceGrid& grid, std::stop_token stop = {});
 [[nodiscard]] std::expected<ChannelShapes, StatsError> channelShapesOf(const SurfaceGrid& grid, std::stop_token stop = {});
 
 struct ChannelSummary {

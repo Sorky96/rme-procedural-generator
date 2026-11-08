@@ -97,6 +97,8 @@ private:
 	std::array<wxString, 3> default_decor_brushes_;                            // tree, bush, stone
 	wxComboBox* rock_brush_choice_ = nullptr;
 	wxComboBox* shore_brush_choice_ = nullptr;
+	wxComboBox* path_brush_choice_ = nullptr;
+	wxSpinCtrl* path_length_spin_ = nullptr;
 	wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;
 	wxArrayString doodad_names_;

@@ -444,6 +444,15 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
 	form->Add(shore_brush_choice_, 1, wxEXPAND);
 
+	form->Add(label("Pat&h length:"), 0, wxALIGN_CENTER_VERTICAL);
+	path_length_spin_ = spin("terrain-path-length", 0, 400, 0);
+	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
+	form->Add(path_length_spin_, 1, wxEXPAND);
+
+	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
+	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
+	form->Add(path_brush_choice_, 1, wxEXPAND);
+
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
 	vegetation_check_->SetName("terrain-vegetation");
@@ -546,12 +555,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
-	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) {
+	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_ }) {
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
+	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
 		control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -692,6 +701,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	const bool natural = NaturalSurface();
 	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
+	path_length_spin_->Enable(natural);
+	path_brush_choice_->Enable(natural && path_length_spin_->GetValue() > 0);
 	vegetation_check_->Enable(natural);
 	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
@@ -762,6 +773,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			config.surface = *profile.tuning;
 			if (profile.decorTuning) config.decor = *profile.decorTuning;
 		}
+		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
@@ -776,8 +788,11 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	// Surface order: Grass, Dirt, Rock, Shore, Lake, River. Lake and river share the water brush.
 	wxComboBox* const classicFields[] = { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_ };
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
-	wxComboBox* const* const brushFields = natural ? surfaceFields : classicFields;
-	request.profile.count = natural ? GroundProfile::surfaceCount : GroundProfile::groundRollCount;
+	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
+	const bool withPaths = natural && config.surface.pathLength > 0;
+	request.profile.count = natural ? (withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount) : GroundProfile::groundRollCount;
+	wxComboBox* const surfaceWithPathFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_, path_brush_choice_ };
+	if (withPaths) brushFields = surfaceWithPathFields;
 	for (size_t i = 0; i < request.profile.count; ++i) {
 		request.profile.brushes[i] = std::string(brushFields[i]->GetValue().utf8_str());
 		if (request.profile.brushes[i].empty()) {

@@ -316,6 +316,19 @@ std::expected<ChannelShapes, StatsError> extractKeyShapes(
 	}
 }
 
+std::expected<ChannelShapes, StatsError> pathShapesOf(const SurfaceGrid& grid, std::stop_token stop) {
+	try {
+		std::vector<uint8_t> mask(grid.cells.size());
+		ChannelShapes result;
+		result.regionCells = mask.size();
+		for (size_t i = 0; i < mask.size(); ++i) { mask[i] = grid.cells[i] == SurfaceKind::Path; result.maskCells += mask[i]; }
+		if (auto added = addWaterShapes(mask, grid.region.width, grid.region.height, result.shapes, stop); !added) return std::unexpected(added.error());
+		return result;
+	} catch (const std::bad_alloc&) {
+		return std::unexpected(StatsError::AllocationFailed);
+	}
+}
+
 std::expected<ChannelShapes, StatsError> channelShapesOf(const SurfaceGrid& grid, std::stop_token stop) {
 	try {
 		std::vector<uint8_t> mask(grid.cells.size());

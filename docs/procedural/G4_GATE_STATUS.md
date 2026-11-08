@@ -215,3 +215,18 @@ Definicja (lista kluczy gruntu i składowa szlaku) zapisana przed pomiarem ([G4_
 **Wniosek.** Szlaki (wg wąskiej listy kluczy: bruk, żwir, chodnik) da się zmierzyć w dwóch mapach (M06: 22 składowe, M19: dokładnie 5, czyli na granicy kwalifikacji); zajmują 0,5–0,7 % powierzchni i mają rząd ok. 70–80 kafli szkieletu na 65 536 kafli (np. w obszarze 512×512 to ok. 300 kafli, kilka odcinków po kilkadziesiąt kafli). Warunek zapisany z góry (≥ 2 kwalifikujące się mapy) jest spełniony, więc generowanie szlaków nie jest zablokowane danymi, ale podstawa jest bardzo wąska.
 
 **Zastrzeżenia.** Rozpoznanie po nazwie brusha (heurystyka); szlak z innego gruntu (np. ubita ziemia, piasek) jest niewidoczny; wartość M19 oparta na 5 składowych; generator szlaków nie istnieje, więc stan bazowy generatora jest zerowy z definicji. Generowanie wymagałoby nowego rodzaju powierzchni przechodzącego przez resolver, okno generatora (pole brusha szlaku), profil (schemat) i odcisk podglądu.
+
+## Iteracja 9b — opcjonalne szlaki (2026-11-08): metryka w paśmie, integracja z GUI niezweryfikowana
+
+Model, kryteria i cele zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9”, commity `468b8ee`, `4ea15a3`). Zaimplementowano: `SurfaceKind::Path`, `SurfaceTuning::pathLength` (0 = wyłączone, nie jest częścią profilu stylu), trasy A* po Grass/Dirt/Shore między losowymi punktami lądu (odległość 48–160, koszt z szumem, szerokość 3–4), resolver z siódmym pędzlem (profil z 7 pędzlami; z 6 odrzuca siatkę ze szlakami), pola „Path length” i „Path brush” w oknie generatora (domyślnie 0, pędzel `cobblestone`), odcisk podglądu z `pathLength`.
+
+**Pomiar (seedy 1001–1032, bok 512, profile v10; `pathLength` dobrany na seedach 1–4 z {40, 80, 160, 320}: 40 dla m06, 80 dla m19; kanał szlaku jak w 9a: pole ≥ 40, szkielet ≥ 20, szerokość ≤ 7):**
+
+| Profil | seedy ze szlakiem | L (ref.) | W (ref.) | B (ref.) | w paśmie |
+| --- | --- | --- | --- | --- | --- |
+| m06, `pathLength` 40 | 32/32 | 53,5 (70) | 3 679 (3 642) | 28 494 (30 200) | **3 z 3** |
+| m19, `pathLength` 80 | 32/32 | 92,5 (78) | 3 746 (4 606) | 29 639 (26 259) | **3 z 3** |
+
+Testy rdzenia PASS (`paths`: wyłączone dają wynik bajt w bajt jak dotąd — przypięty odcisk Seed 1729 bez zmian; szlak nigdy nie nadpisuje skały, jeziora ani rzeki; deterministyczne; `pathLength` 401 odrzucone).
+
+**Czego NIE zweryfikowano.** Pełnej ścieżki GUI: `rme.exe` nie został zlinkowany, bo RME działa (blokada pliku), więc okno generatora z polami szlaku, resolver z siedmioma pędzlami, Preview/Validate/Place/Undo ze szlakami nie były uruchamiane; nie uruchamiano regresji G1 `--commit` ani sondy palety po zmianie resolvera; warunku dodatkowego „udziały rodzajów ±1 punkt procentowy” nie mierzono osobno (szlaki zajmują 0,5–1 % powierzchni); szlaki nie mają celów (osad, bram), nie łączą się z mostami, nie dostają roślinności; cele pochodzą z dwóch map (M19: 5 składowych), więc „w paśmie” oznacza zgodność z dwiema referencjami, nie realizm.

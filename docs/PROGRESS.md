@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: opcjonalne szlaki (iteracja 9) — PARTIAL
+
+Pomiar 9a: szlaki (bruk, żwir, chodnik) da się zmierzyć tylko w M06 i M19 (0,5–0,7 % powierzchni). Zaimplementowano opcjonalne szlaki (domyślnie wyłączone): `SurfaceKind::Path`, `pathLength`, trasy A* po lądzie, resolver z 7. pędzlem, pola w oknie generatora. Metryka L/W/B w paśmie referencji dla m06 i m19 (3 z 3). Testy rdzenia PASS. **Niezweryfikowane: pełna ścieżka GUI (rme.exe nie zlinkowany, RME działał), regresja G1, warunek udziałów.** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: masywy skalne (iteracja 8) — PARTIAL
 
 Metryki skały (RB, RF, RS) zapisane z góry. Skała generatora jest gładsza i bardziej zlana niż w referencjach (RB 33–49 vs 121–333). Przyczyna: podniesienie `featureSize` do 192 usunęło drobny szczegół szumu (3 oktawy). Zmiana: dodatkowe oktawy szumu wysokości przy `featureSize` > 24 (dla ≤ 24 bajt w bajt jak dotąd): RB 33→47 (m19) i 49→77 (m06), kryterium **nie spełnione**; skutki uboczne w granicach (P′, udziały, E_d). `rme.exe` przebudowany. Użytkownik obejrzał m19 w GUI: „wygląda ok” (ocena subiektywna). Nie sprawdzono: niezmiennika rzek i regresji G1 po zmianie szumu, m06 i winter w GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

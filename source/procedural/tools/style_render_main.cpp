@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 	const fs::path outDir = argv[2];
 	fs::create_directories(outDir);
 	const uint32_t side = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
-	constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {40, 90, 200}};
+	constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {40, 90, 200}, {200, 170, 120}};
 	const uint64_t cells = uint64_t(side) * side;
 	const SurfaceBudget budget {cells, cells * 8, cells * 64 + (1u << 20)};
 	SurfaceTuning tuning = *profile->tuning;
@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
 		if (name == "featureSize") tuning.featureSize = value;
 		else if (name == "transitionWidth") tuning.transitionWidth = value;
 		else if (name == "shoreWidth") tuning.shoreWidth = value;
+		else if (name == "pathLength") tuning.pathLength = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
 	for (int i = firstSeed; i < argc; ++i) {
@@ -74,6 +75,10 @@ int main(int argc, char** argv) {
 			const PatchSummary ps = summarizePatches(raw);
 			auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
 			std::cout << std::format("patch seed {}: D {} F {} P {} RB {} RF {} RS {} shares {} {} {} {} {}\n", seed, opt(ps.boundary), opt(ps.compact), opt(ps.beach), opt(ps.rockBoundary), opt(ps.rockCompact), opt(ps.rockDustShare), ps.sharePermille[0], ps.sharePermille[1], ps.sharePermille[2], ps.sharePermille[3], ps.sharePermille[4]);
+		}
+		if (const auto paths = pathShapesOf(*grid)) {
+			const ChannelSummary p = summarizeChannels(*paths);
+			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

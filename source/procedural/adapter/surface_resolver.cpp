@@ -16,12 +16,12 @@
 namespace rme::procedural {
 
 namespace {
-constexpr size_t kindCount = 6;
+constexpr size_t kindCount = 7; // Grass, Dirt, Rock, Shore, Lake, River, Path; a profile with 6 brushes uses the first six
 // One independent stream per kind, advanced at every cell, so changing a mask,
 // protection or neighbouring kind never shifts another cell's variant.
 constexpr std::array<uint64_t, kindCount> variantStreams {
 	0x73325f6772617373ULL, 0x73325f6469727420ULL, 0x73325f726f636b20ULL,
-	0x73325f73686f7265ULL, 0x73325f6c616b6520ULL, 0x73325f7269766572ULL
+	0x73325f73686f7265ULL, 0x73325f6c616b6520ULL, 0x73325f7269766572ULL, 0x73325f7061746820ULL
 };
 constexpr std::array<uint64_t, decorKindCount> decorStreams {
 	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
@@ -45,7 +45,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		(!keepClear.empty() && keepClear.size() != grid.cells.size())) {
 		return std::unexpected(ResolveError::InvalidInput);
 	}
-	if (profile.count != GroundProfile::surfaceCount) return std::unexpected(ResolveError::InvalidProfile);
+	if (profile.count != GroundProfile::surfaceCount && profile.count != GroundProfile::surfaceWithPathCount) return std::unexpected(ResolveError::InvalidProfile);
+	const size_t kinds = profile.count;
 	const bool vegetation = input.config.vegetation;
 	if (vegetation != (decor != nullptr) ||
 		profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) {
@@ -68,7 +69,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		}
 		std::array<const GroundBrush*, kindCount> brushes {};
 		std::array<uint64_t, kindCount> totals {};
-		for (size_t index = 0; index < kindCount; ++index) {
+		for (size_t index = 0; index < kinds; ++index) {
 			const auto* brush = g_brushes.getBrush(profile.brushes[index]);
 			brushes[index] = brush ? brush->as<GroundBrush>() : nullptr;
 			if (!brushes[index] || brushes[index]->getTotalChance() <= 0 || brushes[index]->getBorderItems().empty()) {
@@ -115,15 +116,15 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			input.assetRevision, grid.fingerprint(), std::vector<uint16_t>(grid.cells.size(), 0)};
 		if (vegetation) result.decor.assign(grid.cells.size(), 0);
 		std::vector<StableRandom> streams;
-		streams.reserve(kindCount);
-		for (const auto stream : variantStreams) streams.emplace_back(input.config.seed, stream);
+		streams.reserve(kinds);
+		for (size_t index = 0; index < kinds; ++index) streams.emplace_back(input.config.seed, variantStreams[index]);
 		std::vector<StableRandom> decorRng;
 		decorRng.reserve(decorKindCount);
 		if (vegetation) for (const auto stream : decorStreams) decorRng.emplace_back(input.config.seed, stream);
 		for (size_t i = 0; i < grid.cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 			std::array<int, kindCount> rolls {};
-			for (size_t kind = 0; kind < kindCount; ++kind) rolls[kind] = int(streams[kind].bounded(totals[kind])) + 1;
+			for (size_t kind = 0; kind < kinds; ++kind) rolls[kind] = int(streams[kind].bounded(totals[kind])) + 1;
 			std::array<int, decorKindCount> decorRolls {};
 			if (vegetation) for (size_t kind = 0; kind < decorKindCount; ++kind) {
 				decorRolls[kind] = int(decorRng[kind].bounded(decorTotals[kind])) + 1;
@@ -132,6 +133,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
 			const auto kind = size_t(grid.cells[i]) - 1;
+			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path cell needs the seventh brush
 			const auto id = brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;

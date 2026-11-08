@@ -18,6 +18,7 @@ constexpr uint64_t ditherStream = 0x6469746865725f32ULL;   // "dither_2"
 constexpr uint64_t riverStream = 0x72697665725f7332ULL;    // "river_s2"
 constexpr uint64_t shoreStream = 0x73686f72655f7332ULL;    // "shore_s2"
 constexpr uint64_t meanderStream = 0x6d65616e6465725fULL;  // "meander_"
+constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
@@ -68,6 +69,100 @@ uint16_t fractalNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, ui
 		sum += valueNoise(seed, stream + octave * 0x1000193ULL, x, y, octaveStep) << (octaves - 1 - octave);
 	}
 	return uint16_t(sum / ((1u << octaves) - 1));
+}
+
+// Optional paths (G4 iteration 9): winding routes over Grass, Dirt and Shore between random land cells, 3 to 4 cells
+// wide. Rivers, lakes and rock are never crossed. Returns false when cancelled.
+bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
+	const size_t count = kinds.size();
+	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
+	const auto land = [&](size_t i) { return kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt; };
+	StableRandom random(config.seed, pathStream);
+	std::vector<uint32_t> cost(count, std::numeric_limits<uint32_t>::max());
+	std::vector<int32_t> parent(count, -1);
+	std::vector<uint8_t> closed(count, 0);
+	std::vector<size_t> touched, route;
+	uint64_t placed = 0;
+	const uint32_t span = std::max(width, height);
+	const uint32_t minDistance = std::min<uint32_t>(48, span / 3), maxDistance = std::max<uint32_t>(minDistance + 1, std::min<uint32_t>(160, span));
+	for (uint32_t attempt = 0; attempt < 200 && placed < target; ++attempt) {
+		if (stop.stop_requested()) return false;
+		size_t start = count;
+		for (uint32_t tries = 0; tries < 64 && start == count; ++tries) {
+			const size_t candidate = size_t(random.bounded(count));
+			if (land(candidate)) start = candidate;
+		}
+		if (start == count) continue;
+		const int32_t sx = int32_t(start % width), sy = int32_t(start / width);
+		size_t goal = count;
+		for (uint32_t tries = 0; tries < 48 && goal == count; ++tries) {
+			const int32_t dx = int32_t(random.bounded(2 * maxDistance + 1)) - int32_t(maxDistance);
+			const int32_t dy = int32_t(random.bounded(2 * maxDistance + 1)) - int32_t(maxDistance);
+			const int32_t gx = sx + dx, gy = sy + dy;
+			if (gx < 0 || gy < 0 || gx >= int32_t(width) || gy >= int32_t(height)) continue;
+			if (std::max(std::abs(dx), std::abs(dy)) < int32_t(minDistance)) continue;
+			const size_t candidate = size_t(gy) * width + size_t(gx);
+			if (land(candidate)) goal = candidate;
+		}
+		if (goal == count) continue;
+		const int32_t gx = int32_t(goal % width), gy = int32_t(goal / width);
+		const auto heuristic = [&](size_t i) { return 10u * uint32_t(std::abs(int32_t(i % width) - gx) + std::abs(int32_t(i / width) - gy)); };
+		using Entry = std::pair<uint32_t, uint32_t>; // estimated total, cell
+		std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
+		for (const size_t i : touched) { cost[i] = std::numeric_limits<uint32_t>::max(); parent[i] = -1; closed[i] = 0; }
+		touched.clear();
+		cost[start] = 0;
+		touched.push_back(start);
+		open.push({heuristic(start), uint32_t(start)});
+		bool found = false;
+		uint32_t expanded = 0;
+		while (!open.empty() && expanded < 60000) {
+			const size_t current = open.top().second;
+			open.pop();
+			if (closed[current]) continue;
+			closed[current] = 1;
+			++expanded;
+			if (current == goal) { found = true; break; }
+			const size_t x = current % width, y = current / width;
+			const auto relax = [&](size_t next) {
+				const SurfaceKind kind = kinds[next];
+				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) return;
+				if (closed[next]) return;
+				const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(next % width),
+					uint32_t(config.region.y) + uint32_t(next / width), 5)) * 10 / noiseBins);
+				const uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) - (kind == SurfaceKind::Path ? 8 : 0);
+				const uint32_t candidate = cost[current] + step;
+				if (candidate >= cost[next]) return;
+				if (cost[next] == std::numeric_limits<uint32_t>::max()) touched.push_back(next);
+				cost[next] = candidate;
+				parent[next] = int32_t(current);
+				open.push({candidate + heuristic(next), uint32_t(next)});
+			};
+			if (x > 0) relax(current - 1);
+			if (x + 1 < width) relax(current + 1);
+			if (y > 0) relax(current - width);
+			if (y + 1 < height) relax(current + width);
+		}
+		if (!found) continue;
+		route.clear();
+		for (int32_t cell = int32_t(goal); cell != -1; cell = parent[size_t(cell)]) route.push_back(size_t(cell));
+		const uint32_t manhattan = uint32_t(std::abs(sx - gx) + std::abs(sy - gy));
+		if (route.size() > 4u * std::max<uint32_t>(manhattan, 1)) continue;
+		for (const size_t cell : route) {
+			const size_t x = cell % width, y = cell / width;
+			const uint32_t swell = valueNoise(config.seed, pathStream + 2, uint32_t(config.region.x) + uint32_t(x), uint32_t(config.region.y) + uint32_t(y), 7) >> 15;
+			for (int32_t dy = -1; dy <= 1 + int32_t(swell); ++dy) {
+				for (int32_t dx = -1; dx <= 1 + int32_t(swell); ++dx) {
+					const int32_t px = int32_t(x) + dx, py = int32_t(y) + dy;
+					if (px < 0 || py < 0 || px >= int32_t(width) || py >= int32_t(height)) continue;
+					const size_t i = size_t(py) * width + size_t(px);
+					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore) kinds[i] = SurfaceKind::Path;
+				}
+			}
+		}
+		placed += route.size();
+	}
+	return true;
 }
 
 // Smallest bin whose cumulative count exceeds permille of the cells; fewer than or
@@ -201,7 +296,7 @@ uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y) 
 bool SurfaceGrid::valid() const noexcept {
 	if (region.x < 0 || region.y < 0 || region.z < 0 || region.width == 0 || region.height == 0 ||
 		uint64_t(region.width) * region.height != cells.size()) return false;
-	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::River; });
+	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Path; });
 }
 
 uint64_t SurfaceGrid::fingerprint() const {
@@ -223,7 +318,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -524,6 +619,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 		}
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
+		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop)) return cancelled();
 
 		for (size_t i = 0; i < count; ++i) {
 			if ((!mask.empty() && mask[i] == 0) || (!protection.empty() && protection[i] != 0)) {
