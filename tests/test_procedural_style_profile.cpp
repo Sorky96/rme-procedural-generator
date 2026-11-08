@@ -61,6 +61,10 @@ StyleProfile sample() {
 	t.adjacencyPpm[0][4] = t.adjacencyPpm[4][0] = 30000;
 	p.target = t;
 	p.tuning = SurfaceTuning {20, 70, 12, 2, 20, 3, 90, 8, 250, 5000};
+	DecorContext d;
+	for (size_t i = 0; i < d.cell.size(); ++i) d.cell[i] = {1000000, i + 1, i + 2, i + 3};
+	p.decorTarget = d;
+	p.decorTuning = DecorTuning {1500, 20, 150, 90, 40, 110};
 	return p;
 }
 
@@ -72,9 +76,9 @@ void testSerialization() {
 	const auto back = parseProfile(*text);
 	check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
 	check(back && serializeProfile(*back).value() == *text, "serialization is stable");
-	check(text->starts_with("g4-profile/2\n"), "schema line first");
+	check(text->starts_with("g4-profile/3\n"), "schema line first");
 
-	check(parseProfile("g4-profile/3\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
+	check(parseProfile("g4-profile/4\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");
 	check(parseProfile(text->substr(0, text->find("stat\t"))).error() == ProfileError::BadFormat, "missing statistics refused");
 	std::string unknownKind = *text;
@@ -111,8 +115,19 @@ void testTargetAndTuning() {
 	check(text && text->find("target\tshares\t600000") != std::string::npos && text->find("tuning\t20\t70") != std::string::npos, "target and tuning written");
 	const auto back = parseProfile(text.value_or(""));
 	check(back && back->target == p.target && back->tuning == p.tuning, "target and tuning round trip");
+	check(text && text->find("decor\ttuning\t1500\t20\t150\t90\t40\t110") != std::string::npos && text->find("decor\tcell\t7\t1000000") != std::string::npos, "decor sections written");
+	check(back && back->decorTarget == p.decorTarget && back->decorTuning == p.decorTuning, "decor target and tuning round trip");
+	{
+		std::string cutDecor = *text;
+		cutDecor.erase(cutDecor.find("decor\tcell\t3\t"), cutDecor.find("decor\tcell\t4\t") - cutDecor.find("decor\tcell\t3\t"));
+		check(parseProfile(cutDecor).error() == ProfileError::BadFormat, "decor target with a missing cell refused");
+		check(parseProfile(*text + "decor\tcell\t0\t1\t1\t1\t1\n").error() == ProfileError::BadFormat, "duplicate decor cell refused");
+		check(parseProfile(*text + "decor\ttuning\t1\t2\t3\t4\t5\t6\n").error() == ProfileError::BadFormat, "second decor tuning refused");
+	}
 	p.target.reset();
 	p.tuning.reset();
+	p.decorTarget.reset();
+	p.decorTuning.reset();
 	const auto plain = serializeProfile(p);
 	const auto plainBack = parseProfile(plain.value_or(""));
 	check(plainBack && !plainBack->target && !plainBack->tuning && *plainBack == p, "a profile without them is valid");

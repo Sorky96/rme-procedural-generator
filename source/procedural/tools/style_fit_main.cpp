@@ -7,6 +7,7 @@
 //                  --dat-sha HEX --out-dir DIR [--side N] [--min-natural N]
 // DIR for --stats holds <alias>/run/analysis/kind-stats-surface.txt (written by the reference import probe).
 
+#include "procedural/core/decor_context.h"
 #include "procedural/core/reference_split.h"
 #include "procedural/core/style_fit.h"
 #include "procedural/core/style_profile.h"
@@ -80,6 +81,7 @@ int main(int argc, char** argv) {
 	const auto& entries = manifest->entries;
 	std::vector<Fingerprint> prints;
 	std::vector<MapStats> stats;
+	std::vector<MapDecor> decors;
 	for (const auto& entry : entries) {
 		if (!readFile(fingerprintDir / (entry.alias + ".fp"), text)) { std::cerr << "missing fingerprint " << entry.alias << '\n'; return 3; }
 		auto fp = parseFingerprint(text);
@@ -89,6 +91,10 @@ int main(int argc, char** argv) {
 		auto st = parseStats(text);
 		if (!st) { std::cerr << "invalid kind stats " << entry.alias << '\n'; return 3; }
 		stats.push_back({entry.alias, "", *st});
+		if (!readFile(statsDir / entry.alias / "run" / "analysis" / "decor-context-surface.txt", text)) { std::cerr << "missing decor context " << entry.alias << '\n'; return 3; }
+		auto dc = parseDecorContext(text);
+		if (!dc) { std::cerr << "invalid decor context " << entry.alias << '\n'; return 3; }
+		decors.push_back({entry.alias, "", *dc});
 	}
 	// Same split as reference_split, with its default parameters.
 	const FamilyOptions familyOptions;
@@ -97,7 +103,10 @@ int main(int argc, char** argv) {
 	const auto families = assignFamilies(*manifest, specific, familyOptions);
 	const auto folds = makeFolds(*manifest, families, specific, familyOptions);
 	if (!folds) { std::cerr << "cannot make folds\n"; return 3; }
-	for (size_t i = 0; i < stats.size(); ++i) stats[i].family = families.family[i];
+	for (size_t i = 0; i < stats.size(); ++i) {
+		stats[i].family = families.family[i];
+		decors[i].family = families.family[i];
+	}
 
 	FitOptions fit;
 	fit.eval = {side, {1, 2, 3, 4, 5, 6}};
@@ -123,7 +132,17 @@ int main(int argc, char** argv) {
 		}
 		return total;
 	};
-	auto writeProfile = [&](const std::string& name, const TargetBuild& build, const SurfaceTuning& tuning) {
+	auto gatherDecor = [&](const std::vector<size_t>& indices) {
+		std::vector<MapDecor> maps;
+		for (const size_t i : indices) maps.push_back(decors[i]);
+		return maps;
+	};
+	auto decorJson = [](const DecorTuning& d) {
+		return std::format("{{\"treeScale\": {}, \"waterTree\": {}, \"bush\": {}, \"waterBush\": {}, \"dirtStone\": {}, \"rockStone\": {}}}",
+			d.treeScalePermille, d.waterTreePermille, d.bushPermille, d.waterBushPermille, d.dirtStonePermille, d.rockStonePermille);
+	};
+	auto writeProfile = [&](const std::string& name, const TargetBuild& build, const SurfaceTuning& tuning,
+	                        const DecorContext& decorTarget, const DecorTuning& decorTuning) {
 		StyleProfile profile;
 		profile.client = client;
 		profile.otbSha256 = otbSha;
@@ -136,6 +155,8 @@ int main(int argc, char** argv) {
 		profile.stats = sumStats(build.used);
 		profile.target = build.target;
 		profile.tuning = tuning;
+		profile.decorTarget = decorTarget;
+		profile.decorTuning = decorTuning;
 		const auto out = serializeProfile(profile);
 		if (!out) return false;
 		std::ofstream f(outDir / name, std::ios::binary);
@@ -157,7 +178,17 @@ int main(int argc, char** argv) {
 		const auto steps = fitTuning(train->target, validation->target, baseline, fit, {});
 		if (!steps) { std::cerr << "fit failed in fold " << f << '\n'; return 4; }
 		const size_t chosen = selectStep(*steps);
-		if (!writeProfile(std::format("fold-{}.profile", f), *train, (*steps)[chosen].tuning)) { std::cerr << "cannot write profile\n"; return 4; }
+		const SurfaceTuning& chosenSurface = (*steps)[chosen].tuning;
+		// Vegetation: closed-form rates from the train maps; the validation maps only measure it.
+		const DecorContext decorTrain = buildDecorTarget(gatherDecor(fold.train));
+		const DecorContext decorValidation = buildDecorTarget(gatherDecor(fold.validation));
+		const auto decorFit = fitDecorTuning(decorTrain, chosenSurface, fit.eval, {});
+		if (!decorFit) { std::cerr << "decor fit failed in fold " << f << '\n'; return 4; }
+		const auto builtIn = evaluateDecor(baseline, DecorTuning {}, fit.eval, {});
+		const auto fitted = evaluateDecor(chosenSurface, *decorFit, fit.eval, {});
+		if (!builtIn || !fitted) { std::cerr << "decor evaluation failed in fold " << f << '\n'; return 4; }
+		const DecorDistance decorBefore = decorDistance(decorValidation, *builtIn), decorAfter = decorDistance(decorValidation, *fitted);
+		if (!writeProfile(std::format("fold-{}.profile", f), *train, chosenSurface, decorTrain, *decorFit)) { std::cerr << "cannot write profile\n"; return 4; }
 		auto aliases = [&](const std::vector<ProfileSource>& used) {
 			std::string s = "[";
 			for (size_t i = 0; i < used.size(); ++i) s += std::format("{}{}", i ? ", " : "", quote(used[i].alias));
@@ -169,7 +200,8 @@ int main(int argc, char** argv) {
 			const FitStep& step = (*steps)[s];
 			report += std::format("      {{\"pass\": {}, \"tuning\": {}, \"train\": {}, \"validation\": {}}}{}\n", s, tuningJson(step.tuning), distanceJson(step.train), distanceJson(step.validation), s + 1 < steps->size() ? "," : "");
 		}
-		report += std::format("    ], \"selected_pass\": {}}}{}\n", chosen, f + 1 < folds->size() ? "," : "");
+		report += std::format("    ], \"selected_pass\": {}, \"decor\": {{\"tuning\": {}, \"validation_terms\": {}, \"validation_baseline_sum\": {}, \"validation_fitted_sum\": {}}}}}{}\n",
+			chosen, decorJson(*decorFit), decorBefore.terms, decorBefore.sumPermille, decorAfter.sumPermille, f + 1 < folds->size() ? "," : "");
 	}
 	report += "  ],\n";
 
@@ -179,9 +211,12 @@ int main(int argc, char** argv) {
 	if (!all) { std::cerr << "no usable style maps\n"; return 4; }
 	const auto allSteps = fitTuning(all->target, all->target, baseline, fit, {});
 	if (!allSteps) { std::cerr << "fit failed on all style maps\n"; return 4; }
-	if (!writeProfile("profile-all.profile", *all, allSteps->back().tuning)) { std::cerr << "cannot write profile\n"; return 4; }
-	report += std::format("  \"all_style_maps\": {{\"families\": {}, \"used\": {}, \"excluded\": {}, \"baseline_distance\": {}, \"fitted_distance\": {}, \"tuning\": {}}}\n}}\n",
-		all->familyCount, all->used.size(), all->excluded.size(), distanceJson(allSteps->front().train), distanceJson(allSteps->back().train), tuningJson(allSteps->back().tuning));
+	const DecorContext decorAll = buildDecorTarget(gatherDecor(allStyle));
+	const auto decorAllFit = fitDecorTuning(decorAll, allSteps->back().tuning, fit.eval, {});
+	if (!decorAllFit) { std::cerr << "decor fit failed on all style maps\n"; return 4; }
+	if (!writeProfile("profile-all.profile", *all, allSteps->back().tuning, decorAll, *decorAllFit)) { std::cerr << "cannot write profile\n"; return 4; }
+	report += std::format("  \"all_style_maps\": {{\"families\": {}, \"used\": {}, \"excluded\": {}, \"baseline_distance\": {}, \"fitted_distance\": {}, \"tuning\": {}, \"decor_tuning\": {}}}\n}}\n",
+		all->familyCount, all->used.size(), all->excluded.size(), distanceJson(allSteps->front().train), distanceJson(allSteps->back().train), tuningJson(allSteps->back().tuning), decorJson(*decorAllFit));
 	std::ofstream f(outDir / "fit-report.json", std::ios::binary);
 	f << report;
 	return f ? 0 : 4;

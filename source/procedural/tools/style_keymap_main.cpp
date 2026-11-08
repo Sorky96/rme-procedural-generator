@@ -6,6 +6,7 @@
 // Usage: style_keymap --manifest FILE --reports DIR --out-dir DIR
 // DIR holds <alias>/run/analysis/ground_keys.csv for every manifest entry.
 
+#include "procedural/core/doodad_class.h"
 #include "procedural/core/reference_split.h"
 #include "procedural/core/style_profile.h"
 
@@ -138,5 +139,50 @@ int main(int argc, char** argv) {
 			e->rule.empty() ? "-" : e->rule, it == useStyle.end() ? 0 : it->second.tiles, it == useStyle.end() ? 0 : it->second.maps.size());
 	}
 	{ std::ofstream f(outDir / "keymap-review.md", std::ios::binary); f << md; }
+
+	// Doodad brushes of the style maps (analysis/doodad-brushes.csv, when the import wrote it), classified by name.
+	std::map<std::string, uint64_t> doodads; // surface items
+	bool haveDoodads = false;
+	for (const auto& entry : manifest->entries) {
+		std::string csv;
+		if (entry.role != ReferenceRole::Style || !readFile(reportsDir / entry.alias / "run" / "analysis" / "doodad-brushes.csv", csv)) continue;
+		haveDoodads = true;
+		std::string_view rest = csv;
+		bool first = true;
+		while (!rest.empty()) {
+			const size_t end = rest.find('\n');
+			std::string_view line = rest.substr(0, end);
+			rest = end == std::string_view::npos ? std::string_view {} : rest.substr(end + 1);
+			if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+			if (first) { first = false; continue; }
+			if (line.empty()) continue;
+			const auto f = csvFields(line);
+			if (f.size() >= 2) doodads[f[0]] += std::strtoull(f[1].c_str(), nullptr, 10);
+		}
+	}
+	if (haveDoodads) {
+		std::string dm = "# G4-D doodad brush classification (review)\n\nSurface items (z <= 7) of the style maps. None = not vegetation or stone for the generator.\n";
+		std::array<uint64_t, 4> totals {};
+		std::array<std::vector<std::pair<uint64_t, std::string>>, 4> lists;
+		for (const auto& [name, items] : doodads) {
+			const size_t k = static_cast<size_t>(classifyDoodadBrush(name));
+			totals[k] += items;
+			lists[k].push_back({items, name});
+		}
+		const char* kindNames[] = {"None", "Tree", "Bush", "Stone"};
+		auto byItems = [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; };
+		dm += "\n| Kind | Brushes | Items |\n| --- | ---: | ---: |\n";
+		for (size_t k = 0; k < 4; ++k) dm += std::format("| {} | {} | {} |\n", kindNames[k], lists[k].size(), totals[k]);
+		for (size_t k = 1; k < 4; ++k) {
+			std::sort(lists[k].begin(), lists[k].end(), byItems);
+			dm += std::format("\n## {}\n\n", kindNames[k]);
+			for (const auto& [items, name] : lists[k]) dm += std::format("- `{}`: {}\n", name, items);
+		}
+		std::sort(lists[0].begin(), lists[0].end(), byItems);
+		dm += "\n## None (largest 60)\n\n";
+		for (size_t i = 0; i < lists[0].size() && i < 60; ++i) dm += std::format("- `{}`: {}\n", lists[0][i].second, lists[0][i].first);
+		std::ofstream f(outDir / "doodad-review.md", std::ios::binary);
+		f << dm;
+	}
 	return 0;
 }

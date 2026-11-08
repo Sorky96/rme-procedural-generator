@@ -201,6 +201,21 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 			out += '\n';
 		}
 	}
+	if (p.decorTarget) {
+		for (size_t i = 0; i < p.decorTarget->cell.size(); ++i) {
+			const DecorCell& d = p.decorTarget->cell[i];
+			out += "decor\tcell\t" + std::to_string(i) + '\t' + std::to_string(d.tiles) + '\t' + std::to_string(d.trees) + '\t' +
+				std::to_string(d.bushes) + '\t' + std::to_string(d.stones) + '\n';
+		}
+	}
+	if (p.decorTuning) {
+		const DecorTuning& d = *p.decorTuning;
+		out += "decor\ttuning";
+		for (const uint32_t v : {d.treeScalePermille, d.waterTreePermille, d.bushPermille, d.waterBushPermille, d.dirtStonePermille, d.rockStonePermille}) {
+			out += '\t' + std::to_string(v);
+		}
+		out += '\n';
+	}
 	if (p.tuning) {
 		const SurfaceTuning& t = *p.tuning;
 		out += "tuning";
@@ -216,6 +231,7 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	bool header = false, haveClient = false, haveLevel = false, haveFloors = false, haveOtb = false, haveDat = false, haveTiles = false;
 	std::array<bool, styleKindCount> havePairs {};
 	std::array<bool, naturalKindCount> haveAdjacency {};
+	std::array<bool, 8> haveDecorCell {};
 	bool haveShares = false;
 	while (!text.empty()) {
 		const size_t end = text.find('\n');
@@ -280,6 +296,21 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[3 + i], p.target->adjacencyPpm[a][i])) return std::unexpected(ProfileError::BadFormat);
 			haveAdjacency[a] = true;
 		}
+		else if (type == "decor" && f.size() == 7 && f[1] == "cell") {
+			uint64_t index = 0;
+			if (!parseUnsigned(f[2], index) || index >= 8 || haveDecorCell[index]) return std::unexpected(ProfileError::BadFormat);
+			if (!p.decorTarget) p.decorTarget = DecorContext {};
+			DecorCell& d = p.decorTarget->cell[index];
+			if (!parseUnsigned(f[3], d.tiles) || !parseUnsigned(f[4], d.trees) || !parseUnsigned(f[5], d.bushes) || !parseUnsigned(f[6], d.stones)) {
+				return std::unexpected(ProfileError::BadFormat);
+			}
+			haveDecorCell[index] = true;
+		}
+		else if (type == "decor" && f.size() == 8 && f[1] == "tuning" && !p.decorTuning) {
+			uint32_t v[6];
+			for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
+			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
+		}
 		else if (type == "tuning" && f.size() == 11 && !p.tuning) {
 			uint32_t v[10];
 			for (size_t i = 0; i < 10; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
@@ -290,6 +321,7 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	bool allAdjacency = true;
 	for (const bool b : haveAdjacency) allAdjacency = allAdjacency && b;
 	if (p.target && (!haveShares || !allAdjacency)) return std::unexpected(ProfileError::BadFormat);
+	if (p.decorTarget && !std::all_of(haveDecorCell.begin(), haveDecorCell.end(), [](bool b) { return b; })) return std::unexpected(ProfileError::BadFormat);
 	bool allPairs = true;
 	for (const bool b : havePairs) allPairs = allPairs && b;
 	if (!header || !haveClient || !haveLevel || !haveFloors || !haveOtb || !haveDat || !haveTiles || !allPairs) return std::unexpected(ProfileError::BadFormat);

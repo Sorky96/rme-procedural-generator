@@ -1,4 +1,4 @@
-add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp core/similarity.cpp core/reference_split.cpp core/style_profile.cpp core/style_fit.cpp)
+add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp core/similarity.cpp core/reference_split.cpp core/style_profile.cpp core/style_fit.cpp core/doodad_class.cpp core/decor_context.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
 target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rme PRIVATE rme_procedural_core)
@@ -75,3 +75,7 @@ target_link_libraries(style_keymap PRIVATE rme_procedural_core)
 
 add_executable(style_fit ${CMAKE_CURRENT_SOURCE_DIR}/tools/style_fit_main.cpp)
 target_link_libraries(style_fit PRIVATE rme_procedural_core)
+
+add_executable(test_procedural_decor ${PROJECT_SOURCE_DIR}/tests/test_procedural_decor.cpp)
+target_link_libraries(test_procedural_decor PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_decor COMMAND test_procedural_decor)

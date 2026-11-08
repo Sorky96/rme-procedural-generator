@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/main.h"
 #include "procedural/adapter/reference_import.h"
+#include "procedural/core/doodad_class.h"
 
 #include "app/client_version.h"
 #include "app/managers/version_manager.h"
@@ -295,6 +296,11 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 					unbrushedKeyNames.try_emplace(tile->ground->getID(), "item " + std::string(tile->ground->getDefinition().name()));
 				}
 			}
+			for (const auto& item : tile->items) {
+				if (item->isInvalidOTBMItem() || !item->typeExists() || !(itemTraits(*item, false) & bit(Trait::Doodad))) continue;
+				DoodadUse& use = result.summary.doodadBrushes[item->getDoodadBrush()->getName()];
+				++(position.z <= 7 ? use.surfaceItems : use.undergroundItems);
+			}
 		}
 	}
 	std::vector<FloorBounds> bounds;
@@ -333,7 +339,8 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 	std::unordered_map<uint32_t, uint16_t> unbrushedKeys;
 	for (const auto& [id, name] : unbrushedKeyNames) unbrushedKeys.emplace(id, result.map.internGroundKey(name).value());
 
-	// Pass 2: fill cells.
+	// Pass 2: fill cells. Doodad brushes are classified once each, not per item.
+	std::unordered_map<const Brush*, DecorKind> decorOfBrush;
 	for (auto& location : map.tiles()) {
 		if (cancelled()) return std::unexpected(ReferenceImportError::Cancelled);
 		const Tile* tile = location.get();
@@ -347,7 +354,15 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 				if (const auto it = unbrushedKeys.find(tile->ground->getID()); it != unbrushedKeys.end()) key = it->second;
 			}
 		}
-		for (const auto& item : tile->items) traits |= itemTraits(*item, false);
+		for (const auto& item : tile->items) {
+			const uint32_t itemBits = itemTraits(*item, false);
+			traits |= itemBits;
+			if (!(itemBits & bit(Trait::Doodad))) continue;
+			const Brush* doodad = item->getDoodadBrush();
+			auto found = decorOfBrush.find(doodad);
+			if (found == decorOfBrush.end()) found = decorOfBrush.emplace(doodad, classifyDoodadBrush(doodad->getName())).first;
+			traits |= decorTraitBit(found->second);
+		}
 		const Position position = tile->getPosition();
 		if (!result.map.set(position.x, position.y, position.z, key, traits)) return std::unexpected(ReferenceImportError::NormalizeFailed);
 	}

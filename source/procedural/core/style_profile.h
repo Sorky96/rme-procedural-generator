@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "procedural/core/decor_stats.h"
+#include "procedural/core/decoration.h"
 #include "procedural/core/generation.h"
 #include "procedural/core/semantic_map.h"
 
@@ -116,7 +118,7 @@ inline constexpr std::string_view statsSchema = "g4-kindstats/1";
 [[nodiscard]] std::string serializeStats(const StyleStats& stats);
 [[nodiscard]] std::expected<StyleStats, ProfileError> parseStats(std::string_view text);
 
-inline constexpr std::string_view profileSchema = "g4-profile/2";
+inline constexpr std::string_view profileSchema = "g4-profile/3";
 
 struct StyleProfile {
 	std::string client;
@@ -128,6 +130,8 @@ struct StyleProfile {
 	StyleStats stats;                          // raw sums over the sources
 	std::optional<StyleTarget> target;         // weighted over the sources
 	std::optional<SurfaceTuning> tuning;       // generator parameters fitted to the target
+	std::optional<DecorContext> decorTarget;   // vegetation rates by context, weighted over the sources (virtual units)
+	std::optional<DecorTuning> decorTuning;    // vegetation chances fitted to decorTarget
 	bool operator==(const StyleProfile&) const = default;
 };
 

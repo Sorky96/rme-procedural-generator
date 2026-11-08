@@ -52,6 +52,12 @@ struct UnbrushedGround {
 	bool blocking = false;
 };
 
+// Stacked items owned by one doodad brush, split by surface (z <= 7) and underground floors.
+struct DoodadUse {
+	uint64_t surfaceItems = 0;
+	uint64_t undergroundItems = 0;
+};
+
 // Aggregates only: no tile coordinates and no raw tile content.
 struct ReferenceImportSummary {
 	std::string sha256;
@@ -66,6 +72,7 @@ struct ReferenceImportSummary {
 	std::array<uint64_t, 16> tilesPerFloor {};
 	std::map<uint32_t, uint64_t> unknownIds; // server id -> occurrences, ordered by id
 	std::map<uint32_t, UnbrushedGround> groundWithoutBrush; // server id -> use; filled by normalizeReference only
+	std::map<std::string, DoodadUse> doodadBrushes;         // doodad brush name -> items; filled by normalizeReference only
 };
 
 enum class ReferenceImportError : uint8_t {
