@@ -10,13 +10,15 @@ namespace rme::procedural {
 
 struct GroundProfile {
 	// GroundRoll: Grass, Dirt, Water (count 3). Surface: Grass, Dirt, Rock, Shore, Lake, River (count 6), or with a
-	// seventh brush for Path cells (count 7; the grid may then contain paths, with count 6 it may not).
+	// seventh brush for Path cells (count 7), or with an eighth for Floor cells as well (count 8). A grid may only
+	// contain the kinds its profile has brushes for.
 	// Names are resolved in loaded assets; the same brush may serve several kinds. Entries past
 	// `count` are unused and must stay empty.
 	static constexpr uint8_t groundRollCount = 3;
 	static constexpr uint8_t surfaceCount = 6;
 	static constexpr uint8_t surfaceWithPathCount = 7;
-	std::array<std::string, 7> brushes;
+	static constexpr uint8_t surfaceWithFloorCount = 8; // Path brush at index 6 (always filled), Floor brush at index 7
+	std::array<std::string, 8> brushes;
 	uint8_t count = groundRollCount;
 	[[nodiscard]] std::span<const std::string> active() const noexcept { return std::span(brushes).first(count); }
 	// Vegetation doodad brushes in DecorKind order after None: Tree, Bush, Stone. decorCount is 0 (none)

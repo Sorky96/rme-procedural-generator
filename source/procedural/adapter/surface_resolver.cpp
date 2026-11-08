@@ -16,12 +16,12 @@
 namespace rme::procedural {
 
 namespace {
-constexpr size_t kindCount = 7; // Grass, Dirt, Rock, Shore, Lake, River, Path; a profile with 6 brushes uses the first six
+constexpr size_t kindCount = 8; // Grass, Dirt, Rock, Shore, Lake, River, Path, Floor; a profile uses the first `count` of them
 // One independent stream per kind, advanced at every cell, so changing a mask,
 // protection or neighbouring kind never shifts another cell's variant.
 constexpr std::array<uint64_t, kindCount> variantStreams {
 	0x73325f6772617373ULL, 0x73325f6469727420ULL, 0x73325f726f636b20ULL,
-	0x73325f73686f7265ULL, 0x73325f6c616b6520ULL, 0x73325f7269766572ULL, 0x73325f7061746820ULL
+	0x73325f73686f7265ULL, 0x73325f6c616b6520ULL, 0x73325f7269766572ULL, 0x73325f7061746820ULL, 0x73325f666c6f6f72ULL
 };
 constexpr std::array<uint64_t, decorKindCount> decorStreams {
 	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
@@ -45,7 +45,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		(!keepClear.empty() && keepClear.size() != grid.cells.size())) {
 		return std::unexpected(ResolveError::InvalidInput);
 	}
-	if (profile.count != GroundProfile::surfaceCount && profile.count != GroundProfile::surfaceWithPathCount) return std::unexpected(ResolveError::InvalidProfile);
+	if (profile.count != GroundProfile::surfaceCount && profile.count != GroundProfile::surfaceWithPathCount &&
+		profile.count != GroundProfile::surfaceWithFloorCount) return std::unexpected(ResolveError::InvalidProfile);
 	const size_t kinds = profile.count;
 	const bool vegetation = input.config.vegetation;
 	if (vegetation != (decor != nullptr) ||
@@ -133,7 +134,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
 			const auto kind = size_t(grid.cells[i]) - 1;
-			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path cell needs the seventh brush
+			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush
 			const auto id = brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;

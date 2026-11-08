@@ -98,6 +98,8 @@ private:
 	wxComboBox* rock_brush_choice_ = nullptr;
 	wxComboBox* shore_brush_choice_ = nullptr;
 	wxComboBox* path_brush_choice_ = nullptr;
+	wxSpinCtrl* building_density_spin_ = nullptr;
+	wxComboBox* floor_brush_choice_ = nullptr;
 	wxSpinCtrl* path_length_spin_ = nullptr;
 	wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;

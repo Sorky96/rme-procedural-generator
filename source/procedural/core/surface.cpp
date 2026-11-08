@@ -19,6 +19,7 @@ constexpr uint64_t riverStream = 0x72697665725f7332ULL;    // "river_s2"
 constexpr uint64_t shoreStream = 0x73686f72655f7332ULL;    // "shore_s2"
 constexpr uint64_t meanderStream = 0x6d65616e6465725fULL;  // "meander_"
 constexpr uint64_t rimStream = 0x72696d5f73733130ULL;      // "rim_ss10"
+constexpr uint64_t buildingStream = 0x6275696c645f7333ULL;  // "build_s3"
 constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
@@ -92,6 +93,32 @@ void grassRim(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, 
 		const bool nearShore = rim[i] & 2;
 		const uint32_t noise = valueNoise(config.seed, rimStream, uint32_t(config.region.x) + uint32_t(i % width), uint32_t(config.region.y) + uint32_t(i / width), 4);
 		if (nearShore || noise < noiseBins * 3 / 4) kinds[i] = SurfaceKind::Grass;
+	}
+}
+
+// Optional building foundations (G4 iteration 11): rectangles of Floor, 7-11 by 5-9 cells in either orientation, each with
+// a margin of two cells that must be Grass or Dirt, so a foundation never touches water, rock, a beach, a path or another one.
+void placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
+	const uint64_t wanted = uint64_t(config.tuning.buildingDensity) * kinds.size() / 65536;
+	StableRandom random(config.seed, buildingStream);
+	uint64_t placed = 0;
+	for (uint64_t attempt = 0; attempt < wanted * 40 + 40 && placed < wanted; ++attempt) {
+		if (attempt % 64 == 0 && stop.stop_requested()) return;
+		uint32_t longSide = 7 + uint32_t(random.bounded(5)), shortSide = 5 + uint32_t(random.bounded(5));
+		shortSide = std::min(shortSide, longSide);
+		if (random.bounded(2)) std::swap(longSide, shortSide);
+		if (longSide + 4 > width || shortSide + 4 > height) continue;
+		const uint32_t x0 = uint32_t(random.bounded(width - (longSide + 4) + 1)) + 2, y0 = uint32_t(random.bounded(height - (shortSide + 4) + 1)) + 2;
+		bool free = true;
+		for (uint32_t y = y0 - 2; y < y0 + shortSide + 2 && free; ++y) {
+			for (uint32_t x = x0 - 2; x < x0 + longSide + 2; ++x) {
+				const SurfaceKind kind = kinds[size_t(y) * width + x];
+				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) { free = false; break; }
+			}
+		}
+		if (!free) continue;
+		for (uint32_t y = y0; y < y0 + shortSide; ++y) for (uint32_t x = x0; x < x0 + longSide; ++x) kinds[size_t(y) * width + x] = SurfaceKind::Floor;
+		++placed;
 	}
 }
 
@@ -367,7 +394,7 @@ uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y) 
 bool SurfaceGrid::valid() const noexcept {
 	if (region.x < 0 || region.y < 0 || region.z < 0 || region.width == 0 || region.height == 0 ||
 		uint64_t(region.width) * region.height != cells.size()) return false;
-	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Path; });
+	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Floor; });
 }
 
 uint64_t SurfaceGrid::fingerprint() const {
@@ -389,7 +416,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -692,6 +719,10 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		grassRim(kinds, width, height, config);
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop)) return cancelled();
+		if (config.tuning.buildingDensity) {
+			placeBuildings(kinds, width, height, config, stop);
+			if (stop.stop_requested()) return cancelled();
+		}
 
 		for (size_t i = 0; i < count; ++i) {
 			if ((!mask.empty() && mask[i] == 0) || (!protection.empty() && protection[i] != 0)) {

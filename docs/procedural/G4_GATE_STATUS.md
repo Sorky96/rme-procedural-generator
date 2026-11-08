@@ -291,3 +291,18 @@ Definicje zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 1
 **Wniosek.** Budynki da się zmierzyć w pięciu mapach (≥ 5 budynków: M01, M05, M06, M15, M19), a w M06 i M19 są liczne: ok. 1 budynek na 2 000 kafli (czyli ok. 125 w obszarze 512×512), typowo 9 × 7 kafli, ok. 30 komórek muru, w połowie z drzwiami. Generator nie tworzy żadnych budowli, więc stan bazowy jest zerowy z definicji.
 
 **Zastrzeżenia.** Cecha Wall obejmuje też płoty i wolnostojące mury (M01, część M15), więc „budynek” to heurystyka kształtu; wnętrza, dachy (piętra wyżej) i meble są poza miarą; dowody głównie z M06 i M19. **Czego generowanie wymaga (nie zrobione):** ściany i drzwi to nie grunt, lecz przedmioty na kaflu wymagające pędzla ściany z automatycznym dopasowaniem elementów oraz pędzla drzwi; obecny plan (`GroundPlan`) przenosi tylko grunt i doodady, więc podgląd, zatwierdzanie i Undo wymagają rozszerzenia o warstwę przedmiotów strukturalnych.
+
+## Iteracja 11b — podstawy budynków (2026-11-08): cechy w paśmie, warunek udziałów niespełniony dla m19
+
+Model, kryteria i stałe gęstości zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 11”, commit `ae1c33a`). Zaimplementowano: `SurfaceKind::Floor`, `SurfaceTuning::buildingDensity` (0 = wyłączone, nie jest częścią profilu), prostokąty podłogi 7–11 × 5–9 (losowa orientacja) z marginesem 2 komórek na Grass/Dirt, resolver z ośmioma pędzlami (indeks 6 szlak, 7 podłoga), pola „Buildings” i „Floor brush” w oknie generatora (domyślnie 0, `stone floor`), odcisk podglądu z `buildingDensity`.
+
+**Pomiar (seedy 1001–1032, bok 512, v10; gęstość 30 dla m06, 40 dla m19, stałe z góry):**
+
+| Profil | budynków na 65 536 (ref.) | dłuższy bok (ref.) | krótszy bok (ref.) | w paśmie |
+| --- | --- | --- | --- | --- |
+| m06 | 30 (31) | 9 (9) | 7 (7) | **3 z 3** |
+| m19 | 40 (37) | 9 (9) | 7 (7) | **3 z 3** |
+
+Warunek dodatkowy „udziały rodzajów ±1 punkt procentowy wobec stanu bez budynków”: m06 maksymalna zmiana 0,8 punktu procentowego (spełniony), **m19 1,8 punktu procentowego (Grass 294,5 → 276,5 ‰) — niespełniony**: podłogi zabierają ok. 3–4 % powierzchni lądu, więc udział trawy spada, co wynika z konstrukcji, nie z błędu. Testy rdzenia PASS (wyłączone = bajt w bajt jak dotąd; podłoga tylko na dawnym Grass/Dirt; litery prostokąta; wartość 101 odrzucona; deterministyczne). Regresja G1: sonda `--commit` `passed: true` (stderr pusty), sonda `--surface` wszystkie asercje PASS (stderr jak w historycznym przebiegu: 7 ostrzeżeń `SetFocus`, 1 113 bajtów).
+
+**Zastrzeżenia.** Podłoga bez ścian, drzwi i dachów nie jest budynkiem; cechy w paśmie wynikają z zadanych rozmiarów (7–11 × 5–9 dobrane do referencji 9 × 7), więc to sprawdzenie implementacji, nie niezależny dowód; rozmieszczenie losowe (bez dróg i skupisk osad, szlaki nie prowadzą do budynków); porównanie obwiedni podłogi z obwiednią muru to przybliżenie. **Niezweryfikowane:** okno generatora z nowymi polami, Preview/Validate/Place/Undo z podłogami (ścieżka z 8 pędzlami; sondy używają 6), wygląd w GUI.

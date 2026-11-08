@@ -16,7 +16,7 @@ namespace rme::procedural {
 // v1 types and fingerprints are untouched; v2 has its own kinds and fingerprint domain.
 inline constexpr uint32_t surfaceAlgorithmVersion = 2;
 
-enum class SurfaceKind : uint8_t { Preserve = 0, Grass, Dirt, Rock, Shore, Lake, River, Path };
+enum class SurfaceKind : uint8_t { Preserve = 0, Grass, Dirt, Rock, Shore, Lake, River, Path, Floor };
 
 // All fields below are pure functions of (seed, absolute coordinates) and of
 // whole-region thresholds. A mask or protection therefore never changes the

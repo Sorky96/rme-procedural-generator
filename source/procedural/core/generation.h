@@ -39,6 +39,7 @@ struct SurfaceTuning {
 	uint32_t minRockCells = 8;        // smaller 4-connected rock patches become land
 	uint32_t dirtPermille = 300;      // share of driest cells that are dirt, 0..1000
 	uint32_t transitionWidth = 6000;  // half width of the grass/dirt dithered band, 0..32768
+	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
 	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
 	bool operator==(const SurfaceTuning&) const = default;

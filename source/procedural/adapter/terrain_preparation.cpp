@@ -98,8 +98,13 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 
 	const uint8_t expectedBrushes = config.algorithm == GenerationAlgorithm::Surface ?
 		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
-	if (profile.count != expectedBrushes && !(config.algorithm == GenerationAlgorithm::Surface && profile.count == GroundProfile::surfaceWithPathCount)) return fail(PreparationInputError::InvalidProfile);
-	if (config.algorithm == GenerationAlgorithm::Surface && (config.surface.pathLength != 0) != (profile.count == GroundProfile::surfaceWithPathCount)) return fail(PreparationInputError::InvalidProfile);
+	if (config.algorithm == GenerationAlgorithm::Surface) {
+		const uint8_t required = config.surface.buildingDensity ? GroundProfile::surfaceWithFloorCount :
+			config.surface.pathLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
+		if (profile.count != required) return fail(PreparationInputError::InvalidProfile);
+	} else if (profile.count != expectedBrushes) {
+		return fail(PreparationInputError::InvalidProfile);
+	}
 	const bool vegetation = config.vegetation;
 	if (vegetation && config.algorithm != GenerationAlgorithm::Surface) return fail(PreparationInputError::InvalidParameters);
 	if (vegetation && !valid(config.decor)) return fail(PreparationInputError::InvalidParameters);

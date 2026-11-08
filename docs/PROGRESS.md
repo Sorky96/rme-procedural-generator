@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-08 — G4: osady i struktury, podstawy budynków (iteracja 11) — PARTIAL
+
+Pomiar 11a: budynki (obrysy murów) są w M06 i M19 liczne (ok. 31–37 na 65 536 kafli, mediana 9 × 7, połowa z drzwiami). Zakres wybrany przez użytkownika: same podstawy. Zaimplementowano opcjonalne prostokąty podłogi (`SurfaceKind::Floor`, `buildingDensity`, ośmiu pędzli w profilu, pola w oknie generatora): liczba i rozmiar w paśmie referencji, udziały rodzajów spełnione dla m06, nie dla m19 (1,8 vs 1 punkt procentowy). Regresja G1 `--commit` PASS. **Niezweryfikowane: GUI (okno, Preview/Place/Undo z podłogami), wygląd; brak ścian, drzwi i dachów (nie jest to budynek).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+
 ## 2026-11-08 — G4: przejścia między rodzajami (iteracja 10) — PARTIAL
 
 Nowa miara: skład granic skały i ziemi (z czym graniczą). Generator miał ziemię stykającą się ze skałą i plażą proporcjonalnie do udziału, w referencjach ziemia ich unika. Dodana obwódka trawy (2 komórki wokół plaży w całości, wokół skały w ok. 75 %): m06 8 z 8 cech w paśmie, m19 2 z 8 (kryterium nie spełnione; M19 ma skałę stykającą się z plażą i wodą, czego model wysokości nie daje). Zmieniony przypięty odcisk Seed 1729. Testy rdzenia PASS, `rme.exe` przebudowany. Nie sprawdzono: wyglądu w GUI, regresji G1. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

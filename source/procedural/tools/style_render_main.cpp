@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 	const fs::path outDir = argv[2];
 	fs::create_directories(outDir);
 	const uint32_t side = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
-	constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {40, 90, 200}, {200, 170, 120}};
+	constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {40, 90, 200}, {200, 170, 120}, {120, 120, 150}};
 	const uint64_t cells = uint64_t(side) * side;
 	const SurfaceBudget budget {cells, cells * 8, cells * 64 + (1u << 20)};
 	SurfaceTuning tuning = *profile->tuning;
@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
 		else if (name == "transitionWidth") tuning.transitionWidth = value;
 		else if (name == "shoreWidth") tuning.shoreWidth = value;
 		else if (name == "pathLength") tuning.pathLength = value;
+		else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
 	for (int i = firstSeed; i < argc; ++i) {
@@ -98,6 +99,10 @@ int main(int argc, char** argv) {
 				nearRock += near;
 			}
 			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {} rockadj {} rocknear {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells, paths->maskCells ? nextToRock * 1000 / paths->maskCells : 0, paths->maskCells ? nearRock * 1000 / paths->maskCells : 0);
+		}
+		{
+			const BuildingSummary b = summarizeBuildings(floorBuildingsOf(*grid));
+			std::cout << std::format("build seed {}: count {} per64k {} long {} short {}\n", seed, b.count, b.per64k, b.longMedian, b.shortMedian);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

@@ -77,6 +77,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			// Appended only when set, so plans with the original river routes keep their fingerprint.
 			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
 			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
+			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
 			// Appended only when it differs from the built-in rules, so other plans keep their original fingerprint.
 			if (c.vegetation && !(c.decor == DecorTuning {})) {
 				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,
@@ -229,10 +230,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	if (c != GenerationRegion{left, top, r.z, uint32_t(right-left), uint32_t(bottom-top)}) co_return std::unexpected(PreviewError::InvalidPlan);
 	const auto contextIndex = [&](int x, int y) { return size_t(y-c.y) * c.width + size_t(x-c.x); };
 	if (plan.profile.count != GroundProfile::groundRollCount && plan.profile.count != GroundProfile::surfaceCount &&
-		plan.profile.count != GroundProfile::surfaceWithPathCount) {
+		plan.profile.count != GroundProfile::surfaceWithPathCount && plan.profile.count != GroundProfile::surfaceWithFloorCount) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	std::array<const GroundBrush*, GroundProfile::surfaceWithPathCount> brushes {};
+	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
 		const auto* brush = g_brushes.getBrush(plan.profile.brushes[i]);

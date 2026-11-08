@@ -103,6 +103,8 @@ struct BuildingShapes {
 	std::vector<Building> buildings;
 	uint64_t regionCells = 0;   // present tiles of the examined floors
 };
+// Generator side: 4-connected components of Floor cells (foundations), no size limit.
+[[nodiscard]] BuildingShapes floorBuildingsOf(const SurfaceGrid& grid);
 [[nodiscard]] std::expected<BuildingShapes, StatsError> extractBuildingShapes(
 	const SemanticMap& map, int zMin, int zMax, std::stop_token stop);
 

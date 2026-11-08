@@ -47,7 +47,7 @@ std::vector<uint8_t> kindsOfGrid(const SurfaceGrid& grid) {
 			case SurfaceKind::Rock: kinds[i] = 2; break;
 			case SurfaceKind::Shore: kinds[i] = 3; break;
 			case SurfaceKind::Lake: case SurfaceKind::River: kinds[i] = 4; break;
-			case SurfaceKind::Preserve: case SurfaceKind::Path: break;
+			case SurfaceKind::Preserve: case SurfaceKind::Path: case SurfaceKind::Floor: break;
 		}
 	}
 	return kinds;
@@ -293,6 +293,36 @@ std::expected<BuildingShapes, StatsError> extractBuildingShapes(const SemanticMa
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(StatsError::AllocationFailed);
 	}
+}
+
+BuildingShapes floorBuildingsOf(const SurfaceGrid& grid) {
+	BuildingShapes result;
+	result.regionCells = grid.cells.size();
+	const size_t width = grid.region.width, height = grid.region.height;
+	std::vector<uint8_t> seen(grid.cells.size(), 0);
+	std::vector<size_t> stack;
+	for (size_t start = 0; start < grid.cells.size(); ++start) {
+		if (seen[start] || grid.cells[start] != SurfaceKind::Floor) continue;
+		uint32_t cells = 0;
+		size_t x0 = start % width, x1 = x0, y0 = start / width, y1 = y0;
+		stack.assign(1, start);
+		seen[start] = 1;
+		while (!stack.empty()) {
+			const size_t i = stack.back();
+			stack.pop_back();
+			++cells;
+			const size_t x = i % width, y = i / width;
+			x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y);
+			auto visit = [&](size_t j) { if (!seen[j] && grid.cells[j] == SurfaceKind::Floor) { seen[j] = 1; stack.push_back(j); } };
+			if (x > 0) visit(i - 1);
+			if (x + 1 < width) visit(i + 1);
+			if (y > 0) visit(i - width);
+			if (y + 1 < height) visit(i + width);
+		}
+		const uint32_t w = uint32_t(x1 - x0 + 1), h = uint32_t(y1 - y0 + 1);
+		result.buildings.push_back({cells, std::max(w, h), std::min(w, h), 0});
+	}
+	return result;
 }
 
 BuildingSummary summarizeBuildings(const BuildingShapes& shapes) {

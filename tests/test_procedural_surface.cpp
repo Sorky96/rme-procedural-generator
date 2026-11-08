@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/decoration.h"
+#include "procedural/core/scale_stats.h"
 #include "procedural/core/surface.h"
 
 #include <algorithm>
@@ -100,6 +101,8 @@ void parametersAndLimits() {
 	require(bool(generateSurface(bad, extent, budget)), "meander 8 refused");
 	bad = base; bad.tuning.shoreWidth = 9;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "shoreWidth 9 accepted");
+	bad = base; bad.tuning.buildingDensity = 101;
+	expectError(bad, budget, SurfaceError::InvalidParameters, "buildingDensity 101 accepted");
 	bad = base; bad.tuning.pathLength = 401;
 	expectError(bad, budget, SurfaceError::InvalidParameters, "pathLength 401 accepted");
 	bad = base; bad.tuning.dirtPermille = 1001;
@@ -511,12 +514,38 @@ void grassRimRule(uint32_t side, uint64_t seeds) {
 	require(dirtBesideRock > 0, "the rim removed every contact between dirt and rock");
 }
 
+// Optional building foundations (G4 iteration 11): off by default; when on, only Grass and Dirt become Floor, every
+// foundation is a solid rectangle of 7-11 by 5-9 cells, and no two foundations or a foundation and another kind touch.
+void buildings(uint32_t side, uint64_t seeds) {
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		auto config = makeConfig(side, seed);
+		const auto plain = generateSurface(config, extent, budget);
+		require(plain.has_value() && countOf(*plain, SurfaceKind::Floor) == 0, "floors appeared with buildingDensity 0");
+		config.tuning.buildingDensity = 40;
+		const auto first = generateSurface(config, extent, budget);
+		const auto second = generateSurface(config, extent, budget);
+		require(first.has_value() && second.has_value() && first->cells == second->cells, "buildings are not deterministic");
+		require(first->valid(), "grid with buildings is not valid");
+		for (size_t i = 0; i < first->cells.size(); ++i) {
+			if (first->cells[i] == plain->cells[i]) continue;
+			require(first->cells[i] == SurfaceKind::Floor, "a building run changed a cell to something other than a floor");
+			require(plain->cells[i] == SurfaceKind::Grass || plain->cells[i] == SurfaceKind::Dirt, "a foundation replaced water, rock, shore or a river");
+		}
+		const auto shapes = floorBuildingsOf(*first);
+		for (const Building& b : shapes.buildings) {
+			require(b.cells == b.longSide * b.shortSide, "a foundation is not a solid rectangle");
+			require(b.longSide >= 7 && b.longSide <= 11 && b.shortSide >= 5 && b.shortSide <= 9 || b.longSide >= 5 && b.longSide <= 9 && b.shortSide >= 5, "a foundation has an unexpected size");
+		}
+		if (side >= 250) require(!shapes.buildings.empty(), "buildingDensity 40 produced no foundation");
+	}
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24);
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3);
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {
