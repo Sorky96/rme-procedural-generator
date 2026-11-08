@@ -43,3 +43,26 @@ Podobieństwa wizualnego, naturalności rzek i gór, klastrowania na skalach 16/
 - Iteracja 2 została zaprojektowana po zobaczeniu wyników iteracji 1 na tych samych foldach testowych. Foldy testowe są więc używane po raz drugi i wynik nie jest niezależnym testem w sensie G4; to ocena po adaptacji modelu do znanych słabości. Wynik zostanie oznaczony „po zmianie modelu” i nie zastępuje iteracji 1, tylko leży obok niej.
 - Seedy testowe są te same, mapy testowe te same; różnica dotyczy wyłącznie strojenia.
 - Jeśli kandydat nie przejdzie ograniczenia w żadnym kroku, profil foldu jest identyczny z ręcznymi parametrami (wynik „bez rozstrzygnięcia”), co jest dozwolonym i uczciwym rezultatem.
+
+## Iteracja 3 — profile per styl (zapisana 2026-11-08, przed jej uruchomieniem)
+
+**Co się zmienia:** zamiast jednego profilu uczonego na zlepku rodzin, jeden profil na styl. **Dane nie pozwalają na ocenę na mapach niewidzianych poza jednym przypadkiem** (patrz niżej), więc ta iteracja ma trzy części o różnej mocy dowodowej i nie zastępuje kryterium G4 z planu.
+
+**Definicje.**
+- *Styl* = rodzina z podziału G4-A (deklarowana ∪ po treści), mająca co najmniej jedną mapę stylu z celem (≥ 1000 kafli naturalnych na z ≤ 7; `buildTarget`). Stylów z celem jest 8 (m01, m05, m06, winter, caves, m15, m19, swamp); m17 nie ma celu.
+- *Profil stylu* = `SurfaceTuning` dopasowany do celu stylu z ograniczeniem spójności lądu 97 % (jak w iteracji 2; train = walidacja = styl, wynik ostatniego kroku) oraz `DecorTuning` z dopasowania zamkniętego na kontekstach stylu (konteksty poniżej 200 kafli zostają wbudowane).
+- Dopasowanie: seedy 1–6, bok 160. Ocena: seedy 1001–1032, bok 256, pary seedów jak wcześniej.
+
+**Część A — odwzorowanie własnego stylu (in-sample).** Dla każdego stylu: profil stylu kontra baseline (ręczne parametry) w metrykach S1, S2, S3 i P1 względem celu **tego samego stylu**. Reguła „lepszy/gorszy” i definicje S1–S3, P1 jak w iteracji 1. *To jest ocena na danych, z których profil powstał.*
+
+**Część B — mapa wyłączona z uczenia w obrębie stylu (leave-one-map-out).** Dla stylów z co najmniej dwiema mapami z celem: profil dopasowany na pozostałych mapach stylu, ocena na wyłączonej mapie, względem baseline. Z obecnych danych kwalifikuje się tylko **swamp (M12, M13): dwa przypadki**. Wynik raportowany osobno, bez progu liczbowego (n = 2 nie wystarcza do wniosku o uogólnieniu).
+
+**Część C — rozróżnialność stylów.** Macierz: dla każdej pary (profil stylu i, cel stylu j) mediana po 32 seedach z S1 + S2. Styl j jest *rozpoznany*, jeśli jego własny profil ma najmniejszą medianę wśród wszystkich 8 profili. Raportowany też baseline jako dodatkowy wiersz (nie jest kandydatem do rozpoznania).
+
+**Kryterium iteracji 3 (wszystkie jednocześnie):**
+- A: profil jest lepszy od baseline zarówno w S1, jak i w S2 w co najmniej 2/3 stylów, i żaden styl nie jest gorszy w obu naraz;
+- C: rozpoznanych co najmniej 2/3 stylów;
+- P1: w każdym profilu stylu (A i B) mediana P1 ≥ 95 % mediany baseline;
+- B: bez progu; jeśli którykolwiek z dwóch przypadków jest „gorszy” w S1 i S2 naraz, zapisuję to jako zawód.
+
+**Interpretacja z góry:** spełnienie A, C i P1 oznacza wyłącznie, że profile per styl odwzorowują style, z których powstały, bez utraty spójności lądu. **Nie** dowodzi poprawy na mapach niewidzianych i **nie** spełnia bramki G4 z planu; ta pozostaje oceniana przez część B, która z n = 2 niczego nie rozstrzyga. Wynik jest oznaczany „po zmianie modelu”, foldy testowe z iteracji 1–2 pozostają użyte.
