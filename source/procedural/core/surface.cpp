@@ -128,7 +128,7 @@ public:
 
 	// Stamps a route from `start` to `goal`; returns its length in cells, 0 when there is no acceptable route. Cells that
 	// become Path are appended to `stamped` when it is given.
-	size_t connect(size_t start, size_t goal, std::vector<uint32_t>* stamped = nullptr) {
+	size_t connect(size_t start, size_t goal, std::vector<uint32_t>* stamped = nullptr, bool reachEnds = false) {
 		std::vector<SurfaceKind>& kinds = kinds_;
 		const uint32_t width = width_, height = height_;
 		const SurfaceConfig& config = config_;
@@ -213,6 +213,15 @@ public:
 			const int32_t steps = std::max(1, std::max(std::abs(bx - ax), std::abs(by - ay)));
 			for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
 		}
+		if (reachEnds && !smooth_.empty()) {
+			// The moving average pulls both ends of the line inwards; join them to the real start and goal.
+			const auto line = [&](int32_t ax, int32_t ay, int32_t bx, int32_t by) {
+				const int32_t steps = std::max(1, std::max(std::abs(bx - ax), std::abs(by - ay)));
+				for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
+			};
+			line(sx, sy, smooth_.front().first, smooth_.front().second);
+			line(smooth_.back().first, smooth_.back().second, gx, gy);
+		}
 		return route_.size();
 	}
 
@@ -273,7 +282,7 @@ struct Foundation {
 
 constexpr uint32_t clusterAnchorPercent = 60;
 constexpr uint32_t clusterGapMin = 3, clusterGapSpread = 4;  // gap 3..6
-constexpr uint32_t doorTrailReach = 24;                       // a door trail is routed only to a trail this close (Chebyshev, from the building centre)
+constexpr uint32_t doorTrailReach = 16;                       // a door trail is routed only to a trail this close (Chebyshev, from the building centre)
 constexpr uint32_t doorTargetReach = 60;                      // a door looks for a trail this close (Chebyshev, from the building centre)
 
 std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
@@ -327,7 +336,8 @@ bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32
 	StableRandom random(config.seed, doorStream);
 	std::vector<uint32_t> trail;
 	for (size_t i = 0; i < kinds.size(); ++i) if (kinds[i] == SurfaceKind::Path) trail.push_back(uint32_t(i));
-	for (const Foundation& f : foundations) {
+	for (size_t index = 0; index < foundations.size(); ++index) {
+		const Foundation& f = foundations[index];
 		if (stop.stop_requested()) return false;
 		const int64_t centreX2 = int64_t(f.x0) + f.x1, centreY2 = int64_t(f.y0) + f.y1;  // doubled centre
 		int64_t bestDistance = int64_t(doorTargetReach) + 1;
@@ -338,18 +348,22 @@ bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32
 			if (distance < bestDistance) { bestDistance = distance; target = cell; }
 		}
 		int side;  // 0 north, 1 east, 2 south, 3 west
+		bool pendingPartner = false;  // a later building within doorTrailReach will route to this door
 		if (target != kinds.size()) {
 			const int64_t dx = int64_t(target % width) * 2 - centreX2, dy = int64_t(target / width) * 2 - centreY2;
 			side = std::abs(dx) >= std::abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
 		} else {
-			// No trail yet: face the nearest other building (also a later one), so neighbours look at each other.
-			int64_t nearest = int64_t(doorTargetReach) + 1, faceX2 = 0, faceY2 = 0;
-			for (const Foundation& other : foundations) {
-				if (&other == &f) continue;
-				const int64_t ox2 = int64_t(other.x0) + other.x1, oy2 = int64_t(other.y0) + other.y1;
+			// No trail yet: face the partner that will join this door (the nearest later building within doorTrailReach),
+			// else the nearest other building, so neighbours look at each other.
+			int64_t nearest = int64_t(doorTargetReach) + 1, faceX2 = 0, faceY2 = 0, laterNearest = int64_t(doorTrailReach) + 1, laterX2 = 0, laterY2 = 0;
+			for (size_t other = 0; other < foundations.size(); ++other) {
+				if (other == index) continue;
+				const int64_t ox2 = int64_t(foundations[other].x0) + foundations[other].x1, oy2 = int64_t(foundations[other].y0) + foundations[other].y1;
 				const int64_t distance = std::max(std::abs(ox2 - centreX2), std::abs(oy2 - centreY2)) / 2;
 				if (distance < nearest) { nearest = distance; faceX2 = ox2 - centreX2; faceY2 = oy2 - centreY2; }
+				if (other > index && distance < laterNearest) { laterNearest = distance; laterX2 = ox2 - centreX2; laterY2 = oy2 - centreY2; pendingPartner = true; }
 			}
+			if (pendingPartner) { faceX2 = laterX2; faceY2 = laterY2; nearest = laterNearest; }
 			if (nearest <= int64_t(doorTargetReach)) side = std::abs(faceX2) >= std::abs(faceY2) ? (faceX2 > 0 ? 1 : 3) : (faceY2 > 0 ? 2 : 0);
 			else side = int(random.bounded(4));
 		}
@@ -360,11 +374,17 @@ bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32
 		else if (side == 3) { doorX = f.x0; doorY = midY; stoopX = f.x0 - 1; stoopY = midY; }
 		doors.push_back(doorY * width + doorX);
 		const size_t stoop = size_t(stoopY) * width + stoopX;
-		if (kinds[stoop] == SurfaceKind::Grass || kinds[stoop] == SurfaceKind::Dirt) {
+		const bool routed = target != kinds.size() && bestDistance <= int64_t(doorTrailReach);
+		for (size_t other = index + 1; !routed && !pendingPartner && other < foundations.size(); ++other) {
+			const int64_t ox2 = int64_t(foundations[other].x0) + foundations[other].x1, oy2 = int64_t(foundations[other].y0) + foundations[other].y1;
+			pendingPartner = std::max(std::abs(ox2 - centreX2), std::abs(oy2 - centreY2)) / 2 <= int64_t(doorTrailReach);
+		}
+		// A step in front of the door only where something joins it: a trail in reach or a later building that will.
+		if ((routed || pendingPartner) && (kinds[stoop] == SurfaceKind::Grass || kinds[stoop] == SurfaceKind::Dirt)) {
 			kinds[stoop] = SurfaceKind::Path;
 			trail.push_back(uint32_t(stoop));
 		}
-		if (target != kinds.size() && bestDistance <= int64_t(doorTrailReach)) router.connect(stoop, target, &trail);
+		if (routed) router.connect(stoop, target, &trail, true);
 	}
 	return true;
 }

@@ -567,6 +567,7 @@ void settlements(uint32_t side, uint64_t seeds) {
 		require(first->fingerprint() == second->fingerprint() && first->valid(), "settlement grid fingerprint or validity");
 		const std::vector<BuildingBox> boxes = floorBoxesOf(*first);
 		require(first->doors.size() == boxes.size(), "not exactly one door per foundation");
+		size_t stoops = 0;  // doors with a Path cell in front; a building that nothing can join gets none
 		for (const BuildingBox& box : boxes) {
 			size_t inside = 0;
 			for (const uint32_t door : first->doors) {
@@ -576,10 +577,11 @@ void settlements(uint32_t side, uint64_t seeds) {
 				const bool north = y == box.y0, south = y == box.y1, west = x == box.x0, east = x == box.x1;
 				require(north || south || west || east, "a door is not on the outline");
 				const size_t stoop = north ? door - side : south ? door + side : west ? door - 1 : door + 1;
-				require(first->cells[stoop] == SurfaceKind::Path, "the cell in front of a door is not a trail");
+				stoops += first->cells[stoop] == SurfaceKind::Path;
 			}
 			require(inside == 1, "a foundation has no door or more than one");
 		}
+		if (side >= 250) require(stoops > 0 && stoops <= boxes.size(), "no door got a trail in front of it");
 		// Gap between two foundations: at least 3 cells (margin of two plus the cell between).
 		for (size_t a = 0; a < boxes.size(); ++a) {
 			for (size_t b = a + 1; b < boxes.size(); ++b) {

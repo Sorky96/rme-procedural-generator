@@ -413,3 +413,16 @@ Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METR
 
 Wybór R = 24 (największy spełniający L ≤ 1,5·ref w obu profilach). G, Kn, Ks, Ki, Kb, Bp i Dp bez zmian względem 12d/12f (rozmieszczenie to samo). **Przy domyślnych ustawieniach profilu** (`pathLength` 40 / 80 jak w GUI-owych sugestiach) L wynosi 108 / 177, bo dochodzą losowe długie szlaki 9d; wynik m06 jest tuż nad pasmem, m19 powyżej.
 **Koszt:** „bez dojścia” (schodek bez trasy do innych drzwi) to ok. 64–67 % budynków; w referencjach tylko 9–21 % budynków ma szlak w pobliżu (Bp 93 / 209 ‰), więc odsetek jest tej samej klasy, ale wynika z krótkiego zasięgu, a nie z modelu referencji. 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`. **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika, ma pierwszeństwo); innych `doorTrailReach` poza trzema z zapisu; `style_render` ma teraz wiersz `access` (odsetek bez dojścia) liczony tylko, gdy są drzwi.
+
+## Iteracja 12h — szlaki do drzwi mają dokądś prowadzić (2026-11-09): kikuty usunięte, L poza pasmem w m19; czeka na ocenę użytkownika
+
+Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12h”; grep potwierdził). Zmiany: (1) trasy do drzwi stemplowane aż do schodka i celu (`reachEnds`; długie szlaki 9d bez zmian), (2) schodek tylko przy celu w zasięgu albo przy późniejszym partnerze w zasięgu; drzwi samotnego budynku wychodzą prosto na grunt; strona drzwi ku partnerowi.
+
+Pomiar (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi bajtowo identyczne):
+
+| `doorTrailReach` | L m06 (≤ 105) | L m19 (≤ 117) | kikuty m06 / m19 (‰) | drzwi bez schodka m06 / m19 (‰) |
+| --- | ---: | ---: | ---: | ---: |
+| 24 | 174 ✗ | 277 ✗ | 25 / 18 | 104 / 43 |
+| **16 (wybrane wg reguły, bo 24 nie spełnia)** | **96 ✓** | **174 ✗** | **33 / 31** | 208 / 103 |
+
+Kryterium (a) L: **niespełnione w m19** (174 wobec ≤ 117), spełnione w m06; kryterium (b) kikuty ≤ 100 ‰: **spełnione** (było ok. 650 ‰ „izolowanych” w 12g). G, Kn, Ki, Kb, Dp bez zmian; Bp 791 / 897 ‰ (nie 1000, bo samotne budynki nie mają schodka). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; test `settlements` zmieniony świadomie: schodek przed drzwiami nie jest już wymagany (dla boku ≥ 250 wymagany co najmniej jeden). **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika ma pierwszeństwo); zasięgów innych niż 16 i 24; „dokądś prowadzi” poza metryką kikutów (trasa dwóch sąsiadów może być łamana lub szeroka).

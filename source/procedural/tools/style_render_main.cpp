@@ -149,10 +149,15 @@ int main(int argc, char** argv) {
 					}
 				}
 			}
-			uint32_t isolated = 0;
+			uint32_t bare = 0, stub = 0;
 			for (const uint32_t door : grid->doors) if (const int64_t s = stoopOf(door); s >= 0) ++doorsIn[size_t(label[size_t(s)])];
-			for (const uint32_t door : grid->doors) if (const int64_t s = stoopOf(door); s < 0 || doorsIn[size_t(label[size_t(s)])] == 1) ++isolated;
-			std::cout << std::format("access seed {}: doors {} isolated {} permille {}\n", seed, grid->doors.size(), isolated, isolated * 1000 / grid->doors.size());
+			for (const uint32_t door : grid->doors) {
+				const int64_t s = stoopOf(door);
+				if (s < 0) ++bare;
+				else if (doorsIn[size_t(label[size_t(s)])] == 1) ++stub;
+			}
+			std::cout << std::format("access seed {}: doors {} bare {} stub {} barePermille {} stubPermille {}\n", seed, grid->doors.size(), bare, stub,
+				bare * 1000 / grid->doors.size(), stub * 1000 / grid->doors.size());
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
