@@ -356,3 +356,15 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 **Zmiana 12d (jedna stała, zapisana przed ponownym pomiarem; wynik oznaczony „po zmianie modelu”).** `clusterAnchorPercent` 30 → **60**. Uzasadnienie wyłącznie z tabeli: referencje mają 19–27 % budynków samotnych i skupiska o medianie 1; generator przy 30 % kotwic ma 4–6 % samotnych. Wartość 60 wybrana jako okrągła połowa drogi do przewidywanej wartości, nie dopasowana na seedach; jeśli i ona nie spełni kryterium, nie dobieram dalej bez nowej decyzji użytkownika. Pozostałe stałe (odstęp 3–6, zasięg 60, 12 w definicji skupiska) bez zmian. Kryteria oceny te same co w 12c (powyżej). Długość szlaków (obserwacja 2) w tej iteracji nie jest zmieniana ani oceniana; zostaje zgłoszona jako odchylenie.
 
 **Zastrzeżenia z góry.** Zmiana po zobaczeniu wyniku in-sample na tych samych seedach i mapach (D17); poprawa Ki/Kn przy jednej stałej nie dowodzi ogólności. Ks i Kb mogą nie zmienić się zgodnie z oczekiwaniem, bo zależą od rozkładu rozmiarów skupisk, a nie od jednego parametru.
+
+### Iteracja 12e — adapter drzwi (zapisana 2026-11-09 przed implementacją; decyzja użytkownika: „Adapter i GUI drzwi”)
+
+**Zakres.** Drzwi z rdzenia (`SurfaceGrid::doors`) trafiają do planu i podglądu istniejącym mechanizmem RME, bez drugiego silnika; wyniki rdzenia i kryteria 12c się nie zmieniają.
+- `GroundProfile::door` = rodzaj drzwi z zamkniętej listy nazw (Normal door, Locked door, Magic door, Quest door, Normal door (alt), Archway), mapowanych na `DoorType`; puste = bez drzwi (ściana ciągła jak dotąd). Dozwolone tylko przy pędzlu ściany (profil z 8 pędzlami). Żadnych identyfikatorów przedmiotów w kodzie: element drzwi wybiera pędzel ściany profilu przez `DoorBrush`.
+- `GroundPlan::doors` = flaga na komórkę (jedna na budynek, na komórce obrysu ze ścianą); dopisywana do odcisku planu tylko przy drzwiach, więc plany bez drzwi zachowują dotychczasowy odcisk.
+- Podgląd: po `WallBrush::doWalls` na każdej komórce drzwi `DoorBrush(typ).draw` na buforze podglądu; jeśli `canDraw` jest fałszem (pędzel ściany nie ma drzwi tego rodzaju przy tym ułożeniu), podgląd odmawia z błędem zamiast po cichu zostawić ścianę. Elementy drzwi pędzla ściany należą już do dozwolonych (`getRelatedItems` obejmuje drzwi).
+- Okno generatora: pole wyboru „Doors” (aktywne przy włączonych ścianach) i lista rodzaju drzwi.
+
+**Ocena.** (1) Testy: plan z drzwiami ma odcisk inny niż bez, plan bez drzwi bajt w bajt jak dotąd; odmowy (drzwi bez ściany, nieznany rodzaj, profil bez 8 pędzli). (2) Sondy G1 `--commit` i `--surface` PASS po przebudowie `rme`; do sondy dojdzie przypadek ze ścianami i drzwiami (podgląd, zatwierdzenie, Undo, Redo, liczba drzwi = liczba budynków w obrębie maski). (3) GUI: ocena użytkownika (wygląd, kierunek drzwi względem szlaku, Undo/Redo); jego wybór wizualny ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Czy wybrany pędzel ściany ma drzwi danego rodzaju dla wszystkich ułożeń, zależy od klienta i danych brushy; nieudany `canDraw` kończy podgląd błędem. Nie ma automatycznego przypisywania ID drzwi domu (poza zakresem). Rdzeń nie wie, jakiego rodzaju są drzwi.
