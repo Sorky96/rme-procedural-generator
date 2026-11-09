@@ -380,7 +380,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 - [ ] Multi-level mountain logic i przejścia Z.
 - [ ] Jaskinie, dungeony, korytarze, komory, wejścia, wyjścia.
 - [~] Struktury: osady/ruiny/obozowiska, placement z kontrolą kolizji. Osady na powierzchni: rdzeń ma skupiska, drzwi i trasy do drzwi (2026-11-09), kryterium pomiarowe 12c nie spełnione, adapter i GUI drzwi zrobione, wygląd potwierdzony przez użytkownika ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”); ruiny, obozowiska i podziemia: nie zrobione.
-- [ ] Walidator osiągalności i automatyczny repair / seed rejection.
+- [~] Walidator osiągalności i automatyczny repair / seed rejection. Zrobione (2026-11-09): pomiar osiągalności powierzchni w rdzeniu (`reachabilityOf`), bez podłączenia do GUI; budynki odcięte rzeką w 10 z 32 seedów, kryterium nie spełnione ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 13”); repair, seed rejection, POI i przejścia Z: nie zrobione.
 
 **G5:** z ustalonego startu osiągalne są wymagane POI, prawidłowe wejścia i wyjścia Z oraz brak krytycznych odcięć.
 

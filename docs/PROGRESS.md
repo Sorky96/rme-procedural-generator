@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: walidator osiągalności powierzchni (iteracja 13) — PARTIAL
+
+Rdzeń ma `reachabilityOf` (składowe 4-spójne, kieszenie, budynki zamknięte); 16 testów rdzenia i obie sondy G1 PASS, w tym test krzyżowy z union-find (160 z 160). Pomiar na seedach 1001–1032: największa składowa mediana 993,5 ‰, ale **10 z 32 seedów ma budynki poza największą składową** (rzeki dzielą ląd; drzwi nigdy nie są zablokowane), więc kryterium „zamknięte = 0 w ≥ 90 % seedów” NIE jest spełnione. Walidator nie jest jeszcze podłączony do okna generatora; naprawa/mosty/odrzucanie seedów to następna iteracja. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 13”.
+
 ## 2026-11-09 — G5 część 1: adapter drzwi (iteracja 12e) — PARTIAL
 
 Drzwi trafiają do planu i podglądu przez `DoorBrush` (profil: rodzaj drzwi, plan: flagi komórek, okno: „Doors” i „Door kind”); sonda `--surface` z Commit/Undo/Redo PASS (6 i 38 drzwi), 15 testów rdzenia PASS. Poprawka: kontrola odcisku podglądu przyjmuje teraz klasę `Door` (bez ID domu). GUI czeka na użytkownika. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12e”.

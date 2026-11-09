@@ -428,3 +428,26 @@ Pomiar (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi 
 Kryterium (a) L: **niespełnione w m19** (174 wobec ≤ 117), spełnione w m06; kryterium (b) kikuty ≤ 100 ‰: **spełnione** (było ok. 650 ‰ „izolowanych” w 12g). G, Kn, Ki, Kb, Dp bez zmian; Bp 791 / 897 ‰ (nie 1000, bo samotne budynki nie mają schodka). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; test `settlements` zmieniony świadomie: schodek przed drzwiami nie jest już wymagany (dla boku ≥ 250 wymagany co najmniej jeden). **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika ma pierwszeństwo); zasięgów innych niż 16 i 24; „dokądś prowadzi” poza metryką kikutów (trasa dwóch sąsiadów może być łamana lub szeroka).
 
 **Ocena użytkownika po 12h (2026-11-09, zrzuty z GUI, dwa obszary, `rme` po 12h): „wygląda lepiej”.** Szlaki łączą drzwi sąsiednich budynków i nie widać kikutów. To potwierdza kierunek wizualnie, ale jest to ocena ogólna (bez liczb), a metryka L w m19 pozostaje poza zapisanym pasmem (174 wobec ≤ 117) – rozbieżność metryka/wzrok odnotowana; wzrok ma pierwszeństwo. Nadal otwarte: kryterium 12c jako całość niespełnione, brak badania wrażliwości stałych (60 %, 3–6, 60, 12, 16/24).
+
+## Iteracja 13 — walidator osiągalności powierzchni (2026-11-09): PARTIAL, kryterium budynków NIE spełnione
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 13”, commit `645ce8e`; grep potwierdził). Zaimplementowano `reachabilityOf(SurfaceGrid, walls)` (`source/procedural/core/reachability.{h,cpp}`): mierzy, niczego nie zmienia, bez naprawy i odrzucania seedów.
+
+**Testy.** Nowy `test_procedural_reachability`: układy policzone ręcznie (jezioro dzieli ląd 20 + 25; budynek bez drzwi zamknięty, z drzwiami osiągalny, bez ścian osiągalny; drzwi do wody; Preserve; błędy i `stop_token`) oraz porównanie z niezależną implementacją (union-find) na 80 losowych siatkach 16×16 w trybie ze ścianami i bez: 160 z 160 zgodnych, dwa przebiegi identyczne. 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; odcisk Seed 1729 bez zmian (test `surface`). Pamięć robocza: 9 B/komórkę (etykiety 4 + kolejka 4 + flaga 1), **kryterium z zapisu (≤ 8) było zbyt ciasne**: to odchylenie, wartość jest oszacowaniem, nie pomiarem.
+
+**Pomiar** (seedy 1001–1032, bok 512, profile v10, ściany i drzwi, mediana [min..max], dwa przebiegi bajtowo identyczne; `g5_shape_table.py`, wiersz `reach`):
+
+| | m06 (`pathLength` 40, 30 budynków/64k) | m19 (80, 40) |
+| --- | ---: | ---: |
+| komórek przechodnich | 177 340 | 177 084 |
+| największa składowa (‰) | 993,5 [647..999] | 993,5 [651..1000] |
+| poza największą na 65 536 kafli | 266 [4..15 759] | 264 [0..15 495] |
+| kieszenie ≥ 16 | 2 [1..9] | 2,5 [0..9] |
+| budynki zamknięte / budynki | 0 [0..52] / 120 | 0 [0..77] / 160 |
+| seedy z zamkniętym > 0 | **10 z 32** | **10 z 32** |
+
+Z `pathLength` 0 liczby są prawie takie same (np. m06 zamknięte [0..50], m19 [0..84]).
+
+**Kryterium 4 (zamknięte = 0 w ≥ 90 % seedów): NIE spełnione** (22 z 32 = 69 % seedów bez zamkniętych). Diagnostyka dopisana po pomiarze (post hoc, wiersz `doorBlocked` w `style_render`, nie z zapisu kryteriów): **żadne drzwi nie są zablokowane** (0 z 32 seedów); zamknięte budynki leżą na lądzie odciętym od największej składowej przez rzekę lub jezioro (seedy z największą składową 647–989 ‰). Zamknięcie wynika więc z podziału lądu, nie z błędu drzwi; naprawa wymaga mostów, brodów albo odrzucenia seedu (następna iteracja).
+
+**Nie zweryfikowano:** przechodności Rock i Shore na kliencie (założona, D22); „POI osiągalne” i „ustalony start” (nie istnieją w generatorze, N/A); pięter i przejść Z; adaptera i GUI (walidator nie jest jeszcze wywoływany z okna generatora ani z sondy RME, tylko z `style_render`); stanu dla `buildingDensity` 0 poza testem odcisku; wydajności walidatora (nie mierzono).
