@@ -489,6 +489,38 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 
 namespace {
 
+constexpr uint64_t entranceStream = 0x656e7472616e6365ULL;  // "entrance"
+
+// Z entrances (iteration 27): Rock cells on the edge of a rock band (a 4-neighbour of Grass, Dirt, Shore or Path), at least 3 cells from the edge of
+// the area, with no water or Floor in the 5 x 5 window, at least 24 apart (Chebyshev).
+bool placeEntrances(const std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::vector<uint32_t>& entrances, std::stop_token stop) {
+	const uint64_t wanted = uint64_t(config.tuning.caveEntrances) * kinds.size() / 65536;
+	if (!wanted || width < 8 || height < 8) return true;
+	StableRandom random(config.seed, entranceStream);
+	const auto open = [](SurfaceKind kind) { return kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Shore || kind == SurfaceKind::Path; };
+	for (uint64_t attempt = 0; attempt < wanted * 400 + 400 && entrances.size() < wanted; ++attempt) {
+		if (attempt % 256 == 0 && stop.stop_requested()) return false;
+		const size_t cell = size_t(random.bounded(kinds.size()));
+		if (kinds[cell] != SurfaceKind::Rock) continue;
+		const int32_t x = int32_t(cell % width), y = int32_t(cell / width);
+		if (x < 3 || y < 3 || x + 3 >= int32_t(width) || y + 3 >= int32_t(height)) continue;
+		if (!open(kinds[cell - 1]) && !open(kinds[cell + 1]) && !open(kinds[cell - width]) && !open(kinds[cell + width])) continue;
+		bool free = true;
+		for (int32_t dy = -2; dy <= 2 && free; ++dy) {
+			for (int32_t dx = -2; dx <= 2; ++dx) {
+				const SurfaceKind kind = kinds[size_t(y + dy) * width + size_t(x + dx)];
+				if (kind == SurfaceKind::Lake || kind == SurfaceKind::River || kind == SurfaceKind::Floor) { free = false; break; }
+			}
+		}
+		for (const uint32_t other : entrances) {
+			if (!free) break;
+			if (std::max(std::abs(int32_t(other % width) - x), std::abs(int32_t(other / width) - y)) < 24) free = false;
+		}
+		if (free) entrances.push_back(uint32_t(cell));
+	}
+	return true;
+}
+
 bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop, std::vector<uint8_t>* crossings) {
 	const size_t count = kinds.size();
 	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
@@ -875,6 +907,7 @@ bool SurfaceGrid::valid() const noexcept {
 	if (!std::ranges::all_of(gaps, [&](uint32_t gap) { return gap < cells.size() && cells[gap] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(sites, [&](uint32_t site) { return site < cells.size() && cells[site] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(fires, [&](uint32_t fire) { return fire < cells.size() && cells[fire] == SurfaceKind::Path; })) return false;
+	if (!std::ranges::all_of(entrances, [&](uint32_t entrance) { return entrance < cells.size() && cells[entrance] == SurfaceKind::Rock; })) return false;
 	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Floor; });
 }
 
@@ -910,6 +943,11 @@ uint64_t SurfaceGrid::fingerprint() const {
 		word(static_cast<uint32_t>(fires.size()));
 		for (const uint32_t fire : fires) word(fire);
 	}
+	if (!entrances.empty()) {
+		byte('E');
+		word(static_cast<uint32_t>(entrances.size()));
+		for (const uint32_t entrance : entrances) word(entrance);
+	}
 	return hash;
 }
 
@@ -917,7 +955,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8 || config.tuning.repairReach > 1 || config.tuning.ruinPercent > 100 || config.tuning.campCount > 50 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8 || config.tuning.repairReach > 1 || config.tuning.ruinPercent > 100 || config.tuning.campCount > 50 || config.tuning.caveEntrances > 20 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -1224,7 +1262,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);
 		std::vector<uint8_t>* crossings = config.tuning.fordLength ? &crossingMask : nullptr;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop, crossings)) return cancelled();
-		std::vector<uint32_t> doors, gaps, sites, fires;
+		std::vector<uint32_t> doors, gaps, sites, fires, entrances;
 		if (config.tuning.buildingDensity) {
 			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
@@ -1240,6 +1278,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			if (!placeDoorsAndTrails(kinds, width, height, config, config.tuning.ruinPercent ? std::span<const Foundation>(withDoors) : std::span<const Foundation>(foundations), doors, stop, crossings)) return cancelled();
 		}
 		if (config.tuning.campCount && !placeCamps(kinds, width, height, config, gaps, sites, fires, stop)) return cancelled();
+		if (config.tuning.caveEntrances && !placeEntrances(kinds, width, height, config, entrances, stop)) return cancelled();
 		// Walkability treats doors and gaps alike (openings in a wall).
 		std::vector<uint32_t> openings = doors;
 		openings.insert(openings.end(), gaps.begin(), gaps.end());
@@ -1260,7 +1299,8 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::erase_if(gaps, [&](uint32_t gap) { return kinds[gap] != SurfaceKind::Floor; });
 		std::erase_if(sites, [&](uint32_t site) { return kinds[site] != SurfaceKind::Floor; });
 		std::erase_if(fires, [&](uint32_t fire) { return kinds[fire] != SurfaceKind::Path; });
-		return SurfaceGrid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires) };
+		std::erase_if(entrances, [&](uint32_t entrance) { return kinds[entrance] != SurfaceKind::Rock; });
+		return SurfaceGrid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires), std::move(entrances) };
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}

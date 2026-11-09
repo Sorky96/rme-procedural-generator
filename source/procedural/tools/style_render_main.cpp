@@ -7,6 +7,7 @@
 #include "procedural/core/png_writer.h"
 #include "procedural/core/reachability.h"
 #include "procedural/core/region_graph.h"
+#include "procedural/core/underground.h"
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/settlement_stats.h"
 #include "procedural/core/style_profile.h"
@@ -56,6 +57,7 @@ int main(int argc, char** argv) {
 		else if (name == "repairReach") tuning.repairReach = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
+		else if (name == "caveEntrances") tuning.caveEntrances = value;
 		else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
@@ -188,6 +190,13 @@ int main(int argc, char** argv) {
 				open = open || kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Rock || kind == SurfaceKind::Shore || kind == SurfaceKind::Path;
 			}
 			doorBlocked += !open;
+		}
+		if (!grid->entrances.empty()) {
+			// Iteration 27: the cave below the entrances and its reachability from the start.
+			const auto cave = generateCave(*grid, seed);
+			const auto under = cave ? undergroundReachabilityOf(*grid, *cave, true) : std::unexpected(UndergroundError::InvalidGrid);
+			if (under) std::cout << std::format("under seed {}: entrances {} entrancesReached {} caveCells {} caveCellsPer64k {} components {} pockets {} reachedPermille {}\n", seed, under->entrances, under->entrancesReached,
+				under->caveCells, under->caveCells * 65536 / grid->cells.size(), under->caveComponents, under->pockets, under->caveCells ? under->caveReachedCells * 1000 / under->caveCells : 0);
 		}
 		if (const auto graph = buildRegionGraph(*grid, true)) {
 			// Iteration 24: size of the graph, POIs without a route from the start, travel distances and whether the adjacency graph is connected.

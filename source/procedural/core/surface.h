@@ -48,6 +48,8 @@ struct SurfaceGrid {
 	std::vector<uint32_t> sites;
 	// Camp fires (G5 iteration 26): one Path cell in the middle of every camp clearing. Empty unless camps are on.
 	std::vector<uint32_t> fires;
+	// Z entrances (G5 iteration 27): Rock cells on the edge of a rock band that lead down to the cave below (same x, y one floor lower).
+	std::vector<uint32_t> entrances;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };
