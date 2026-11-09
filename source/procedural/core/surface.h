@@ -52,10 +52,10 @@ struct SurfaceGrid {
 uint32_t surfaceValueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step);
 uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y);
 
-// Shore smoothing (G4 iteration 18), exposed for tests: `passes` rounds of a 7 x 7 majority filter over Shore, Grass and Dirt
-// cells within 9 cells of a Lake cell (Lake counts as sand, Rock and the edge of the area are not counted); cells next to a Lake cell
+// Shore smoothing (G4 iteration 18/20), exposed for tests: `passes` rounds of a (2r+1) x (2r+1) majority filter (r = `radius`, 0 means 3)
+// over Shore, Grass and Dirt cells within 3r cells of a Lake cell (Lake counts as sand, Rock and the edge of the area are not counted); cells next to a Lake cell
 // (8-neighbours) are left alone. A Shore cell that turns into land becomes Grass or Dirt by the majority in its window (tie: Grass).
-void smoothShores(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t passes);
+void smoothShores(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t passes, uint32_t radius = 0);
 
 // Spit trimming (G4 iteration 19), exposed for tests: a Shore cell that lies in a horizontal or vertical run of at most 2 Shore
 // cells with Lake or River at both ends becomes water (River when either end is River, otherwise Lake). One pass on a snapshot.

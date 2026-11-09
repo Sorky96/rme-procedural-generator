@@ -47,6 +47,7 @@ struct SurfaceTuning {
 	uint32_t fordLength = 0;          // longest water crossing (cells) a ford may span, 0..256; 0 = no fords (not part of a style profile)
 	uint32_t rockPasses = 0;          // 1 = trails may cross bands of rock (iteration 15); 0 = they go around (not part of a style profile)
 	uint32_t shoreSmoothing = 0;      // majority-filter passes that round the sand / grass edge near lakes, 0..4; 0 = as generated (not part of a style profile)
+	uint32_t shoreRadius = 0;         // window radius of the shore smoothing, 0..8; 0 = 3 (not part of a style profile)
 	bool operator==(const SurfaceTuning&) const = default;
 };
 

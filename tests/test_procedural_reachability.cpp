@@ -292,6 +292,32 @@ void testSmoothShores() {
 	check(none.cells == noneBefore.cells, "smoothing: 0 passes change nothing");
 }
 
+// Shore smoothing radius (iteration 20), 20 x 15: Lake x 0..1, Shore x 2..8, Grass x 9..19, plus a sand bump of depth 1 and length 5
+// at (9, 5..9). Radius 3 (7 x 7 windows) keeps the bump (e.g. (9,6): 26 sand of 49), radius 5 (11 x 11) removes it ((9,6): 60 sand of 121,
+// below the majority) and leaves the straight edge alone (e.g. (9,4): 55 of 110, not above half; (8,0): 37 of 66).
+void testShoreRadius() {
+	SurfaceGrid plain = grid(20, 15, SurfaceKind::Grass);
+	fillRect(plain, 0, 0, 1, 14, SurfaceKind::Lake);
+	fillRect(plain, 2, 0, 8, 14, SurfaceKind::Shore);
+	SurfaceGrid bump = plain;
+	fillRect(bump, 9, 5, 9, 9, SurfaceKind::Shore);
+	SurfaceGrid narrow = bump;
+	smoothShores(narrow.cells, 20, 15, 1, 3);
+	check(narrow.cells == bump.cells, "radius 3 keeps a bump of depth 1 and length 5");
+	SurfaceGrid zero = bump;
+	smoothShores(zero.cells, 20, 15, 1, 0);
+	check(zero.cells == narrow.cells, "radius 0 means 3");
+	SurfaceGrid wide = bump;
+	smoothShores(wide.cells, 20, 15, 1, 5);
+	check(wide.cells == plain.cells, "radius 5 removes the bump");
+	SurfaceGrid straight = plain;
+	smoothShores(straight.cells, 20, 15, 2, 5);
+	check(straight.cells == plain.cells, "radius 5 leaves a straight edge alone");
+	SurfaceGrid again = bump;
+	smoothShores(again.cells, 20, 15, 1, 5);
+	check(again.cells == wide.cells, "radius 5 is deterministic");
+}
+
 // Spit trimming (iteration 18/19), hand counted on 10 x 5 grids of Lake:
 //   Shore x 4..5 over the whole height (2 wide, water both sides): all 10 cells become Lake;
 //   Shore x 3..5 (3 wide): stays; a single Shore cell in the water becomes Lake; a run of 2 with Grass at one end stays;
@@ -378,6 +404,7 @@ int main() {
 	testNaturalFord();
 	testSmoothShores();
 	testTrimSpits();
+	testShoreRadius();
 	testSmallPocket();
 	testLakeAndFar();
 	testCrossCheck();
