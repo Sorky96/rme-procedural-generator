@@ -209,12 +209,26 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	if (configuredMemory <= 0 || configuredCount <= 0) return false;
 	const uint64_t limit = uint64_t(configuredMemory) * 1024 * 1024;
 	if (incoming > limit) return false;
+	if (terrainPair && (terrainPairCount >= 2 || current != terrainPairStart + terrainPairCount ||
+		current >= size_t(configuredCount) || memory_size > limit - incoming)) return false;
 	TerrainTransition transition(applyingTerrain);
 	// Roll back newly reserved map structure if any subsequent allocation/refusal fails.
 	BaseMap::TileReservation locations(editor.map, positions);
 	g_minimap.PrepareInvalidationSlot(editor.map);
 	if (stop.stop_requested() || !batch->canApply()) return false;
 	if (!batch->batch.front()->prepareExactSelection()) return false;
+	if (terrainPair) {
+		// Retain all prior history, including redo, until both floors have succeeded.
+		// Insertion is the last allocation; rollback needs only noexcept swaps and erasure.
+		auto slot = actions.emplace(actions.begin() + current, nullptr);
+		batch->commit();
+		terrainPairBatches[terrainPairCount++] = batch.get();
+		*slot = std::move(batch);
+		memory_size += incoming;
+		++current;
+		locations.commit();
+		return true;
+	}
 	size_t retained = memory_size;
 	for (size_t index = current; index < actions.size(); ++index) {
 		const auto bytes = actions[index]->memsize();
@@ -244,6 +258,39 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	// Script listeners may start a subsequent undoable edit only after the guard is released.
 	emitTerrainHistoryChange();
 	return true;
+}
+
+bool ActionQueue::beginTerrainPair() noexcept {
+	if (applyingTerrain || terrainPair) return false;
+	terrainPair = true;
+	terrainPairStart = current;
+	terrainPairCount = 0;
+	return true;
+}
+
+void ActionQueue::finishTerrainPair(bool success) noexcept {
+	ASSERT(terrainPair && current == terrainPairStart + terrainPairCount);
+	TerrainTransition transition(applyingTerrain);
+	if (!success) {
+		while (terrainPairCount) {
+			ASSERT(current && actions[current - 1].get() == terrainPairBatches[terrainPairCount - 1] &&
+				actions[current - 1]->getType() == ACTION_GENERATE_TERRAIN);
+			auto& batch = actions[current - 1];
+			batch->undo(); // exact prepared tile/selection swaps; no allocation or observers
+			memory_size -= batch->memsize();
+			actions.erase(actions.begin() + --current);
+			--terrainPairCount;
+		}
+	} else {
+		for (size_t i = current; i < actions.size(); ++i) memory_size -= actions[i]->memsize();
+		actions.erase(actions.begin() + current, actions.end());
+	}
+	terrainPair = false;
+	terrainPairCount = 0;
+	terrainPairBatches.fill(nullptr);
+	if (success) notifyTerrainTransition();
+	transition.release();
+	if (success) emitTerrainHistoryChange();
 }
 
 bool ActionQueue::undo() {

@@ -33,9 +33,13 @@ public:
 	prepareTerrainPreviewSteps(const Map& map, const rme::procedural::GenerationSnapshot& snapshot,
 		const rme::procedural::GroundPlan& plan, rme::procedural::PreviewBudget budget, std::stop_token stop);
 private:
-	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitValidatedTerrain(
+	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitTerrainUnits(
 		Editor& editor, const rme::procedural::PreparedTerrain& prepared,
 		rme::procedural::TerrainCommitBudget budget, std::stop_token stop);
+	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitValidatedTerrain(
+		Editor& editor, const rme::procedural::PreparedTerrain& prepared,
+		rme::procedural::TerrainCommitBudget budget, std::stop_token stop,
+		const rme::procedural::PreparedTerrain* retained = nullptr);
 };
 
 #endif

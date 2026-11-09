@@ -22,7 +22,7 @@ DrawOperations::commitTerrainPreview(const PreparedTerrain& prepared, const Gene
 	const GroundProfile& profile, TerrainCommitBudget budget, std::span<const uint8_t> mask, std::stop_token stop) {
 	const auto target = validateTerrainTarget(prepared, config, profile, mask, stop);
 	if (!target) return std::unexpected(TerrainCommitError(target.error()));
-	return commitValidatedTerrain(**target, prepared, budget, stop);
+	return commitTerrainUnits(**target, prepared, budget, stop);
 }
 
 std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError>
@@ -30,12 +30,45 @@ DrawOperations::commitSelectedTerrainPreview(const PreparedTerrain& prepared, co
 	const GenerationConfig& config, const GroundProfile& profile, TerrainCommitBudget budget, std::stop_token stop) {
 	const auto target = validateSelectedTerrainTarget(prepared, selection, config, profile, stop);
 	if (!target) return std::unexpected(TerrainCommitError(target.error()));
-	return commitValidatedTerrain(**target, prepared, budget, stop);
+	return commitTerrainUnits(**target, prepared, budget, stop);
+}
+
+std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError>
+DrawOperations::commitTerrainUnits(Editor& editor, const PreparedTerrain& prepared, TerrainCommitBudget budget, std::stop_token stop) {
+	if (!prepared.cave) return commitValidatedTerrain(editor, prepared, budget, stop);
+	if (!editor.actionQueue || !editor.actionQueue->beginTerrainPair()) return failure(TerrainCommitFailure::BusyHistory);
+	const auto lower = commitValidatedTerrain(editor, *prepared.cave, budget, stop, &prepared);
+	if (!lower) {
+		editor.actionQueue->finishTerrainPair(false);
+		return lower;
+	}
+	// No observer, GUI dispatch or Lua event runs inside the pair. Revision publication is deferred.
+	// Check that exact revision and every captured surface value before applying the second step.
+	const auto revision = editor.map.getChangeTracker().getGeneration();
+	Result surface = failure(TerrainCommitFailure::MemoryLimit);
+	if (!snapshotMatchesMapAtRevision(editor.map, prepared.snapshot, revision) || revision != prepared.snapshot.input.mapRevision) {
+		surface = std::unexpected(TerrainCommitError(TargetValidationError(PreparedValidationError::StaleMap)));
+	} else if (lower->transitionBytes <= budget.maxBytes && lower->changes <= budget.maxChanges) {
+		budget.maxBytes -= lower->transitionBytes;
+		budget.maxChanges -= lower->changes;
+		surface = commitValidatedTerrain(editor, prepared, budget, stop);
+	}
+	if (!surface) {
+		editor.actionQueue->finishTerrainPair(false);
+		// Both source snapshots must be restored, including location metadata and the original revision.
+		ASSERT(snapshotMatchesMap(editor.map, prepared.snapshot) && snapshotMatchesMap(editor.map, prepared.cave->snapshot));
+		return surface;
+	}
+	surface->changes += lower->changes;
+	surface->transitionBytes += lower->transitionBytes;
+	surface->totalBytes += lower->transitionBytes;
+	editor.actionQueue->finishTerrainPair(true);
+	return surface;
 }
 
 std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError>
 DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& prepared,
-	TerrainCommitBudget budget, std::stop_token stop) {
+	TerrainCommitBudget budget, std::stop_token stop, const PreparedTerrain* retained) {
 	if (!editor.actionQueue || editor.actionQueue->isApplyingTerrain()) return failure(TerrainCommitFailure::BusyHistory);
 	if (LuaAPI::isTransactionActive()) return failure(TerrainCommitFailure::ActiveLuaTransaction);
 	if (stop.stop_requested()) return failure(TerrainCommitFailure::Cancelled);
@@ -51,31 +84,48 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 	};
 	// Public accounting fields are not authority. Recount retained containers/payload and use the
 	// private preview estimate, then retain the larger original preparation charge (no refunds).
-	const auto& snapshot = prepared.snapshot;
-	if (!charge(sizeof(PreparedTerrain) + preparationScratchBytes + 8 * kSnapshotAllocationOverhead) ||
-		!charge(snapshot.cells.capacity(), sizeof(SnapshotCell)) ||
-		!charge(snapshot.input.mask.capacity()) || !charge(snapshot.input.protection.capacity()) ||
-		!charge(prepared.plan.items.capacity(), sizeof(uint16_t)) || !charge(prepared.plan.decor.capacity(), sizeof(uint16_t)) ||
-		!charge(prepared.plan.client.capacity() + 1) || !charge(prepared.preview.getEstimatedPeakBytes())) {
-		return failure(TerrainCommitFailure::MemoryLimit);
-	}
-	for (const auto& name : prepared.plan.profile.active()) {
-		if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return failure(TerrainCommitFailure::MemoryLimit);
-	}
-	for (const auto& name : prepared.plan.profile.activeDecor()) {
-		if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return failure(TerrainCommitFailure::MemoryLimit);
-	}
-	for (const auto& cell : snapshot.cells) {
-		if (stop.stop_requested()) return failure(TerrainCommitFailure::Cancelled);
-		if (!charge(cell.houseExits.capacity(), sizeof(uint32_t))) return failure(TerrainCommitFailure::MemoryLimit);
-		if (!cell.original) continue;
-		const auto estimate = estimateSnapshotTileMemory(*cell.original, budget.maxBytes - used, stop);
-		if (!estimate) return failure(estimate.error() == SnapshotMemoryError::Cancelled ?
-			TerrainCommitFailure::Cancelled : TerrainCommitFailure::MemoryLimit);
-		if (!charge(estimate->bytes)) return failure(TerrainCommitFailure::MemoryLimit);
-	}
-	used = std::max(used, prepared.memory.totalBytes);
-	if (used > budget.maxBytes) return failure(TerrainCommitFailure::MemoryLimit);
+	const auto recount = [&](auto&& self, const PreparedTerrain& unit) -> std::expected<void, TerrainCommitFailure> {
+		const auto& snapshot = unit.snapshot;
+		if (!charge(sizeof(PreparedTerrain) + preparationScratchBytes + 8 * kSnapshotAllocationOverhead) ||
+			!charge(snapshot.cells.capacity(), sizeof(SnapshotCell)) ||
+			!charge(snapshot.input.mask.capacity()) || !charge(snapshot.input.protection.capacity()) ||
+			!charge(unit.plan.items.capacity(), sizeof(uint16_t)) || !charge(unit.plan.decor.capacity(), sizeof(uint16_t)) ||
+			!charge(unit.plan.client.capacity() + 1) || !charge(unit.preview.getEstimatedPeakBytes())) {
+			return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
+		for (const auto* name : {&unit.plan.profile.wall, &unit.plan.profile.door, &unit.plan.profile.campfire,
+			&unit.plan.profile.caveEntrance, &unit.plan.profile.caveExit, &unit.plan.profile.caveGround}) {
+			if (!charge(name->capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
+		for (const auto layer : {std::span(unit.plan.walls), std::span(unit.plan.fires), std::span(unit.plan.entrances),
+			std::span(unit.plan.exitTops), std::span(unit.plan.exits)}) {
+			if (!charge(layer.size(), sizeof(uint16_t))) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
+		if (!charge(unit.plan.caveFloor.capacity()) || !charge(unit.plan.doors.capacity())) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		for (const auto& name : unit.plan.profile.active()) {
+			if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
+		for (const auto& name : unit.plan.profile.activeDecor()) {
+			if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
+		for (const auto& cell : snapshot.cells) {
+			if (stop.stop_requested()) return std::unexpected(TerrainCommitFailure::Cancelled);
+			if (!charge(cell.houseExits.capacity(), sizeof(uint32_t))) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+			if (!cell.original) continue;
+			const auto estimate = estimateSnapshotTileMemory(*cell.original, budget.maxBytes - used, stop);
+			if (!estimate) return std::unexpected(estimate.error() == SnapshotMemoryError::Cancelled ?
+				TerrainCommitFailure::Cancelled : TerrainCommitFailure::MemoryLimit);
+			if (!charge(estimate->bytes)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
+		used = std::max(used, unit.memory.totalBytes);
+		if (used > budget.maxBytes) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		if (unit.cave) {
+			const auto result = self(self, *unit.cave);
+			if (!result) return result;
+		}
+		return {};
+	};
+	if (const auto result = recount(recount, retained ? *retained : prepared); !result) return failure(result.error());
 	const auto preparationBytes = used;
 	const auto beforeSelection = used;
 	if (!charge(uint64_t(editor.selection.size()) + positions.size(), 3 * sizeof(Tile*)) ||
