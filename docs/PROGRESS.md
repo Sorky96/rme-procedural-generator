@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: naturalniejszy kształt brodu (iteracja 14d) — PARTIAL
+
+Po decyzji użytkownika („wolę naturalny wygląd”) dłuższe brody (≥ 8 komórek wody) mają wychyloną oś (do 4 komórek) i zmienną szerokość 3/5; krótsze bez zmian. Testy właściwości na szerokiej wodzie, sonda na zatwierdzonej mapie (443 kafle brodu, 0 blokujących, 7 kieszeni połączonych), liczby seedów z zamkniętymi budynkami bez zmian, 16 testów rdzenia i obie sondy G1 PASS. „Naturalny” ocenia użytkownik. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14d”.
+
 ## 2026-11-09 — G5: rozszerzone końce brodu (iteracja 14c) — PARTIAL
 
 Po uwadze użytkownika (bród zbyt wąski na początku i końcu) końce brodu mają teraz piaszczysty „wlot” o promieniu 3; styk z lądem rośnie z 2 do 4–7 kafli. Sonda sprawdza flagi blokowania i łączność na zatwierdzonej mapie (0 blokujących, kieszenie połączone), liczby seedów z zamkniętymi budynkami bez zmian, 16 testów rdzenia i obie sondy G1 PASS. Wygląd i chodzenie w grze czekają na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14c”.
