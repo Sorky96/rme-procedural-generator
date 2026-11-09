@@ -390,3 +390,15 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 **Kryteria dodatkowe.** `buildingDensity` 0 bez zmian (odcisk Seed 1729); 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne; decyduje ocena wzrokowa użytkownika (jego wybór ma pierwszeństwo przed metryką).
 
 **Zastrzeżenia z góry.** Krótszy zasięg zostawi więcej budynków bez trasy (to cena skrócenia, mierzona jako odsetek bez dojścia); L liczone tylko dla `pathLength` 0, z długimi szlakami 9d suma będzie większa o ich wkład; pasmo dla L pochodzi z dwóch map (D17); zakres {16, 24, 36} wybrany z góry, nie dopasowany.
+
+### Iteracja 12h — szlaki do drzwi mają dokądś prowadzić (zapisana 2026-11-09 przed implementacją i przed pomiarem; powód: ocena wzrokowa użytkownika po 12g, trzy zrzuty)
+
+**Obserwacje użytkownika (GUI, `pathLength` 0):** (1) pojedyncze schodki bez trasy wyglądają jak kikuty; (2) trasy między sąsiednimi budynkami kończą się tuż przed celem (np. zrzut 3: zaokrąglona plama pod budynkiem urywa się 2 kafle od kikuta drugich drzwi), więc nie wyglądają, jakby gdzieś prowadziły. Przyczyny: (1) schodek powstaje zawsze, także gdy nie ma z czym go połączyć (12g); (2) wygładzenie trasy średnią ruchomą skraca jej końce, a stemplowanie nie dochodzi do punktu startu i celu.
+
+**Zmiany (obie dotyczą tylko budynków; `buildingDensity` 0 i długie szlaki 9d bez zmian bajt w bajt).**
+1. `PathRouter::connect` dostaje opcję `reachEnds` (włączaną tylko dla tras do drzwi): oprócz wygładzonej linii stemplowane są odcinki od schodka do początku linii i od jej końca do celu.
+2. Schodek powstaje tylko wtedy, gdy budynek ma cel: kafel Path w ≤ `doorTrailReach` (24) od środka (jak dotąd) **albo** jeszcze nieprzetworzony budynek w tym zasięgu (środek–środek, Czebyszew), któremu drzwi się przyłączą: wtedy schodek jest znacznikiem czekającym na partnera, a partner znajdzie go jako cel. Budynek bez żadnego celu nie dostaje schodka (drzwi wychodzą prosto na trawę/grunt).
+
+**Ocena (seedy 1001–1032, bok 512, v10, `pathLength` 0, `buildingDensity` 30 / 40).** (a) L (mediana) ≤ 1,5·ref (≤ 105 m06, ≤ 117 m19) przy `doorTrailReach` 24; jeśli nie, wartość 16 (jedyna alternatywa, zapisana z góry); (b) **kikuty**: odsetek drzwi, których schodek jest jedynym drzwiami w swojej składowej Path (8-spójnej), ≤ 100 ‰ (cel: 12g miało ok. 650–670 ‰ „izolowanych”, z czego większość to właśnie kikuty); (c) raportuję odsetek drzwi bez schodka (budynki bez celu) oraz G, Kn, Ks, Ki, Kb, Dp (powinny zostać bez zmian); (d) testy: 15 testów rdzenia + sondy G1 PASS po przebudowaniu `rme`, dwa przebiegi bajtowo identyczne, wszystkie drzwi nadal na obrysie, schodek (jeśli jest) to Path przed drzwiami; (e) decyduje ocena wzrokowa użytkownika.
+
+**Zastrzeżenia z góry.** Pary budynków mogą się łączyć trasą wąską lub łamaną (A* ze stałymi kosztami); budynek, którego partner nie uzyska trasy (limit długości, brak drogi), zostaje z kikutem (to właśnie mierzy (b)); zmiana po obserwacji trzech zrzutów jednego użytkownika; zasięg 24 w dalszym ciągu nie badany pod kątem czułości.
