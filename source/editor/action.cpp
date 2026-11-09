@@ -869,7 +869,7 @@ size_t BatchAction::memsize(bool recalc) const {
 
 void BatchAction::addAction(std::unique_ptr<Action> action) {
 	// If empty, do nothing.
-	if (action->size() == 0) {
+	if (action->size() == 0 && type != ACTION_GENERATE_TERRAIN) {
 		return;
 	}
 
@@ -886,7 +886,7 @@ void BatchAction::addAction(std::unique_ptr<Action> action) {
 
 void BatchAction::addAndCommitAction(std::unique_ptr<Action> action) {
 	// If empty, do nothing.
-	if (action->size() == 0) {
+	if (action->size() == 0 && type != ACTION_GENERATE_TERRAIN) {
 		return;
 	}
 

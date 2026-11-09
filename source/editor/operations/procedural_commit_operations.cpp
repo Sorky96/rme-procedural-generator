@@ -117,12 +117,12 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 				TerrainCommitFailure::Cancelled : TerrainCommitFailure::MemoryLimit);
 			if (!charge(estimate->bytes)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
-		used = std::max(used, unit.memory.totalBytes);
-		if (used > budget.maxBytes) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		if (unit.cave) {
 			const auto result = self(self, *unit.cave);
 			if (!result) return result;
 		}
+		used = std::max(used, unit.memory.totalBytes);
+		if (used > budget.maxBytes) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		return {};
 	};
 	if (const auto result = recount(recount, retained ? *retained : prepared); !result) return failure(result.error());
@@ -163,7 +163,7 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 	const auto transitionBytes = used - preparationBytes;
 	// The existing queue's cached batch memory field is uint32_t. Fail closed before it can wrap.
 	if (transitionBytes > UINT32_MAX) return failure(TerrainCommitFailure::MemoryLimit);
-	if (positions.empty()) return TerrainCommitReceipt {0, transitionBytes, used, prepared.preview.getFingerprint()};
+	if (positions.empty() && prepared.plan.caveFloor.empty() && !prepared.cave) return TerrainCommitReceipt {0, transitionBytes, used, prepared.preview.getFingerprint()};
 	try {
 		auto action = editor.actionQueue->createAction(ACTION_GENERATE_TERRAIN);
 		action->changes.reserve(positions.size());

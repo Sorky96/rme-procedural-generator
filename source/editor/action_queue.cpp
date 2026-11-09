@@ -201,7 +201,7 @@ void ActionQueue::notifyTerrainTransition(bool selectionCountChanged) noexcept {
 bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	std::span<const Position> positions, std::stop_token stop) {
 	if (applyingTerrain || !batch || batch->getType() != ACTION_GENERATE_TERRAIN ||
-		batch->size() != 1 || positions.empty() || editor.live_manager.IsLive() ||
+		batch->size() != 1 || (positions.empty() && !terrainPair) || editor.live_manager.IsLive() ||
 		LuaAPI::isTransactionActive() || editor.selection.isBusy() || editor.selection.isDeferred()) return false;
 	const auto incoming = batch->memsize();
 	const auto configuredMemory = g_settings.getInteger(Config::UNDO_MEM_SIZE);
