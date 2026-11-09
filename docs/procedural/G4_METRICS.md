@@ -504,3 +504,24 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 4. Ocena wyglądu przez użytkownika ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** Stałe (3–30 komórek skały, 48 kroków, 4 kroki za skałą, co drugie podejście) to moje wybory; część seedów może nie mieć pasma skały w zasięgu, wtedy 75 % jest nieosiągalne i napiszę to; szlak przez skałę jest szeroki jak zwykły szlak (3–4 kafle); pędzel szlaku na skale nie był sprawdzany pod kątem blokowania.
+
+### Iteracja 17 — szlaki dochodzą do celu w skale i przechodzą przez wodę (zapisana 2026-11-09 przed implementacją i przed pomiarem; powód: uwagi użytkownika do iteracji 16, pięć zrzutów z GUI)
+
+**Uwagi użytkownika.** (1) Szlak przez skałę „nie dochodzi do żadnego miejsca, kończy się w skale”. (2) Wolałby szlak z `dirt` albo do wyboru. (3) Szlak, który dochodzi do rzeki, powinien przechodzić na drugi brzeg. (4) Poszarpane brzegi piasku i trawy przy jeziorze (osobna sprawa, poniżej).
+
+**Diagnoza (1).** `PathRouter::connect` wygładza trasę średnią kroczącą (okno 6), co skraca oba końce o kilka komórek; w iteracji 12h to naprawiłem opcją `reachEnds` tylko dla tras do drzwi. Szlaki z `drawPaths` jej nie mają, a cel „po drugiej stronie skały” leży 4 komórki za skałą, więc trasa urywa się w skale.
+**Odpowiedź (2).** Pole „Path brush” jest listą wszystkich pędzli gruntu; `dirt` można wybrać dziś bez zmian w kodzie. Nie zmieniam domyślnego (cobblestone), chyba że użytkownik zdecyduje inaczej.
+
+**Zmiany.**
+- 17a: `drawPaths` stempluje do rzeczywistego startu i celu (`reachEnds`) **tylko przy `rockPasses` = 1**; przy 0 bajt w bajt jak dotąd.
+- 17b: przy `fordLength` > 0 router (szlaki i trasy do drzwi) może przechodzić przez komórki **River** (nie Lake) za dodatkowe 25 na komórkę; komórki wody pod trasą i obramowaniem stają się **Shore (piasek), nie Path** (Path na wodzie dostaje blokującą krawędź wody, patrz 14b) i są oznaczone maską, więc późniejszy szlak nie zamienia ich w Path. Przy `fordLength` 0 bajt w bajt jak dotąd. Szerokość przejścia nie jest ograniczona poza kosztem (rzeki są wąskie), `fordLength` nie jest jej limitem w tej iteracji.
+
+**Miara (nowa, w `style_render`).** „Czubek” szlaku = komórka Path mająca ≤ 3 komórek Path wśród 8 sąsiadów (czapa końca trasy). `tipRock` = czubki z ≥ 3 komórkami Rock wśród 8 sąsiadów; `tipWater` = czubki z ≥ 3 komórkami River lub Lake wśród 8 sąsiadów; liczone na mapę. Seedy 1001–1032, bok 512, profile v10, `pathLength` 40 / 80, `buildingDensity` 30 / 40.
+
+**Kryteria.**
+1. `rockPasses` 1: liczba seedów z `tipRock` > 0 po zmianie ≤ 3 z 32 w obu profilach (stan sprzed zmiany zapisuję jako bazowy).
+2. `fordLength` 48 (obok `pathLength`): liczba seedów z `tipWater` > 0 co najmniej o połowę mniejsza niż przy `fordLength` 0 (stan bazowy zapisuję); seedy z zamkniętymi budynkami dla `fordLength` 8/16/32/48/64/256 podaję (mogą się zmienić; bez pasma).
+3. `rockPasses` 0 i `fordLength` 0: odcisk Seed 1729 i wynik `style_render` bez zmian, 16 testów rdzenia; sonda `--surface`: 0 blokujących kafli brodu i obok niego, kieszenie połączone; obie sondy G1 PASS; dwa przebiegi bajtowo identyczne.
+4. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Czubek to heurystyka (może liczyć też narożniki stempla); przejście szlaku przez rzekę to piaszczysty bród 3–4 kafle (nie most); trasy do drzwi też mogą przechodzić przez rzeki; nie sprawdzano, czy szlak przez rzekę wygląda dobrze; punkt (4) (poszarpane brzegi piasek/trawa) **nie jest w tej iteracji** — wymaga osobnej diagnozy.
