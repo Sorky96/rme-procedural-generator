@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: graf regionów (iteracja 24) — PARTIAL
+
+`buildRegionGraph`: regiony (Land, Rock, Water, ≥ 16 komórek), krawędzie sąsiedztwa z wagą i węzły POI (start, wejścia, wyjścia) z odległością trasy od startu; tylko rdzeń i `style_render`, bez GUI. Test ręczny 14×6 i 17 testów rdzenia oraz obie sondy G1 PASS; w 32 z 32 seedów wszystkie POI mają trasę, graf sąsiedztwa jest spójny. Od tej iteracji kryteria i wyniki G5 są w [G5_METRICS.md](procedural/G5_METRICS.md) i [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md).
+
 ## 2026-11-09 — G5: naprawa osiągalności i odrzucanie seedów (iteracja 23) — PARTIAL
 
 `repairReach` (pole „Repair unreachable places”, domyślnie zaznaczone) łączy brodem każdą składową z drzwiami lub wyjściem, której nie osiąga się z startu; `generateReachableSurface` odrzuca seedy, w których POI nie da się osiągnąć. Wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 48 z naprawą (28 i 29 bez) i przy 0 z naprawą. 16 testów rdzenia i obie sondy G1 PASS. Wygląd brodów z naprawy (do 256 komórek) czeka na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 23”.

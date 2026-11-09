@@ -376,7 +376,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 5 - Topologia i wielopiętrowe światy
 
-- [~] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze. Zrobione (2026-11-09): brody z piasku (Shore przez rzekę/jezioro, `fordLength` do 256) łączące odcięty ląd w obrębie jednego obszaru; kafle brodu sprawdzone sondą pod kątem blokowania, chodzenie w grze i wygląd nie sprawdzone ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14b”); graf regionów, POI, mosty z przedmiotem i przełęcze: nie zrobione.
+- [~] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze. Zrobione (2026-11-09): brody z piasku (Shore przez rzekę/jezioro, `fordLength` do 256) łączące odcięty ląd w obrębie jednego obszaru; kafle brodu sprawdzone sondą pod kątem blokowania, chodzenie w grze i wygląd nie sprawdzone ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14b”); mosty z przedmiotem i przełęcze: nie zrobione. Graf regionów zrobiony 2026-11-09 (`buildRegionGraph`, iteracja 24 w [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), tylko rdzeń).
 - [ ] Multi-level mountain logic i przejścia Z.
 - [ ] Jaskinie, dungeony, korytarze, komory, wejścia, wyjścia.
 - [~] Struktury: osady/ruiny/obozowiska, placement z kontrolą kolizji. Osady na powierzchni: rdzeń ma skupiska, drzwi i trasy do drzwi (2026-11-09), kryterium pomiarowe 12c nie spełnione, adapter i GUI drzwi zrobione, wygląd potwierdzony przez użytkownika ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”); ruiny, obozowiska i podziemia: nie zrobione.
