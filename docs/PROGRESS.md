@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: ognisko w obozowisku (iteracja 26) — PARTIAL
+
+Obozowisko ma ognisko w środku polany (pędzel doodad z pola „Campfire brush”, warstwa planu `fires`, niezależna od roślinności) i większą polanę (dysk 61 komórek, namiot 3×3 obok). Sonda `--surface` sprawdza mechanizm z zamiennikiem pędzla (klient 10.98 w repo nie ma pędzla „campfire”); 17 testów rdzenia PASS, wszystkie miejsca osiągnięte w 32 z 32 seedów, w m19 w niektórych seedach tylko 12 z 24 obozowisk. Wygląd i prawdziwe ognisko czekają na użytkownika. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 26”.
+
 ## 2026-11-09 — G5: ruiny i obozowiska (iteracja 25) — PARTIAL
 
 `ruinPercent` (ruina = budynek bez drzwi z lukami w murze) i `campCount` (polana z otwartym namiotem), `SurfaceGrid::gaps` i `sites`, luki przechodnie w walidatorze, resolver pomija ścianę na lukach, pola „Ruins (%)” i „Camps” w zakładce Buildings. Ruiny ≈ 29 % budynków, 24 obozowiska na mapę, wszystkie miejsca osiągnięte w 32 z 32 seedów po naprawie; sonda `--surface` z Commit, Undo, Redo i bez ściany na lukach PASS; 17 testów rdzenia PASS. Wygląd w GUI czeka na użytkownika. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 25”.
