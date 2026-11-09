@@ -4,6 +4,7 @@
 
 #include "app/managers/version_manager.h"
 #include "brushes/ground/ground_brush.h"
+#include "procedural/adapter/surface_resolver.h"
 #include "item_definitions/core/item_definition_store.h"
 #include <limits>
 #include <new>
@@ -47,6 +48,18 @@ uint64_t GroundPlan::fingerprint() const {
 			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
 		}
 	}
+	for (const auto [tag, layer] : {std::pair{0x65, std::span(entrances)}, std::pair{0x74, std::span(exitTops)}, std::pair{0x78, std::span(exits)}}) {
+		if (layer.empty()) continue;
+		hash = (hash ^ tag) * 1099511628211ULL;
+		for (const auto id : layer) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
+	if (!caveFloor.empty()) {
+		hash = (hash ^ 0x62) * 1099511628211ULL;
+		for (const auto cell : caveFloor) hash = (hash ^ cell) * 1099511628211ULL;
+	}
 	return hash;
 }
 
@@ -79,6 +92,7 @@ std::expected<GroundPlan, ResolveError> resolveGroundPlan(
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
 	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * sizeof(uint16_t);
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
+	if (hasCave(profile)) return std::unexpected(ResolveError::InvalidProfile);
 	if (profile.count != GroundProfile::groundRollCount) return std::unexpected(ResolveError::InvalidProfile);
 	for (const auto& name : profile.active()) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);

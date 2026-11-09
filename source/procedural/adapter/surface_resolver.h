@@ -5,8 +5,21 @@
 #include "procedural/adapter/ground_resolver.h"
 #include "procedural/core/decoration.h"
 #include "procedural/core/surface.h"
+#include "procedural/core/underground.h"
 
 namespace rme::procedural {
+
+struct CaveBrushes {
+	struct Items { uint16_t top = 0, ramp = 0, tail = 0; };
+	std::vector<ExitShape> shapes;
+	std::vector<Items> items;
+	std::vector<uint16_t> entrances;
+	uint16_t ground = 0;
+};
+
+[[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
+[[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile& profile, const GenerationConfig& config);
 
 // Resolves a surface grid into the same GroundPlan the rest of the pipeline already consumes.
 // profile.count must be GroundProfile::surfaceCount, with names in SurfaceKind order after

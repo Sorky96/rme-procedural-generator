@@ -34,6 +34,7 @@ struct GroundProfile {
 	std::string campfire;
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
+	std::string caveEntrance, caveExit, caveGround;
 };
 
 struct GroundPlan {
@@ -57,6 +58,11 @@ struct GroundPlan {
 	// Camp fire item per cell (0 = none); empty when the profile has no campfire brush, otherwise one entry per cell.
 	std::vector<uint16_t> fires;
 	[[nodiscard]] uint64_t fingerprint() const;
+	std::vector<uint16_t> entrances;
+	std::vector<uint16_t> exitTops;
+	std::vector<uint16_t> exits;
+	// Nonempty only for the lower-floor unit: authenticates sparse Floor placement and Solid borders.
+	std::vector<uint8_t> caveFloor;
 };
 
 // True when a ground brush of the profile has an outer border to "nothing": the border calculator then draws
