@@ -421,3 +421,17 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 5. Wszystkie testy rdzenia i obie sondy G1 PASS; `buildingDensity` 0 bez zmian bajt w bajt (odcisk Seed 1729 `17159159863505677800`).
 
 **Zastrzeżenia z góry.** Nie ma jeszcze POI ani „ustalonego startu” z G5 (start/POI w generatorze nie istnieją): ocena „POI osiągalne” = N/A, jedyne wymagane punkty to wejścia budynków. Przechodność Rock i Shore przyjęta, nie sprawdzona na kliencie (D22 do zapisu). Piętra i przejścia Z poza zakresem (generator działa na jednym piętrze).
+
+### Iteracja 14 — brody przez wodę (zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Mosty/brody”)
+
+**Zakres.** Wybrałem **brody**, nie mosty: bród to przejście z kafli Path ułożone na rzece lub jeziorze, więc używa siódmego pędzla (szlaku) i nie wymaga nowego pędzla ani identyfikatorów przedmiotów. Mosty z osobnym przedmiotem (drewno, balustrady) wymagają pędzla mostu w profilu i zostają poza zakresem (do TECH_DEBT).
+
+**Zmiana (tylko przy nowym polu `SurfaceTuning::fordLength`, dopisanym na końcu struktury; 0 = wyłączone = wynik bajt w bajt jak dotąd).** Po rzekach, szlakach i budynkach: dopóki istnieje składowa przechodnia ≥ 16 komórek (`reachabilityPocketCells`) poza największą, która ma w zasięgu ≤ `fordLength` komórek wody (River, Lake; ruch 4-sąsiedzki, tylko przez wodę) inną składową przechodnią, najmniejsza taka składowa (kolejność: najmniejszy numer etykiety w porządku wierszowym) dostaje bród: najkrótsza trasa przez wodę (BFS, remisy wg stałej kolejności sąsiadów) jest stemplowana jako Path razem z sąsiadami wodnymi trasy (ok. 3 szerokości). Po każdym brodzie składowe liczone od nowa. Model przechodności jak w iteracji 13 (ściany włączone). Brody powstają przed zastosowaniem maski i ochrony (komórki Preserve zostają Preserve).
+
+**Kryteria.**
+1. Testy ręcznie policzone: dwie połowy lądu rozdzielone rzeką szerokości 3 — `fordLength` 3 łączy je (1 składowa, trasa 3 komórek wody), `fordLength` 2 nie łączy; brak wody w zasięgu = bez zmian; dwa przebiegi identyczne; `fordLength` 0 = odcisk jak przed zmianą (Seed 1729: 17159159863505677800).
+2. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, ustawienia jak w iteracji 13, `fordLength` ∈ {8, 16, 32}): seedy z budynkami zamkniętymi (`sealed` > 0), największa składowa (‰), komórki Path dodane brodami na 65 536 kafli. **Kryterium przechodzenia: ≥ 29 z 32 seedów bez zamkniętych budynków (≥ 90 %) w obu profilach.** Wybór wartości: najmniejsza z {8, 16, 32} spełniająca kryterium w obu profilach; jeśli żadna, wartość 32 i werdykt NIE spełnione.
+3. Wszystkie testy rdzenia i obie sondy G1 PASS po przebudowie `rme`; przy `fordLength` 0 testy z odciskami bez zmian.
+4. Adapter/GUI: pole „Ford length” w oknie generatora (0 = wyłączone), profil musi mieć siódmy pędzel szlaku (jak przy `pathLength`); podgląd, Undo i Redo z brodami (przypadek sondy `--surface`); ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Bród z Path wygląda jak szara ścieżka przez wodę, nie jak most; nie sprawdzano, czy kafel Path na wodzie jest akceptowalny dla gracza (przechodni w grze zależy od pędzla szlaku). Ford może przeciąć długą rzekę w wielu miejscach (jedna rzeka dzieli ląd w wielu składowych); liczba brodów rośnie z liczbą składowych. Maska i ochrona mogą zerwać bród (Preserve). Walidator mierzy tylko model przechodności (D22).
