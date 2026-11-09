@@ -368,3 +368,13 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 **Ocena.** (1) Testy: plan z drzwiami ma odcisk inny niż bez, plan bez drzwi bajt w bajt jak dotąd; odmowy (drzwi bez ściany, nieznany rodzaj, profil bez 8 pędzli). (2) Sondy G1 `--commit` i `--surface` PASS po przebudowie `rme`; do sondy dojdzie przypadek ze ścianami i drzwiami (podgląd, zatwierdzenie, Undo, Redo, liczba drzwi = liczba budynków w obrębie maski). (3) GUI: ocena użytkownika (wygląd, kierunek drzwi względem szlaku, Undo/Redo); jego wybór wizualny ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** Czy wybrany pędzel ściany ma drzwi danego rodzaju dla wszystkich ułożeń, zależy od klienta i danych brushy; nieudany `canDraw` kończy podgląd błędem. Nie ma automatycznego przypisywania ID drzwi domu (poza zakresem). Rdzeń nie wie, jakiego rodzaju są drzwi.
+
+### Iteracja 12f — strona drzwi budynku bez szlaku (zapisana 2026-11-09 przed zmianą; powód: ocena wzrokowa użytkownika w GUI)
+
+**Obserwacja użytkownika (GUI, zrzut):** drzwi lewego górnego budynku są po lewej, a szlak biegnie z prawej i od dołu. Przyczyna w modelu 12b: budynek, przy którym w chwili przetwarzania nie ma jeszcze kafla Path w zasięgu 60, dostaje **losową** stronę drzwi, a późniejsze budynki łączą się potem z jego schodkiem, więc szlak okrąża budynek.
+
+**Zmiana (jedna reguła; nie zmienia rozmieszczenia budynków, więc G, Kn, Ks, Ki, Kb bez zmian).** Gdy nie ma celu w postaci kafla Path w zasięgu 60, strona drzwi jest zwrócona ku **środkowi najbliższego innego budynku** (każdego, także późniejszego w kolejności umieszczania) w odległości Czebyszewa ≤ 60; losowa strona zostaje tylko wtedy, gdy nie ma żadnego budynku w zasięgu. Trasy: bez zmian (budynek bez Path w zasięgu dostaje tylko schodek, następne łączą się z nim).
+
+**Ocena.** Kryteria 12c bez zmian; oczekiwanie: Dp i pozostałe cechy skupisk nie pogarszają się, a drzwi dwóch sąsiednich budynków są zwrócone ku sobie (test: dla pary budynków bez szlaku strona drzwi każdego jest stroną ku drugiemu). Decyduje oglądowa ocena użytkownika; rozbieżność z metryką odnotuję.
+
+**Zastrzeżenia z góry.** Zwrot ku najbliższemu budynkowi nie gwarantuje zwrotu ku docelowemu szlakowi; zmiana po obserwacji z jednego zrzutu.

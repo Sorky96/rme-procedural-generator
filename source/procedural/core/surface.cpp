@@ -318,7 +318,7 @@ std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t
 }
 
 // One door per foundation on the middle cell of the outline side that faces the nearest trail (or a random side when none
-// is within doorTargetReach); the cell in front of the door becomes Path and is routed to that trail. Buildings are taken in
+// is within doorTargetReach, else the nearest other building); the cell in front of the door becomes Path and is routed to that trail. Buildings are taken in
 // placement order, so each new one joins the trails the earlier ones made. Returns false when cancelled.
 bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config,
 	std::span<const Foundation> foundations, std::vector<uint32_t>& doors, std::stop_token stop) {
@@ -341,7 +341,16 @@ bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32
 			const int64_t dx = int64_t(target % width) * 2 - centreX2, dy = int64_t(target / width) * 2 - centreY2;
 			side = std::abs(dx) >= std::abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
 		} else {
-			side = int(random.bounded(4));
+			// No trail yet: face the nearest other building (also a later one), so neighbours look at each other.
+			int64_t nearest = int64_t(doorTargetReach) + 1, faceX2 = 0, faceY2 = 0;
+			for (const Foundation& other : foundations) {
+				if (&other == &f) continue;
+				const int64_t ox2 = int64_t(other.x0) + other.x1, oy2 = int64_t(other.y0) + other.y1;
+				const int64_t distance = std::max(std::abs(ox2 - centreX2), std::abs(oy2 - centreY2)) / 2;
+				if (distance < nearest) { nearest = distance; faceX2 = ox2 - centreX2; faceY2 = oy2 - centreY2; }
+			}
+			if (nearest <= int64_t(doorTargetReach)) side = std::abs(faceX2) >= std::abs(faceY2) ? (faceX2 > 0 ? 1 : 3) : (faceY2 > 0 ? 2 : 0);
+			else side = int(random.bounded(4));
 		}
 		const uint32_t midX = f.x0 + (f.x1 - f.x0) / 2, midY = f.y0 + (f.y1 - f.y0) / 2;
 		uint32_t doorX = midX, doorY = f.y0, stoopX = midX, stoopY = f.y0 - 1;
