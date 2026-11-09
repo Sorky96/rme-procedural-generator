@@ -355,3 +355,31 @@ Kwalifikują się trzy mapy (≥ 30 budynków): M06, M19, M01. M01 to według 11
 - Czy „budynek” to dom: Wall/Door w referencji obejmuje płoty, bramy i murki (D19); odległości 3, 8 i 12 są stałymi z góry, nie badano czułości na nie.
 - Piętra > 7, wnętrz, dachów, mostów.
 - Pomiaru generatora: baseline generatora w tych miarach (12c) nie był jeszcze liczony; projekt 12b nie został napisany.
+
+## Iteracja 12b–12d — skupiska, drzwi i szlaki do drzwi w rdzeniu (2026-11-09): PARTIAL, kryterium NIE spełnione
+
+Zakres od użytkownika: drzwi + szlaki do drzwi + skupiska. Model, stałe i kryteria zapisane przed implementacją i przed każdym pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12”: definicje `46b7024`, model 12b `7bccd95`, wynik 12c i zapis 12d `99c60d7`; zapisy sprawdzone grepem). Zaimplementowano w rdzeniu (commit `49e6737`): budynki w skupiskach (kotwice losowe, reszta dołączana w odstępie 3–6 kafli do już postawionego), jedne drzwi na budynek (`SurfaceGrid::doors`, środek strony zwróconej ku najbliższemu szlakowi w ≤ 60, inaczej strona losowa), schodek Path przed drzwiami i trasa do najbliższego szlaku (wspólny `PathRouter` wyodrębniony z `drawPaths`). Adapter (pędzel drzwi RME, plan, podgląd, okno generatora) **nie jest zrobiony**.
+
+**Pomiar generatora (seedy 1001–1032, bok 512, profile v10; ustawienia m06 pathLength 40 / buildingDensity 30, m19 80 / 40; mediana; dwa przebiegi bajtowo identyczne).**
+
+| Cecha | ref m06 | 12b (30 % kotwic) | 12d (60 %) | ref m19 | 12b | 12d |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| G (odstęp) | 4 | 4 ✓ | 4 ✓ | 4 | 4 ✓ | 4 ✓ |
+| Kn (×1000) | 11 167 | 5 875 ✗ | 9 375 ✓ | 11 955 | 4 750 ✗ | 7 500 ✗ (pasmo od 8 010) |
+| Ks | 1 | 2 ✗ | 2 ✗ | 1 | 3 ✗ | 2 ✗ |
+| Ki ‰ | 265 | 62 ✗ | 150 ✗ | 189 | 37 ✗ | 72 ✗ |
+| Kb ‰ | 661 | 850 ✗ | 741 ✗ (Δ 80) | 714 | 928 ✗ | 875 ✗ |
+| Bp − Cp (kierunek) | +79 | +924 ✓ | +910 ✓ | +184 | +908 ✓ | +896 ✓ |
+| Bv − Cv (kierunek) | −29 | −130 ✓ | −127 ✓ | −23 | −98 ✓ | −86 ✓ |
+| Dp − Dp0 (kierunek) | +261 | +503 ✓ | +527 ✓ | +204 | +495 ✓ | +509 ✓ |
+| **cechy zaliczone** | | 4 z 8 | **5 z 8** | | 4 z 8 | **4 z 8** |
+
+**Wynik: kryterium (≥ 75 % ocenianych cech) NIE spełnione ani w 12b, ani po zmianie 12d, w obu profilach.** Stałych dalej nie dobierałem (zapis z góry). Zmiana 12d (kotwice 60 %) poprawiła Kn i Ki, nie przywróciła Ki ani Ks; w stanie obecnym w kodzie jest 60 % (bliższe referencji niż 30 %), co jest odnotowane jako decyzja po zmianie modelu.
+
+**Co jest spełnione z założeń.** Dokładnie jedne drzwi na budynek, drzwi na obrysie, schodek Path, odstęp ≥ 3, drzwi znikają, gdy komórka przestała być Floor po masce (test `settlements`); `buildingDensity` 0 bez zmian: pinned odcisk Seed 1729 i PNG `pathLength` 80 / `buildingDensity` 0 dla 4 seedów **bajt w bajt** identyczne z rdzeniem sprzed zmian (porównanie dwóch binariów); 15 testów rdzenia PASS (`g5_run_suite.py --probes`: obie sondy G1 PASS po przebudowaniu `rme`).
+
+**Zmiany wyników (świadome).** Dla `buildingDensity` > 0: inne rozmieszczenie budynków, Path przed drzwiami i trasy; w sondzie `--surface` liczba komórek ściany dla 100×100 zmieniła się z 150 na 164 (250×250: 1 038 bez zmiany); odcisk `SURFACE_RESOLVER_SIZE` (bez budynków) bez zmiany. Test `buildings` rozluźniony: oprócz Floor dozwolone Path (Grass/Dirt/Shore → Path).
+
+**Odchylenia, których NIE oceniano kryterium.** (1) **Szlaki:** długość (L na 65 536) rośnie z 53 / 89 (9d) do 299 / 344 przy włączonych budynkach (ref 70 / 78), bo każdy budynek dostaje trasę do najbliższej sieci; pasma 9b nie dotyczą już tej konfiguracji. Do rozstrzygnięcia: mniej tras (np. tylko do kafla Path w ≤ 25, albo wspólne trasy klastra) albo `pathLength` 0. (2) **Bp = 1000 z konstrukcji** (schodek), więc ta cecha ma tylko kierunek. (3) Dn = 1 i Db = 1000 są idealizacją (ref 2–4 i 23–56 %).
+
+**Czego NIE zweryfikowano.** Adaptera i GUI (pędzel drzwi przez `DoorBrush`, Preview/Validate/Place/Undo/Redo z drzwiami i schodkami, wygląd osad); „bez dojścia” (odsetek budynków, których schodek nie łączy się z siecią) nie liczony; czułości na stałe 3–6, 12, 60; niezależnych map (D17); wpływu na udziały rodzajów (Path rośnie); wydajności; zachowania przy masce i chronionych komórkach poza testem `settlements`.

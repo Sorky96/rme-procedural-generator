@@ -379,7 +379,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 - [ ] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze.
 - [ ] Multi-level mountain logic i przejścia Z.
 - [ ] Jaskinie, dungeony, korytarze, komory, wejścia, wyjścia.
-- [ ] Struktury: osady/ruiny/obozowiska, placement z kontrolą kolizji.
+- [~] Struktury: osady/ruiny/obozowiska, placement z kontrolą kolizji. Osady na powierzchni: rdzeń ma skupiska, drzwi i trasy do drzwi (2026-11-09), kryterium pomiarowe nie spełnione, adapter drzwi i GUI nie zrobione ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”); ruiny, obozowiska i podziemia: nie zrobione.
 - [ ] Walidator osiągalności i automatyczny repair / seed rejection.
 
 **G5:** z ustalonego startu osiągalne są wymagane POI, prawidłowe wejścia i wyjścia Z oraz brak krytycznych odcięć.

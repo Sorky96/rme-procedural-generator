@@ -265,13 +265,13 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 
 // Optional building foundations (G4 iterations 11 and 12): rectangles of Floor, 7-11 by 5-9 cells in either orientation,
 // each with a margin of two cells that must be Grass or Dirt, so a foundation never touches water, rock, a beach, a path
-// or another one. 30 % of the attempts start a cluster at a random place; the rest put a building 3 to 6 cells from the
+// or another one. 60 % of the attempts start a cluster at a random place; the rest put a building 3 to 6 cells from the
 // side of one that is already there. Returns the foundations in placement order.
 struct Foundation {
 	uint32_t x0, y0, x1, y1;  // inclusive
 };
 
-constexpr uint32_t clusterAnchorPercent = 30;
+constexpr uint32_t clusterAnchorPercent = 60;
 constexpr uint32_t clusterGapMin = 3, clusterGapSpread = 4;  // gap 3..6
 constexpr uint32_t doorTargetReach = 60;                      // a door looks for a trail this close (Chebyshev, from the building centre)
 

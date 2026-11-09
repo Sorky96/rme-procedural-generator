@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5 część 1: osady (iteracja 12), kryterium NIE spełnione — PARTIAL
+
+Porządek (D20, D21): `g5_run_suite.py` (15 testów rdzenia + obie sondy G1 jednym poleceniem) i `g5_shape_table.py` (tabele kształtu, dwa przebiegi bajtowo identyczne) w repo; parametry kształtu m06/m19 zostają ręczne (decyzja w D20). Pomiar 12a w 19 referencjach (`g5_reference_settlements.py`): skupiska (odstęp najbliższego sąsiada 4, ok. 2,8 budynku na skupisko), budynki przy szlaku 6–8 razy częściej niż przeciętny kafel, brak związku z wodą, drzwi zwrócone ku szlakowi o 20–26 punktów procentowych częściej niż przypadek. Rdzeń: skupiska, jedne drzwi na budynek i trasy do drzwi; kryteria zapisane z góry **nie spełnione** (4–5 z 8 cech, próg 75 %) także po jednej zmianie stałej (12d). Szlaki są przy tym 4× dłuższe niż w referencji. Adapter (pędzel drzwi RME), okno generatora i GUI: **nie zrobione**. Szczegóły i czego nie zweryfikowano: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”. Gałąź `feature/procedural-g5-settlements` (od gałęzi PR #5), commity lokalne, bez push i PR.
+
 ## 2026-11-08 — G4: ściany budynków (iteracja 11c) — PARTIAL
 
 Na prośbę użytkownika podłogi budynków dostały ściany (bez drzwi): warstwa przedmiotów ścian w planie (`GroundPlan::walls`, `GroundProfile::wall`), walidacja w resolverze i podglądzie, wyrównanie elementów istniejącym `WallBrush::doWalls`, pola w oknie generatora. Mediana komórek obrysu w paśmie referencji (28 vs 30 / 24). Regresja G1 `--commit` PASS. Użytkownik potwierdził w GUI: budynki wyglądają jak realne, Preview/Validate/Place/Undo/Redo bez problemu. **Niezweryfikowane: e2e sondą na rzeczywistym kliencie (sonda G1 bez ścian).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
