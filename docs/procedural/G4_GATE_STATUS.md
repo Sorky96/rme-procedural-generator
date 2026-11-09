@@ -620,3 +620,21 @@ Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 21�
 **Nie zweryfikowano:** wyglądu okna (natywny `wxNotebook` w ciemnym motywie); działania przełączania zakładek z klawiatury i mnemoników; czy zakładki mają sensowną wysokość (Terrain ma 11 wierszy, najwięcej); czy pola nieaktywne (np. wagi przy stylu Natural surface) są czytelne.
 
 **Ocena użytkownika po 21 (2026-11-09, GUI): „Wygląda ok”.** Układ okna w zakładkach potwierdzony wzrokowo (kryterium 2 spełnione według użytkownika; zachowanie Preview / Validate / Place / Undo nie było osobno opisane).
+
+## Iteracja 22 — POI i ustalony start w walidatorze osiągalności (2026-11-09): PARTIAL, kryterium 2 spełnione dla `fordLength` 256
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 22”, commit `089c45d`; grep potwierdził). Zaimplementowano `poiReachabilityOf` w `reachability.*`: start = przechodnia komórka najbliższa środkowi obszaru (nie musi leżeć w największej składowej), wejścia = komórki drzwi, wyjścia = po jednej na bok (przechodnia komórka brzegu najbliższa środkowi boku); punkt osiągnięty, gdy leży w składowej startu. Czysta funkcja liczącą, generator i GUI bez zmian; wiersz `poi` w `style_render`. Zakres: powierzchnia jednego piętra (wyjścia Z i podziemia: osobny etap; decyzja domyślna, użytkownik nie odpowiedział na pytanie o zakres).
+
+**Kryterium 1: spełnione.** Testy ręczne (jezioro: start (3,2) z remisu, 4 wyjścia, 3 osiągnięte, składowa startu 20 z 40; budynek z drzwiami: wejście i 4 wyjścia osiągnięte; bez drzwi start w zamkniętej izbie nie osiąga żadnego wyjścia, składowa 9; bok z wodą bez wyjścia; siatka z samą wodą bez startu; pusta siatka nieprawidłowa) oraz porównanie z niezależną implementacją (przeszukiwanie od startu) na 80 losowych siatkach w dwóch trybach: 160 z 160 zgodnych. **Kryterium 3: spełnione** (16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian; dwa przebiegi bajtowo identyczne).
+
+**Kryterium 2: spełnione dla `fordLength` 256.** Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80; seedy ze **wszystkimi** wejściami i wyjściami osiągniętymi z startu (m06 / m19), suma nieosiągniętych wejść / wyjść:
+
+| `fordLength` | m06 | m19 | nieosiągnięte wejścia (m06 / m19) | nieosiągnięte wyjścia (m06 / m19) |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 19 z 32 | 20 z 32 | 121 / 159 | 13 / 13 |
+| 48 | 28 z 32 | 29 z 32 | 2 / 2 | 3 / 3 |
+| **256** | **32 z 32** | **32 z 32** | 0 / 0 | 0 / 0 |
+
+Wymagane było ≥ 29 z 32 w obu profilach przy 256: jest 32 z 32 (przy 0 i 48 raportuję bez pasma; przy 48 m06 ma 28). Najmniejszy udział składowej startu w komórkach przechodnich: 647 ‰ przy 0, 978 ‰ przy 48, 999 ‰ przy 256.
+
+**Zastrzeżenia (z zapisu i nowe):** start „najbliższy środkowi” to mój wybór (w prawdziwej mapie start to miasto lub temple, którego generator nie tworzy); POI to dziś tylko drzwi i wyjścia brzegowe (nie ma ruin, obozowisk ani punktów z listy); wyjścia na bokach nie wiedzą, co leży w sąsiednich obszarach; **zasięg 256 oznacza bardzo długie ławice przez morze**, więc spełnienie kryterium kosztuje wygląd (oceniane wcześniej tylko przy 48); nie ma jeszcze naprawy ani odrzucania seedów (kolejny punkt planu); walidator nie jest podłączony do okna; model przechodności z D22. **Nie zweryfikowano:** wejść i wyjść Z, podziemi, piętra innego niż 7 (rdzeń jest od piętra niezależny, ale nie testowany), POI w oknie lub w sondzie RME.

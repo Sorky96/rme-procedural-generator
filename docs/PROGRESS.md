@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: POI i ustalony start w walidatorze (iteracja 22) — PARTIAL
+
+`poiReachabilityOf`: start najbliższy środkowi obszaru, wejścia (drzwi) i wyjścia (po jednym na bok); osiągalność z startu. Wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 256 (m06 i m19), 19 i 20 z 32 przy 0, 28 i 29 z 32 przy 48. Testy ręczne i porównanie z niezależną implementacją 160 z 160; 16 testów rdzenia i obie sondy G1 PASS. Zakres: powierzchnia jednego piętra, bez podłączenia do okna. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 22”.
+
 ## 2026-11-09 — okno generatora w zakładkach (iteracja 21) — wdrożone, czeka na ocenę użytkownika
 
 Okno „Generate Terrain” miało jedną kolumnę ok. 35 pól, która nie mieściła się na 1080p (uciety „Bush brush”, status nakładał się na pola). Pola są teraz w zakładkach Area, Terrain, Paths, Buildings i Vegetation; zachowanie bez zmian. `rme` buduje się, 16 testów rdzenia i obie sondy G1 PASS; układu nie sprawdzałem w GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 21”.
