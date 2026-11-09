@@ -43,6 +43,7 @@
 #include <wx/combobox.h>
 #include <wx/dcclient.h>
 #include <wx/image.h>
+#include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -292,21 +293,22 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	const int margin = Theme::Grid(4);
 	const wxColour fieldBackground = Theme::Get(Theme::Role::Background);
 	const wxColour fieldText = Theme::Get(Theme::Role::Text);
+	wxWindow* host = this;  // parent of the controls created next: the dialog, or the page of the current tab
 
-	const auto label = [this](const wxString& text) {
-		auto* control = newd wxStaticText(this, wxID_ANY, text);
+	const auto label = [&host](const wxString& text) {
+		auto* control = newd wxStaticText(host, wxID_ANY, text);
 		control->SetForegroundColour(Theme::Get(Theme::Role::Text));
 		return control;
 	};
 	const auto spin = [&](const wxString& name, int min, int max, int value) {
-		auto* control = newd wxSpinCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(Theme::Grid(24), -1), wxSP_ARROW_KEYS, min, max, value);
+		auto* control = newd wxSpinCtrl(host, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(Theme::Grid(24), -1), wxSP_ARROW_KEYS, min, max, value);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
 		return control;
 	};
 	const auto text = [&](const wxString& name, const wxString& value) {
-		auto* control = newd wxTextCtrl(this, wxID_ANY, value);
+		auto* control = newd wxTextCtrl(host, wxID_ANY, value);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
@@ -339,7 +341,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		// Only the preferred (or first) entry exists until the list is first opened: filling
 		// thousands of entries into eight lists made opening the dialog slow.
 		wxString initial = names.Index(preferred) != wxNOT_FOUND ? preferred : (names.IsEmpty() ? wxString() : names[0]);
-		auto* control = newd wxComboBox(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxCB_READONLY);
+		auto* control = newd wxComboBox(host, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxCB_READONLY);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
@@ -361,11 +363,25 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	};
 
 	// Inputs, in tab order.
-	auto* form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
-	form->AddGrowableCol(1, 1);
+	auto* sections = newd wxNotebook(this, wxID_ANY);
+	sections->SetName("terrain-sections");
+	sections->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
+	wxFlexGridSizer* form = nullptr;
+	const auto section = [&](const wxString& title) {
+		auto* page = newd wxPanel(sections, wxID_ANY);
+		page->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
+		host = page;
+		form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
+		form->AddGrowableCol(1, 1);
+		auto* box = newd wxBoxSizer(wxVERTICAL);
+		box->Add(form, 0, wxEXPAND | wxALL, margin);
+		page->SetSizer(box);
+		sections->AddPage(page, title);
+	};
+	section("Area");
 
 	form->Add(label("&Area:"), 0, wxALIGN_CENTER_VERTICAL);
-	scope_choice_ = newd wxChoice(this, wxID_ANY);
+	scope_choice_ = newd wxChoice(host, wxID_ANY);
 	scope_choice_->SetName("terrain-scope");
 	scope_choice_->Append("Empty rectangle");
 	scope_choice_->Append("Current selection");
@@ -401,6 +417,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	seed_text_ = text("terrain-seed", "1729");
 	form->Add(seed_text_, 1, wxEXPAND);
 
+	section("Terrain");
 	form->Add(label("&Grass weight:"), 0, wxALIGN_CENTER_VERTICAL);
 	grass_weight_spin_ = spin("terrain-grass-weight", 0, 1000, 3);
 	form->Add(grass_weight_spin_, 1, wxEXPAND);
@@ -426,7 +443,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(water_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Terrain &style:"), 0, wxALIGN_CENTER_VERTICAL);
-	style_choice_ = newd wxChoice(this, wxID_ANY);
+	style_choice_ = newd wxChoice(host, wxID_ANY);
 	style_choice_->SetName("terrain-style");
 	style_choice_->Append("Classic (random mix)");
 	style_choice_->Append("Natural surface (lakes, rivers, rock)");
@@ -434,7 +451,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(style_choice_, 1, wxEXPAND);
 
 	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
-	profile_choice_ = newd wxChoice(this, wxID_ANY);
+	profile_choice_ = newd wxChoice(host, wxID_ANY);
 	profile_choice_->SetName("terrain-profile");
 	profile_choice_->Append("Built-in (manual settings)");
 	profile_choice_->SetSelection(0);
@@ -449,6 +466,15 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
 	form->Add(shore_brush_choice_, 1, wxEXPAND);
 
+	form->Add(label("Smooth &beaches:"), 0, wxALIGN_CENTER_VERTICAL);
+	smooth_beaches_check_ = newd wxCheckBox(host, wxID_ANY, "Round the sand edge near lakes");
+	smooth_beaches_check_->SetName("terrain-smooth-beaches");
+	smooth_beaches_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	smooth_beaches_check_->SetValue(true);
+	smooth_beaches_check_->SetToolTip("Removes single sand cells, notches and checkerboard corners along the beaches of lakes.");
+	form->Add(smooth_beaches_check_, 1, wxEXPAND);
+
+	section("Paths");
 	form->Add(label("Pat&h length:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_length_spin_ = spin("terrain-path-length", 0, 400, 0);
 	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
@@ -459,16 +485,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a sand crossing up to this many water tiles wide. 0 = no fords. Uses the shore brush.");
 	form->Add(ford_length_spin_, 1, wxEXPAND);
 
-	form->Add(label("Smooth &beaches:"), 0, wxALIGN_CENTER_VERTICAL);
-	smooth_beaches_check_ = newd wxCheckBox(this, wxID_ANY, "Round the sand edge near lakes");
-	smooth_beaches_check_->SetName("terrain-smooth-beaches");
-	smooth_beaches_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
-	smooth_beaches_check_->SetValue(true);
-	smooth_beaches_check_->SetToolTip("Removes single sand cells, notches and checkerboard corners along the beaches of lakes.");
-	form->Add(smooth_beaches_check_, 1, wxEXPAND);
-
 	form->Add(label("Rock &passes:"), 0, wxALIGN_CENTER_VERTICAL);
-	rock_passes_check_ = newd wxCheckBox(this, wxID_ANY, "Paths may cross bands of rock");
+	rock_passes_check_ = newd wxCheckBox(host, wxID_ANY, "Paths may cross bands of rock");
 	rock_passes_check_->SetName("terrain-rock-passes");
 	rock_passes_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	rock_passes_check_->SetToolTip("Paths take the narrowest way through a rock band instead of going around it. Needs a path length above 0.");
@@ -478,6 +496,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
 	form->Add(path_brush_choice_, 1, wxEXPAND);
 
+	section("Buildings");
 	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
 	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
 	building_density_spin_->SetToolTip("Building foundations (floor rectangles, optional walls and doors) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
@@ -488,7 +507,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(floor_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("&Walls:"), 0, wxALIGN_CENTER_VERTICAL);
-	walls_check_ = newd wxCheckBox(this, wxID_ANY, "Add walls around the buildings");
+	walls_check_ = newd wxCheckBox(host, wxID_ANY, "Add walls around the buildings");
 	walls_check_->SetName("terrain-walls");
 	walls_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	form->Add(walls_check_, 1, wxEXPAND);
@@ -498,21 +517,22 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(wall_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("&Doors:"), 0, wxALIGN_CENTER_VERTICAL);
-	doors_check_ = newd wxCheckBox(this, wxID_ANY, "One door per building, with a trail to it");
+	doors_check_ = newd wxCheckBox(host, wxID_ANY, "One door per building, with a trail to it");
 	doors_check_->SetName("terrain-doors");
 	doors_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	doors_check_->SetToolTip("Replaces one wall piece of every building with a door facing the nearest trail. The wall brush must have doors of the chosen kind.");
 	form->Add(doors_check_, 1, wxEXPAND);
 
 	form->Add(label("Door &kind:"), 0, wxALIGN_CENTER_VERTICAL);
-	door_type_choice_ = newd wxChoice(this, wxID_ANY);
+	door_type_choice_ = newd wxChoice(host, wxID_ANY);
 	door_type_choice_->SetName("terrain-door-type");
 	for (const auto& kind : doorKinds) door_type_choice_->Append(wxString::FromUTF8(kind.first.data(), kind.first.size()));
 	door_type_choice_->SetSelection(0);
 	form->Add(door_type_choice_, 1, wxEXPAND);
 
+	section("Vegetation");
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
-	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
+	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
 	vegetation_check_->SetName("terrain-vegetation");
 	vegetation_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	form->Add(vegetation_check_, 1, wxEXPAND);
@@ -528,6 +548,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Stone brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	stone_brush_choice_ = brushChoice("terrain-stone-brush", "small rocks", true);
 	form->Add(stone_brush_choice_, 1, wxEXPAND);
+	host = this;
 	auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; placing adds one Undo step.");
 	helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	helper->Wrap(Theme::Grid(64));
@@ -536,7 +557,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	client_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 
 	auto* left = newd wxBoxSizer(wxVERTICAL);
-	left->Add(form, 0, wxEXPAND);
+	left->Add(sections, 1, wxEXPAND);
 	left->AddSpacer(Theme::Grid(3));
 	left->Add(helper, 0, wxEXPAND);
 	left->AddSpacer(gap);
