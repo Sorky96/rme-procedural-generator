@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: brody z piasku zamiast ze szlaku (iteracja 14b) — PARTIAL
+
+Uwaga użytkownika („tym mostem nie da się przejść”) trafna: brod z kafli Path dostawał blokującą krawędź `shallow water` (5 z 6 kafli w sondzie). Brody mają teraz rodzaj Shore (piasek), sonda sprawdza flagę blokowania kafli po Commit (0 z 6), limit zasięgu wzrósł z 64 do 256 (przy 256: 0 z 32 seedów z zamkniętymi budynkami w m06 i m19). 16 testów rdzenia i obie sondy G1 PASS. Wygląd i chodzenie w grze czekają na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14b”.
+
 ## 2026-11-09 — G5: brody przez wodę (iteracja 14) — PARTIAL
 
 Rdzeń ma `SurfaceTuning::fordLength` i `placeFords` (Path przez rzekę lub jezioro łączący odcięte składowe), okno generatora pole „Ford length”. 16 testów rdzenia i obie sondy G1 PASS (nowy `SURFACE_FORDS_E2E_PASS`). Kryterium z zapisu (≥ 90 % seedów bez zamkniętych budynków) NIE spełnione dla {8, 16, 32}: przy 32 zamknięte budynki ma 5 z 32 seedów (było 10); po fakcie 48 daje 2 z 32. Wygląd brodów czeka na ocenę użytkownika. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14”.
