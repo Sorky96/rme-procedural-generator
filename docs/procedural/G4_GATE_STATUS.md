@@ -506,3 +506,20 @@ Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14d
 ## Pomiar przed przełęczami (2026-11-09): w tym profilu skała jest przechodnia
 
 Sonda `--surface` (bok 250, `lakePermille` 450, profil `grass/dirt/rocky ground/sand/sea`, klient 10.98) liczy flagę blokowania kafli po Commit według rodzaju komórki (wiersz `KIND_BLOCKING`): **Rock 19 z 4983 blokujących (0,4 %)**, Shore 0 z 7705, Grass 116 z 17 293 (0,7 %); przykład kafla Rock: grunt `gravel` z elementami `rocks`, `grass`. Wniosek: skała z pędzla „rocky ground” **nie jest przeszkodą**, więc „przełęcz” nie rozwiązuje żadnego odcięcia osiągalności (model D22 dla Rock, Shore i Grass potwierdzony na tym profilu, z wyjątkiem pojedynczych kafli; przyczyna 19 + 116 blokujących kafli nie zbadana). Przełęcz mogłaby być tylko trasą szlaku przez skałę (dziś `PathRouter` nie przechodzi przez Rock) albo wymagałaby, żeby skała blokowała (ściany górskie, poza zakresem generatora).
+
+## Iteracja 15 — szlaki przez skałę (2026-11-09): PARTIAL, kryterium 2 NIE spełnione
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 15”, commit `eae361d`; grep potwierdził). Zaimplementowano `SurfaceTuning::rockPasses` (0/1, dopisane na końcu struktury, nie jest częścią profilu stylu): przy 1 `PathRouter` może wchodzić na komórki Rock za dodatkowe 40 (stała `passCrossCost`), komórki Rock pod trasą i obramowaniem stają się Path; pole „Rock passes” w oknie generatora (aktywne przy „Path length” > 0); odcisk konfiguracji planu z `rockPasses` tylko gdy ustawione; `style_render` ma wiersz `cut` (komórki Path z Rock w odległości ≤ 3 po obu stronach w jednej osi, na 65 536).
+
+**Kryterium 1: spełnione** (`rockPasses` 0: 16 testów rdzenia, odcisk Seed 1729 bez zmian). **Kryterium 3: spełnione** (dwa przebiegi bajtowo identyczne; obie sondy G1 PASS; sonda `--surface`: 443 kafle brodu, 0 blokujących, 7 kieszeni połączonych).
+
+**Kryterium 2: NIE spełnione.** Seedy 1001–1032, bok 512, profile v10, `pathLength` 40 / 80, `buildingDensity` 30 / 40:
+
+| `rockPasses`, koszt | m06: `cut` mediana (max), seedy z `cut` > 0 | m19: `cut` mediana (max), seedy z `cut` > 0 | L mediana m06 / m19 |
+| --- | ---: | ---: | ---: |
+| 0 | 0 (0), 0 z 32 | 0 (1), 1 z 32 | 166 / 295 |
+| **1, koszt 40 (zapisany)** | 0 (6), 3 z 32 | 0 (15), 8 z 32 | 162 / 296 |
+
+Wymagane było: mediana ≥ 2× większa niż przy 0 i `cut` > 0 w ≥ 24 z 32 seedów; wynik 3 i 8 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt 15 → 5 i 9 z 32; koszt 0 (skała bez dopłaty) → 13 i 22 z 32 (mediana `cut` m19 9). Nawet darmowe przejście przez skałę nie daje 24 z 32, więc **koszt nie jest wąskim gardłem**: szlaki łączą losowe punkty lądu i rzadko wymagają przejścia przez pasmo skały. Długość szlaków (L) bez regresji (162 / 296 wobec 166 / 295).
+
+**Wniosek.** Funkcja działa i nic nie psuje, ale w tych seedach prawie nie widać przełęczy; żeby je widzieć, szlaki musiałyby celowo łączyć obszary rozdzielone skałą (zmiana wyboru końców tras, osobna iteracja). Wygląd w GUI nie sprawdzony. **Nie zweryfikowano:** wyglądu; blokowania kafli Path na skale (sonda ich nie dotyka, bo `rockPasses` jest w sondzie wyłączone); pomiaru w referencjach (odchylenie opisane w zapisie); opcji 2 (skała blokująca z przełęczami): nie zaczęta.

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: szlaki przez skałę, „przełęcze” część 1 (iteracja 15) — PARTIAL
+
+Skała z pędzla „rocky ground” jest przechodnia (19 z 4983 kafli blokuje), więc przełęcz nie jest potrzebą osiągalności. Dodano `rockPasses` (szlaki mogą przechodzić przez pasma skały) i pole „Rock passes” w oknie. Kryterium „przecinające szlaki w ≥ 75 % seedów” NIE spełnione (3 i 8 z 32; nawet przy darmowej skale 13 i 22 z 32), bo szlaki łączą losowe punkty i rzadko muszą przejść przez skałę. 16 testów rdzenia i obie sondy G1 PASS. Opcja „skała blokująca + przełęcze” czeka. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 15”.
+
 ## 2026-11-09 — G5: naturalniejszy kształt brodu (iteracja 14d) — PARTIAL
 
 Po decyzji użytkownika („wolę naturalny wygląd”) dłuższe brody (≥ 8 komórek wody) mają wychyloną oś (do 4 komórek) i zmienną szerokość 3/5; krótsze bez zmian. Testy właściwości na szerokiej wodzie, sonda na zatwierdzonej mapie (443 kafle brodu, 0 blokujących, 7 kieszeni połączonych), liczby seedów z zamkniętymi budynkami bez zmian, 16 testów rdzenia i obie sondy G1 PASS. „Naturalny” ocenia użytkownik. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14d”.
