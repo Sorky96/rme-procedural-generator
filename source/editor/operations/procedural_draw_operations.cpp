@@ -16,6 +16,7 @@
 #include "map/tile_operations.h"
 #include "procedural/adapter/generation_snapshot.h"
 #include "procedural/adapter/ground_resolver.h"
+#include "procedural/adapter/surface_resolver.h"
 #include "procedural/adapter/snapshot_equal.h"
 #include "procedural/adapter/snapshot_memory.h"
 #include <algorithm>
@@ -33,9 +34,7 @@ constexpr uint64_t borderScratchBytes = 4096;
 bool sameConfig(const GenerationConfig& a, const GenerationConfig& b) noexcept { return a == b; }
 
 bool emptyContent(const Tile* tile) noexcept {
-	return !tile || (!tile->ground && tile->items.empty() && !tile->creature && !tile->spawn &&
-		!tile->house_id && !tile->mapflags && !tile->extra &&
-		!(tile->statflags & ~uint16_t(TILESTATE_BLOCKING)));
+	return emptyTerrainContent(tile);
 }
 
 bool protectedCell(const SnapshotCell& cell) noexcept {
@@ -137,6 +136,19 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	if (!plan.fires.empty()) {
 		hashField(hash, plan.fires.size());
 		for (const auto id : plan.fires) hashField(hash, id, 2);
+	}
+	for (const auto layer : {std::span(plan.entrances), std::span(plan.exitTops), std::span(plan.exits)}) {
+		if (layer.empty()) continue;
+		hashField(hash, layer.size());
+		for (const auto id : layer) hashField(hash, id, 2);
+	}
+	if (!plan.caveFloor.empty()) {
+		hashField(hash, 0x62, 1);
+		for (const auto cell : plan.caveFloor) hashField(hash, cell, 1);
+	}
+	if (hasCave(plan.profile)) {
+		string(plan.profile.caveEntrance); string(plan.profile.caveExit); string(plan.profile.caveGround);
+		hashField(hash, plan.config.surface.caveEntrances, 4);
 	}
 	return hash;
 }
@@ -254,15 +266,19 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		plan.profile.count != GroundProfile::surfaceWithPathCount && plan.profile.count != GroundProfile::surfaceWithFloorCount) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
+	const bool cave = !plan.caveFloor.empty();
+	if (!validCaveProfile(plan.profile, plan.config) || (cave && (!hasCave(plan.profile) || plan.caveFloor.size() != plan.items.size())))
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	if (cave && (!plan.decor.empty() || !plan.walls.empty() || !plan.doors.empty() || !plan.fires.empty())) co_return std::unexpected(PreviewError::InvalidPlan);
 	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
-		const auto* brush = g_brushes.getBrush(plan.profile.brushes[i]);
+		const auto* brush = g_brushes.getBrush(cave ? plan.profile.caveGround : plan.profile.brushes[i]);
 		brushes[i] = brush ? brush->as<GroundBrush>() : nullptr;
 		if (!brushes[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	const bool vegetation = plan.config.vegetation;
-	if (vegetation != !plan.decor.empty() || plan.profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0) ||
+	const bool vegetation = plan.config.vegetation && !cave;
+	if (vegetation != !plan.decor.empty() || (!cave && plan.profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) ||
 		(vegetation && (plan.decor.size() != plan.items.size() || plan.config.algorithm != GenerationAlgorithm::Surface))) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
@@ -279,10 +295,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		}
 	}
 	// Camp fire items (iteration 26): every single item of every variation of the campfire brush may be placed.
-	if (plan.profile.campfire.empty() != plan.fires.empty() || (!plan.fires.empty() && (plan.fires.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount))) {
+	if ((!cave && plan.profile.campfire.empty() != plan.fires.empty()) || (!plan.fires.empty() && (plan.fires.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount))) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	if (!plan.profile.campfire.empty()) {
+	if (!cave && !plan.profile.campfire.empty()) {
 		const auto* brush = plan.profile.campfire.size() <= 256 ? g_brushes.getBrush(plan.profile.campfire) : nullptr;
 		const auto* fireBrush = brush ? brush->as<DoodadBrush>() : nullptr;
 		if (!fireBrush) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -298,10 +314,24 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		}
 		if (!found) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
+	std::vector<uint16_t> entranceIds, topIds, exitIds;
+	if (hasCave(plan.profile)) {
+		const auto resolved = resolveCaveBrushes(plan.profile, plan.config);
+		if (!resolved) co_return std::unexpected(PreviewError::InvalidPlan);
+		entranceIds = resolved->entrances;
+		for (const auto& ids : resolved->items) {
+			topIds.push_back(ids.top); exitIds.push_back(ids.ramp);
+			if (ids.tail) exitIds.push_back(ids.tail);
+		}
+		if (cave ? (!plan.entrances.empty() || !plan.exitTops.empty() || plan.exits.size() != plan.items.size()) :
+			(!plan.exits.empty() || plan.entrances.size() != plan.items.size() || plan.exitTops.size() != plan.items.size()))
+			co_return std::unexpected(PreviewError::InvalidPlan);
+		for (const auto* ids : {&entranceIds, &topIds, &exitIds}) decorIds.insert(decorIds.end(), ids->begin(), ids->end());
+	} else if (cave || !plan.entrances.empty() || !plan.exitTops.empty() || !plan.exits.empty()) co_return std::unexpected(PreviewError::InvalidPlan);
 	// Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
 	std::vector<uint16_t> wallIds;
 	const WallBrush* wallBrush = nullptr;
-	if (!plan.profile.wall.empty()) {
+	if (!cave && !plan.profile.wall.empty()) {
 		const auto* brush = plan.profile.wall.size() <= 256 ? g_brushes.getBrush(plan.profile.wall) : nullptr;
 		wallBrush = brush ? brush->as<WallBrush>() : nullptr;
 		if (!wallBrush || plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -312,8 +342,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	} else if (!plan.walls.empty()) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	const auto doorType = plan.profile.door.empty() ? std::nullopt : doorTypeOf(plan.profile.door);
-	if (plan.profile.door.empty() != plan.doors.empty() || (!plan.profile.door.empty() && (!doorType || !wallBrush || plan.doors.size() != plan.items.size()))) {
+	const auto doorType = cave || plan.profile.door.empty() ? std::nullopt : doorTypeOf(plan.profile.door);
+	if ((!cave && plan.profile.door.empty() != plan.doors.empty()) || (!cave && !plan.profile.door.empty() && (!doorType || !wallBrush || plan.doors.size() != plan.items.size()))) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	std::ranges::sort(decorIds);
@@ -321,12 +351,19 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	uint64_t decorPlacements = 0;
 	uint64_t placements = 0;
 	// Surface leaves writable cells beside existing ground empty; every other cell must be placed.
-	const auto keepClear = plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot, profileNeedsEdgeClearance(plan.profile)) : std::vector<uint8_t>();
+	const auto keepClear = !cave && plan.config.algorithm == GenerationAlgorithm::Surface ? surfaceKeepClear(snapshot, profileNeedsEdgeClearance(plan.profile)) : std::vector<uint8_t>();
 	for (size_t i = 0; i < plan.items.size(); ++i) {
 		if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
 		if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x,y)]) ||
-			bool(plan.items[i]) != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
+			bool(plan.items[i]) != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]) && (!cave || plan.caveFloor[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (cave && (plan.caveFloor[i] > 1 || (plan.caveFloor[i] && (i % r.width < 2 || i / r.width < 2 || i % r.width + 2 >= r.width || i / r.width + 2 >= r.height)))) co_return std::unexpected(PreviewError::InvalidPlan);
+		for (const auto [layer, allowed] : {std::pair{std::span(plan.entrances), std::span(entranceIds)},
+			std::pair{std::span(plan.exitTops), std::span(topIds)}, std::pair{std::span(plan.exits), std::span(exitIds)}}) {
+			if (layer.empty() || !layer[i]) continue;
+			if (!plan.items[i] || std::ranges::find(allowed, layer[i]) == allowed.end()) co_return std::unexpected(PreviewError::InvalidItem);
+			++decorPlacements;
+		}
 		if (plan.decor.empty() ? false : bool(plan.decor[i]) && !plan.items[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.walls.empty() && plan.walls[i]) {
 			if (!plan.items[i] || !std::ranges::binary_search(wallIds, plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -481,6 +518,14 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.fires[i]));
 		}
+		for (const auto layer : {std::span(plan.entrances), std::span(plan.exitTops), std::span(plan.exits)}) {
+			for (size_t i = 0; i < layer.size(); ++i) {
+				if (!layer[i]) continue;
+				auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+				if (!tile || !tile->ground) co_return std::unexpected(PreviewError::InvalidPlan);
+				tile->addItem(Item::Create(layer[i]));
+			}
+		}
 		// Walls follow the vegetation: the pieces are placed with the brush's first item and RME's own wall logic then
 		// picks the right piece (straight, corner) from the neighbouring walls.
 		for (size_t i = 0; i < plan.walls.size(); ++i) {
@@ -523,6 +568,19 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 				if (position.x < r.x || position.y < r.y || int64_t(position.x) >= int64_t(r.x)+r.width ||
 					int64_t(position.y) >= int64_t(r.y)+r.height) co_return std::unexpected(PreviewError::OutOfMask);
 				const size_t index = size_t(position.y-r.y)*r.width+size_t(position.x-r.x);
+				if (cave) {
+					if (bool(tile && tile->ground) != bool(plan.items[index])) co_return std::unexpected(PreviewError::InvalidPlan);
+					if (!plan.caveFloor[index]) {
+						bool adjacent = false;
+						const int cx = int(index % r.width), cy = int(index / r.width);
+						for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+							if (cx + dx >= 0 && cy + dy >= 0 && cx + dx < int(r.width) && cy + dy < int(r.height))
+								adjacent |= bool(plan.items[size_t(cy + dy) * r.width + size_t(cx + dx)]);
+						}
+						if (!adjacent || !tile || std::ranges::any_of(tile->items, [](const auto& item) { return !item->isBorder(); }))
+							co_return std::unexpected(PreviewError::InvalidPlan);
+					}
+				}
 				if (!input.mask[index] || input.protection[index]) co_return std::unexpected(PreviewError::OutOfMask);
 				if (result.changes_.size() >= budget.maxChanges) co_return std::unexpected(PreviewError::Limit);
 				result.changes_.push_back(position);

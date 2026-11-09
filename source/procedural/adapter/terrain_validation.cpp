@@ -96,6 +96,13 @@ std::expected<void, PreparedValidationError> validatePreparedTerrain(
 		return fail(PreparedValidationError::InvalidPrepared);
 	}
 
+	if (prepared.cave) {
+		auto lowerConfig = currentConfig;
+		++lowerConfig.region.z;
+		if (prepared.cave->cave || prepared.cave->plan.caveFloor.empty()) return fail(PreparedValidationError::InvalidPrepared);
+		const auto lower = validatePreparedTerrain(map, *prepared.cave, lowerConfig, currentProfile, currentMask, stop);
+		if (!lower) return lower;
+	} else if (!plan.entrances.empty()) return fail(PreparedValidationError::InvalidPrepared);
 	if (stop.stop_requested()) return fail(PreparedValidationError::Cancelled);
 	return {};
 }

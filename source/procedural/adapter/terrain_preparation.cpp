@@ -100,7 +100,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	const uint8_t expectedBrushes = config.algorithm == GenerationAlgorithm::Surface ?
 		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
 	if (config.algorithm == GenerationAlgorithm::Surface) {
-		const uint8_t required = config.surface.buildingDensity || config.surface.campCount ? GroundProfile::surfaceWithFloorCount :
+		const uint8_t required = config.surface.buildingDensity || config.surface.campCount || hasCave(profile) ? GroundProfile::surfaceWithFloorCount :
 			config.surface.pathLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
 		if (profile.count != required) return fail(PreparationInputError::InvalidProfile);
 		if (!profile.wall.empty() && !config.surface.buildingDensity) return fail(PreparationInputError::InvalidProfile);
@@ -108,6 +108,17 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!profile.campfire.empty() && profile.count != GroundProfile::surfaceWithFloorCount) return fail(PreparationInputError::InvalidProfile);
 	} else if (profile.count != expectedBrushes) {
 		return fail(PreparationInputError::InvalidProfile);
+	}
+	if (!validCaveProfile(profile, config)) return fail(PreparationInputError::InvalidProfile);
+	if (hasCave(profile)) {
+		if (region.z >= MAP_MAX_LAYER) return fail(PreparationInputError::NoLowerFloor);
+		for (uint32_t y = 0; y < region.height; ++y) {
+			if (stop.stop_requested()) return fail(PreparationInputError::Cancelled);
+			for (uint32_t x = 0; x < region.width; ++x) {
+				if (!emptyTerrainContent(map.getTile(Position(region.x + int(x), region.y + int(y), region.z + 1))))
+					return fail(PreparationInputError::LowerFloorOccupied);
+			}
+		}
 	}
 	const bool vegetation = config.vegetation;
 	if (vegetation && config.algorithm != GenerationAlgorithm::Surface) return fail(PreparationInputError::InvalidParameters);
@@ -134,6 +145,9 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround}) {
+		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
+	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
 	// stage copies it. The view is used only here and never stored.
 	const uint64_t clientLength = g_version.GetCurrentVersionIDView().size();
@@ -150,7 +164,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1)) + (profile.door.empty() ? 0 : cellCount);
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -171,6 +185,12 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			return fail(PreparationInputError::MemoryLimit);
 		}
 		semanticBytes += 2 * cellCount + 2 * kSnapshotAllocationOverhead;
+		if (hasCave(profile)) {
+			// Cave cells, exit search occupancy, landings, queues, brush geometry and retained sparse plan.
+			// Conservative bound; charged before generating and never refunded.
+			if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 128) return fail(PreparationInputError::MemoryLimit);
+			semanticBytes += cellCount * 128 + 65536;
+		}
 		if (vegetation) {
 			if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes) / decorationBytesPerCell) {
 				return fail(PreparationInputError::MemoryLimit);
@@ -227,6 +247,7 @@ TerrainPreparationSteps runPreparation(
 
 		// The semantic grid lives only in this scope, so it is released before the sandbox exists.
 		GroundPlan plan;
+		std::unique_ptr<PreparedTerrain> cave;
 		{
 			if (input.config.algorithm == GenerationAlgorithm::Surface) {
 				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
@@ -244,6 +265,65 @@ TerrainPreparationSteps runPreparation(
 				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear);
 				if (!resolved) co_return fail(resolved.error());
 				plan = std::move(*resolved);
+				if (hasCave(profile)) {
+					auto brushes = resolveCaveBrushes(profile, input.config);
+					if (!brushes) co_return fail(brushes.error());
+					auto generated = generateCave(*grid, input.config.seed, stop);
+					if (!generated) co_return fail(fromSurface(generated.error()));
+					std::vector<uint8_t> occupied;
+					if (decor) {
+						occupied.resize(cellCount);
+						for (size_t i = 0; i < cellCount; ++i) occupied[i] = decor->cells[i] != DecorKind::None;
+					}
+					auto exits = placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
+					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
+						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
+					auto lowerConfig = input.config;
+					++lowerConfig.region.z;
+					if (!reserve(sizeof(PreparedTerrain) + planBytes)) co_return fail(PreparationInputError::MemoryLimit);
+					auto lowerSnapshot = captureGenerationSnapshot(map, lowerConfig, {budget.maxCells, semanticBytes},
+						{budget.maxContextCells, remaining}, mask, stop);
+					if (!lowerSnapshot) co_return fail(lowerSnapshot.error());
+					if (!reserve(lowerSnapshot->estimatedBytes)) co_return fail(PreparationInputError::MemoryLimit);
+					GroundPlan lowerPlan = {lowerConfig, profile, plan.client, input.mapGeneration, input.mapRevision, input.assetRevision,
+						generated->fingerprint(), std::vector<uint16_t>(cellCount, 0)};
+					lowerPlan.caveFloor.resize(cellCount);
+					lowerPlan.exits.assign(cellCount, 0);
+					plan.entrances.assign(cellCount, 0);
+					plan.exitTops.assign(cellCount, 0);
+					for (size_t i = 0; i < cellCount; ++i) {
+						const bool floor = generated->cells[i] == CaveKind::Floor;
+						lowerPlan.caveFloor[i] = floor;
+						if (floor && lowerSnapshot->input.mask[i] && !lowerSnapshot->input.protection[i]) lowerPlan.items[i] = brushes->ground;
+					}
+					for (const auto& exit : exits->exits) {
+						const auto e = grid->entrances[exit.entrance], p = exit.cell;
+						if (!plan.items[e] || !plan.items[p] || !lowerPlan.items[p]) continue;
+						const auto& ids = brushes->items[exit.shape];
+						const auto& shape = brushes->shapes[exit.shape];
+						const auto tail = size_t(int64_t(p) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
+						if (shape.hasTail && !lowerPlan.items[tail]) continue;
+						plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
+						if (!plan.decor.empty()) plan.decor[e] = 0;
+						plan.exitTops[p] = ids.top;
+						lowerPlan.exits[p] = ids.ramp;
+						if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
+					}
+					auto lowerSteps = DrawOperations::prepareTerrainPreviewSteps(map, *lowerSnapshot, lowerPlan,
+						{budget.maxChanges, remaining}, stop);
+					auto lower = lowerSteps.advance();
+					while (!lower) {
+						co_await std::suspend_always{};
+						if (g_version.GetAssetRevision() != input.assetRevision) co_return fail(PreviewError::StaleSnapshot);
+						lower = lowerSteps.advance();
+					}
+					if (!*lower) co_return fail(lower->error());
+					const auto lowerPreviewBytes = (**lower).getEstimatedPeakBytes();
+					if (!reserve(lowerPreviewBytes)) co_return fail(PreparationInputError::MemoryLimit);
+					const PreparationMemory lowerMemory {sizeof(PreparedTerrain), lowerSnapshot->estimatedBytes, 0, planBytes,
+						lowerPreviewBytes, sizeof(PreparedTerrain) + lowerSnapshot->estimatedBytes + planBytes + lowerPreviewBytes};
+					cave = std::make_unique<PreparedTerrain>(PreparedTerrain {std::move(*lowerSnapshot), std::move(lowerPlan), std::move(**lower), lowerMemory});
+				}
 			} else {
 				auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
 					input.mask, input.protection, stop);
@@ -271,6 +351,9 @@ TerrainPreparationSteps runPreparation(
 		const uint64_t previewBytes = preview->getEstimatedPeakBytes();
 		if (!reserve(previewBytes)) co_return fail(PreparationInputError::MemoryLimit);
 
+		if (cave && (cave->preview.getChanges().size() > budget.maxChanges - preview->getChanges().size())) co_return fail(PreparationInputError::ChangeLimit);
+		if (cave && !snapshotMatchesMap(map, cave->snapshot)) co_return fail(PreviewError::StaleSnapshot);
+
 		// Check the live source again before returning a result to either caller.
 		if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
 
@@ -279,7 +362,7 @@ TerrainPreparationSteps runPreparation(
 		const PreparationMemory memory {
 			infrastructureBytes, snapshotBytes, semanticBytes, planBytes, previewBytes, budget.maxBytes - remaining
 		};
-		co_return PreparedTerrain { std::move(*snapshot), std::move(plan), std::move(*preview), memory };
+		co_return PreparedTerrain { std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave) };
 	} catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
 	}

@@ -41,7 +41,7 @@ struct PreparationMemory {
 
 enum class PreparationInputError {
 	WrongThread, NoClient, InvalidProfile, MemoryLimit, ContextLimit,
-	ChangeLimit, Cancelled, AllocationFailed, InvalidParameters
+	ChangeLimit, Cancelled, AllocationFailed, InvalidParameters, LowerFloorOccupied, NoLowerFloor
 };
 
 // Stage failures are forwarded unchanged so callers see the exact module cause.
@@ -53,6 +53,7 @@ struct PreparedTerrain {
 	GroundPlan plan;
 	TerrainPreview preview;
 	PreparationMemory memory;
+	std::unique_ptr<PreparedTerrain> cave;
 };
 
 // Captures, generates, resolves and builds the DrawOperations preview for one region in a single
