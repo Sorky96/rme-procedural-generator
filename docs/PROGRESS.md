@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: brody przez wodę (iteracja 14) — PARTIAL
+
+Rdzeń ma `SurfaceTuning::fordLength` i `placeFords` (Path przez rzekę lub jezioro łączący odcięte składowe), okno generatora pole „Ford length”. 16 testów rdzenia i obie sondy G1 PASS (nowy `SURFACE_FORDS_E2E_PASS`). Kryterium z zapisu (≥ 90 % seedów bez zamkniętych budynków) NIE spełnione dla {8, 16, 32}: przy 32 zamknięte budynki ma 5 z 32 seedów (było 10); po fakcie 48 daje 2 z 32. Wygląd brodów czeka na ocenę użytkownika. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14”.
+
 ## 2026-11-09 — G5: walidator osiągalności powierzchni (iteracja 13) — PARTIAL
 
 Rdzeń ma `reachabilityOf` (składowe 4-spójne, kieszenie, budynki zamknięte); 16 testów rdzenia i obie sondy G1 PASS, w tym test krzyżowy z union-find (160 z 160). Pomiar na seedach 1001–1032: największa składowa mediana 993,5 ‰, ale **10 z 32 seedów ma budynki poza największą składową** (rzeki dzielą ląd; drzwi nigdy nie są zablokowane), więc kryterium „zamknięte = 0 w ≥ 90 % seedów” NIE jest spełnione. Walidator nie jest jeszcze podłączony do okna generatora; naprawa/mosty/odrzucanie seedów to następna iteracja. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 13”.

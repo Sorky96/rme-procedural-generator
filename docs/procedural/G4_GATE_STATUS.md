@@ -451,3 +451,24 @@ Z `pathLength` 0 liczby są prawie takie same (np. m06 zamknięte [0..50], m19 [
 **Kryterium 4 (zamknięte = 0 w ≥ 90 % seedów): NIE spełnione** (22 z 32 = 69 % seedów bez zamkniętych). Diagnostyka dopisana po pomiarze (post hoc, wiersz `doorBlocked` w `style_render`, nie z zapisu kryteriów): **żadne drzwi nie są zablokowane** (0 z 32 seedów); zamknięte budynki leżą na lądzie odciętym od największej składowej przez rzekę lub jezioro (seedy z największą składową 647–989 ‰). Zamknięcie wynika więc z podziału lądu, nie z błędu drzwi; naprawa wymaga mostów, brodów albo odrzucenia seedu (następna iteracja).
 
 **Nie zweryfikowano:** przechodności Rock i Shore na kliencie (założona, D22); „POI osiągalne” i „ustalony start” (nie istnieją w generatorze, N/A); pięter i przejść Z; adaptera i GUI (walidator nie jest jeszcze wywoływany z okna generatora ani z sondy RME, tylko z `style_render`); stanu dla `buildingDensity` 0 poza testem odcisku; wydajności walidatora (nie mierzono).
+
+## Iteracja 14 — brody przez wodę (2026-11-09): PARTIAL, kryterium NIE spełnione dla wartości z zapisu (32), spełnione post hoc od 48
+
+Kryteria i reguła wyboru wartości zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14”, commit `15d5f66`; grep potwierdził). Zaimplementowano `SurfaceTuning::fordLength` (dopisane na końcu struktury, 0..64, 0 = wyłączone), `placeFords` w rdzeniu (BFS przez River i Lake, Path na trasie i wodzie obok, składowe liczone przez `walkableLabelsOf`), pole „Ford length” w oknie generatora (profil musi mieć siódmy pędzel szlaku), odcisk konfiguracji planu z `fordLength` tylko gdy ustawione.
+
+**Testy.** `test_procedural_reachability` rozszerzony ręcznie policzonymi układami: rzeka 3 szerokości (zasięg 2: bez zmian; zasięg 3: 6 komórek Path, rzeka 18, jedna składowa 142), kieszeń 12 komórek bez brodu, jezioro 4 szerokości (zasięg 3: bez zmian; 4: 8 komórek Path), determinizm, drugi przebieg bez zmian. 16 testów rdzenia PASS, odcisk Seed 1729 bez zmian. Sonda `--surface`: nowy przypadek `SURFACE_FORDS_E2E_PASS` (bok 250, pierwszy seed od 1729 z brodem: 6 komórek Path wyłącznie na wodzie, Preview, Validate, Commit jako jeden krok, Undo, Redo, odcisk planu się zmienia); sonda `--commit` PASS; `rme` przebudowany.
+
+**Pomiar** (seedy 1001–1032, bok 512, profile v10, ściany i drzwi, ustawienia jak w iteracji 13; seedy z zamkniętymi budynkami / suma zamkniętych; mediana komórek brodów):
+
+| `fordLength` | m06 seedy / suma | m19 seedy / suma | największa składowa, min (‰) | komórki brodów (mediana, max) |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 10 / 121 | 10 / 159 | 647 / 651 | 0 |
+| 8 | 9 / 69 | 9 / 82 | 733 / 730 | 8, 42 |
+| 16 | 9 / 69 | 9 / 82 | 733 / 731 | 14, 122 |
+| **32 (wybór wg reguły)** | **5 / 24** | **5 / 31** | 919 / 919 | 36, 307 |
+
+Kryterium (≥ 29 z 32 seedów bez zamkniętych, czyli ≤ 3 z zamkniętymi, w obu profilach): **NIE spełnione dla żadnej wartości z zapisanego zestawu {8, 16, 32}**; zgodnie z regułą wybór to 32 z werdyktem NIE spełnione (5 z 32 seedów, 69 → 84 % bez zamkniętych). **Pomiar dodatkowy po fakcie (nie z zapisu):** 48 → 2 z 32 seedów (m06 i m19; po 2 zamknięte budynki łącznie), 64 → 1 / 2 z 32; te wartości spełniałyby kryterium, ale nie były w zapisanym zestawie, więc nie zmieniają werdyktu; komórki brodów przy 48–64: max 330–373 na 262 144 kafli. Dwa przebiegi bajtowo identyczne (`g5_shape_table.py --extra fordLength=32`).
+
+**Wniosek.** Brody wystarczają, gdy woda nie jest szersza niż zasięg; pozostałe zamknięte budynki leżą za wodą szerszą niż 32 komórki. Domyślnie w oknie 0 (wyłączone); wartość do ręcznej oceny: 48.
+
+**Nie zweryfikowano:** wyglądu brodów w GUI (ocena użytkownika ma pierwszeństwo); czy kafel Path na wodzie jest przechodni w grze (zależy od pędzla szlaku, D22); mostów z osobnym przedmiotem (poza zakresem); wpływu masek i ochrony (Preserve może zerwać bród); wydajności brodów (nie mierzono; w sweepie 32 seedów generowanie z brodami trwało 6–7 s wobec 4 s bez, ale to dwa wywołania generatora na seed w `style_render`); `test_universal_rotator` nie linkuje się przy pełnym `ninja` (inny cel, nie ruszany, nie badany).

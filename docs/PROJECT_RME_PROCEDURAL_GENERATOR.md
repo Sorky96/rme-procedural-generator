@@ -376,7 +376,7 @@ Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ogran
 
 ### FAZA 5 - Topologia i wielopiętrowe światy
 
-- [ ] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze.
+- [~] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze. Zrobione (2026-11-09): brody (Path przez rzekę/jezioro, `fordLength`) łączące odcięty ląd w obrębie jednego obszaru, kryterium 90 % seedów nie spełnione dla wartości z zapisu ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14”); graf regionów, POI, mosty z przedmiotem i przełęcze: nie zrobione.
 - [ ] Multi-level mountain logic i przejścia Z.
 - [ ] Jaskinie, dungeony, korytarze, komory, wejścia, wyjścia.
 - [~] Struktury: osady/ruiny/obozowiska, placement z kontrolą kolizji. Osady na powierzchni: rdzeń ma skupiska, drzwi i trasy do drzwi (2026-11-09), kryterium pomiarowe 12c nie spełnione, adapter i GUI drzwi zrobione, wygląd potwierdzony przez użytkownika ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”); ruiny, obozowiska i podziemia: nie zrobione.
