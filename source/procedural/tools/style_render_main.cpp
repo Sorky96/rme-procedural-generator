@@ -5,6 +5,7 @@
 //   style_render PROFILE OUT_DIR SIDE [featureSize=N|transitionWidth=N|shoreWidth=N]... SEED [SEED...]    writes OUT_DIR/<seed>.png
 
 #include "procedural/core/png_writer.h"
+#include "procedural/core/reachability.h"
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/settlement_stats.h"
 #include "procedural/core/style_profile.h"
@@ -158,6 +159,23 @@ int main(int argc, char** argv) {
 			}
 			std::cout << std::format("access seed {}: doors {} bare {} stub {} barePermille {} stubPermille {}\n", seed, grid->doors.size(), bare, stub,
 				bare * 1000 / grid->doors.size(), stub * 1000 / grid->doors.size());
+		}
+		// Post-hoc diagnostic (not in the iteration 13 criteria): doors with no walkable non-Floor neighbour.
+		uint32_t doorBlocked = 0;
+		for (const uint32_t door : grid->doors) {
+			bool open = false;
+			for (const int64_t step : {int64_t(-1), int64_t(1), -int64_t(side), int64_t(side)}) {
+				const int64_t j = int64_t(door) + step;
+				if (j < 0 || size_t(j) >= grid->cells.size()) continue;
+				const SurfaceKind kind = grid->cells[size_t(j)];
+				open = open || kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Rock || kind == SurfaceKind::Shore || kind == SurfaceKind::Path;
+			}
+			doorBlocked += !open;
+		}
+		if (const auto reach = reachabilityOf(*grid, true); reach && reach->walkable) {
+			std::cout << std::format("reach seed {}: walkable {} components {} largest {} largestPermille {} cutOff {} cutOffPer64k {} pockets {} buildings {} sealed {} doorBlocked {}\n", seed,
+				reach->walkable, reach->components, reach->largest, reach->largest * 1000 / reach->walkable, reach->cutOff, reach->cutOff * 65536 / reach->cells, reach->pockets,
+				reach->buildings, reach->sealed, doorBlocked);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

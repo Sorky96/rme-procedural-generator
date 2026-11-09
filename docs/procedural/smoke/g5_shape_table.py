@@ -39,7 +39,7 @@ NUMBER = r'(-?\d+|NA)'
 # Per-profile settings that are NOT part of the profile (D20): path length target and building density.
 import os
 DEFAULT_SETTINGS = {'m06': ['pathLength=40', 'buildingDensity=30'], 'm19': ['pathLength=80', 'buildingDensity=40']}
-LINE = re.compile(r'^(seed|channels seed|scale seed|trans seed|patch seed|paths seed|outline seed|build seed|settle seed|access seed) (\d+): (.*)$')
+LINE = re.compile(r'^(seed|channels seed|scale seed|trans seed|patch seed|paths seed|outline seed|build seed|settle seed|access seed|reach seed) (\d+): (.*)$')
 PAIRS = re.compile(r'([A-Za-z0-9]+) (-?\d+|NA)(?= |$)')
 TRANS = re.compile(r'^R ' + ' '.join([NUMBER] * 4) + r' \| D ' + ' '.join([NUMBER] * 4) + '$')
 SHARES = re.compile(r'shares ' + ' '.join([NUMBER] * 5))
