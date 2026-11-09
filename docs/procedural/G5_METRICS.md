@@ -18,3 +18,23 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 3. 16 testów rdzenia + nowy test, obie sondy G1 PASS (rdzeń generatora bez zmian: odcisk Seed 1729 bez zmian); dwa przebiegi bajtowo identyczne.
 
 **Zastrzeżenia z góry.** Klasy są grube (Land obejmuje trawę, dirt, plażę, szlaki i budynki; wnętrza regionów nie są rozróżniane); sąsiedztwo to dotyk komórek, nie „przejście”; odległość trasy to kroki 4-sąsiedzkie, nie czas w grze; graf nie zna ruin, obozowisk ani punktów z listy; nie ma jeszcze wielu pięter ani wejść Z; próg 16 komórek jest moim wyborem; graf nie jest zapisywany ani pokazywany w GUI.
+
+### Iteracja 25 — ruiny i obozowiska (FAZA 5, punkt „Struktury”; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Ruiny i obozowiska”)
+
+**Odchylenie od zasady „najpierw pomiar w referencjach”.** Nie mierzę w referencjach, jak wyglądają ruiny i obozowiska (rozpoznanie ich w kafelkach referencji wymaga nowego kodu sondy i listy pędzli); kryteria są **bezwzględne**, N/A dla pasm z referencji. Definicje to **moja idealizacja** istniejących mechanizmów (podłoga, ściany, szlaki), nie odtworzenie referencji.
+
+**Definicje (nowe pola `SurfaceTuning`, dopisane na końcu: `ruinPercent` 0..100 i `campCount` 0..50 na 65 536 komórek; 0 = jak dotąd, bajt w bajt; nie są częścią profilu stylu).**
+- **Ruina:** budynek (fundament Floor z iteracji 11–12) wybrany deterministycznie z prawdopodobieństwem `ruinPercent` %; **nie ma drzwi ani szlaku do nich**; zamiast tego **luki w murze**: co najmniej 2 i około ćwierć komórek obrysu (bez narożników) bez ściany (`SurfaceGrid::gaps`). Komórka luki jest przechodnia.
+- **Obozowisko:** polana (dysk Path o promieniu 3, komórki Grass lub Dirt) na terenie bez wody, skały, podłogi i szlaku w promieniu 5 od środka, z jednym „namiotem”: fundamentem Floor 3×3 w środku, którego **cały obrys jest luką** (bez ścian); minimalna odległość między środkami obozowisk i od budynków 12.
+- **Miejsca (`SurfaceGrid::sites`):** po jednej komórce na ruinę i na obozowisko (komórka wnętrza najbliższa środkowi fundamentu); ruina lub obozowisko jest „osiągnięte”, gdy jego miejsce leży w składowej startu (model przechodności z iteracji 13/22; luki jak drzwi bez bycia wejściem).
+
+**Zmiany pochodne.** `SurfaceGrid::valid()` sprawdza luki (na komórkach Floor) i miejsca (na Floor); odcisk siatki dopisuje luki i miejsca tylko, gdy niepuste; resolver pomija ścianę na komórkach luk; walidator osiągalności liczy luki jak komórki przechodnie obrysu, a budynek bez drzwi, ale z lukami, jest osiągalny; `PoiReport` dostaje `sites` i `sitesReached`; okno generatora: pola „Ruins (%)” i „Camps” w zakładce Buildings (profil z podłogą, czyli 8 pędzli, jest wymagany także przy samych obozowiskach).
+
+**Kryteria.**
+1. `ruinPercent` 0 i `campCount` 0: odcisk Seed 1729, 17 testów rdzenia i wynik `style_render` bez zmian.
+2. Testy ręczne: ruina bez drzwi, z lukami: komórki luk przechodnie, budynek osiągalny; budynek z tą samą siatką bez luk i bez drzwi zamknięty; obozowisko: dysk i namiot 3×3 z 8 lukami obrysu, miejsce w środku; walidacja (`valid()`) odrzuca lukę poza Floor; odcisk różni się od siatki bez luk; deterministyczność i niezależność od maski.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, `ruinPercent` 30, `campCount` 6, `fordLength` 48, `repairReach` 1): liczba ruin i obozowisk (mediana [min..max]), ruiny jako odsetek budynków (oczekiwanie bliskie 30 %), luki na ruinę (mediana), **udział ruin i obozowisk osiągniętych z startu: kryterium przechodzenia 100 % w ≥ 29 z 32 seedów** (stan wszystkich POI z naprawy: 32 z 32), wejścia budynków z drzwiami nadal wszystkie osiągnięte.
+4. 17 testów rdzenia i obie sondy G1 PASS po przebudowie `rme`; sonda `--surface` dostaje przypadek z ruinami i obozowiskami (Preview, Validate, Commit, Undo, Redo, liczba elementów ściany równa planowi bez luk); dwa przebiegi bajtowo identyczne.
+5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Ruina to budynek z dziurami w murze, nie zawalona konstrukcja (bez gruzu, bez nierównej wysokości); obozowisko to polana ze ścieżką i podłogą bez namiotu z przedmiotu (brak ognisk, skrzyń, doodadów, bo profil nie ma pędzla na nie); luki są losowe, a nie „realistycznie zniszczone”; nie sprawdzam, czy pędzel ściany ma wszystkie ułożenia przy lukach (ściany układa `WallBrush::doWalls`, więc końce muru przy lukach dostają własne ułożenia pędzla); nie zmierzono w referencjach; ruiny i obozowiska nie są jeszcze w grafie regionów jako osobne POI (tylko `sites` w walidatorze).
