@@ -236,7 +236,8 @@ int main(int argc, char** argv) {
 			const auto at = [&](int64_t x, int64_t y) { return x < 0 || y < 0 || x >= w || y >= w ? SurfaceKind::Preserve : grid->cells[size_t(y) * side + size_t(x)]; };
 			const auto sandLike = [](SurfaceKind k) { return k == SurfaceKind::Shore || k == SurfaceKind::Lake; };
 			const auto landLike = [](SurfaceKind k) { return k == SurfaceKind::Grass || k == SurfaceKind::Dirt; };
-			uint64_t spurs = 0, notches = 0, checker = 0, boundary = 0, sand = 0;
+			uint64_t spurs = 0, notches = 0, checker = 0, boundary = 0, sand = 0, spit = 0;
+			const auto waterLike = [](SurfaceKind k) { return k == SurfaceKind::Lake || k == SurfaceKind::River; };
 			for (int64_t y = 0; y < w; ++y) for (int64_t x = 0; x < w; ++x) {
 				const SurfaceKind own = at(x, y);
 				int around = 0;
@@ -244,6 +245,19 @@ int main(int argc, char** argv) {
 				if (own == SurfaceKind::Shore) {
 					++sand;
 					spurs += around <= 2;
+					for (int axis = 0; axis < 2; ++axis) {
+						const int64_t ax = axis == 0 ? 1 : 0, ay = axis == 0 ? 0 : 1;
+						SurfaceKind ends[2] = {SurfaceKind::Preserve, SurfaceKind::Preserve};
+						int length = 1;
+						bool ok = true;
+						for (int sd = 0; sd < 2 && ok; ++sd) for (int64_t k = 1;; ++k) {
+							const SurfaceKind kind = at(x + (sd ? -ax : ax) * k, y + (sd ? -ay : ay) * k);
+							if (kind == SurfaceKind::Shore) { if (++length > 2) { ok = false; break; } continue; }
+							ends[sd] = kind;
+							break;
+						}
+						if (ok && length <= 2 && waterLike(ends[0]) && waterLike(ends[1])) { ++spit; break; }
+					}
 					boundary += landLike(at(x - 1, y)) || landLike(at(x + 1, y)) || landLike(at(x, y - 1)) || landLike(at(x, y + 1));
 				} else if (landLike(own)) {
 					notches += around >= 6;
@@ -252,7 +266,7 @@ int main(int argc, char** argv) {
 				checker += (a == SurfaceKind::Shore && d == SurfaceKind::Shore && landLike(b) && landLike(c)) || (b == SurfaceKind::Shore && c == SurfaceKind::Shore && landLike(a) && landLike(d));
 			}
 			const auto per = [&](uint64_t v) { return v * 65536 / grid->cells.size(); };
-			std::cout << std::format("shore seed {}: spurs {} notches {} checker {} boundary {} sand {}\n", seed, per(spurs), per(notches), per(checker), per(boundary), per(sand));
+			std::cout << std::format("shore seed {}: spurs {} notches {} checker {} boundary {} sand {} spit {}\n", seed, per(spurs), per(notches), per(checker), per(boundary), per(sand), per(spit));
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

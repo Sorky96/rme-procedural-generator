@@ -57,6 +57,10 @@ uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y);
 // (8-neighbours) are left alone. A Shore cell that turns into land becomes Grass or Dirt by the majority in its window (tie: Grass).
 void smoothShores(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t passes);
 
+// Spit trimming (G4 iteration 19), exposed for tests: a Shore cell that lies in a horizontal or vertical run of at most 2 Shore
+// cells with Lake or River at both ends becomes water (River when either end is River, otherwise Lake). One pass on a snapshot.
+void trimSpits(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height);
+
 // Fords (G4 iteration 14), exposed for tests: joins walkable components of at least 16 cells to another component across at
 // most `reach` River or Lake cells by stamping the shortest crossing (and the water beside it) as Shore. `kinds` is a
 // width * height grid, `doors` lie on Floor cells; walls are assumed on. Deterministic. generateSurface calls this when

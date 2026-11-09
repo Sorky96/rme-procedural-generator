@@ -292,6 +292,41 @@ void testSmoothShores() {
 	check(none.cells == noneBefore.cells, "smoothing: 0 passes change nothing");
 }
 
+// Spit trimming (iteration 18/19), hand counted on 10 x 5 grids of Lake:
+//   Shore x 4..5 over the whole height (2 wide, water both sides): all 10 cells become Lake;
+//   Shore x 3..5 (3 wide): stays; a single Shore cell in the water becomes Lake; a run of 2 with Grass at one end stays;
+//   a run bounded by River on one side and Lake on the other becomes River.
+void testTrimSpits() {
+	SurfaceGrid two = grid(10, 5, SurfaceKind::Lake);
+	fillRect(two, 4, 0, 5, 4, SurfaceKind::Shore);
+	trimSpits(two.cells, 10, 5);
+	check(countKind(two, SurfaceKind::Lake) == 50 && countKind(two, SurfaceKind::Shore) == 0, "spits: a 2 wide strip between water becomes water");
+
+	SurfaceGrid three = grid(10, 5, SurfaceKind::Lake);
+	fillRect(three, 3, 0, 5, 4, SurfaceKind::Shore);
+	const SurfaceGrid threeBefore = three;
+	trimSpits(three.cells, 10, 5);
+	check(three.cells == threeBefore.cells, "spits: a 3 wide strip stays");
+
+	SurfaceGrid single = grid(10, 5, SurfaceKind::Lake);
+	single.cells[2 * 10 + 4] = SurfaceKind::Shore;
+	trimSpits(single.cells, 10, 5);
+	check(countKind(single, SurfaceKind::Shore) == 0, "spits: a single sand cell in the water becomes water");
+
+	SurfaceGrid grassEnd = grid(10, 5, SurfaceKind::Lake);
+	fillRect(grassEnd, 0, 0, 3, 4, SurfaceKind::Grass);
+	fillRect(grassEnd, 4, 0, 5, 4, SurfaceKind::Shore);
+	const SurfaceGrid grassEndBefore = grassEnd;
+	trimSpits(grassEnd.cells, 10, 5);
+	check(grassEnd.cells == grassEndBefore.cells, "spits: a strip with grass at one end stays");
+
+	SurfaceGrid river = grid(10, 5, SurfaceKind::Lake);
+	fillRect(river, 0, 0, 3, 4, SurfaceKind::River);
+	fillRect(river, 4, 0, 5, 4, SurfaceKind::Shore);
+	trimSpits(river.cells, 10, 5);
+	check(countKind(river, SurfaceKind::Shore) == 0 && countKind(river, SurfaceKind::River) == 20 + 10, "spits: a strip between river and lake becomes river");
+}
+
 // A pocket of 12 cells (< 16) is not worth a ford: land x 0..2 (3 x 4), river x 3..5, land x 6..19.
 void testSmallPocket() {
 	SurfaceGrid g = grid(20, 4, SurfaceKind::Grass);
@@ -342,6 +377,7 @@ int main() {
 	testMouths();
 	testNaturalFord();
 	testSmoothShores();
+	testTrimSpits();
 	testSmallPocket();
 	testLakeAndFar();
 	testCrossCheck();

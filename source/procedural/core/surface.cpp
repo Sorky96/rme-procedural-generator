@@ -308,6 +308,38 @@ void smoothShores(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t heig
 	}
 }
 
+void trimSpits(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height) {
+	const size_t count = kinds.size();
+	const auto isWater = [](SurfaceKind kind) { return kind == SurfaceKind::Lake || kind == SurfaceKind::River; };
+	std::vector<SurfaceKind> result = kinds;
+	for (size_t i = 0; i < count; ++i) {
+		if (kinds[i] != SurfaceKind::Shore) continue;
+		const int32_t x = int32_t(i % width), y = int32_t(i / width);
+		for (int axis = 0; axis < 2; ++axis) {
+			const int32_t dx = axis == 0 ? 1 : 0, dy = axis == 0 ? 0 : 1;
+			// Walk to both ends of the run of Shore cells through (x, y); each end must be water inside the area.
+			SurfaceKind ends[2] = {SurfaceKind::Preserve, SurfaceKind::Preserve};
+			int32_t length = 1;
+			bool inside = true;
+			for (int side = 0; side < 2 && inside; ++side) {
+				const int32_t sign = side == 0 ? 1 : -1;
+				for (int32_t step = 1;; ++step) {
+					const int32_t nx = x + sign * dx * step, ny = y + sign * dy * step;
+					if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) { inside = false; break; }
+					const SurfaceKind kind = kinds[size_t(ny) * width + size_t(nx)];
+					if (kind == SurfaceKind::Shore) { if (++length > 2) { inside = false; break; } continue; }
+					ends[side] = kind;
+					break;
+				}
+			}
+			if (!inside || length > 2 || !isWater(ends[0]) || !isWater(ends[1])) continue;
+			result[i] = ends[0] == SurfaceKind::River || ends[1] == SurfaceKind::River ? SurfaceKind::River : SurfaceKind::Lake;
+			break;
+		}
+	}
+	kinds.swap(result);
+}
+
 // Fords (G4 iteration 14): while a walkable component of at least reachabilityPocketCells cells outside the largest one
 // has another component within `reach` water cells (River or Lake, 4-neighbour moves), the smallest such component gets the
 // shortest crossing stamped as Shore (sand: Path next to water gets a blocking water edge from the auto-border), together
@@ -1093,6 +1125,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		if (config.tuning.shoreSmoothing) smoothShores(kinds, width, height, config.tuning.shoreSmoothing);
 		grassRim(kinds, width, height, config);
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
+		if (config.tuning.shoreSmoothing) trimSpits(kinds, width, height);
 		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);
 		std::vector<uint8_t>* crossings = config.tuning.fordLength ? &crossingMask : nullptr;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop, crossings)) return cancelled();
