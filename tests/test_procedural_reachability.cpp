@@ -153,7 +153,7 @@ Reference referenceOf(const SurfaceGrid& g, bool walls) {
 
 // 20 x 8: land x 0..7 (64 cells), river x 8..10 (3 wide), land x 11..19 (72 cells, the largest).
 //   reach 3: the smallest crossing is the three water cells of row 0 (x 8..10); the water beside them (row 1) is stamped too,
-//   so 6 cells become Path, the river keeps 18 and the land is one component.
+//   so 6 cells become Shore, the river keeps 18 and the land is one component.
 //   reach 2: no crossing is short enough, nothing changes.
 SurfaceGrid riverGrid() {
 	SurfaceGrid g = grid(20, 8, SurfaceKind::Grass);
@@ -165,32 +165,32 @@ size_t countKind(const SurfaceGrid& g, SurfaceKind kind) { return size_t(std::co
 
 void testFords() {
 	SurfaceGrid g = riverGrid();
-	check(placeFords(g.cells, 20, 8, 2, g.doors).has_value() && countKind(g, SurfaceKind::Path) == 0 && countKind(g, SurfaceKind::River) == 24, "reach 2 does not cross three water cells");
+	check(placeFords(g.cells, 20, 8, 2, g.doors).has_value() && countKind(g, SurfaceKind::Shore) == 0 && countKind(g, SurfaceKind::River) == 24, "reach 2 does not cross three water cells");
 	check(placeFords(g.cells, 20, 8, 3, g.doors).has_value(), "reach 3 runs");
-	check(countKind(g, SurfaceKind::Path) == 6 && countKind(g, SurfaceKind::River) == 18, "reach 3 stamps 6 Path cells");
+	check(countKind(g, SurfaceKind::Shore) == 6 && countKind(g, SurfaceKind::River) == 18, "reach 3 stamps 6 Shore cells");
 	bool rowZero = true;
-	for (uint32_t x = 8; x <= 10; ++x) rowZero = rowZero && g.cells[x] == SurfaceKind::Path && g.cells[20 + x] == SurfaceKind::Path;
+	for (uint32_t x = 8; x <= 10; ++x) rowZero = rowZero && g.cells[x] == SurfaceKind::Shore && g.cells[20 + x] == SurfaceKind::Shore;
 	check(rowZero, "the ford is rows 0 and 1");
 	const auto r = reachabilityOf(g, false);
 	check(r.has_value() && r->components == 1 && r->largest == 160 - 18, "one component after the ford");
 	SurfaceGrid again = riverGrid();
 	check(placeFords(again.cells, 20, 8, 3, again.doors).has_value() && again.cells == g.cells, "deterministic");
-	check(placeFords(g.cells, 20, 8, 3, g.doors).has_value() && countKind(g, SurfaceKind::Path) == 6, "a second pass changes nothing");
+	check(placeFords(g.cells, 20, 8, 3, g.doors).has_value() && countKind(g, SurfaceKind::Shore) == 6, "a second pass changes nothing");
 }
 
 // A pocket of 12 cells (< 16) is not worth a ford: land x 0..2 (3 x 4), river x 3..5, land x 6..19.
 void testSmallPocket() {
 	SurfaceGrid g = grid(20, 4, SurfaceKind::Grass);
 	fillRect(g, 3, 0, 5, 3, SurfaceKind::River);
-	check(placeFords(g.cells, 20, 4, 64, g.doors).has_value() && countKind(g, SurfaceKind::Path) == 0, "pockets below 16 cells get no ford");
+	check(placeFords(g.cells, 20, 4, 64, g.doors).has_value() && countKind(g, SurfaceKind::Shore) == 0, "pockets below 16 cells get no ford");
 }
 
 // Lakes are crossed like rivers; a sealed pocket behind rock-free water that is wider than reach stays alone.
 void testLakeAndFar() {
 	SurfaceGrid g = grid(20, 8, SurfaceKind::Grass);
 	fillRect(g, 8, 0, 11, 7, SurfaceKind::Lake); // 4 wide: land 0..7 (64) and 12..19 (64); tie goes to the first
-	check(placeFords(g.cells, 20, 8, 3, g.doors).has_value() && countKind(g, SurfaceKind::Path) == 0, "four wide lake with reach 3 stays open");
-	check(placeFords(g.cells, 20, 8, 4, g.doors).has_value() && countKind(g, SurfaceKind::Path) == 8 && countKind(g, SurfaceKind::Lake) == 24, "four wide lake with reach 4 gets 8 Path cells");
+	check(placeFords(g.cells, 20, 8, 3, g.doors).has_value() && countKind(g, SurfaceKind::Shore) == 0, "four wide lake with reach 3 stays open");
+	check(placeFords(g.cells, 20, 8, 4, g.doors).has_value() && countKind(g, SurfaceKind::Shore) == 8 && countKind(g, SurfaceKind::Lake) == 24, "four wide lake with reach 4 gets 8 Shore cells");
 }
 
 void testCrossCheck() {

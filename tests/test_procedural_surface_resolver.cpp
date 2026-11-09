@@ -414,7 +414,7 @@ void doors(uint32_t side, std::ostream& report) {
 	report << "SURFACE_DOORS_E2E_PASS" << '\t' << side << '\t' << "doors=" << plannedDoors << '\t' << "changes=" << receipt->changes << '\n';
 }
 
-// Fords (G4 iteration 14): a surface with fordLength differs from one without only where water became Path; the preview,
+// Fords (G4 iteration 14): a surface with fordLength differs from one without only where water became Shore (sand); the preview,
 // Commit, Undo and Redo work with it and the plan fingerprint changes.
 void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	UndoLimits undoLimits;
@@ -423,12 +423,12 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	GenerationConfig config {{100, 100, 7, side, side}, seed};
 	config.algorithm = GenerationAlgorithm::Surface;
 	config.surface.riverCount = 8;
-	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone"}, GroundProfile::surfaceWithPathCount};
+	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea"}, GroundProfile::surfaceCount};
 	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
 	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
 	auto plain = config;
 	plain.surface.fordLength = 0;
-	config.surface.fordLength = 64;
+	config.surface.fordLength = 256;
 	// The first seed from the given one on that needs a ford (the layout of rivers and lakes decides).
 	std::optional<SurfaceGrid> withFords, without;
 	size_t changed = 0;
@@ -441,7 +441,7 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 		for (size_t i = 0; i < a->cells.size(); ++i) {
 			if (a->cells[i] == b->cells[i]) continue;
 			++changed;
-			check(a->cells[i] == SurfaceKind::Path && (b->cells[i] == SurfaceKind::River || b->cells[i] == SurfaceKind::Lake), "A ford changed something other than water into Path");
+			check(a->cells[i] == SurfaceKind::Shore && (b->cells[i] == SurfaceKind::River || b->cells[i] == SurfaceKind::Lake), "A ford changed something other than water into Path");
 		}
 		withFords = std::move(*a);
 		without = std::move(*b);
@@ -449,9 +449,7 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	check(changed > 0, "No seed produced a ford");
 	const auto baselineTiles = editor.map.getTileCount();
 	const auto prior = editor.actionQueue->getCurrentIndex();
-	auto plainProfile = profile;
-	plainProfile.count = GroundProfile::surfaceCount;
-	auto plainPrepared = prepareTerrain(editor.map, plain, plainProfile, preparation);
+	auto plainPrepared = prepareTerrain(editor.map, plain, profile, preparation);
 	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
 	check(bool(plainPrepared), "Preparation without fords failed, error index " + std::to_string(plainPrepared ? 0 : plainPrepared.error().index()));
 	check(bool(prepared), "Ford preparation failed, error index " + std::to_string(prepared ? 0 : prepared.error().index()) +
@@ -462,6 +460,23 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
 	check(bool(receipt), "Ford commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
 	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Ford commit is not one history step");
+	if (withFords && without) {
+		size_t blocking = 0, noGround = 0, checkedCells = 0;
+		std::string firstItems;
+		for (size_t i = 0; i < withFords->cells.size(); ++i) {
+			if (withFords->cells[i] == without->cells[i]) continue;
+			const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
+			++checkedCells;
+			if (!tile || !tile->ground) { ++noGround; continue; }
+			if (tile->isBlocking()) ++blocking;
+			if (firstItems.empty() && tile->isBlocking()) {
+				firstItems = "ground " + std::to_string(tile->ground->getID()) + (tile->ground->isBlocking() ? "(blocks)" : "") + " " + std::string(tile->ground->getName()) + " items";
+				for (const auto& item : tile->items) firstItems += " " + std::to_string(item->getID()) + (item->isBlocking() ? "(blocks)" : "") + " " + std::string(item->getName());
+			}
+		}
+		report << "FORD_TILES\t" << checkedCells << "\tblocking=" << blocking << "\twithoutGround=" << noGround << "\t" << firstItems << '\n';
+		check(blocking == 0 && noGround == 0, "A ford tile blocks or has no ground");
+	}
 	const auto committedTiles = editor.map.getTileCount();
 	check(editor.actionQueue->undo(), "Ford Undo refused");
 	check(editor.map.getTileCount() == baselineTiles, "Undo changed the tile count");

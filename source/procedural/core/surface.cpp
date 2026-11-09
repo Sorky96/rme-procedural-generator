@@ -246,7 +246,8 @@ private:
 
 // Fords (G4 iteration 14): while a walkable component of at least reachabilityPocketCells cells outside the largest one
 // has another component within `reach` water cells (River or Lake, 4-neighbour moves), the smallest such component gets the
-// shortest crossing stamped as Path, together with the water cells beside it (about three cells wide). Components are
+// shortest crossing stamped as Shore (sand: Path next to water gets a blocking water edge from the auto-border), together
+// with the water cells beside it (about three cells wide). Components are
 // numbered row-major and tried in label order; every ford relabels the surface.
 std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
 	std::span<const uint32_t> doors, std::stop_token stop) {
@@ -295,10 +296,10 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 						std::vector<size_t> crossing;
 						for (int32_t at = int32_t(i); at >= 0 && depth[size_t(at)] > 0; at = parent[size_t(at)]) crossing.push_back(size_t(at));
 						for (const size_t cell : crossing) {
-							kinds[cell] = SurfaceKind::Path;
+							kinds[cell] = SurfaceKind::Shore;
 							const size_t cx = cell % width, cy = cell / width;
 							const size_t beside[4] = {cx > 0 ? cell - 1 : count, cx + 1 < width ? cell + 1 : count, cy > 0 ? cell - width : count, cy + 1 < height ? cell + width : count};
-							for (const size_t b : beside) if (b != count && isWater(b)) kinds[b] = SurfaceKind::Path;
+							for (const size_t b : beside) if (b != count && isWater(b)) kinds[b] = SurfaceKind::Shore;
 						}
 						stamped = true;
 						break;
@@ -627,7 +628,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 64 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}

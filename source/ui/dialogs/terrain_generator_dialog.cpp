@@ -455,8 +455,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(path_length_spin_, 1, wxEXPAND);
 
 	form->Add(label("&Ford length:"), 0, wxALIGN_CENTER_VERTICAL);
-	ford_length_spin_ = spin("terrain-ford-length", 0, 64, 0);
-	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a crossing of Path tiles up to this many water tiles wide. 0 = no fords. Uses the path brush.");
+	ford_length_spin_ = spin("terrain-ford-length", 0, 256, 0);
+	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a sand crossing up to this many water tiles wide. 0 = no fords. Uses the shore brush.");
 	form->Add(ford_length_spin_, 1, wxEXPAND);
 
 	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -750,7 +750,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	path_length_spin_->Enable(natural);
 	building_density_spin_->Enable(natural);
 	ford_length_spin_->Enable(natural);
-	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || ford_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
+	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
@@ -845,7 +845,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
 	const bool withFloors = natural && config.surface.buildingDensity > 0;
-	const bool withPaths = natural && (config.surface.pathLength > 0 || config.surface.fordLength > 0);
+	const bool withPaths = natural && config.surface.pathLength > 0;
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
 		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
 	wxComboBox* const surfaceWithFloorFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_, path_brush_choice_, floor_brush_choice_ };
