@@ -6,6 +6,7 @@
 
 #include "procedural/core/png_writer.h"
 #include "procedural/core/reachability.h"
+#include "procedural/core/region_graph.h"
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/settlement_stats.h"
 #include "procedural/core/style_profile.h"
@@ -185,6 +186,24 @@ int main(int argc, char** argv) {
 				open = open || kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Rock || kind == SurfaceKind::Shore || kind == SurfaceKind::Path;
 			}
 			doorBlocked += !open;
+		}
+		if (const auto graph = buildRegionGraph(*grid, true)) {
+			// Iteration 24: size of the graph, POIs without a route from the start, travel distances and whether the adjacency graph is connected.
+			uint32_t land = 0, rock = 0, water = 0, unreached = 0, maxExit = 0, maxEntrance = 0;
+			for (const auto& node : graph->regions) { land += node.kind == RegionClass::Land; rock += node.kind == RegionClass::Rock; water += node.kind == RegionClass::Water; }
+			for (const auto& poi : graph->pois) {
+				if (poi.distance < 0) { ++unreached; continue; }
+				if (poi.kind == PoiKind::Exit) maxExit = std::max<uint32_t>(maxExit, uint32_t(poi.distance));
+				if (poi.kind == PoiKind::Entrance) maxEntrance = std::max<uint32_t>(maxEntrance, uint32_t(poi.distance));
+			}
+			std::vector<size_t> parent(graph->regions.size());
+			for (size_t i = 0; i < parent.size(); ++i) parent[i] = i;
+			const auto find = [&](size_t i) { while (parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+			for (const auto& edge : graph->edges) parent[find(edge.a)] = find(edge.b);
+			size_t components = 0;
+			for (size_t i = 0; i < parent.size(); ++i) components += find(i) == i;
+			std::cout << std::format("graph seed {}: regions {} land {} rock {} water {} edges {} fragments {} unreached {} maxExit {} maxEntrance {} connected {}\n", seed, graph->regions.size(), land, rock, water,
+				graph->edges.size(), graph->smallFragments, unreached, maxExit, maxEntrance, components <= 1 ? 1 : 0);
 		}
 		if (const auto poi = poiReachabilityOf(*grid, true); poi && poi->hasStart) {
 			std::cout << std::format("poi seed {}: entrances {} entrancesReached {} exits {} exitsReached {} startPermille {} allReached {}\n", seed, poi->entrances, poi->entrancesReached,
