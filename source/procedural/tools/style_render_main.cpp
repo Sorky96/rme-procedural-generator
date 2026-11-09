@@ -6,6 +6,7 @@
 
 #include "procedural/core/png_writer.h"
 #include "procedural/core/scale_stats.h"
+#include "procedural/core/settlement_stats.h"
 #include "procedural/core/style_profile.h"
 #include "procedural/core/surface.h"
 #include "procedural/core/water_shape.h"
@@ -109,6 +110,13 @@ int main(int argc, char** argv) {
 			std::sort(outlines.begin(), outlines.end());
 			std::cout << std::format("outline seed {}: median {}\n", seed, outlines.empty() ? 0u : outlines[outlines.size() / 2]);
 			std::cout << std::format("build seed {}: count {} per64k {} long {} short {}\n", seed, b.count, b.per64k, b.longMedian, b.shortMedian);
+		}
+		{
+			const SettlementSummary t = summarizeSettlements(settlementStatsOf(*grid));
+			auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
+			std::cout << std::format("settle seed {}: buildings {} G {} Kn {} Ks {} Ki {} Kb {} Bp {} Cp {} Bv {} Cv {} Dh {} Dn {} Db {} Dp {} Dp0 {} S {}\n", seed, t.buildings,
+				opt(t.gapMedian), opt(t.clustersPer64kMilli), opt(t.clusterSizeMedian), opt(t.aloneP), opt(t.inLargeP), opt(t.nearPathP), opt(t.pathControlP),
+				opt(t.nearWaterP), opt(t.waterControlP), opt(t.withDoorP), opt(t.doorsMedian), opt(t.boundaryDoorP), opt(t.facingP), opt(t.facingChanceP), t.facingSet);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
