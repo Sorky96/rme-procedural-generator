@@ -868,8 +868,8 @@ size_t BatchAction::memsize(bool recalc) const {
 }
 
 void BatchAction::addAction(std::unique_ptr<Action> action) {
-	// A cave pair retains an empty first floor as its own generator history step.
-	if (action->size() == 0 && type != ACTION_GENERATE_TERRAIN) {
+	// If empty, do nothing.
+	if (action->size() == 0) {
 		return;
 	}
 

@@ -710,6 +710,13 @@ void caves(uint32_t side, std::ostream& report) {
 	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
 	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
 	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	// Two earlier history steps outside the area, so the full-history case below has old steps to drop.
+	for (const int32_t x : {400, 420}) {
+		const GenerationConfig earlier {{x, 400, 7, 10, 10}, 7};
+		const GroundProfile roll {{"grass", "dirt", "sea"}, GroundProfile::groundRollCount};
+		const auto step = prepareTerrain(editor.map, earlier, roll, preparation);
+		check(step && DrawOperations::commitTerrainPreview(*step, earlier, roll, commit), "Earlier history step failed");
+	}
 	auto plain = prepareTerrain(editor.map, config, profile, preparation);
 	check(bool(plain), "Cave baseline preparation failed");
 	profile.caveEntrance = "cave enter";
@@ -819,10 +826,15 @@ void caves(uint32_t side, std::ostream& report) {
 	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
 		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Rollback changed map tiles");
 	check(bool(validateTerrainTarget(*prepared, config, profile)), "Rollback invalidated original preparation");
+	// A history already at its step limit: the pair must drop the oldest steps, not refuse.
+	const auto atLimit = int(editor.actionQueue->getSize());
+	check(atLimit >= 2, "Cave probe needs earlier history steps");
+	g_settings.setInteger(Config::UNDO_SIZE, atLimit);
 	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
-	check(bool(receipt), "Two-floor commit failed");
+	g_settings.setInteger(Config::UNDO_SIZE, 1000);
+	check(bool(receipt), "Two-floor commit failed with a full history");
 	check(receipt->changes == prepared->preview.getChanges().size() + prepared->cave->preview.getChanges().size(), "Receipt lost changes");
-	check(editor.actionQueue->getCurrentIndex() == prior + 2 && editor.actionQueue->getSize() == size + 2, "Cave commit needs two steps");
+	check(editor.actionQueue->getSize() == size_t(atLimit) && editor.actionQueue->getCurrentIndex() == size_t(atLimit), "Full history was not trimmed to its limit");
 	for (const auto* unit : {&*prepared, prepared->cave.get()}) for (const auto& position : unit->preview.getChanges())
 		check(snapshotTilesEqual(editor.map.getTile(position), unit->preview.getBuffer().getTile(position)), "Map differs from preview");
 	const auto afterUpper = stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6);
@@ -867,8 +879,8 @@ void caves(uint32_t side, std::ostream& report) {
 		check(emptyCave && emptyCave->cave && emptyCave->cave->preview.getChanges().empty(), "Expected an empty cave without rocks");
 		auto* queue = g_gui.GetCurrentEditor()->actionQueue.get();
 		const auto before = queue->getCurrentIndex();
-		check(bool(DrawOperations::commitTerrainPreview(*emptyCave, noRock, profile, commit)), "Empty cave pair commit failed");
-		check(queue->getCurrentIndex() == before + 2 && queue->undo() && queue->undo(), "Empty cave did not retain two history steps");
+		check(bool(DrawOperations::commitTerrainPreview(*emptyCave, noRock, profile, commit)), "Empty cave commit failed");
+		check(queue->getCurrentIndex() == before + 1 && queue->undo(), "Empty cave must add exactly one history step");
 		check(stackImage(emptyMap, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
 			stackImage(emptyMap, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Empty cave undo changed the map");
 	}

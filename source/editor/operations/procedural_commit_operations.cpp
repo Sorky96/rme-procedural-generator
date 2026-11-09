@@ -35,7 +35,8 @@ DrawOperations::commitSelectedTerrainPreview(const PreparedTerrain& prepared, co
 
 std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError>
 DrawOperations::commitTerrainUnits(Editor& editor, const PreparedTerrain& prepared, TerrainCommitBudget budget, std::stop_token stop) {
-	if (!prepared.cave) return commitValidatedTerrain(editor, prepared, budget, stop);
+	// An empty cave (no entrance got an exit) adds no history step: the surface is committed alone.
+	if (!prepared.cave || prepared.cave->preview.getChanges().empty()) return commitValidatedTerrain(editor, prepared, budget, stop);
 	if (!editor.actionQueue || !editor.actionQueue->beginTerrainPair()) return failure(TerrainCommitFailure::BusyHistory);
 	const auto lower = commitValidatedTerrain(editor, *prepared.cave, budget, stop, &prepared);
 	if (!lower) {
@@ -163,7 +164,7 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 	const auto transitionBytes = used - preparationBytes;
 	// The existing queue's cached batch memory field is uint32_t. Fail closed before it can wrap.
 	if (transitionBytes > UINT32_MAX) return failure(TerrainCommitFailure::MemoryLimit);
-	if (positions.empty() && prepared.plan.caveFloor.empty() && !prepared.cave) return TerrainCommitReceipt {0, transitionBytes, used, prepared.preview.getFingerprint()};
+	if (positions.empty()) return TerrainCommitReceipt {0, transitionBytes, used, prepared.preview.getFingerprint()};
 	try {
 		auto action = editor.actionQueue->createAction(ACTION_GENERATE_TERRAIN);
 		action->changes.reserve(positions.size());

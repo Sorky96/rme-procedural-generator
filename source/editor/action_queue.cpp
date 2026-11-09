@@ -201,7 +201,7 @@ void ActionQueue::notifyTerrainTransition(bool selectionCountChanged) noexcept {
 bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	std::span<const Position> positions, std::stop_token stop) {
 	if (applyingTerrain || !batch || batch->getType() != ACTION_GENERATE_TERRAIN ||
-		batch->size() != 1 || (positions.empty() && !terrainPair) || editor.live_manager.IsLive() ||
+		batch->size() != 1 || positions.empty() || editor.live_manager.IsLive() ||
 		LuaAPI::isTransactionActive() || editor.selection.isBusy() || editor.selection.isDeferred()) return false;
 	const auto incoming = batch->memsize();
 	const auto configuredMemory = g_settings.getInteger(Config::UNDO_MEM_SIZE);
@@ -209,8 +209,24 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	if (configuredMemory <= 0 || configuredCount <= 0) return false;
 	const uint64_t limit = uint64_t(configuredMemory) * 1024 * 1024;
 	if (incoming > limit) return false;
-	if (terrainPair && (terrainPairCount >= 2 || current != terrainPairStart + terrainPairCount ||
-		current >= size_t(configuredCount) || memory_size > limit - incoming)) return false;
+	if (terrainPair) {
+		if (terrainPairCount >= 2 || current != terrainPairStart + terrainPairCount) return false;
+		// Admission only: redo and the oldest steps before the pair are dropped by finishTerrainPair(true), so a refused
+		// pair leaves the earlier history untouched. The pair itself is never trimmed.
+		size_t retained = memory_size;
+		for (size_t index = current; index < actions.size(); ++index) {
+			const auto bytes = actions[index]->memsize();
+			if (bytes > retained) return false;
+			retained -= bytes;
+		}
+		size_t first = 0;
+		while (first < terrainPairStart && (retained > limit - incoming || current - first >= size_t(configuredCount))) {
+			const auto bytes = actions[first++]->memsize();
+			if (bytes > retained) return false;
+			retained -= bytes;
+		}
+		if (retained > limit - incoming || current - first >= size_t(configuredCount)) return false;
+	}
 	TerrainTransition transition(applyingTerrain);
 	// Roll back newly reserved map structure if any subsequent allocation/refusal fails.
 	BaseMap::TileReservation locations(editor.map, positions);
@@ -284,6 +300,14 @@ void ActionQueue::finishTerrainPair(bool success) noexcept {
 	} else {
 		for (size_t i = current; i < actions.size(); ++i) memory_size -= actions[i]->memsize();
 		actions.erase(actions.begin() + current, actions.end());
+		// Same limits as a single terrain step, applied to the steps before the pair (admission already checked they suffice).
+		const uint64_t limit = uint64_t(std::max(0, g_settings.getInteger(Config::UNDO_MEM_SIZE))) * 1024 * 1024;
+		const auto count = size_t(std::max(0, g_settings.getInteger(Config::UNDO_SIZE)));
+		while (current > terrainPairCount && (memory_size > limit || current > count)) {
+			memory_size -= actions.front()->memsize();
+			actions.pop_front();
+			--current;
+		}
 	}
 	terrainPair = false;
 	terrainPairCount = 0;
