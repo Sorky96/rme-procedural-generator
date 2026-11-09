@@ -460,3 +460,17 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 5. Ocena wyglądu przez użytkownika ma pierwszeństwo; nie potrafię z metryki ocenić, czy „da się przejść” w jego rozumieniu.
 
 **Zastrzeżenia z góry.** Promień 3 to mój wybór (bez pomiaru referencji; w referencjach nie ma brodów z piasku); większe piaszczyste „łaty” na końcach mogą wyglądać nienaturalnie; sąsiednie kafle wody dostają krawędzie piasku.
+
+### Iteracja 14d — naturalniejszy kształt brodu (zapisana 2026-11-09 przed zmianą kodu; decyzja użytkownika po 14c: „Wolę naturalny wygląd”)
+
+**Powód.** Po 14c bród to prosta linia o równej szerokości i krawędziach jak od linijki; użytkownik nie wie, czy to naturalne, i woli naturalny wygląd. **Ocena „naturalny” należy do użytkownika; poniższe kryteria mierzą tylko, że kształt nie jest prostą równą linią i że niczego nie psuje.**
+
+**Zmiana (tylko dla brodów z trasą ≥ 8 komórek wody; krótsze zostają jak w 14c, więc testy ręczne 14c bez zmian).** (1) Oś brodu to nie najkrótsza trasa BFS, lecz linia od początku do końca trasy z poprzecznym wychyleniem `offset = (szum − 0,5) · 2 · A · sin(π·p/L)`, `A = min(4, L/6)` komórek, szum z `valueNoise` (ziarno generatora, bezwzględne współrzędne punktu bazowego, krok 8), więc wychylenie jest 0 na obu końcach. (2) Szerokość zmienna: wokół każdej komórki osi woda w odległości Czebyszewa `d` zamienia się w piasek, `d = 2` gdy szum (osobny strumień) > 40 000 z 65 536, inaczej `d = 1` (szerokość 3 lub 5, zmienna gładko co ok. 8 komórek). (3) Końce jak w 14c (wlot promienia 3). (4) Zabezpieczenie: po zbudowaniu osi sprawdzane jest, czy początek łączy się z celem po komórkach przechodnich; jeśli nie, dodatkowo stemplowana jest prosta trasa BFS z 14c (gwarancja postępu i zakończenia pętli). `placeFords` dostaje opcjonalny argument z ziarnem i początkiem obszaru (domyślnie 0).
+
+**Kryteria.**
+1. Testy ręczne 14c (rzeka 3, jezioro 4, siatka 20×16, kieszeń 12) przechodzą bez zmian.
+2. Test na szerokiej wodzie (siatka 64×24, ląd x 0..7 i x 56..63, woda 48 kolumn, `fordLength` 64): jedna składowa po brodzie; deterministyczność (dwa przebiegi i dwa różne ziarna dają różne kształty); w środkowej jednej trzeciej długości każda kolumna ma od 3 do 9 komórek piasku; środek ciężkości piasku w kolumnie zmienia się o ≥ 2 rzędy między kolumnami (kształt nie jest prostą linią); piasek tylko tam, gdzie była woda.
+3. Sonda `--surface`: 0 blokujących kafli brodu i obok niego, kieszenie połączone na zatwierdzonej mapie.
+4. Seedy z zamkniętymi budynkami identyczne jak w 14c (zasięg 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 z 32); komórki brodów i czas generowania podane (bez pasma); dwa przebiegi bajtowo identyczne; 16 testów rdzenia, obie sondy G1, odcisk Seed 1729 bez zmian (`fordLength` 0 nic nie zmienia).
+
+**Zastrzeżenia z góry.** Stałe (A, 8, 40 000, szerokość 3/5) to moje wybory bez pomiaru referencji (w referencjach nie ma brodów); wychylona oś może przechodzić przez komórki nie będące wodą (nie są zmieniane); czy wygląda naturalnie, ocenia użytkownik; zabezpieczenie (4) może dodać prostą trasę, wtedy kształt będzie mniej naturalny.
