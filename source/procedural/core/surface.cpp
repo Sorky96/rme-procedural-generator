@@ -397,16 +397,54 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 	uint64_t placed = 0;
 	const uint32_t span = std::max(width, height);
 	const uint32_t minDistance = std::min<uint32_t>(48, span / 3), maxDistance = std::max<uint32_t>(minDistance + 1, std::min<uint32_t>(160, span));
+	// Iteration 16: a land cell on the far side of a rock band (3 to 30 rock cells) straight along one of 8 directions from `from`,
+	// without water in between; `count` when none of 8 random directions has one within 48 steps.
+	const auto crossingGoal = [&](size_t from) {
+		constexpr int32_t directions[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+		for (uint32_t tries = 0; tries < 8; ++tries) {
+			const auto& [dx, dy] = directions[random.bounded(8)];
+			int32_t x = int32_t(from % width), y = int32_t(from / width);
+			uint32_t rock = 0;
+			for (int32_t step = 1; step <= 48; ++step) {
+				x += dx;
+				y += dy;
+				if (x < 0 || y < 0 || x >= int32_t(width) || y >= int32_t(height)) break;
+				const size_t cell = size_t(y) * width + size_t(x);
+				if (kinds[cell] == SurfaceKind::Rock) { ++rock; continue; }
+				if (rock == 0) {
+					if (kinds[cell] == SurfaceKind::Lake || kinds[cell] == SurfaceKind::River) break;
+					continue;
+				}
+				if (rock < 3 || rock > 30 || !land(cell)) break;
+				size_t goalCell = cell;
+				for (int32_t beyond = 1; beyond <= 4; ++beyond) {
+					const int32_t bx = x + dx * beyond, by = y + dy * beyond;
+					if (bx < 0 || by < 0 || bx >= int32_t(width) || by >= int32_t(height) || !land(size_t(by) * width + size_t(bx))) break;
+					goalCell = size_t(by) * width + size_t(bx);
+				}
+				return goalCell;
+			}
+		}
+		return count;
+	};
 	for (uint32_t attempt = 0; attempt < 200 && placed < target; ++attempt) {
 		if (stop.stop_requested()) return false;
-		size_t start = count;
+		size_t start = count, goal = count;
+		if (config.tuning.rockPasses && attempt % 2 == 0) {
+			// Up to 64 random land cells are tried as the start of a trail that crosses a rock band.
+			for (uint32_t tries = 0; tries < 64 && goal == count; ++tries) {
+				const size_t candidate = size_t(random.bounded(count));
+				if (!land(candidate)) continue;
+				goal = crossingGoal(candidate);
+				if (goal != count) start = candidate;
+			}
+		}
 		for (uint32_t tries = 0; tries < 64 && start == count; ++tries) {
 			const size_t candidate = size_t(random.bounded(count));
 			if (land(candidate)) start = candidate;
 		}
 		if (start == count) continue;
 		const int32_t sx = int32_t(start % width), sy = int32_t(start / width);
-		size_t goal = count;
 		for (uint32_t tries = 0; tries < 48 && goal == count; ++tries) {
 			const int32_t dx = int32_t(random.bounded(2 * maxDistance + 1)) - int32_t(maxDistance);
 			const int32_t dy = int32_t(random.bounded(2 * maxDistance + 1)) - int32_t(maxDistance);

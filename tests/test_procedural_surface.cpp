@@ -604,12 +604,27 @@ void settlements(uint32_t side, uint64_t seeds) {
 	}
 }
 
+// G4 iteration 16: trails that cross rock bands. Off by default; on, the result is deterministic and differs.
+void rockPasses() {
+	auto config = makeConfig(160, 2024);
+	config.tuning.pathLength = 80;
+	const auto off = generateSurface(config, extent, budget);
+	config.tuning.rockPasses = 1;
+	const auto on = generateSurface(config, extent, budget);
+	const auto again = generateSurface(config, extent, budget);
+	require(off.has_value() && on.has_value() && again.has_value(), "rockPasses: generation");
+	require(on->fingerprint() == again->fingerprint(), "rockPasses: not deterministic");
+	require(on->fingerprint() != off->fingerprint(), "rockPasses: no change in the result");
+	config.tuning.rockPasses = 2;
+	require(!validateSurface(config, extent, budget).has_value(), "rockPasses above 1 was accepted");
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3);
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {
