@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: szlaki dochodzą do celu i przechodzą przez rzekę (iteracja 17) — PARTIAL
+
+Po uwagach z GUI: znaleziony błąd z 12h (końce `reachEnds` połączone na krzyż; widoczny dopiero przy długich szlakach jako proste ukośne linie i pętle), poprawiony; szlaki dochodzą do prawdziwego celu przy `rockPasses`. Przy `fordLength` > 0 szlaki przechodzą przez rzeki piaszczystym brodem. Miara „czubków” okazała się zawodna (kryteria 1 i 2 z zapisu NIE spełnione), oceniam po renderach i użytkowniku; 16 testów rdzenia i obie sondy G1 PASS. Poszarpane brzegi piasku i trawy czekają na osobną diagnozę. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 17”.
+
 ## 2026-11-09 — G5: cele szlaków przez skałę (iteracja 16) — PARTIAL
 
 Przy `rockPasses` szlak szuka teraz startu i celu po przeciwnych stronach pasma skały (3–30 komórek). Szlaki przecinające skałę są w 10 z 32 seedów (było 3 i 8), kryterium 24 z 32 NIE spełnione; po fakcie przy koszcie skały 0 jest 21 i 27 z 32. Odkrycie: generator rysuje tylko 1–2 trasy na mapę 512×512 przy `pathLength` 40. L bez regresji, 16 testów rdzenia i obie sondy G1 PASS. Wygląd w GUI nie sprawdzony. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 16”.

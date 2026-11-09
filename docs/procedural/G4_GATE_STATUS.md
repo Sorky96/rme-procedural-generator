@@ -543,3 +543,22 @@ Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Itera
 Wymagane: mediana ≥ 2× i `cut` > 0 w ≥ 24 z 32 seedów; jest 10 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt skały 15 → 13 i 13 z 32; koszt 0 → 21 z 32 (mediana `cut` 3) w m06 i 27 z 32 (mediana 8) w m19; L 153–304. Przy zapisanym koszcie 40 A* woli objazd niż 3–30 komórek skały, więc z wybranymi celami szlak często i tak omija skałę. Wniosek: wąskim gardłem są teraz **koszt skały i to, że mapa dostaje tylko 1–2 trasy**, a nie cele; kryterium 75 % wymagałoby kosztu bliskiego 0 (m19 tak, m06 jeszcze nie) albo wymuszenia przejścia przez skałę, co zmienia charakter szlaków.
 
 **Nie zweryfikowano:** wyglądu w GUI (nie wiem, czy szlak przez skałę wygląda jak przełęcz, czy jak wycięty korytarz 3–4 kafle); blokowania kafli Path na skale; pomiaru w referencjach; opcji 2 (skała blokująca).
+
+## Iteracja 17 — szlaki dochodzą do celu i przechodzą przez rzekę (2026-11-09): PARTIAL, kryteria miary 1 i 2 NIE spełnione, ale miara okazała się zawodna
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 17”, commit `610853c`; grep potwierdził). Zaimplementowano: 17a `drawPaths` stempluje do rzeczywistego startu i celu przy `rockPasses` 1; 17b przy `fordLength` > 0 router (szlaki i trasy do drzwi) przechodzi przez komórki River (koszt +25), woda pod trasą staje się piaskiem (Shore, z maską, żeby późniejszy szlak nie zrobił z niej Path), tylko gdy trasa naprawdę przecina rzekę. Odpowiedź na (2): „Path brush” to lista wszystkich pędzli gruntu, `dirt` można wybrać dziś.
+
+**Błąd znaleziony na obrazach, nie w metryce (z iteracji 12h):** `route_` biegnie od celu do startu, a `reachEnds` łączył `start` z początkiem `smooth_` (końcem celu) i koniec `smooth_` z celem, czyli **na krzyż**. Przy krótkich trasach do drzwi (≤ 16) było to niewidoczne; przy długich szlakach daje długie proste ukośne linie i pętle (potwierdzone renderem seedu 1003 przed i po poprawce). Poprawione (`line(cel, początek smooth_)`, `line(koniec smooth_, start)`). **Skutek uboczny: zmienia wyniki przy `buildingDensity` > 0** (trasy do drzwi mają prawidłowe końce); odcisk Seed 1729 (`buildingDensity` 0) bez zmian; liczby seedów z zamkniętymi budynkami bez zmian, sumy minimalnie inne (np. zasięg 8: 71 / 90 zamiast 69 / 82).
+
+**Pomiar** (seedy 1001–1032, bok 512, profile v10; seedy z miarą > 0 z 32, m06 / m19):
+
+| ustawienie | `tipRock` > 0 | `tipWater` > 0 |
+| --- | ---: | ---: |
+| `rockPasses` 0, `fordLength` 0 | 0 / 1 | 2 / 4 |
+| `rockPasses` 1, `fordLength` 0 | 16 / 24 | 10 / 17 |
+| `rockPasses` 0, `fordLength` 48 | 2 / 0 | 1 / 4 |
+| `rockPasses` 1, `fordLength` 48 | 13 / 23 | 4 / 6 |
+
+**Kryterium 1 (`tipRock` > 0 w ≤ 3 z 32 seedów przy `rockPasses` 1): NIE spełnione** (16 i 24). **Kryterium 2 (`tipWater` o połowę mniejsza przy `fordLength` 48): NIE spełnione dla `rockPasses` 0** (2 → 1, 4 → 4), spełnione tylko przy `rockPasses` 1 (10 → 4, 17 → 6; to wynik zapisany jako dodatkowy, nie z zapisu). **Wniosek o mierze:** „czubek” (komórka Path z ≤ 3 sąsiadami Path) liczy też schodkowe krawędzie szerokiego szlaku w skale i końce przy brzegu, więc rośnie, gdy szlak przechodzi przez skałę; nie rozróżnia „urwany w skale” od „prawidłowo przecina”. **Nie traktuję jej jako dowodu**; decydują obrazy i ocena użytkownika. Kryterium 3: spełnione (16 testów rdzenia, obie sondy G1 PASS, sonda `--surface` nadal 0 blokujących kafli brodu i obok niego, kieszenie połączone; dwa przebiegi bajtowo identyczne). Seedy z zamkniętymi budynkami dla `fordLength` 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 (bez zmian).
+
+**Nie zweryfikowano:** czy szlak przez rzekę wygląda dobrze i czy przechodzi na drugi brzeg we wszystkich przypadkach (obejrzałem tylko render 2 seedów w kolorach rodzajów, nie GUI); kryterium (1) poza miarą; blokowania kafli piasku pod szlakiem przez rzekę (sonda ich nie obejmuje); poszarpanych brzegów piasku i trawy (punkt 4 uwag, osobna diagnoza); wpływu poprawki końców na trasy do drzwi w GUI.
