@@ -38,3 +38,19 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** Ruina to budynek z dziurami w murze, nie zawalona konstrukcja (bez gruzu, bez nierównej wysokości); obozowisko to polana ze ścieżką i podłogą bez namiotu z przedmiotu (brak ognisk, skrzyń, doodadów, bo profil nie ma pędzla na nie); luki są losowe, a nie „realistycznie zniszczone”; nie sprawdzam, czy pędzel ściany ma wszystkie ułożenia przy lukach (ściany układa `WallBrush::doWalls`, więc końce muru przy lukach dostają własne ułożenia pędzla); nie zmierzono w referencjach; ruiny i obozowiska nie są jeszcze w grafie regionów jako osobne POI (tylko `sites` w walidatorze).
+
+### Iteracja 26 — ognisko w obozowisku (FAZA 5; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Dodaj tam campfire. Jedziemy dalej”)
+
+**Zakres.** Obozowisko z iteracji 25 (polana Path z otwartym namiotem 3×3) dostaje **ognisko**: jedną komórkę `SurfaceGrid::fires` w środku polany. Przedmiot pochodzi z pędzla doodad wybranego w profilu (`GroundProfile::campfire`, domyślnie „campfire” w oknie, gdy klient ma taki pędzel), bez identyfikatorów przedmiotów w kodzie. Nowa warstwa planu `GroundPlan::fires` (przedmiot na komórkę, 0 = brak), osobna od roślinności, więc ognisko działa bez zaznaczonej „Vegetation”.
+
+**Zmiany geometrii obozowiska (kosztem zmiany wyników iteracji 25 dla `campCount` > 0; bez `campCount` nic się nie zmienia).** Polana to dysk Path o promieniu około 4 (komórki z dx² + dy² ≤ 18) wokół środka; **ognisko w środku (Path)**; namiot Floor 3×3 przesunięty o 3 komórki na wschód od środka (jego środek to miejsce `sites`, obrys to 8 luk), całkowicie w obrębie polany; warunek wolnego terenu: Grass lub Dirt w promieniu 7 od środka, brak Floor w promieniu 12, odstęp środków ≥ 12.
+
+**Kryteria.**
+1. `campCount` 0 lub puste `campfire`: odcisk Seed 1729, 17 testów rdzenia i odcisk planu bez ognisk bez zmian; plan bez ognisk ma ten sam odcisk co dotąd.
+2. Testy: każde obozowisko ma dokładnie jedno ognisko na komórce Path w środku polany, namiot go nie zakrywa (komórka ogniska ≠ komórki Floor), `valid()` odrzuca ognisko poza Path, odcisk siatki zmienia się z ogniskami, ręcznie policzona geometria jednego obozowiska (liczba komórek polany, 8 luk, 1 ognisko, 1 miejsce), deterministyczność, nowy `campCount` bez budynków działa.
+3. Sonda `--surface` (klient 10.98 **nie ma pędzla „campfire”**, więc przypadek używa dowolnego pędzla doodad z pojedynczymi przedmiotami, np. „small rocks”, jako pędzla ogniska i sprawdza tylko mechanizm): po Commit na każdej komórce ogniska dokładnie jeden element z tego pędzla, na innych komórkach ani jednego, Undo i Redo przywracają stan; odmowy: pędzel ogniska nieznany, pędzel nie jest doodadem; plan z ogniskiem ma inny odcisk niż bez.
+4. Pomiar jak w iteracji 25 (seedy 1001–1032, bok 512, m06 / m19, ruiny 30 %, 6 obozowisk, `fordLength` 48, `repairReach` 1): obozowisk nadal 24 na mapę, ognisk 24, wszystkie miejsca osiągnięte w ≥ 29 z 32 seedów (poprzednio 32 z 32).
+5. 17 testów rdzenia i obie sondy G1 PASS po przebudowie `rme`; dwa przebiegi bajtowo identyczne.
+6. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Ognisko to przedmiot z wybranego pędzla (w pędzlu „campfire” klientów 12.90+ są warianty: pierścień, spalone drewno, ogień; wariant wybierany deterministycznie po komórce, więc część ognisk może być zgaszona); w kliencie 10.98 z repo nie ma pędzla „campfire” (są przedmioty 1421–1426 bez pędzla), więc **działanie z prawdziwym ogniskiem nie zostanie przetestowane w sondzie, tylko mechanizm**; pole „Campfire brush” w oknie jest puste, gdy klient nie ma pędzla o tej nazwie (wtedy ognisk nie ma, a użytkownik może wybrać dowolny doodad); przedmiot blokujący (np. pole ognia) może zablokować komórkę ogniska w grze; ognisko nie jest jeszcze POI.
