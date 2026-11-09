@@ -333,3 +333,26 @@ Cechy na mapę (zbiorczo; N/A, gdy mapa ma < 30 budynków):
 **Ocena 12c** wg kryteriów zapisanych wyżej (pasma, seedy 1001–1032, profile m06 i m19, `buildingDensity` 30 i 40, `pathLength` jak w `g5_shape_table.py`). Pozostaje: GUI (pędzel drzwi, widok, Preview/Validate/Place/Undo/Redo) do oceny użytkownika.
 
 **Zastrzeżenia z góry.** Procent 30/70, odstępy 3–6, zasięg 60 i szerokość trasy wybrane z referencji M06/M19 (G 4, ok. 2,8 budynku na skupisko), nie dopasowane na seedach generatora; zmiana tych stałych po zobaczeniu wyniku wymaga nowego zapisu i oznaczenia „po zmianie modelu”. Pomiar G i Kn jest wrażliwy na stałe 3–6 i 12 (czułości nie badano). Drzwi w generatorze to jedno wejście (idealizacja), referencje mają ich więcej (Dn 2 / 4).
+
+### Iteracja 12 — wynik 12c (model 12b) i zapis 12d: udział kotwic (2026-11-09; zapis przed zmianą stałej i przed ponownym pomiarem)
+
+**Wynik 12c dla modelu 12b (commit rdzenia z 30 % kotwic; seedy 1001–1032, bok 512, v10, mediana).** Kryterium „≥ 75 % ocenianych cech w paśmie lub ze zgodnym kierunkiem” **niespełnione w obu profilach (4 z 8)**.
+
+| Cecha | m06 ref → gen | m06 | m19 ref → gen | m19 |
+| --- | --- | --- | --- | --- |
+| G | 4 → 4 | w paśmie | 4 → 4 | w paśmie |
+| Kn | 11 167 → 5 875 | **poza** (pasmo 7 482–16 750) | 11 955 → 4 750 | **poza** (8 010–17 932) |
+| Ks | 1 → 2 | **poza** (0,67–1,5) | 1 → 3 | **poza** |
+| Ki | 265 → 62 | **poza** (\|Δ\| 203 > 50) | 189 → 37 | **poza** (152) |
+| Kb | 661 → 850 | **poza** (189) | 714 → 928 | **poza** (214) |
+| Bp − Cp | +79 → +924 | kierunek zgodny | +184 → +908 | zgodny |
+| Bv − Cv | −29 → −130 | kierunek zgodny | −23 → −98 | zgodny |
+| Dp − Dp0 | +261 → +503 | kierunek zgodny | +204 → +495 | zgodny |
+
+Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 231 / 563), Dh 1000. Warunki dodatkowe rdzenia: jedne drzwi na budynek, drzwi na obrysie, schodek Path, odstęp ≥ 3, `buildingDensity` 0 bez zmian (odcisk Seed 1729 i PNG `pathLength` 80 / `buildingDensity` 0 bajt w bajt jak przed zmianą), 15 testów PASS.
+
+**Obserwacje poza kryteriami.** (1) Bp = 1000 z konstrukcji (każdy budynek ma schodek), więc nie odróżnia od referencji tak jak Bp = 93 / 209; kierunek jest spełniony trywialnie. (2) Długość szlaków (L na 65 536) rośnie z 53 / 89 (9d, bez budynków) do 243 / 280 przy budynkach, bo każdy budynek dostaje trasę do najbliższej sieci; referencje mają 70 / 78 (cała mapa, wg listy 9a). Szlaki zajmują więc wyraźnie więcej niż w referencji. (3) Budynki są zbyt zbite: Ki 62 / 37 wobec 265 / 189 ‰.
+
+**Zmiana 12d (jedna stała, zapisana przed ponownym pomiarem; wynik oznaczony „po zmianie modelu”).** `clusterAnchorPercent` 30 → **60**. Uzasadnienie wyłącznie z tabeli: referencje mają 19–27 % budynków samotnych i skupiska o medianie 1; generator przy 30 % kotwic ma 4–6 % samotnych. Wartość 60 wybrana jako okrągła połowa drogi do przewidywanej wartości, nie dopasowana na seedach; jeśli i ona nie spełni kryterium, nie dobieram dalej bez nowej decyzji użytkownika. Pozostałe stałe (odstęp 3–6, zasięg 60, 12 w definicji skupiska) bez zmian. Kryteria oceny te same co w 12c (powyżej). Długość szlaków (obserwacja 2) w tej iteracji nie jest zmieniana ani oceniana; zostaje zgłoszona jako odchylenie.
+
+**Zastrzeżenia z góry.** Zmiana po zobaczeniu wyniku in-sample na tych samych seedach i mapach (D17); poprawa Ki/Kn przy jednej stałej nie dowodzi ogólności. Ks i Kb mogą nie zmienić się zgodnie z oczekiwaniem, bo zależą od rozkładu rozmiarów skupisk, a nie od jednego parametru.
