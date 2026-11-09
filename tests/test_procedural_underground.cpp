@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <format>
+#include <tuple>
 #include <iostream>
 #include <iterator>
 #include <string>
@@ -200,9 +202,196 @@ void testCrossCheck() {
 	}
 	check(matched == 80, "all 80 underground comparisons matched");
 }
+
+constexpr ExitShape ramps[] = {
+	{ExitDirection::North, 0, 1, true}, {ExitDirection::West, 1, 0, true},
+	{ExitDirection::South, 0, -1, true}, {ExitDirection::East, -1, 0, true}};
+
+bool samePlan(const CaveExitPlan& a, const CaveExitPlan& b) {
+	return a.skipped == b.skipped && a.exits.size() == b.exits.size() &&
+		std::ranges::equal(a.exits, b.exits, [](const CaveExit& x, const CaveExit& y) {
+			return x.entrance == y.entrance && x.cell == y.cell && x.shape == y.shape;
+		});
+}
+
+// Independent oracle: enumerate every grid cell, sort candidate tuples and compare
+// each prospective placement directly against every accepted exit (no occupancy masks).
+CaveExitPlan bruteExits(const SurfaceGrid& g, const CaveGrid& c, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied) {
+	const int w = int(g.region.width), h = int(g.region.height);
+	const auto shifted = [&](int p, int dx, int dy) {
+		const int x = p % w + dx, y = p / w + dy;
+		return x < 0 || y < 0 || x >= w || y >= h ? -1 : y * w + x;
+	};
+	const auto dest = [&](int p, ExitDirection d) {
+		switch (d) {
+			case ExitDirection::North: return shifted(p, 0, -1);
+			case ExitDirection::South: return shifted(p, 0, 1);
+			case ExitDirection::East: return shifted(p, 1, 0);
+			case ExitDirection::West: return shifted(p, -1, 0);
+		}
+		return -1;
+	};
+	const auto contains = [](const auto& list, int p) { return std::ranges::find(list, uint32_t(p)) != list.end(); };
+	const auto surfaceOK = [&](int p) {
+		if (p < 0 || contains(g.entrances, p) || contains(g.fires, p) || contains(g.doors, p) ||
+			contains(g.gaps, p) || contains(g.sites, p) || (!occupied.empty() && occupied[size_t(p)])) return false;
+		switch (g.cells[size_t(p)]) {
+			case SurfaceKind::Grass: case SurfaceKind::Dirt: case SurfaceKind::Rock: case SurfaceKind::Shore: case SurfaceKind::Path: return true;
+			default: return false;
+		}
+	};
+	CaveExitPlan plan;
+	for (uint32_t e = 0; e < g.entrances.size(); ++e) {
+		const int entrance = int(g.entrances[e]);
+		std::vector<std::tuple<int, int, int>> candidates;
+		for (int p = 0; p < w * h; ++p) {
+			const int dx = p % w - entrance % w, dy = p / w - entrance / w;
+			const int distance = dx * dx + dy * dy;
+			if (distance > 0 && distance <= 5) candidates.emplace_back(distance, p / w, p % w);
+		}
+		std::ranges::sort(candidates);
+		bool found = false;
+		for (const auto& [distance, y, x] : candidates) {
+			const int p = y * w + x;
+			for (size_t si = 0; si < shapes.size(); ++si) {
+				const auto& shape = shapes[si];
+				const int t = shape.hasTail ? shifted(p, shape.tailDx, shape.tailDy) : p;
+				const int d = dest(p, shape.direction);
+				if (!surfaceOK(p) || !surfaceOK(d) || d == p || t < 0 || contains(g.entrances, t) ||
+					c.cells[size_t(p)] != CaveKind::Floor || c.cells[size_t(t)] != CaveKind::Floor) continue;
+				bool conflict = false;
+				for (const auto& old : plan.exits) {
+					const auto& os = shapes[old.shape];
+					const int op = int(old.cell), ot = os.hasTail ? shifted(op, os.tailDx, os.tailDy) : op;
+					const int od = dest(op, os.direction);
+					conflict |= p == op || p == ot || t == op || t == ot || p == od || d == op || d == od;
+				}
+				if (conflict) continue;
+				plan.exits.push_back({e, uint32_t(p), uint8_t(si)});
+				found = true;
+				break;
+			}
+			if (found) break;
+		}
+		if (!found) plan.skipped.push_back(e);
+	}
+	return plan;
+}
+
+void testExits() {
+	auto g = grid(9, 9, SurfaceKind::Grass);
+	g.entrances = {40}; g.cells[40] = SurfaceKind::Rock;
+	auto c = emptyCave(g); disc(c, 4, 4);
+	const ExitShape north[] = {{ExitDirection::North}};
+	auto plan = placeCaveExits(g, c, north);
+	check(plan && plan->exits.size() == 1 && plan->exits[0].cell == 31 && plan->exits[0].shape == 0 &&
+		plan->exits[0].entrance == 0 && plan->skipped.empty(), "exit: closest north cell (4,3), destination (4,2), not entrance");
+	const auto again = placeCaveExits(g, c, north);
+	check(plan && again && samePlan(*plan, *again), "exit: deterministic");
+
+	std::vector<uint8_t> occupied(81, 0);
+	occupied[31] = 1;
+	plan = placeCaveExits(g, c, north, occupied);
+	check(plan && plan->exits.size() == 1 && plan->exits[0].cell == 39, "exit: occupied P excludes first candidate");
+	occupied[31] = 0; occupied[22] = 1;
+	plan = placeCaveExits(g, c, north, occupied);
+	check(plan && plan->exits.size() == 1 && plan->exits[0].cell == 39, "exit: occupied destination excludes first candidate");
+	g.fires = {31}; g.cells[31] = SurfaceKind::Path;
+	plan = placeCaveExits(g, c, north);
+	check(plan && plan->exits[0].cell == 39, "exit: fire excluded");
+	g.fires.clear(); g.cells[31] = SurfaceKind::Grass;
+	plan = placeCaveExits(g, c, ramps);
+	check(plan && plan->exits.size() == 1 && plan->exits[0].cell == 31 && plan->exits[0].shape == 1,
+		"exit: north ramp tail hits entrance, next shape West wins");
+
+	g.cells.assign(81, SurfaceKind::Lake); g.cells[40] = SurfaceKind::Rock;
+	plan = placeCaveExits(g, c, ramps);
+	check(plan && plan->exits.empty() && plan->skipped == std::vector<uint32_t>{0}, "exit: water landing skipped");
+	g.cells.assign(81, SurfaceKind::Grass);
+	// Reverse spatial order checks that the entrance list, not cell order, controls placement.
+	g.entrances = {41, 40}; g.cells[40] = g.cells[41] = SurfaceKind::Rock;
+	disc(c, 5, 4);
+	plan = placeCaveExits(g, c, ramps);
+	check(plan && plan->exits.size() == 2 && plan->exits[0].cell == 32 && plan->exits[1].cell == 39 &&
+		plan->exits[0].entrance == 0 && plan->exits[1].entrance == 1, "exit: close entrances have distinct P/tails/destinations in list order");
+	check(plan && samePlan(*plan, bruteExits(g, c, ramps, {})), "exit: close layout matches independent checker");
+
+	const auto invalid = [&](const SurfaceGrid& surface, const CaveGrid& cave, std::span<const ExitShape> shapes,
+		std::span<const uint8_t> mask = {}) {
+		const auto result = placeCaveExits(surface, cave, shapes, mask);
+		return !result && result.error() == UndergroundError::InvalidGrid;
+	};
+	check(invalid(g, c, {}), "exit: empty shapes rejected");
+	check(invalid(g, c, ramps, std::span(occupied).first(80)), "exit: wrong occupied size rejected");
+	for (int field = 0; field < 5; ++field) {
+		auto wrong = c;
+		if (field == 0) ++wrong.region.x;
+		if (field == 1) ++wrong.region.y;
+		if (field == 2) ++wrong.region.z;
+		if (field == 3) ++wrong.region.width;
+		if (field == 4) ++wrong.region.height;
+		check(invalid(g, wrong, ramps), "exit: mismatched region rejected");
+	}
+	auto wrongCave = c; wrongCave.cells[0] = static_cast<CaveKind>(2);
+	check(invalid(g, wrongCave, ramps), "exit: invalid cave rejected");
+	auto wrongSurface = g; wrongSurface.entrances.push_back(81);
+	check(invalid(wrongSurface, c, ramps), "exit: invalid surface rejected");
+	const ExitShape badTail[] = {{ExitDirection::North, 1, 1, true}};
+	check(invalid(g, c, badTail), "exit: diagonal tail rejected");
+	const ExitShape zeroTail[] = {{ExitDirection::North, 0, 0, true}};
+	check(invalid(g, c, zeroTail), "exit: zero tail rejected");
+	const ExitShape badDirection[] = {{static_cast<ExitDirection>(4)}};
+	check(invalid(g, c, badDirection), "exit: invalid direction rejected");
+	std::vector<ExitShape> tooMany(257);
+	check(invalid(g, c, tooMany), "exit: unrepresentable shape index rejected");
+	std::stop_source stopped; stopped.request_stop();
+	const auto cancelled = placeCaveExits(g, c, ramps, {}, stopped.get_token());
+	check(!cancelled && cancelled.error() == UndergroundError::Cancelled, "exit: cancellation");
+	g.entrances.clear();
+	plan = placeCaveExits(g, c, ramps);
+	check(plan && plan->exits.empty() && plan->skipped.empty(), "exit: no entrances");
+}
+
+void testExitCrossCheck() {
+	uint64_t state = 0xa8459b3127ULL;
+	auto next = [&] { state ^= state << 13; state ^= state >> 7; state ^= state << 17; return state; };
+	int matched = 0;
+	for (int round = 0; round < 80; ++round) {
+		auto g = grid(5 + uint32_t(next() % 10), 5 + uint32_t(next() % 10), SurfaceKind::Grass);
+		for (auto& kind : g.cells) kind = static_cast<SurfaceKind>(next() % 9);
+		for (uint32_t i = 0; i < g.cells.size(); ++i) {
+			if (g.cells[i] == SurfaceKind::Rock && next() % 2 == 0) g.entrances.push_back(i);
+			if (g.cells[i] == SurfaceKind::Path && next() % 2 == 0) g.fires.push_back(i);
+			if (g.cells[i] == SurfaceKind::Floor) {
+				switch (next() % 3) { case 0: g.doors.push_back(i); break; case 1: g.gaps.push_back(i); break; default: g.sites.push_back(i); }
+			}
+		}
+		std::ranges::reverse(g.entrances);
+		auto c = emptyCave(g);
+		for (auto& kind : c.cells) kind = next() % 4 ? CaveKind::Floor : CaveKind::Solid;
+		std::vector<uint8_t> occupied(g.cells.size());
+		for (auto& byte : occupied) byte = uint8_t(next() % 7 == 0);
+		std::vector<ExitShape> shapes;
+		for (int i = 0; i < 8; ++i) {
+			auto shape = ramps[next() % 4]; shape.hasTail = next() % 2 != 0;
+			shapes.push_back(shape);
+		}
+		const std::span<const uint8_t> mask = round % 2 ? std::span<const uint8_t>(occupied) : std::span<const uint8_t>();
+		const auto got = placeCaveExits(g, c, shapes, mask);
+		const auto want = bruteExits(g, c, shapes, mask);
+		const auto repeated = placeCaveExits(g, c, shapes, mask);
+		const bool same = got && repeated && samePlan(*got, want) && samePlan(*got, *repeated);
+		check(same, std::format("exit cross-check round {}", round));
+		matched += same;
+	}
+	std::cout << std::format("EXIT_CROSS_CHECK {}/80\n", matched);
+	check(matched == 80, "all 80 independent exit comparisons matched");
+}
 } // namespace
 
 int main() {
+	testExits();
+	testExitCrossCheck();
 	testEntrances();
 	testCave();
 	testValidator();

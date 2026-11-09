@@ -40,13 +40,15 @@ int main(int argc, char** argv) {
 	const uint64_t cells = uint64_t(side) * side;
 	const SurfaceBudget budget {cells, cells * 8, cells * 96 + (1u << 20)};
 	SurfaceTuning tuning = *profile->tuning;
+	bool caveExitShapes = false;
 	int firstSeed = 4;
 	// Sweep helper: leading name=value arguments override featureSize, transitionWidth or shoreWidth.
 	for (; firstSeed < argc && std::string_view(argv[firstSeed]).find('=') != std::string_view::npos; ++firstSeed) {
 		const std::string_view arg = argv[firstSeed];
 		const std::string_view name = arg.substr(0, arg.find('='));
 		const uint32_t value = static_cast<uint32_t>(std::strtoul(argv[firstSeed] + name.size() + 1, nullptr, 10));
-		if (name == "featureSize") tuning.featureSize = value;
+		if (name == "caveExitShapes") caveExitShapes = arg.substr(name.size() + 1) == "ramp";
+		else if (name == "featureSize") tuning.featureSize = value;
 		else if (name == "transitionWidth") tuning.transitionWidth = value;
 		else if (name == "shoreWidth") tuning.shoreWidth = value;
 		else if (name == "pathLength") tuning.pathLength = value;
@@ -195,8 +197,18 @@ int main(int argc, char** argv) {
 			// Iteration 27: the cave below the entrances and its reachability from the start.
 			const auto cave = generateCave(*grid, seed);
 			const auto under = cave ? undergroundReachabilityOf(*grid, *cave, true) : std::unexpected(UndergroundError::InvalidGrid);
-			if (under) std::cout << std::format("under seed {}: entrances {} entrancesReached {} caveCells {} caveCellsPer64k {} components {} pockets {} reachedPermille {}\n", seed, under->entrances, under->entrancesReached,
+			if (under) std::cout << std::format("under seed {}: entrances {} entrancesReached {} caveCells {} caveCellsPer64k {} components {} pockets {} reachedPermille {}", seed, under->entrances, under->entrancesReached,
 				under->caveCells, under->caveCells * 65536 / grid->cells.size(), under->caveComponents, under->pockets, under->caveCells ? under->caveReachedCells * 1000 / under->caveCells : 0);
+			if (caveExitShapes) {
+				constexpr ExitShape ramp[] = {
+					{ExitDirection::North, 0, 1, true}, {ExitDirection::West, 1, 0, true},
+					{ExitDirection::South, 0, -1, true}, {ExitDirection::East, -1, 0, true}};
+				// This tool does not generate decoration, so no occupied mask is available.
+				const auto exits = cave ? placeCaveExits(*grid, *cave, ramp) : std::unexpected(UndergroundError::InvalidGrid);
+				if (!exits) { std::cerr << "cave exit placement failed\n"; return 6; }
+				if (under) std::cout << std::format(" exits {} skipped {}", exits->exits.size(), exits->skipped.size());
+			}
+			if (under) std::cout << '\n';
 		}
 		if (const auto graph = buildRegionGraph(*grid, true)) {
 			// Iteration 24: size of the graph, POIs without a route from the start, travel distances and whether the adjacency graph is connected.

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <stop_token>
 #include <vector>
 
@@ -34,6 +35,32 @@ struct UndergroundReport {
 };
 
 enum class UndergroundError : uint8_t { InvalidGrid, Cancelled, AllocationFailed };
+
+// Geometry only: the lower ramp at P leads to P + direction on the surface.
+// An optional lower-floor tail is relative to P; the upper ramp part is at P.
+enum class ExitDirection : uint8_t { North = 0, South, East, West };
+struct ExitShape {
+	ExitDirection direction = ExitDirection::North;
+	int8_t tailDx = 0;
+	int8_t tailDy = 0;
+	bool hasTail = false;
+	bool operator==(const ExitShape&) const = default;
+};
+struct CaveExit {
+	uint32_t entrance = 0; // index into SurfaceGrid::entrances
+	uint32_t cell = 0;     // row-major P
+	uint8_t shape = 0;     // index into shapes
+};
+struct CaveExitPlan {
+	std::vector<CaveExit> exits;
+	std::vector<uint32_t> skipped; // entrance indices without an exit
+};
+
+// First fit in (squared distance, y, x, shape) order, processing entrances in list order.
+// occupied, when present, has one byte per surface cell (nonzero blocks placement).
+[[nodiscard]] std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
+	const SurfaceGrid& surface, const CaveGrid& cave, std::span<const ExitShape> shapes,
+	std::span<const uint8_t> occupied = {}, std::stop_token stop = {});
 
 // An entrance is reached when its surface cell lies in the start's component (poiReachabilityOf); cave cells are reached when they lie in a
 // 4-connected component of Floor cells that holds the landing of a reached entrance.
