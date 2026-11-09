@@ -99,6 +99,9 @@ private:
 	wxComboBox* shore_brush_choice_ = nullptr;
 	wxComboBox* path_brush_choice_ = nullptr;
 	wxComboBox* campfire_brush_choice_ = nullptr;
+	wxComboBox* cave_entrance_brush_choice_ = nullptr;
+	wxComboBox* cave_exit_brush_choice_ = nullptr;
+	wxComboBox* cave_ground_brush_choice_ = nullptr;
 	wxSpinCtrl* building_density_spin_ = nullptr;
 	wxComboBox* floor_brush_choice_ = nullptr;
 	wxCheckBox* walls_check_ = nullptr;
@@ -112,6 +115,7 @@ private:
 	wxSpinCtrl* ford_length_spin_ = nullptr;
 	wxSpinCtrl* ruin_percent_spin_ = nullptr;
 	wxSpinCtrl* camp_count_spin_ = nullptr;
+	wxSpinCtrl* cave_entrances_spin_ = nullptr;
 	wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;
 	wxArrayString doodad_names_;

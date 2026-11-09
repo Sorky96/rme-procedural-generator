@@ -148,9 +148,9 @@ wxString describe(PreparationInputError error) {
 		case PreparationInputError::InvalidParameters:
 			return "The surface settings are not valid.";
 		case PreparationInputError::LowerFloorOccupied:
-			return "The entire rectangle on the floor below must be empty.";
+			return "The floor below the area is not empty: the cave needs an empty floor z+1 in the whole rectangle.";
 		case PreparationInputError::NoLowerFloor:
-			return "There is no floor below this area.";
+			return "There is no floor below this one for a cave.";
 		case PreparationInputError::AllocationFailed:
 			return memoryMessage;
 	}
@@ -558,6 +558,28 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	if (doodad_names_.Index("campfire") == wxNOT_FOUND) campfire_brush_choice_->Clear();
 	form->Add(campfire_brush_choice_, 1, wxEXPAND);
 
+	section("Underground");
+	form->Add(label("Cave entrances:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_entrances_spin_ = spin("terrain-cave-entrances", 0, 20, 0);
+	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells on the edge of rock, each with a cave below (floor z+1) and a ramp back up. The floor below must be empty in the whole rectangle.");
+	form->Add(cave_entrances_spin_, 1, wxEXPAND);
+
+	form->Add(label("Z entrance brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_entrance_brush_choice_ = brushChoice("terrain-cave-entrance-brush", "cave enter", 1);
+	if (doodad_names_.Index("cave enter") == wxNOT_FOUND) cave_entrance_brush_choice_->Clear();
+	form->Add(cave_entrance_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Cave exit brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_exit_brush_choice_ = brushChoice("terrain-cave-exit-brush", "ramp", 1);
+	cave_exit_brush_choice_->SetToolTip("Must be a ramp-like doodad: a composite with a floor-change tile and a tile on the floor above.");
+	if (doodad_names_.Index("ramp") == wxNOT_FOUND) cave_exit_brush_choice_->Clear();
+	form->Add(cave_exit_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Cave ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_ground_brush_choice_ = brushChoice("terrain-cave-ground-brush", "cave", 0);
+	if (ground_names_.Index("cave") == wxNOT_FOUND) cave_ground_brush_choice_->Clear();
+	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
+
 	section("Vegetation");
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
@@ -677,12 +699,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
-	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_ }) {
+	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_ }) {
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
+	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_ }) {
 		control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -839,6 +861,9 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	ruin_percent_spin_->Enable(natural && building_density_spin_->GetValue() > 0);
 	camp_count_spin_->Enable(natural);
 	campfire_brush_choice_->Enable(natural && camp_count_spin_->GetValue() > 0);
+	const bool caveProfile = natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0);
+	cave_entrances_spin_->Enable(caveProfile);
+	for (wxComboBox* control : { cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_ }) control->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
 	ford_length_spin_->Enable(natural);
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
@@ -894,7 +919,7 @@ void TerrainGeneratorDialog::SetStatus(const wxString& text, bool error) {
 }
 
 std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadRequest() try {
-	Request request; // caveEntrance/caveExit/caveGround stay empty until the separate form task.
+	Request request;
 	auto& config = request.config;
 
 	const std::string seed = seed_text_->GetValue().ToStdString();
@@ -943,6 +968,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
 	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0);
+	config.surface.caveEntrances = withFloors ? uint32_t(cave_entrances_spin_->GetValue()) : 0;
 	const bool withPaths = natural && config.surface.pathLength > 0;
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
 		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
@@ -971,6 +997,11 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 
 	if (withFloors && config.surface.campCount > 0) request.profile.campfire = std::string(campfire_brush_choice_->GetValue().utf8_str());
+	if (withFloors && config.surface.caveEntrances > 0) {
+		request.profile.caveEntrance = std::string(cave_entrance_brush_choice_->GetValue().utf8_str());
+		request.profile.caveExit = std::string(cave_exit_brush_choice_->GetValue().utf8_str());
+		request.profile.caveGround = std::string(cave_ground_brush_choice_->GetValue().utf8_str());
+	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();
 	if (config.vegetation) {
