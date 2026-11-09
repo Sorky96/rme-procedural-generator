@@ -474,3 +474,19 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 4. Seedy z zamkniętymi budynkami identyczne jak w 14c (zasięg 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 z 32); komórki brodów i czas generowania podane (bez pasma); dwa przebiegi bajtowo identyczne; 16 testów rdzenia, obie sondy G1, odcisk Seed 1729 bez zmian (`fordLength` 0 nic nie zmienia).
 
 **Zastrzeżenia z góry.** Stałe (A, 8, 40 000, szerokość 3/5) to moje wybory bez pomiaru referencji (w referencjach nie ma brodów); wychylona oś może przechodzić przez komórki nie będące wodą (nie są zmieniane); czy wygląda naturalnie, ocenia użytkownik; zabezpieczenie (4) może dodać prostą trasę, wtedy kształt będzie mniej naturalny.
+
+### Iteracja 15 — szlaki przez skałę, „przełęcze” (część 1) (zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: obie opcje, najpierw szlak przez skałę)
+
+**Zakres i odchylenie od zasady „najpierw pomiar w referencjach”.** Pomiar na zatwierdzonej mapie (G4_GATE_STATUS, „Pomiar przed przełęczami”) pokazał, że skała jest przechodnia, więc przełęcz nie jest tu potrzebą osiągalności, tylko kształtem szlaków. **Nie zmierzyłem w referencjach, ile szlaków przechodzi przez skałę** (wymaga nowego kodu sondy); to odchylenie od zasady, kryteria poniżej są więc bezwzględne, bez pasma z referencji (N/A). Opcja 2 użytkownika (skała blokująca i przełęcze jako jedyne przejścia) jest **osobną późniejszą iteracją** (wymaga pędzla blokującego w profilu i zmiany modelu osiągalności); tu jej nie ma.
+
+**Zmiana (nowe pole `SurfaceTuning::rockPasses`, 0/1, dopisane na końcu; 0 = jak dotąd, bajt w bajt).** Przy 1 router szlaków (`PathRouter`, także trasy do drzwi) może wchodzić na komórki Rock za dodatkową cenę 40 na komórkę (krok bazowy 10–20), więc szlak przechodzi przez pasmo skały tylko tam, gdzie objazd jest dłuższy (najwęższe miejsce pasma jako zastępstwo siodła; wysokości nie są dostępne w routerze). Komórki Rock pod trasą i jej obramowaniem stają się Path.
+
+**Miara.** `cut` = liczba komórek Path, które mają Rock w odległości ≤ 3 po obu stronach w jednej osi (lewo i prawo albo góra i dół), czyli szlak „przecinający” pasmo; liczone na 65 536 komórek, mediana [min..max], seedy 1001–1032, bok 512, profile m06/m19, `buildingDensity` 30 / 40.
+
+**Kryteria.**
+1. `rockPasses` 0: wszystkie testy rdzenia i odcisk Seed 1729 bez zmian; wynik `style_render` identyczny jak dotychczas.
+2. `rockPasses` 1, `pathLength` z profilu (40 / 80): mediana `cut` co najmniej 2× większa niż przy 0 i `cut` > 0 w ≥ 75 % seedów (24 z 32); długość szlaków L (mediana) nie więcej niż 1,5× wartość przy 0 (bez regresji kształtu szlaków).
+3. Dwa przebiegi bajtowo identyczne; 16 testów rdzenia i obie sondy G1 PASS; sonda `--surface` nadal 0 blokujących kafli brodu, kieszenie połączone.
+4. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Cena 40 i zasięg 3 są moimi wyborami bez referencji; szlak przez skałę jest szerszy niż prawdziwa przełęcz (stempel 3–4 kafle) i może wyglądać jak wycięty korytarz; kafle Path na skale używają pędzla szlaku (jego krawędzie względem skały nie były sprawdzane pod kątem blokowania, tak jak przy brodzie; będzie to w sondzie, jeśli kryterium 3 to wykaże); osiągalność się nie zmienia (skała jest przechodnia).
