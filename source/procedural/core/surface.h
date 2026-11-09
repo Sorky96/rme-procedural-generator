@@ -52,6 +52,13 @@ struct SurfaceGrid {
 uint32_t surfaceValueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step);
 uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y);
 
+// Fords (G4 iteration 14), exposed for tests: joins walkable components of at least 16 cells to another component across at
+// most `reach` River or Lake cells by stamping the shortest crossing (and the water beside it) as Path. `kinds` is a
+// width * height grid, `doors` lie on Floor cells; walls are assumed on. Deterministic. generateSurface calls this when
+// SurfaceTuning::fordLength is set.
+std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
+	std::span<const uint32_t> doors, std::stop_token stop = {});
+
 std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask = {}, std::span<const uint8_t> protection = {},

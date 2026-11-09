@@ -101,7 +101,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
 	if (config.algorithm == GenerationAlgorithm::Surface) {
 		const uint8_t required = config.surface.buildingDensity ? GroundProfile::surfaceWithFloorCount :
-			config.surface.pathLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
+			config.surface.pathLength || config.surface.fordLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
 		if (profile.count != required) return fail(PreparationInputError::InvalidProfile);
 		if (!profile.wall.empty() && !config.surface.buildingDensity) return fail(PreparationInputError::InvalidProfile);
 		if (!profile.door.empty() && (profile.wall.empty() || !doorTypeOf(profile.door))) return fail(PreparationInputError::InvalidProfile);

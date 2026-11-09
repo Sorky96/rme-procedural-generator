@@ -44,6 +44,7 @@ struct SurfaceTuning {
 	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
 	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
+	uint32_t fordLength = 0;          // longest water crossing (cells) a ford may span, 0..64; 0 = no fords (not part of a style profile)
 	bool operator==(const SurfaceTuning&) const = default;
 };
 

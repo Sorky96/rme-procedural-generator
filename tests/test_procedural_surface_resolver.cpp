@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -413,6 +414,63 @@ void doors(uint32_t side, std::ostream& report) {
 	report << "SURFACE_DOORS_E2E_PASS" << '\t' << side << '\t' << "doors=" << plannedDoors << '\t' << "changes=" << receipt->changes << '\n';
 }
 
+// Fords (G4 iteration 14): a surface with fordLength differs from one without only where water became Path; the preview,
+// Commit, Undo and Redo work with it and the plan fingerprint changes.
+void fords(uint32_t side, uint64_t seed, std::ostream& report) {
+	UndoLimits undoLimits;
+	check(g_gui.NewMap(), "Editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	GenerationConfig config {{100, 100, 7, side, side}, seed};
+	config.algorithm = GenerationAlgorithm::Surface;
+	config.surface.riverCount = 8;
+	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone"}, GroundProfile::surfaceWithPathCount};
+	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	auto plain = config;
+	plain.surface.fordLength = 0;
+	config.surface.fordLength = 64;
+	// The first seed from the given one on that needs a ford (the layout of rivers and lakes decides).
+	std::optional<SurfaceGrid> withFords, without;
+	size_t changed = 0;
+	for (uint64_t offset = 0; offset < 40 && !changed; ++offset) {
+		config.seed = plain.seed = seed + offset;
+		auto a = generateSurface({config.region, config.seed, config.surface}, MapExtent {65001, 65001, 16}, surfaceBudget);
+		auto b = generateSurface({plain.region, plain.seed, plain.surface}, MapExtent {65001, 65001, 16}, surfaceBudget);
+		check(bool(a) && bool(b), "Ford surface generation failed");
+		if (!a || !b) return;
+		for (size_t i = 0; i < a->cells.size(); ++i) {
+			if (a->cells[i] == b->cells[i]) continue;
+			++changed;
+			check(a->cells[i] == SurfaceKind::Path && (b->cells[i] == SurfaceKind::River || b->cells[i] == SurfaceKind::Lake), "A ford changed something other than water into Path");
+		}
+		withFords = std::move(*a);
+		without = std::move(*b);
+	}
+	check(changed > 0, "No seed produced a ford");
+	const auto baselineTiles = editor.map.getTileCount();
+	const auto prior = editor.actionQueue->getCurrentIndex();
+	auto plainProfile = profile;
+	plainProfile.count = GroundProfile::surfaceCount;
+	auto plainPrepared = prepareTerrain(editor.map, plain, plainProfile, preparation);
+	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(plainPrepared), "Preparation without fords failed, error index " + std::to_string(plainPrepared ? 0 : plainPrepared.error().index()));
+	check(bool(prepared), "Ford preparation failed, error index " + std::to_string(prepared ? 0 : prepared.error().index()) +
+		(prepared || prepared.error().index() != 4 ? std::string() : " preview error " + std::to_string(int(std::get<PreviewError>(prepared.error())))));
+	if (!plainPrepared || !prepared) return;
+	check(bool(validatePreparedTerrain(editor.map, *prepared, config, profile)), "Ford validation failed");
+	check(prepared->plan.fingerprint() != plainPrepared->plan.fingerprint(), "Fords did not change the plan fingerprint");
+	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+	check(bool(receipt), "Ford commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
+	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Ford commit is not one history step");
+	const auto committedTiles = editor.map.getTileCount();
+	check(editor.actionQueue->undo(), "Ford Undo refused");
+	check(editor.map.getTileCount() == baselineTiles, "Undo changed the tile count");
+	check(editor.actionQueue->redo(), "Ford Redo refused");
+	check(editor.map.getTileCount() == committedTiles, "Redo did not restore the tiles");
+	editor.map.clearChanges();
+	report << "SURFACE_FORDS_E2E_PASS" << '\t' << side << '\t' << "fordCells=" << changed << '\t' << "changes=" << (receipt ? receipt->changes : 0) << '\n';
+}
+
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
 // tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
 void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
@@ -490,6 +548,7 @@ void run() {
 		structures(250, report);
 		doors(100, report);
 		doors(250, report);
+		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
 		nextToTerrain(250, 1729, false, report);

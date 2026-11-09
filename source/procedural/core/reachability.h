@@ -5,7 +5,9 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <stop_token>
+#include <vector>
 
 namespace rme::procedural {
 
@@ -27,7 +29,20 @@ struct ReachabilityReport {
 	uint32_t sealed = 0;         // buildings whose door is not in the largest component (or that have no door with walls)
 };
 
+// Walkable components of a surface, numbered from 1 in row-major order of their first cell; label 0 = not walkable.
+// `largest` is the biggest component (ties go to the lowest label), 0 when nothing is walkable.
+struct WalkableLabels {
+	std::vector<uint32_t> label;
+	std::vector<uint64_t> sizes;  // index = label; sizes[0] unused
+	uint32_t largest = 0;
+};
+
 enum class ReachabilityError : uint8_t { InvalidGrid, Cancelled, AllocationFailed };
+
+// The component labelling behind reachabilityOf, for callers that hold the cells before they form a SurfaceGrid. `doors`
+// are cell indices that must lie on Floor cells. Checks stop_requested once per row.
+[[nodiscard]] std::expected<WalkableLabels, ReachabilityError> walkableLabelsOf(
+	std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, std::span<const uint32_t> doors, bool walls, std::stop_token stop = {});
 
 // Pure function of the grid and `walls`. Checks stop_requested once per row. Working memory is 9 bytes per cell:
 // component labels (4), a queue of at most one entry per cell (4) and one flag byte. An estimate, not a measurement.

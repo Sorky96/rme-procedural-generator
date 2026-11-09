@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
 	const uint32_t side = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
 	constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140}, {235, 215, 150}, {40, 90, 200}, {40, 90, 200}, {200, 170, 120}, {120, 120, 150}};
 	const uint64_t cells = uint64_t(side) * side;
-	const SurfaceBudget budget {cells, cells * 8, cells * 64 + (1u << 20)};
+	const SurfaceBudget budget {cells, cells * 8, cells * 96 + (1u << 20)};
 	SurfaceTuning tuning = *profile->tuning;
 	int firstSeed = 4;
 	// Sweep helper: leading name=value arguments override featureSize, transitionWidth or shoreWidth.
@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
 		else if (name == "transitionWidth") tuning.transitionWidth = value;
 		else if (name == "shoreWidth") tuning.shoreWidth = value;
 		else if (name == "pathLength") tuning.pathLength = value;
+		else if (name == "fordLength") tuning.fordLength = value;
 		else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
@@ -160,6 +161,15 @@ int main(int argc, char** argv) {
 			std::cout << std::format("access seed {}: doors {} bare {} stub {} barePermille {} stubPermille {}\n", seed, grid->doors.size(), bare, stub,
 				bare * 1000 / grid->doors.size(), stub * 1000 / grid->doors.size());
 		}
+		// Path cells that exist only because of fords: the same surface generated without them.
+		uint64_t fordCells = 0;
+		if (tuning.fordLength) {
+			SurfaceTuning plain = tuning;
+			plain.fordLength = 0;
+			const auto without = generateSurface(SurfaceConfig {config.region, seed, plain}, MapExtent {65001, 65001, 16}, budget);
+			if (!without) { std::cerr << "generation failed for seed " << seed << '\n'; return 4; }
+			for (size_t c = 0; c < grid->cells.size(); ++c) fordCells += grid->cells[c] != without->cells[c];
+		}
 		// Post-hoc diagnostic (not in the iteration 13 criteria): doors with no walkable non-Floor neighbour.
 		uint32_t doorBlocked = 0;
 		for (const uint32_t door : grid->doors) {
@@ -173,9 +183,9 @@ int main(int argc, char** argv) {
 			doorBlocked += !open;
 		}
 		if (const auto reach = reachabilityOf(*grid, true); reach && reach->walkable) {
-			std::cout << std::format("reach seed {}: walkable {} components {} largest {} largestPermille {} cutOff {} cutOffPer64k {} pockets {} buildings {} sealed {} doorBlocked {}\n", seed,
+			std::cout << std::format("reach seed {}: walkable {} components {} largest {} largestPermille {} cutOff {} cutOffPer64k {} pockets {} buildings {} sealed {} doorBlocked {} fordCells {}\n", seed,
 				reach->walkable, reach->components, reach->largest, reach->largest * 1000 / reach->walkable, reach->cutOff, reach->cutOff * 65536 / reach->cells, reach->pockets,
-				reach->buildings, reach->sealed, doorBlocked);
+				reach->buildings, reach->sealed, doorBlocked, fordCells);
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

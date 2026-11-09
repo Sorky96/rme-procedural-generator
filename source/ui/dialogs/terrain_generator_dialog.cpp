@@ -454,6 +454,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
 	form->Add(path_length_spin_, 1, wxEXPAND);
 
+	form->Add(label("&Ford length:"), 0, wxALIGN_CENTER_VERTICAL);
+	ford_length_spin_ = spin("terrain-ford-length", 0, 64, 0);
+	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a crossing of Path tiles up to this many water tiles wide. 0 = no fords. Uses the path brush.");
+	form->Add(ford_length_spin_, 1, wxEXPAND);
+
 	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
 	form->Add(path_brush_choice_, 1, wxEXPAND);
@@ -593,7 +598,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
-	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, building_density_spin_ }) {
+	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, ford_length_spin_, building_density_spin_ }) {
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
@@ -744,7 +749,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
 	path_length_spin_->Enable(natural);
 	building_density_spin_->Enable(natural);
-	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
+	ford_length_spin_->Enable(natural);
+	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || ford_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
@@ -822,6 +828,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
+		config.surface.fordLength = uint32_t(ford_length_spin_->GetValue());
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
@@ -838,7 +845,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
 	const bool withFloors = natural && config.surface.buildingDensity > 0;
-	const bool withPaths = natural && config.surface.pathLength > 0;
+	const bool withPaths = natural && (config.surface.pathLength > 0 || config.surface.fordLength > 0);
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
 		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
 	wxComboBox* const surfaceWithFloorFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_, path_brush_choice_, floor_brush_choice_ };

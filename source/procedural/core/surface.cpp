@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/surface.h"
 
+#include "procedural/core/reachability.h"
+
 #include <algorithm>
 #include <functional>
 #include <limits>
 #include <new>
 #include <queue>
+#include <span>
 #include <utility>
 
 namespace rme::procedural {
@@ -24,6 +27,7 @@ constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
 constexpr uint64_t doorStream = 0x646f6f725f733132ULL;     // "door_s12"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
+constexpr uint64_t fordBytesPerCell = 28;                   // estimate for the ford pass: labels, order, seen, parent, depth, queue, offsets
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
 constexpr uint32_t noiseBins = 65536;
 constexpr int64_t fixedOne = 4096;
@@ -238,6 +242,81 @@ private:
 };
 
 // Optional paths (G4 iteration 9): winding routes between random land cells. Returns false when cancelled.
+} // namespace
+
+// Fords (G4 iteration 14): while a walkable component of at least reachabilityPocketCells cells outside the largest one
+// has another component within `reach` water cells (River or Lake, 4-neighbour moves), the smallest such component gets the
+// shortest crossing stamped as Path, together with the water cells beside it (about three cells wide). Components are
+// numbered row-major and tried in label order; every ford relabels the surface.
+std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
+	std::span<const uint32_t> doors, std::stop_token stop) {
+	const size_t count = kinds.size();
+	std::vector<uint32_t> seen(count, 0), order(count), queue;
+	std::vector<int32_t> parent(count, -1);
+	std::vector<uint32_t> depth(count, 0), offset;
+	uint32_t token = 0;
+	queue.reserve(count);
+	const auto isWater = [&](size_t i) { return kinds[i] == SurfaceKind::River || kinds[i] == SurfaceKind::Lake; };
+	for (;;) {
+		auto labels = walkableLabelsOf(kinds, width, height, doors, true, stop);
+		if (!labels) {
+			if (labels.error() == ReachabilityError::Cancelled) return std::unexpected(SurfaceError::Cancelled);
+			if (labels.error() == ReachabilityError::AllocationFailed) throw std::bad_alloc();
+			return std::unexpected(SurfaceError::InvalidParameters);
+		}
+		const uint32_t components = uint32_t(labels->sizes.size());
+		offset.assign(components + 1, 0);
+		for (const uint32_t label : labels->label) ++offset[label + 1];
+		for (uint32_t id = 0; id < components; ++id) offset[id + 1] += offset[id];
+		std::vector<uint32_t> fill(offset.begin(), offset.end() - 1);
+		for (size_t i = 0; i < count; ++i) order[fill[labels->label[i]]++] = uint32_t(i);
+
+		bool stamped = false;
+		for (uint32_t id = 1; id < components && !stamped; ++id) {
+			if (id == labels->largest || labels->sizes[id] < reachabilityPocketCells) continue;
+			if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+			++token;
+			queue.clear();
+			for (uint32_t k = offset[id]; k < offset[id + 1]; ++k) {
+				queue.push_back(order[k]);
+				seen[order[k]] = token;
+				depth[order[k]] = 0;
+				parent[order[k]] = -1;
+			}
+			for (size_t head = 0; head < queue.size() && !stamped; ++head) {
+				const size_t i = queue[head];
+				const size_t x = i % width, y = i / width;
+				const size_t next[4] = {x > 0 ? i - 1 : count, x + 1 < width ? i + 1 : count, y > 0 ? i - width : count, y + 1 < height ? i + width : count};
+				for (const size_t n : next) {
+					if (n == count || seen[n] == token) continue;
+					if (labels->label[n] != 0) {
+						// Another component reached from a water cell: the water cells back to the source are the ford.
+						if (depth[i] == 0) continue;
+						std::vector<size_t> crossing;
+						for (int32_t at = int32_t(i); at >= 0 && depth[size_t(at)] > 0; at = parent[size_t(at)]) crossing.push_back(size_t(at));
+						for (const size_t cell : crossing) {
+							kinds[cell] = SurfaceKind::Path;
+							const size_t cx = cell % width, cy = cell / width;
+							const size_t beside[4] = {cx > 0 ? cell - 1 : count, cx + 1 < width ? cell + 1 : count, cy > 0 ? cell - width : count, cy + 1 < height ? cell + width : count};
+							for (const size_t b : beside) if (b != count && isWater(b)) kinds[b] = SurfaceKind::Path;
+						}
+						stamped = true;
+						break;
+					}
+					if (!isWater(n) || depth[i] + 1 > reach) continue;
+					seen[n] = token;
+					depth[n] = depth[i] + 1;
+					parent[n] = int32_t(i);
+					queue.push_back(uint32_t(n));
+				}
+			}
+		}
+		if (!stamped) return {};
+	}
+}
+
+namespace {
+
 bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
 	const size_t count = kinds.size();
 	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
@@ -548,7 +627,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 64 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -561,7 +640,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	if (count > std::numeric_limits<uint64_t>::max() / workingBytesPerCell - noiseBins) {
 		return std::unexpected(SurfaceError::SizeOverflow);
 	}
-	const uint64_t working = count * workingBytesPerCell + uint64_t(noiseBins) * sizeof(uint32_t);
+	const uint64_t working = count * (workingBytesPerCell + (config.tuning.fordLength ? fordBytesPerCell : 0)) + uint64_t(noiseBins) * sizeof(uint32_t);
 	if (working > budget.maxWorkingBytes) return std::unexpected(SurfaceError::WorkingLimit);
 	return SurfaceLayout { layout->cellCount, layout->outputBytes, working };
 }
@@ -856,6 +935,9 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
 			if (!placeDoorsAndTrails(kinds, width, height, config, foundations, doors, stop)) return cancelled();
+		}
+		if (config.tuning.fordLength) {
+			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, doors, stop); !fords) return std::unexpected(fords.error());
 		}
 
 		for (size_t i = 0; i < count; ++i) {
