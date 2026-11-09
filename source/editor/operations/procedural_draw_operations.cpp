@@ -7,7 +7,10 @@
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
+#include "brushes/door/door_brush.h"
+#include "game/complexitem.h"
 #include "brushes/wall/wall_brush.h"
+#include "procedural/adapter/door_types.h"
 #include "item_definitions/core/item_definition_store.h"
 #include "map/map.h"
 #include "map/tile_operations.h"
@@ -128,7 +131,9 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 }
 
 bool hashItem(uint64_t& hash, const Item* item, bool ground, std::span<const uint16_t> decorIds) noexcept {
-	if (!item || typeid(*item) != typeid(Item) || item->getInvalidOTBMData() ||
+	// RME turns a door piece into a Door (a plain Item subclass with a house door id); only an unassigned one is generated.
+	const bool plain = item && (typeid(*item) == typeid(Item) || (typeid(*item) == typeid(Door) && static_cast<const Door*>(item)->getDoorID() == 0));
+	if (!plain || item->getInvalidOTBMData() ||
 		(item->getAttributesView() && !item->getAttributesView()->empty())) return false;
 	const auto definition = g_item_definitions.get(item->getID());
 	if (!definition || !definition.clientId() || definition.isMetaItem() ||
@@ -276,6 +281,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	} else if (!plan.walls.empty()) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
+	const auto doorType = plan.profile.door.empty() ? std::nullopt : doorTypeOf(plan.profile.door);
+	if (plan.profile.door.empty() != plan.doors.empty() || (!plan.profile.door.empty() && (!doorType || !wallBrush || plan.doors.size() != plan.items.size()))) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
 	std::ranges::sort(decorIds);
 	decorIds.erase(std::ranges::unique(decorIds).begin(), decorIds.end());
 	uint64_t decorPlacements = 0;
@@ -293,6 +302,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			const auto wallDefinition = g_item_definitions.get(plan.walls[i]);
 			if (!wallDefinition || !wallDefinition.clientId() || wallDefinition.isMetaItem() || wallDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 		}
+		if (!plan.doors.empty() && plan.doors[i] && (plan.walls.empty() || !plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.items[i]) continue;
 		++placements;
 		if (!plan.decor.empty() && plan.decor[i]) {
@@ -440,6 +450,18 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!plan.walls[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			WallBrush::doWalls(result.buffer_.get(), tile);
+		}
+		// Doors replace the aligned wall piece with RME's own door logic; a wall brush without this kind of door for the
+		// piece that ended up there refuses the preview instead of leaving a closed wall.
+		if (doorType) {
+			DoorBrush doorBrush(*doorType);
+			for (size_t i = 0; i < plan.doors.size(); ++i) {
+				if (!plan.doors[i]) continue;
+				const Position position(r.x + int(i % r.width), r.y + int(i / r.width), r.z);
+				auto* tile = result.buffer_->getTile(position);
+				if (!tile || !doorBrush.canDraw(result.buffer_.get(), position)) co_return std::unexpected(PreviewError::InvalidItem);
+				doorBrush.draw(result.buffer_.get(), tile, nullptr);
+			}
 		}
 		// Classify actual values, ignoring only derived caches. Even a border on
 		// an unselected neighbour rejects the whole candidate; never clip it away.

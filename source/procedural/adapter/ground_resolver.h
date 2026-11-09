@@ -28,6 +28,8 @@ struct GroundProfile {
 	uint8_t decorCount = 0;
 	// Wall brush for the outline of Floor foundations; empty = no walls. Only valid with a profile of eight brushes.
 	std::string wall;
+	// Door kind (a name from door_types.h) for one door per building on the outline; empty = no doors. Needs a wall brush.
+	std::string door;
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
 };
@@ -48,6 +50,8 @@ struct GroundPlan {
 	// Wall item per cell for the outline of a Floor foundation (the brush's first item; the real alignment is fixed by
 	// RME's wall logic on the preview buffer); empty when the profile has no wall brush, otherwise one entry per cell.
 	std::vector<uint16_t> walls;
+	// 1 on the outline cell that gets a door (RME's DoorBrush replaces the wall piece there); empty when the profile has no door.
+	std::vector<uint8_t> doors;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
 

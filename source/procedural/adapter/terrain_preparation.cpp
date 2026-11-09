@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/main.h"
 #include "procedural/adapter/terrain_preparation.h"
+#include "procedural/adapter/door_types.h"
 
 #include "app/managers/version_manager.h"
 #include "editor/operations/draw_operations.h"
@@ -103,6 +104,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			config.surface.pathLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
 		if (profile.count != required) return fail(PreparationInputError::InvalidProfile);
 		if (!profile.wall.empty() && !config.surface.buildingDensity) return fail(PreparationInputError::InvalidProfile);
+		if (!profile.door.empty() && (profile.wall.empty() || !doorTypeOf(profile.door))) return fail(PreparationInputError::InvalidProfile);
 	} else if (profile.count != expectedBrushes) {
 		return fail(PreparationInputError::InvalidProfile);
 	}
@@ -123,6 +125,10 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.wall.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.wall.size());
 	}
+	if (!profile.door.empty()) {
+		if (!validName(profile.door.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(profile.door.size());
+	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
 	// stage copies it. The view is used only here and never stored.
 	const uint64_t clientLength = g_version.GetCurrentVersionIDView().size();
@@ -139,7 +145,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1));
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1)) + (profile.door.empty() ? 0 : cellCount);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {

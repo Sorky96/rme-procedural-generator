@@ -18,6 +18,7 @@
 #include "live/live_manager.h"
 #include "lua/lua_api.h"
 #include "map/map.h"
+#include "procedural/adapter/door_types.h"
 #include "procedural/adapter/terrain_commit.h"
 #include "procedural/adapter/terrain_target.h"
 #include "rendering/drawers/tiles/tile_color_calculator.h"
@@ -459,7 +460,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
 	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
-	building_density_spin_->SetToolTip("Building foundations (floor rectangles, no walls) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
+	building_density_spin_->SetToolTip("Building foundations (floor rectangles, optional walls and doors) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
 	form->Add(building_density_spin_, 1, wxEXPAND);
 
 	form->Add(label("Floor brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -475,6 +476,20 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Wall brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	wall_brush_choice_ = brushChoice("terrain-wall-brush", "stone wall", 2);
 	form->Add(wall_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("&Doors:"), 0, wxALIGN_CENTER_VERTICAL);
+	doors_check_ = newd wxCheckBox(this, wxID_ANY, "One door per building, with a trail to it");
+	doors_check_->SetName("terrain-doors");
+	doors_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	doors_check_->SetToolTip("Replaces one wall piece of every building with a door facing the nearest trail. The wall brush must have doors of the chosen kind.");
+	form->Add(doors_check_, 1, wxEXPAND);
+
+	form->Add(label("Door &kind:"), 0, wxALIGN_CENTER_VERTICAL);
+	door_type_choice_ = newd wxChoice(this, wxID_ANY);
+	door_type_choice_->SetName("terrain-door-type");
+	for (const auto& kind : doorKinds) door_type_choice_->Append(wxString::FromUTF8(kind.first.data(), kind.first.size()));
+	door_type_choice_->SetSelection(0);
+	form->Add(door_type_choice_, 1, wxEXPAND);
 
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
@@ -591,6 +606,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	profile_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnProfileChosen, this);
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	walls_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	doors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	door_type_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
 	place_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPlace, this);
@@ -731,6 +748,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
+	doors_check_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
+	door_type_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue() && doors_check_->GetValue());
 	vegetation_check_->Enable(natural);
 	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
@@ -839,6 +858,10 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			SetStatus("Choose a wall brush or untick Walls.", true);
 			wall_brush_choice_->SetFocus();
 			return std::nullopt;
+		}
+		if (doors_check_->GetValue()) {
+			const wxString kind = door_type_choice_->GetStringSelection();
+			request.profile.door = std::string(kind.utf8_str());
 		}
 	}
 

@@ -34,6 +34,11 @@ uint64_t GroundPlan::fingerprint() const {
 			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
 		}
 	}
+	// Appended only with doors, so plans without them keep their fingerprint.
+	if (!doors.empty()) {
+		hash = (hash ^ 0x6f) * 1099511628211ULL;
+		for (const auto flag : doors) hash = (hash ^ flag) * 1099511628211ULL;
+	}
 	return hash;
 }
 
