@@ -402,3 +402,22 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 **Ocena (seedy 1001–1032, bok 512, v10, `pathLength` 0, `buildingDensity` 30 / 40).** (a) L (mediana) ≤ 1,5·ref (≤ 105 m06, ≤ 117 m19) przy `doorTrailReach` 24; jeśli nie, wartość 16 (jedyna alternatywa, zapisana z góry); (b) **kikuty**: odsetek drzwi, których schodek jest jedynym drzwiami w swojej składowej Path (8-spójnej), ≤ 100 ‰ (cel: 12g miało ok. 650–670 ‰ „izolowanych”, z czego większość to właśnie kikuty); (c) raportuję odsetek drzwi bez schodka (budynki bez celu) oraz G, Kn, Ks, Ki, Kb, Dp (powinny zostać bez zmian); (d) testy: 15 testów rdzenia + sondy G1 PASS po przebudowaniu `rme`, dwa przebiegi bajtowo identyczne, wszystkie drzwi nadal na obrysie, schodek (jeśli jest) to Path przed drzwiami; (e) decyduje ocena wzrokowa użytkownika.
 
 **Zastrzeżenia z góry.** Pary budynków mogą się łączyć trasą wąską lub łamaną (A* ze stałymi kosztami); budynek, którego partner nie uzyska trasy (limit długości, brak drogi), zostaje z kikutem (to właśnie mierzy (b)); zmiana po obserwacji trzech zrzutów jednego użytkownika; zasięg 24 w dalszym ciągu nie badany pod kątem czułości.
+
+### Iteracja 13 — walidator osiągalności powierzchni (zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Walidator osiągalności najpierw”)
+
+**Zakres.** Rdzeń dostaje czystą funkcję `reachabilityOf(SurfaceGrid, walls)` (`source/procedural/core/reachability.{h,cpp}`), która tylko **mierzy** (bez naprawy i bez odrzucania seedów; to osobna iteracja po pomiarze). Nic nie zmienia wyniku generatora ani odcisków.
+
+**Model przechodności (założenie, nie zmierzone na kliencie).** Przechodnie: Grass, Dirt, Rock, Shore, Path oraz wnętrze Floor. Nieprzechodnie: Lake, River, Preserve (komórka nie jest generowana, więc nieznana) oraz, gdy `walls` włączone, komórka obrysu Floor (Floor z 4-sąsiadem innego rodzaju lub poza obszarem — ta sama definicja co w resolverze) **bez drzwi**; komórka drzwi jest przechodnia. Bez ścian obrys jest przechodni. Łączność 4-sąsiedzka (jak `topology`).
+
+**Wyjście.** Liczba komórek przechodnich, składowych, największa składowa, udział największej w ‰, komórki poza największą, „kieszenie” (składowe ≥ 16 komórek poza największą), budynki (składowe 4-spójne Floor), budynki zamknięte (drzwi poza największą składową albo brak drzwi przy `walls`), budynki osiągalne.
+
+**Dlaczego bez pasma z referencji.** Referencje (piętro 7) mają największą składową ok. 10 % pól przechodnich (np. 74 945 z 718 346), bo mapy to wyspy i obszary rozdzielone nieznanym; wycinek 512×512 generatora nie jest z tym porównywalny. Wartości referencji zostają **N/A** jako pasmo; kryteria są bezwzględne.
+
+**Kryteria.**
+1. Testy ręcznie policzone: jezioro dzielące ląd na dwie składowe (liczby z rysunku), budynek z drzwiami (osiągalny), bez drzwi przy `walls` (zamknięty), te same dane bez `walls` (osiągalny), komórki Preserve nieprzechodnie, pusta siatka, `stop_token`.
+2. Test krzyżowy: na ≥ 50 losowych siatkach 16×16 wynik równa się niezależnej implementacji w teście (inny algorytm: union-find) w liczbie składowych, największej i budynkach zamkniętych.
+3. Deterministyczność: dwa przebiegi identyczne; pamięć robocza ≤ 8 B/komórkę (oszacowanie, nie pomiar).
+4. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, `pathLength` domyślna z profilu i 0, ściany i drzwi włączone; mediana [min..max]): udział największej składowej (‰), komórki poza największą na 65 536, kieszenie, budynki zamknięte / budynki. **Kryterium przechodzenia tylko dla budynków:** zamknięte = 0 w ≥ 90 % seedów (medianowo 0). Pozostałe liczby to stan bazowy dla mostów i przełęczy, bez pasma (rzeki dzielą ląd legalnie).
+5. Wszystkie testy rdzenia i obie sondy G1 PASS; `buildingDensity` 0 bez zmian bajt w bajt (odcisk Seed 1729 `17159159863505677800`).
+
+**Zastrzeżenia z góry.** Nie ma jeszcze POI ani „ustalonego startu” z G5 (start/POI w generatorze nie istnieją): ocena „POI osiągalne” = N/A, jedyne wymagane punkty to wejścia budynków. Przechodność Rock i Shore przyjęta, nie sprawdzona na kliencie (D22 do zapisu). Piętra i przejścia Z poza zakresem (generator działa na jednym piętrze).
