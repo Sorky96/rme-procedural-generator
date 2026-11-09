@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: rozszerzone końce brodu (iteracja 14c) — PARTIAL
+
+Po uwadze użytkownika (bród zbyt wąski na początku i końcu) końce brodu mają teraz piaszczysty „wlot” o promieniu 3; styk z lądem rośnie z 2 do 4–7 kafli. Sonda sprawdza flagi blokowania i łączność na zatwierdzonej mapie (0 blokujących, kieszenie połączone), liczby seedów z zamkniętymi budynkami bez zmian, 16 testów rdzenia i obie sondy G1 PASS. Wygląd i chodzenie w grze czekają na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14c”.
+
 ## 2026-11-09 — G5: brody z piasku zamiast ze szlaku (iteracja 14b) — PARTIAL
 
 Uwaga użytkownika („tym mostem nie da się przejść”) trafna: brod z kafli Path dostawał blokującą krawędź `shallow water` (5 z 6 kafli w sondzie). Brody mają teraz rodzaj Shore (piasek), sonda sprawdza flagę blokowania kafli po Commit (0 z 6), limit zasięgu wzrósł z 64 do 256 (przy 256: 0 z 32 seedów z zamkniętymi budynkami w m06 i m19). 16 testów rdzenia i obie sondy G1 PASS. Wygląd i chodzenie w grze czekają na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14b”.
