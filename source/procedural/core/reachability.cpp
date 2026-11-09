@@ -82,6 +82,39 @@ std::expected<WalkableLabels, ReachabilityError> walkableLabelsOf(
 	}
 }
 
+std::optional<uint32_t> fixedStartOf(const WalkableLabels& labels, uint32_t widthIn, uint32_t heightIn) {
+	const int64_t width = widthIn, height = heightIn;
+	std::optional<uint32_t> start;
+	int64_t bestDistance = 0;
+	for (size_t i = 0; i < labels.label.size(); ++i) {
+		if (!labels.label[i]) continue;
+		const int64_t dx = 2 * int64_t(i % size_t(width)) - (width - 1), dy = 2 * int64_t(i / size_t(width)) - (height - 1);
+		const int64_t distance = dx * dx + dy * dy;
+		if (!start || distance < bestDistance) { start = uint32_t(i); bestDistance = distance; }
+	}
+	return start;
+}
+
+std::vector<uint32_t> exitCellsOf(const WalkableLabels& labels, uint32_t widthIn, uint32_t heightIn) {
+	const int64_t width = widthIn, height = heightIn;
+	std::vector<uint32_t> cells;
+	// One exit per side: scan the edge in index order and keep the cell nearest to the middle of the side.
+	for (int side = 0; side < 4; ++side) {
+		int64_t best = -1, bestOffset = 0;
+		const int64_t length = side < 2 ? width : height;
+		for (int64_t k = 0; k < length; ++k) {
+			const int64_t x = side == 0 ? k : side == 1 ? k : side == 2 ? 0 : width - 1;
+			const int64_t y = side == 0 ? 0 : side == 1 ? height - 1 : k;
+			const size_t cell = size_t(y * width + x);
+			if (!labels.label[cell]) continue;
+			const int64_t offset = std::abs(2 * k - (length - 1));
+			if (best < 0 || offset < bestOffset) { best = int64_t(cell); bestOffset = offset; }
+		}
+		if (best >= 0) cells.push_back(uint32_t(best));
+	}
+	return cells;
+}
+
 std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid& grid, bool walls, std::stop_token stop) {
 	if (!grid.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
 	const int64_t width = grid.region.width, height = grid.region.height;
@@ -90,13 +123,7 @@ std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid&
 	PoiReport report;
 	for (size_t id = 1; id < labels->sizes.size(); ++id) report.walkable += labels->sizes[id];
 
-	int64_t bestDistance = 0;
-	for (size_t i = 0; i < grid.cells.size(); ++i) {
-		if (!labels->label[i]) continue;
-		const int64_t dx = 2 * int64_t(i % size_t(width)) - (width - 1), dy = 2 * int64_t(i / size_t(width)) - (height - 1);
-		const int64_t distance = dx * dx + dy * dy;
-		if (!report.hasStart || distance < bestDistance) { report.hasStart = true; report.start = uint32_t(i); bestDistance = distance; }
-	}
+	if (const auto start = fixedStartOf(*labels, grid.region.width, grid.region.height)) { report.hasStart = true; report.start = *start; }
 	if (!report.hasStart) {
 		report.entrances = uint32_t(grid.doors.size());
 		return report;
@@ -107,25 +134,9 @@ std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid&
 		++report.entrances;
 		report.entrancesReached += labels->label[door] == startLabel;
 	}
-	// One exit per side: scan the edge in index order and keep the cell nearest to the middle of the side.
-	const auto exitOnSide = [&](int side) {
-		int64_t best = -1, bestOffset = 0;
-		const int64_t length = side < 2 ? width : height;
-		for (int64_t k = 0; k < length; ++k) {
-			const int64_t x = side == 0 ? k : side == 1 ? k : side == 2 ? 0 : width - 1;
-			const int64_t y = side == 0 ? 0 : side == 1 ? height - 1 : k;
-			const size_t cell = size_t(y * width + x);
-			if (!labels->label[cell]) continue;
-			const int64_t offset = std::abs(2 * k - (length - 1));
-			if (best < 0 || offset < bestOffset) { best = int64_t(cell); bestOffset = offset; }
-		}
-		return best;
-	};
-	for (int side = 0; side < 4; ++side) {
-		const int64_t cell = exitOnSide(side);
-		if (cell < 0) continue;
+	for (const uint32_t cell : exitCellsOf(*labels, grid.region.width, grid.region.height)) {
 		++report.exits;
-		report.exitsReached += labels->label[size_t(cell)] == startLabel;
+		report.exitsReached += labels->label[cell] == startLabel;
 	}
 	return report;
 }

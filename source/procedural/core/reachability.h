@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <vector>
@@ -48,6 +49,10 @@ enum class ReachabilityError : uint8_t { InvalidGrid, Cancelled, AllocationFaile
 // component labels (4), a queue of at most one entry per cell (4) and one flag byte. An estimate, not a measurement.
 [[nodiscard]] std::expected<ReachabilityReport, ReachabilityError> reachabilityOf(
 	const SurfaceGrid& grid, bool walls, std::stop_token stop = {});
+
+// The fixed start and the exit cells of iteration 22 (see PoiReport), computed from a labelling; also used by the repair pass.
+[[nodiscard]] std::optional<uint32_t> fixedStartOf(const WalkableLabels& labels, uint32_t width, uint32_t height);
+[[nodiscard]] std::vector<uint32_t> exitCellsOf(const WalkableLabels& labels, uint32_t width, uint32_t height);
 
 // Reachability from a fixed start (G4 iteration 22, FAZA 5). Start: the walkable cell nearest to the middle of the area (squared
 // distance, ties: lower index). Entrances: the door cells of SurfaceGrid::doors. Exits: for each side the walkable cell on that edge

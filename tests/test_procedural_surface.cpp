@@ -2,6 +2,7 @@
 #include "procedural/core/decoration.h"
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/surface.h"
+#include "procedural/core/reachability.h"
 
 #include <algorithm>
 #include <array>
@@ -619,12 +620,39 @@ void rockPasses() {
 	require(!validateSurface(config, extent, budget).has_value(), "rockPasses above 1 was accepted");
 }
 
+// G4 iteration 23: seed rejection. A seed whose first attempt fails is found by search; the result is deterministic.
+void reachableSurface() {
+	size_t rejected = 0;
+	for (uint64_t seed = 1; seed <= 40 && !rejected; ++seed) {
+		auto config = makeConfig(100, seed);
+		config.tuning.buildingDensity = 40;
+		config.tuning.lakePermille = 300;
+		config.tuning.riverCount = 8;
+		const auto result = generateReachableSurface(config, extent, budget, 8);
+		require(result.has_value(), "reachable surface: generation");
+		if (result->attempts == 1) { require(result->allReached && result->seed == seed, "reachable surface: first attempt"); continue; }
+		rejected = size_t(seed);
+		require(result->seed == seed + result->attempts - 1 || !result->allReached, "reachable surface: seed arithmetic");
+		const auto again = generateReachableSurface(config, extent, budget, 8);
+		require(again.has_value() && again->seed == result->seed && again->attempts == result->attempts && again->grid.cells == result->grid.cells, "reachable surface: not deterministic");
+		const auto one = generateReachableSurface(config, extent, budget, 1);
+		const auto plain = generateSurface(config, extent, budget);
+		require(one.has_value() && plain.has_value() && one->seed == seed && one->attempts == 1 && !one->allReached && one->grid.cells == plain->cells, "reachable surface: one attempt returns the first surface unreached");
+		if (result->allReached) {
+			const auto poi = poiReachabilityOf(result->grid, true);
+			require(poi.has_value() && poi->entrances == poi->entrancesReached && poi->exits == poi->exitsReached, "reachable surface: reported as reached but is not");
+		}
+	}
+	require(rejected != 0, "reachable surface: no seed needed a second attempt in 40 (test setup)");
+	require(!generateReachableSurface(makeConfig(100, 1), extent, budget, 0).has_value(), "reachable surface: zero attempts accepted");
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses();
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {

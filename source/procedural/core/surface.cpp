@@ -8,6 +8,7 @@
 #include <functional>
 #include <limits>
 #include <new>
+#include <optional>
 #include <queue>
 #include <span>
 #include <utility>
@@ -355,6 +356,7 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 	uint32_t token = 0;
 	queue.reserve(count);
 	const auto isWater = [&](size_t i) { return kinds[i] == SurfaceKind::River || kinds[i] == SurfaceKind::Lake; };
+	std::optional<uint32_t> repairStart;  // the fixed start, taken from the first labelling (repair mode)
 	for (;;) {
 		auto labels = walkableLabelsOf(kinds, width, height, doors, true, stop);
 		if (!labels) {
@@ -363,6 +365,17 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 			return std::unexpected(SurfaceError::InvalidParameters);
 		}
 		const uint32_t components = uint32_t(labels->sizes.size());
+		// Repair mode: the components that hold a door or an exit and are not the start's component.
+		std::vector<uint8_t> needsFord;
+		if (shape.repair) {
+			if (!repairStart) repairStart = fixedStartOf(*labels, width, height);
+			if (!repairStart) return {};
+			needsFord.assign(components, 0);
+			for (const uint32_t door : doors) needsFord[labels->label[door]] = 1;
+			for (const uint32_t cell : exitCellsOf(*labels, width, height)) needsFord[labels->label[cell]] = 1;
+			needsFord[0] = 0;
+			needsFord[labels->label[*repairStart]] = 0;
+		}
 		offset.assign(components + 1, 0);
 		for (const uint32_t label : labels->label) ++offset[label + 1];
 		for (uint32_t id = 0; id < components; ++id) offset[id + 1] += offset[id];
@@ -371,7 +384,7 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 
 		bool stamped = false;
 		for (uint32_t id = 1; id < components && !stamped; ++id) {
-			if (id == labels->largest || labels->sizes[id] < reachabilityPocketCells) continue;
+			if (shape.repair ? !needsFord[id] : (id == labels->largest || labels->sizes[id] < reachabilityPocketCells)) continue;
 			if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
 			++token;
 			queue.clear();
@@ -823,7 +836,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8 || config.tuning.repairReach > 1 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -836,7 +849,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	if (count > std::numeric_limits<uint64_t>::max() / workingBytesPerCell - noiseBins) {
 		return std::unexpected(SurfaceError::SizeOverflow);
 	}
-	const uint64_t working = count * (workingBytesPerCell + (config.tuning.fordLength ? fordBytesPerCell : 0)) + uint64_t(noiseBins) * sizeof(uint32_t);
+	const uint64_t working = count * (workingBytesPerCell + (config.tuning.fordLength || config.tuning.repairReach ? fordBytesPerCell : 0)) + uint64_t(noiseBins) * sizeof(uint32_t);
 	if (working > budget.maxWorkingBytes) return std::unexpected(SurfaceError::WorkingLimit);
 	return SurfaceLayout { layout->cellCount, layout->outputBytes, working };
 }
@@ -1139,6 +1152,9 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		if (config.tuning.fordLength) {
 			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, doors, stop, FordShape {config.seed, config.region.x, config.region.y}); !fords) return std::unexpected(fords.error());
 		}
+		if (config.tuning.repairReach) {
+			if (const auto repaired = placeFords(kinds, width, height, 256, doors, stop, FordShape {config.seed, config.region.x, config.region.y, true}); !repaired) return std::unexpected(repaired.error());
+		}
 
 		for (size_t i = 0; i < count; ++i) {
 			if ((!mask.empty() && mask[i] == 0) || (!protection.empty() && protection[i] != 0)) {
@@ -1151,6 +1167,26 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}
+}
+
+std::expected<ReachableSurface, SurfaceError> generateReachableSurface(
+	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget, uint32_t maxAttempts,
+	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
+	if (maxAttempts == 0) return std::unexpected(SurfaceError::InvalidParameters);
+	std::optional<ReachableSurface> first;
+	for (uint32_t attempt = 0; attempt < maxAttempts; ++attempt) {
+		SurfaceConfig tried = config;
+		tried.seed = config.seed + attempt;
+		auto grid = generateSurface(tried, extent, budget, mask, protection, stop);
+		if (!grid) return std::unexpected(grid.error());
+		const auto poi = poiReachabilityOf(*grid, true, stop);
+		if (!poi) return std::unexpected(poi.error() == ReachabilityError::Cancelled ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
+		const bool all = poi->hasStart && poi->entrances == poi->entrancesReached && poi->exits == poi->exitsReached;
+		if (all) return ReachableSurface {std::move(*grid), tried.seed, attempt + 1, true};
+		if (!first) first = ReachableSurface {std::move(*grid), tried.seed, 1, false};
+	}
+	first->attempts = maxAttempts;
+	return std::move(*first);
 }
 
 } // namespace rme::procedural

@@ -67,10 +67,19 @@ void trimSpits(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height)
 // SurfaceTuning::fordLength is set.
 // Crossings of at least 8 water cells get a natural shape (swinging axis, varying width, iteration 14d) driven by the seed and the
 // absolute position of the area; shorter ones stay straight.
-struct FordShape { uint64_t seed = 0; int32_t x = 0; int32_t y = 0; };
+// `repair` (iteration 23): only components that hold a door or an exit and are not the start's component get a ford, whatever their size.
+struct FordShape { uint64_t seed = 0; int32_t x = 0; int32_t y = 0; bool repair = false; };
 
 std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
 	std::span<const uint32_t> doors, std::stop_token stop = {}, FordShape shape = {});
+
+// Seed rejection (G4 iteration 23): tries `seed`, `seed + 1`, ... up to `maxAttempts` and returns the first surface whose doors and exits are all
+// reachable from the fixed start (see poiReachabilityOf; walls assumed). When none is, the first attempt comes back with allReached = false.
+struct ReachableSurface { SurfaceGrid grid; uint64_t seed = 0; uint32_t attempts = 0; bool allReached = false; };
+
+std::expected<ReachableSurface, SurfaceError> generateReachableSurface(
+	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget, uint32_t maxAttempts,
+	std::span<const uint8_t> mask = {}, std::span<const uint8_t> protection = {}, std::stop_token stop = {});
 
 std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,

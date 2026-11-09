@@ -388,6 +388,46 @@ void testPoi() {
 	check(poiReachabilityOf(bad, false).error_or(ReachabilityError::Cancelled) == ReachabilityError::InvalidGrid, "poi: empty grid is invalid");
 }
 
+// Repair (iteration 23), 24 x 9: Grass x 0..12 (the start is (11,4): the middle (11.5, 4) ties between x = 11 and 12, lower index),
+// River x 13..18 (6 wide), Grass x 19..23 with a 3 x 3 building Floor x 20..22, y 2..4 and its door at (21,4).
+//   Exits: north (11,0), south (11,8), west (0,4) on the start's side; east (23,4) and the door lie across the river.
+//   A normal ford of reach 3 cannot cross 6 water cells; repair (reach 256) joins the right bank: crossing row 0 x 13..18, mouths of radius 3
+//   cover rows 0..3, so 6 x 4 = 24 sand cells and 54 - 24 = 30 river cells remain; afterwards all 1 + 4 POIs are reached.
+SurfaceGrid repairGrid() {
+	SurfaceGrid g = grid(24, 9, SurfaceKind::Grass);
+	fillRect(g, 13, 0, 18, 8, SurfaceKind::River);
+	fillRect(g, 20, 2, 22, 4, SurfaceKind::Floor);
+	g.doors = {4 * 24 + 21};
+	return g;
+}
+
+void testRepair() {
+	SurfaceGrid g = repairGrid();
+	auto before = poiReachabilityOf(g, true);
+	check(before.has_value() && before->start == 4 * 24 + 11 && before->entrances == 1 && before->entrancesReached == 0 && before->exits == 4 && before->exitsReached == 3, "repair: before, 3 of 4 exits and no entrance reached");
+	check(placeFords(g.cells, 24, 9, 3, g.doors).has_value() && countKind(g, SurfaceKind::Shore) == 0, "repair: a normal ford of reach 3 does nothing");
+	check(placeFords(g.cells, 24, 9, 256, g.doors, {}, FordShape {1, 0, 0, true}).has_value(), "repair: runs");
+	check(countKind(g, SurfaceKind::Shore) == 24 && countKind(g, SurfaceKind::River) == 30, "repair: 24 sand cells, 30 river cells");
+	const auto after = poiReachabilityOf(g, true);
+	check(after.has_value() && after->entrancesReached == 1 && after->exitsReached == 4, "repair: everything is reached afterwards");
+	SurfaceGrid again = repairGrid();
+	check(placeFords(again.cells, 24, 9, 256, again.doors, {}, FordShape {1, 0, 0, true}).has_value() && again.cells == g.cells, "repair: deterministic");
+
+	// An island with nothing on it stays alone; a tiny room (door + one interior cell) in the water gets its ford.
+	SurfaceGrid island = grid(24, 9, SurfaceKind::River);
+	fillRect(island, 0, 0, 12, 8, SurfaceKind::Grass);
+	fillRect(island, 16, 3, 17, 4, SurfaceKind::Grass);
+	check(placeFords(island.cells, 24, 9, 256, island.doors, {}, FordShape {1, 0, 0, true}).has_value() && countKind(island, SurfaceKind::Shore) == 0, "repair: an island without a door or exit is left alone");
+	SurfaceGrid room = grid(24, 9, SurfaceKind::River);
+	fillRect(room, 0, 0, 12, 8, SurfaceKind::Grass);
+	fillRect(room, 16, 3, 18, 5, SurfaceKind::Floor);
+	room.doors = {5 * 24 + 17};
+	check(poiReachabilityOf(room, true)->entrancesReached == 0, "repair: the room is cut off before");
+	check(placeFords(room.cells, 24, 9, 256, room.doors, {}, FordShape {1, 0, 0, true}).has_value(), "repair: the room case runs");
+	const auto joined = poiReachabilityOf(room, true);
+	check(joined.has_value() && joined->entrances == 1 && joined->entrancesReached == 1, "repair: a 2 cell room with a door gets its ford");
+}
+
 // Independent check: brute force start, flood fill from it over the same walkability rule.
 void testPoiCrossCheck() {
 	uint64_t state = 0x9e3779b97f4a7c15ULL;
@@ -507,6 +547,7 @@ int main() {
 	testMouths();
 	testNaturalFord();
 	testPoi();
+	testRepair();
 	testPoiCrossCheck();
 	testSmoothShores();
 	testTrimSpits();

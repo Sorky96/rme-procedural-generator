@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
 		else if (name == "rockPasses") tuning.rockPasses = value;
 		else if (name == "shoreSmoothing") tuning.shoreSmoothing = value;
 		else if (name == "shoreRadius") tuning.shoreRadius = value;
+		else if (name == "repairReach") tuning.repairReach = value;
 		else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}

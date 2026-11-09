@@ -105,6 +105,7 @@ private:
 	wxCheckBox* doors_check_ = nullptr;
 	wxCheckBox* rock_passes_check_ = nullptr;
 	wxCheckBox* smooth_beaches_check_ = nullptr;
+	wxCheckBox* repair_check_ = nullptr;
 	wxChoice* door_type_choice_ = nullptr;
 	wxSpinCtrl* path_length_spin_ = nullptr;
 	wxSpinCtrl* ford_length_spin_ = nullptr;
