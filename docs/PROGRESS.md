@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: wąskie języki piasku między wodą (iteracja 19) — PARTIAL
+
+Po czterech zrzutach z GUI: pasy i półwyspy piasku 1–2 kafle szerokości między jeziorem a rzeką (rzeka tnie plażę) są usuwane przy „Smooth beaches” (`spit` 10 → 0 na 65 536 komórek). Brzeg piasek / trawa ma obramowanie na zatwierdzonej mapie (1760 z 1760), więc przyczyna była geometryczna. Koszt: kilka więcej odciętych budynków (brody to naprawiają). Prostokątne wcięcia trawy w piasek (schodki 90°) nie są rozwiązane. 16 testów rdzenia i obie sondy G1 PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 19”.
+
 ## 2026-11-09 — G5: wygładzenie brzegu piasek / trawa (iteracja 18) — PARTIAL
 
 Pole „Smooth beaches” (domyślnie zaznaczone, 2 przejścia filtra większościowego 7×7 w zasięgu 9 od jeziora). Długość granicy piasek / trawa −22 %, drobne nierówności 2× mniej, ilość piasku bez zmian; kryterium 5× NIE spełnione, a reguła zapisana z góry (5×5) nie wygładzała wcale, więc użyłem silniejszej po pomiarze (odchylenie opisane). 16 testów rdzenia i obie sondy G1 PASS. Wygląd ocenia użytkownik. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 18”.
