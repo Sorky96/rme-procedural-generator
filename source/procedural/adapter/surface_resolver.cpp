@@ -132,6 +132,11 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			input.assetRevision, grid.fingerprint(), std::vector<uint16_t>(grid.cells.size(), 0)};
 		if (vegetation) result.decor.assign(grid.cells.size(), 0);
 		if (walled) result.walls.assign(grid.cells.size(), 0);
+		std::vector<uint8_t> gapCell;  // outline cells of ruins and camps that get no wall piece (G5 iteration 25)
+		if (walled && !grid.gaps.empty()) {
+			gapCell.assign(grid.cells.size(), 0);
+			for (const uint32_t gap : grid.gaps) gapCell[gap] = 1;  // valid() already checked the range
+		}
 		std::vector<uint8_t> doorCell;
 		if (doored) {
 			result.doors.assign(grid.cells.size(), 0);
@@ -165,7 +170,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				const size_t width = grid.region.width, height = grid.region.height, x = i % width, y = i / width;
 				const bool outline = x == 0 || y == 0 || x + 1 == width || y + 1 == height || grid.cells[i - 1] != SurfaceKind::Floor ||
 					grid.cells[i + 1] != SurfaceKind::Floor || grid.cells[i - width] != SurfaceKind::Floor || grid.cells[i + width] != SurfaceKind::Floor;
-				if (outline) result.walls[i] = wallItem;
+				if (outline && (gapCell.empty() || !gapCell[i])) result.walls[i] = wallItem;
 				if (outline && doored && doorCell[i]) result.doors[i] = 1;
 			}
 			if (vegetation) {

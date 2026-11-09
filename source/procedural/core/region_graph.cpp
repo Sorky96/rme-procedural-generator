@@ -105,7 +105,8 @@ std::expected<RegionGraph, RegionGraphError> buildRegionGraph(const SurfaceGrid&
 		for (const auto& [pair, weight] : boundary) graph.edges.push_back({pair.first, pair.second, weight});
 
 		// POI nodes with their distance from the start over walkable cells.
-		auto walkable = walkableLabelsOf(grid.cells, grid.region.width, grid.region.height, grid.doors, walls, stop);
+		const std::vector<uint32_t> openings = openingsOf(grid);
+		auto walkable = walkableLabelsOf(grid.cells, grid.region.width, grid.region.height, openings, walls, stop);
 		if (!walkable) return std::unexpected(walkable.error() == ReachabilityError::Cancelled ? RegionGraphError::Cancelled : RegionGraphError::AllocationFailed);
 		const auto start = fixedStartOf(*walkable, grid.region.width, grid.region.height);
 		if (!start) return graph;

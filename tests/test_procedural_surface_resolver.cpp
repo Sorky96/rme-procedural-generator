@@ -571,6 +571,61 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	report << "SURFACE_FORDS_E2E_PASS" << '\t' << side << '\t' << "fordCells=" << changed << '\t' << "changes=" << (receipt ? receipt->changes : 0) << '\n';
 }
 
+// Ruins and camps (G5 iteration 25): the plan has a wall on every outline cell except the gaps; Commit puts no wall piece on a gap tile, Undo and
+// Redo restore everything; the grid is valid and the plan fingerprint differs from one without ruins and camps.
+void ruinsAndCamps(uint32_t side, std::ostream& report) {
+	UndoLimits undoLimits;
+	check(g_gui.NewMap(), "Editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	GenerationConfig config {{100, 100, 7, side, side}, 1729};
+	config.algorithm = GenerationAlgorithm::Surface;
+	config.surface.pathLength = 40;
+	config.surface.buildingDensity = 40;
+	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+	profile.wall = "stone wall";
+	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	auto plain = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(plain), "Preparation without ruins failed");
+	config.surface.ruinPercent = 40;
+	config.surface.campCount = 8;
+	const auto baselineTiles = editor.map.getTileCount();
+	const auto prior = editor.actionQueue->getCurrentIndex();
+	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(prepared), "Ruin preparation failed, error index " + std::to_string(prepared ? 0 : prepared.error().index()));
+	if (!plain || !prepared) return;
+	check(bool(validatePreparedTerrain(editor.map, *prepared, config, profile)), "Ruin validation failed");
+	check(prepared->plan.fingerprint() != plain->plan.fingerprint(), "Ruins did not change the plan fingerprint");
+	const auto grid = generateSurface({config.region, config.seed, config.surface}, MapExtent {65001, 65001, 16}, surfaceBudget);
+	check(bool(grid) && grid->valid() && !grid->gaps.empty() && !grid->sites.empty(), "The surface has no gaps or sites");
+	if (!grid) return;
+	size_t outline = 0;
+	for (size_t i = 0; i < grid->cells.size(); ++i) {
+		if (grid->cells[i] != SurfaceKind::Floor) continue;
+		const size_t x = i % side, y = i / side;
+		outline += x == 0 || y == 0 || x + 1 == side || y + 1 == side || grid->cells[i - 1] != SurfaceKind::Floor || grid->cells[i + 1] != SurfaceKind::Floor ||
+			grid->cells[i - side] != SurfaceKind::Floor || grid->cells[i + side] != SurfaceKind::Floor;
+	}
+	const size_t plannedWalls = size_t(std::ranges::count_if(prepared->plan.walls, [](uint16_t item) { return item != 0; }));
+	check(plannedWalls + grid->gaps.size() == outline, "Planned walls plus gaps do not add up to the outline cells");
+	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+	check(bool(receipt), "Ruin commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
+	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Ruin commit is not one history step");
+	size_t wallsOnGaps = 0;
+	for (const uint32_t gap : grid->gaps) {
+		const auto* tile = editor.map.getTile(Position(100 + int(gap % side), 100 + int(gap / side), 7));
+		if (tile) for (const auto& item : tile->items) wallsOnGaps += item->isWall();
+	}
+	check(wallsOnGaps == 0, "A wall piece stands on a gap tile");
+	const auto committedTiles = editor.map.getTileCount();
+	check(editor.actionQueue->undo(), "Ruin Undo refused");
+	check(editor.map.getTileCount() == baselineTiles, "Undo changed the tile count");
+	check(editor.actionQueue->redo(), "Ruin Redo refused");
+	check(editor.map.getTileCount() == committedTiles, "Redo did not restore the tiles");
+	editor.map.clearChanges();
+	report << "SURFACE_RUINS_E2E_PASS" << '\t' << side << '\t' << "gaps=" << grid->gaps.size() << '\t' << "sites=" << grid->sites.size() << '\t' << "walls=" << plannedWalls << '\n';
+}
+
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
 // tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
 void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
@@ -648,6 +703,7 @@ void run() {
 		structures(250, report);
 		doors(100, report);
 		doors(250, report);
+		ruinsAndCamps(250, report);
 		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);

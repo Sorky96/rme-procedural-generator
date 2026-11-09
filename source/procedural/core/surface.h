@@ -42,6 +42,10 @@ struct SurfaceGrid {
 	// Door cells (G4 iteration 12), one per building foundation, as row-major cell indices; each lies on a Floor cell.
 	// Empty unless buildings are on, and then not part of the fingerprint.
 	std::vector<uint32_t> doors;
+	// Ruins and camps (G5 iteration 25): outline cells of a Floor foundation that get no wall piece (gaps; walkable) and one
+	// interior cell per ruin or camp (sites). Row-major cell indices on Floor cells. Empty unless ruins or camps are on.
+	std::vector<uint32_t> gaps;
+	std::vector<uint32_t> sites;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };
@@ -68,7 +72,7 @@ void trimSpits(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height)
 // Crossings of at least 8 water cells get a natural shape (swinging axis, varying width, iteration 14d) driven by the seed and the
 // absolute position of the area; shorter ones stay straight.
 // `repair` (iteration 23): only components that hold a door or an exit and are not the start's component get a ford, whatever their size.
-struct FordShape { uint64_t seed = 0; int32_t x = 0; int32_t y = 0; bool repair = false; };
+struct FordShape { uint64_t seed = 0; int32_t x = 0; int32_t y = 0; bool repair = false; std::span<const uint32_t> sites = {}; };
 
 std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
 	std::span<const uint32_t> doors, std::stop_token stop = {}, FordShape shape = {});

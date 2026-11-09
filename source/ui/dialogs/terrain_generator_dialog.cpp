@@ -538,6 +538,16 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	door_type_choice_->SetSelection(0);
 	form->Add(door_type_choice_, 1, wxEXPAND);
 
+	form->Add(label("Ruins (%):"), 0, wxALIGN_CENTER_VERTICAL);
+	ruin_percent_spin_ = spin("terrain-ruin-percent", 0, 100, 0);
+	ruin_percent_spin_->SetToolTip("Share of the buildings that become ruins: no door and gaps in the wall. 0 = none. Needs buildings.");
+	form->Add(ruin_percent_spin_, 1, wxEXPAND);
+
+	form->Add(label("Camps:"), 0, wxALIGN_CENTER_VERTICAL);
+	camp_count_spin_ = spin("terrain-camp-count", 0, 50, 0);
+	camp_count_spin_->SetToolTip("Clearings with an open tent floor per 65536 map cells. 0 = none. Uses the path and floor brushes.");
+	form->Add(camp_count_spin_, 1, wxEXPAND);
+
 	section("Vegetation");
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
@@ -642,7 +652,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
-	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, ford_length_spin_, building_density_spin_ }) {
+	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_ }) {
 		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
@@ -796,12 +806,14 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
 	path_length_spin_->Enable(natural);
 	building_density_spin_->Enable(natural);
+	ruin_percent_spin_->Enable(natural && building_density_spin_->GetValue() > 0);
+	camp_count_spin_->Enable(natural);
 	ford_length_spin_->Enable(natural);
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
 	repair_check_->Enable(natural);
-	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
-	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
+	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0));
+	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0));
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
 	doors_check_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
@@ -878,6 +890,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
+		config.surface.ruinPercent = config.surface.buildingDensity ? uint32_t(ruin_percent_spin_->GetValue()) : 0;
+		config.surface.campCount = uint32_t(camp_count_spin_->GetValue());
 		config.surface.fordLength = uint32_t(ford_length_spin_->GetValue());
 		config.surface.rockPasses = rock_passes_check_->GetValue() && config.surface.pathLength > 0 ? 1 : 0;
 		config.surface.shoreSmoothing = smooth_beaches_check_->GetValue() ? 2 : 0;
@@ -897,7 +911,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const classicFields[] = { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_ };
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
-	const bool withFloors = natural && config.surface.buildingDensity > 0;
+	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0);
 	const bool withPaths = natural && config.surface.pathLength > 0;
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
 		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
@@ -912,7 +926,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 	}
 
-	if (withFloors && walls_check_->GetValue()) {
+	if (withFloors && config.surface.buildingDensity > 0 && walls_check_->GetValue()) {
 		request.profile.wall = std::string(wall_brush_choice_->GetValue().utf8_str());
 		if (request.profile.wall.empty()) {
 			SetStatus("Choose a wall brush or untick Walls.", true);

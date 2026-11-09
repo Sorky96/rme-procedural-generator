@@ -428,6 +428,34 @@ void testRepair() {
 	check(joined.has_value() && joined->entrances == 1 && joined->entrancesReached == 1, "repair: a 2 cell room with a door gets its ford");
 }
 
+// Ruins and camps (iteration 25), hand counted on 12 x 7 grass with a building Floor x 2..6, y 1..5 (outline 16 cells, interior x 3..5, y 2..4):
+//   no door, no gap: sealed; the same building with a gap at (4,5): the gap cell is walkable, the building is reachable (1 component, 69 cells);
+//   the site (4,3) is reached; a gap or a site outside Floor makes the grid invalid; the fingerprint changes with the gap; reachabilityOf and the
+//   POI report agree (0 entrances, 1 site, 1 reached).
+void testRuin() {
+	SurfaceGrid g = grid(12, 7, SurfaceKind::Grass);
+	fillRect(g, 2, 1, 6, 5, SurfaceKind::Floor);
+	g.sites = {3 * 12 + 4};
+	const uint64_t plain = g.fingerprint();
+	auto r = reachabilityOf(g, true);
+	check(r.has_value() && r->buildings == 1 && r->sealed == 1, "ruin: no door and no gap means sealed");
+	auto poi = poiReachabilityOf(g, true);
+	check(poi.has_value() && poi->entrances == 0 && poi->sites == 1, "ruin: no entrance, one site");
+	g.gaps = {5 * 12 + 4};
+	r = reachabilityOf(g, true);
+	check(r.has_value() && r->sealed == 0 && r->components == 1 && r->walkable == 69, "ruin: a gap makes the building reachable");
+	poi = poiReachabilityOf(g, true);
+	check(poi.has_value() && poi->sites == 1 && poi->sitesReached == 1 && poi->entrances == 0, "ruin: the site is reached through the gap");
+	check(g.fingerprint() != plain, "ruin: the gap changes the fingerprint");
+	check(g.valid(), "ruin: a grid with a gap and a site on Floor is valid");
+	SurfaceGrid bad = g;
+	bad.gaps = {0};
+	check(!bad.valid(), "ruin: a gap off Floor is invalid");
+	bad = g;
+	bad.sites = {0};
+	check(!bad.valid(), "ruin: a site off Floor is invalid");
+}
+
 // Independent check: brute force start, flood fill from it over the same walkability rule.
 void testPoiCrossCheck() {
 	uint64_t state = 0x9e3779b97f4a7c15ULL;
@@ -548,6 +576,7 @@ int main() {
 	testNaturalFord();
 	testPoi();
 	testRepair();
+	testRuin();
 	testPoiCrossCheck();
 	testSmoothShores();
 	testTrimSpits();

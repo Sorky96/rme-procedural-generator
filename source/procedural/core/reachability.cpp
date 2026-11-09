@@ -82,6 +82,12 @@ std::expected<WalkableLabels, ReachabilityError> walkableLabelsOf(
 	}
 }
 
+std::vector<uint32_t> openingsOf(const SurfaceGrid& grid) {
+	std::vector<uint32_t> openings = grid.doors;
+	openings.insert(openings.end(), grid.gaps.begin(), grid.gaps.end());
+	return openings;
+}
+
 std::optional<uint32_t> fixedStartOf(const WalkableLabels& labels, uint32_t widthIn, uint32_t heightIn) {
 	const int64_t width = widthIn, height = heightIn;
 	std::optional<uint32_t> start;
@@ -118,7 +124,8 @@ std::vector<uint32_t> exitCellsOf(const WalkableLabels& labels, uint32_t widthIn
 std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid& grid, bool walls, std::stop_token stop) {
 	if (!grid.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
 	const int64_t width = grid.region.width, height = grid.region.height;
-	auto labels = walkableLabelsOf(grid.cells, grid.region.width, grid.region.height, grid.doors, walls, stop);
+	const std::vector<uint32_t> openings = openingsOf(grid);
+	auto labels = walkableLabelsOf(grid.cells, grid.region.width, grid.region.height, openings, walls, stop);
 	if (!labels) return std::unexpected(labels.error());
 	PoiReport report;
 	for (size_t id = 1; id < labels->sizes.size(); ++id) report.walkable += labels->sizes[id];
@@ -126,6 +133,7 @@ std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid&
 	if (const auto start = fixedStartOf(*labels, grid.region.width, grid.region.height)) { report.hasStart = true; report.start = *start; }
 	if (!report.hasStart) {
 		report.entrances = uint32_t(grid.doors.size());
+		report.sites = uint32_t(grid.sites.size());
 		return report;
 	}
 	const uint32_t startLabel = labels->label[report.start];
@@ -133,6 +141,10 @@ std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid&
 	for (const uint32_t door : grid.doors) {
 		++report.entrances;
 		report.entrancesReached += labels->label[door] == startLabel;
+	}
+	for (const uint32_t site : grid.sites) {
+		++report.sites;
+		report.sitesReached += labels->label[site] == startLabel;
 	}
 	for (const uint32_t cell : exitCellsOf(*labels, grid.region.width, grid.region.height)) {
 		++report.exits;
@@ -147,7 +159,8 @@ std::expected<ReachabilityReport, ReachabilityError> reachabilityOf(const Surfac
 	ReachabilityReport report;
 	report.cells = count;
 
-	auto labels = walkableLabelsOf(grid.cells, grid.region.width, grid.region.height, grid.doors, walls, stop);
+	const std::vector<uint32_t> openings = openingsOf(grid);
+	auto labels = walkableLabelsOf(grid.cells, grid.region.width, grid.region.height, openings, walls, stop);
 	if (!labels) return std::unexpected(labels.error());
 	const uint32_t largestLabel = labels->largest;
 	for (uint32_t id = 1; id < labels->sizes.size(); ++id) {
@@ -162,7 +175,7 @@ std::expected<ReachabilityReport, ReachabilityError> reachabilityOf(const Surfac
 		// Buildings: 4-connected Floor components. With walls a building needs a door cell in the largest component;
 		// without walls any of its cells there is enough.
 		std::vector<uint8_t> flags(count, 0);
-		for (const uint32_t door : grid.doors) flags[door] |= flagDoor;
+		for (const uint32_t opening : openings) flags[opening] |= flagDoor;
 		std::vector<uint32_t> queue;
 		queue.reserve(count);
 		for (size_t y = 0; y < height; ++y) {

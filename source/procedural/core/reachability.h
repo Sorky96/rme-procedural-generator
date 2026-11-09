@@ -50,6 +50,9 @@ enum class ReachabilityError : uint8_t { InvalidGrid, Cancelled, AllocationFaile
 [[nodiscard]] std::expected<ReachabilityReport, ReachabilityError> reachabilityOf(
 	const SurfaceGrid& grid, bool walls, std::stop_token stop = {});
 
+// Doors then gaps of a grid: the outline cells of a foundation that can be walked through (iteration 25 adds the gaps of ruins and camps).
+[[nodiscard]] std::vector<uint32_t> openingsOf(const SurfaceGrid& grid);
+
 // The fixed start and the exit cells of iteration 22 (see PoiReport), computed from a labelling; also used by the repair pass.
 [[nodiscard]] std::optional<uint32_t> fixedStartOf(const WalkableLabels& labels, uint32_t width, uint32_t height);
 [[nodiscard]] std::vector<uint32_t> exitCellsOf(const WalkableLabels& labels, uint32_t width, uint32_t height);
@@ -63,6 +66,7 @@ struct PoiReport {
 	uint32_t start = 0;            // cell index
 	uint32_t entrances = 0, entrancesReached = 0;
 	uint32_t exits = 0, exitsReached = 0;
+	uint32_t sites = 0, sitesReached = 0;   // ruins and camps (SurfaceGrid::sites), iteration 25
 	uint64_t walkable = 0, startComponent = 0;
 };
 

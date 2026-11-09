@@ -54,6 +54,8 @@ int main(int argc, char** argv) {
 		else if (name == "shoreSmoothing") tuning.shoreSmoothing = value;
 		else if (name == "shoreRadius") tuning.shoreRadius = value;
 		else if (name == "repairReach") tuning.repairReach = value;
+		else if (name == "ruinPercent") tuning.ruinPercent = value;
+		else if (name == "campCount") tuning.campCount = value;
 		else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
@@ -204,6 +206,18 @@ int main(int argc, char** argv) {
 			for (size_t i = 0; i < parent.size(); ++i) components += find(i) == i;
 			std::cout << std::format("graph seed {}: regions {} land {} rock {} water {} edges {} fragments {} unreached {} maxExit {} maxEntrance {} connected {}\n", seed, graph->regions.size(), land, rock, water,
 				graph->edges.size(), graph->smallFragments, unreached, maxExit, maxEntrance, components <= 1 ? 1 : 0);
+		}
+		if (!grid->sites.empty() || !grid->gaps.empty()) {
+			// Iteration 25: ruins (sites inside a foundation larger than 3 x 3) and camps (3 x 3 tents), gaps per ruin, sites reached from the start.
+			const std::vector<BuildingBox> boxes = floorBoxesOf(*grid);
+			uint32_t camps = 0, ruins = 0;
+			for (const uint32_t site : grid->sites) {
+				const uint32_t sx = site % side, sy = site / side;
+				for (const BuildingBox& box : boxes) if (sx >= box.x0 && sx <= box.x1 && sy >= box.y0 && sy <= box.y1) { (box.x1 - box.x0 == 2 && box.y1 - box.y0 == 2 ? camps : ruins) += 1; break; }
+			}
+			const auto poi = poiReachabilityOf(*grid, true);
+			std::cout << std::format("ruin seed {}: buildings {} doors {} ruins {} camps {} gaps {} gapsPerRuin {} sites {} sitesReached {}\n", seed, boxes.size() - camps, grid->doors.size(), ruins, camps, grid->gaps.size(),
+				ruins ? (grid->gaps.size() - 8ull * camps) / ruins : 0, grid->sites.size(), poi ? poi->sitesReached : 0);
 		}
 		if (const auto poi = poiReachabilityOf(*grid, true); poi && poi->hasStart) {
 			std::cout << std::format("poi seed {}: entrances {} entrancesReached {} exits {} exitsReached {} startPermille {} allReached {}\n", seed, poi->entrances, poi->entrancesReached,

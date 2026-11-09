@@ -100,7 +100,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	const uint8_t expectedBrushes = config.algorithm == GenerationAlgorithm::Surface ?
 		GroundProfile::surfaceCount : GroundProfile::groundRollCount;
 	if (config.algorithm == GenerationAlgorithm::Surface) {
-		const uint8_t required = config.surface.buildingDensity ? GroundProfile::surfaceWithFloorCount :
+		const uint8_t required = config.surface.buildingDensity || config.surface.campCount ? GroundProfile::surfaceWithFloorCount :
 			config.surface.pathLength ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
 		if (profile.count != required) return fail(PreparationInputError::InvalidProfile);
 		if (!profile.wall.empty() && !config.surface.buildingDensity) return fail(PreparationInputError::InvalidProfile);

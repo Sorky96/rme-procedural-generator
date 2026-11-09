@@ -109,6 +109,8 @@ private:
 	wxChoice* door_type_choice_ = nullptr;
 	wxSpinCtrl* path_length_spin_ = nullptr;
 	wxSpinCtrl* ford_length_spin_ = nullptr;
+	wxSpinCtrl* ruin_percent_spin_ = nullptr;
+	wxSpinCtrl* camp_count_spin_ = nullptr;
 	wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;
 	wxArrayString doodad_names_;

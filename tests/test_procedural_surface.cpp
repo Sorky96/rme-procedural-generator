@@ -647,12 +647,41 @@ void reachableSurface() {
 	require(!generateReachableSurface(makeConfig(100, 1), extent, budget, 0).has_value(), "reachable surface: zero attempts accepted");
 }
 
+// G5 iteration 25: ruins and camps. Off by default; on, the grid is valid, deterministic and every site is reached after repair.
+void ruinsAndCamps() {
+	for (uint64_t seed = 1; seed <= 4; ++seed) {
+		auto config = makeConfig(250, seed);
+		config.tuning.pathLength = 40;
+		config.tuning.buildingDensity = 40;
+		const auto plain = generateSurface(config, extent, budget);
+		require(plain.has_value() && plain->gaps.empty() && plain->sites.empty(), "ruins: gaps or sites appeared with the options off");
+		config.tuning.ruinPercent = 40;
+		config.tuning.campCount = 8;
+		config.tuning.repairReach = 1;
+		const auto first = generateSurface(config, extent, budget);
+		const auto second = generateSurface(config, extent, budget);
+		require(first.has_value() && second.has_value() && first->cells == second->cells && first->gaps == second->gaps && first->sites == second->sites, "ruins: not deterministic");
+		require(first->valid() && first->fingerprint() != plain->fingerprint(), "ruins: invalid grid or no change");
+		require(!first->sites.empty() && !first->gaps.empty(), "ruins: no site or gap produced");
+		const auto boxes = floorBoxesOf(*first);
+		require(first->doors.size() + first->sites.size() >= boxes.size() - 0 && first->doors.size() < boxes.size(), "ruins: doors and sites do not cover the foundations");
+		const auto poi = poiReachabilityOf(*first, true);
+		require(poi.has_value() && poi->sites == first->sites.size() && poi->sitesReached == poi->sites, "ruins: a site is not reached after repair");
+	}
+	auto camps = makeConfig(250, 1);
+	camps.tuning.campCount = 6;
+	const auto onlyCamps = generateSurface(camps, extent, budget);
+	require(onlyCamps.has_value() && onlyCamps->doors.empty() && !onlyCamps->sites.empty() && onlyCamps->gaps.size() == 8 * onlyCamps->sites.size(), "camps: each camp has one site and eight gaps");
+	camps.tuning.campCount = 51;
+	require(!validateSurface(camps, extent, budget).has_value(), "camps above 50 accepted");
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface();
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface(); ruinsAndCamps();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {
