@@ -185,6 +185,10 @@ int main(int argc, char** argv) {
 			}
 			doorBlocked += !open;
 		}
+		if (const auto poi = poiReachabilityOf(*grid, true); poi && poi->hasStart) {
+			std::cout << std::format("poi seed {}: entrances {} entrancesReached {} exits {} exitsReached {} startPermille {} allReached {}\n", seed, poi->entrances, poi->entrancesReached,
+				poi->exits, poi->exitsReached, poi->startComponent * 1000 / std::max<uint64_t>(poi->walkable, 1), poi->entrances == poi->entrancesReached && poi->exits == poi->exitsReached ? 1 : 0);
+		}
 		if (const auto reach = reachabilityOf(*grid, true); reach && reach->walkable) {
 			std::cout << std::format("reach seed {}: walkable {} components {} largest {} largestPermille {} cutOff {} cutOffPer64k {} pockets {} buildings {} sealed {} doorBlocked {} fordCells {}\n", seed,
 				reach->walkable, reach->components, reach->largest, reach->largest * 1000 / reach->walkable, reach->cutOff, reach->cutOff * 65536 / reach->cells, reach->pockets,

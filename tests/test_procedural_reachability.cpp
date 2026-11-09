@@ -353,6 +353,110 @@ void testTrimSpits() {
 	check(countKind(river, SurfaceKind::Shore) == 0 && countKind(river, SurfaceKind::River) == 20 + 10, "spits: a strip between river and lake becomes river");
 }
 
+// POI reachability from a fixed start (iteration 22), hand counted.
+//   9 x 5 grass with a lake column at x = 4: the middle (4,2) is water; (3,2) and (5,2) tie, the lower index (3,2) is the start.
+//   Exits: north (3,0) (x = 3 and 5 tie, lower index), south (3,4), west (0,2), east (8,2): 4 exits, the east one is across the lake.
+//   Component of the start: 4 x 5 = 20 of 40 walkable cells.
+void testPoi() {
+	SurfaceGrid lake = grid(9, 5, SurfaceKind::Grass);
+	fillRect(lake, 4, 0, 4, 4, SurfaceKind::Lake);
+	auto r = poiReachabilityOf(lake, false);
+	check(r.has_value() && r->hasStart && r->start == 2 * 9 + 3, "poi: the start is the lower index of two nearest cells");
+	check(r.has_value() && r->entrances == 0 && r->exits == 4 && r->exitsReached == 3, "poi: four exits, three reached");
+	check(r.has_value() && r->walkable == 40 && r->startComponent == 20, "poi: the start component holds 20 of 40 cells");
+
+	// 12 x 7 land with a building x 2..6, y 1..5 (interior x 3..5, y 2..4); the middle (5.5, 3) has (5,3) and (6,3) at the same distance;
+	// (5,3) is inside the building. With a door at (4,5) everything is one component; without one the start sits in a sealed room.
+	SurfaceGrid house = grid(12, 7, SurfaceKind::Grass);
+	fillRect(house, 2, 1, 6, 5, SurfaceKind::Floor);
+	house.doors = {5 * 12 + 4};
+	r = poiReachabilityOf(house, true);
+	check(r.has_value() && r->start == 3 * 12 + 5 && r->entrances == 1 && r->entrancesReached == 1 && r->exits == 4 && r->exitsReached == 4, "poi: door joins the start room with the outside");
+	house.doors.clear();
+	r = poiReachabilityOf(house, true);
+	check(r.has_value() && r->start == 3 * 12 + 5 && r->entrances == 0 && r->exits == 4 && r->exitsReached == 0 && r->startComponent == 9, "poi: a sealed start reaches no exit");
+
+	SurfaceGrid northWater = grid(6, 4, SurfaceKind::Grass);
+	fillRect(northWater, 0, 0, 5, 0, SurfaceKind::Lake);
+	r = poiReachabilityOf(northWater, false);
+	check(r.has_value() && r->exits == 3 && r->exitsReached == 3, "poi: a side without land has no exit");
+
+	SurfaceGrid sea = grid(5, 5, SurfaceKind::Lake);
+	r = poiReachabilityOf(sea, false);
+	check(r.has_value() && !r->hasStart && r->exits == 0 && r->entrances == 0, "poi: no start in an all water grid");
+	SurfaceGrid bad;
+	check(poiReachabilityOf(bad, false).error_or(ReachabilityError::Cancelled) == ReachabilityError::InvalidGrid, "poi: empty grid is invalid");
+}
+
+// Independent check: brute force start, flood fill from it over the same walkability rule.
+void testPoiCrossCheck() {
+	uint64_t state = 0x9e3779b97f4a7c15ULL;
+	auto next = [&] { state ^= state << 13; state ^= state >> 7; state ^= state << 17; return state; };
+	const SurfaceKind kinds[] = {SurfaceKind::Grass, SurfaceKind::Grass, SurfaceKind::Dirt, SurfaceKind::Rock, SurfaceKind::Shore, SurfaceKind::Lake,
+		SurfaceKind::River, SurfaceKind::Path, SurfaceKind::Floor, SurfaceKind::Floor, SurfaceKind::Floor, SurfaceKind::Preserve};
+	int matched = 0;
+	for (int round = 0; round < 80; ++round) {
+		const uint32_t w = 9 + uint32_t(next() % 8), h = 9 + uint32_t(next() % 8);
+		SurfaceGrid g = grid(w, h, SurfaceKind::Grass);
+		for (auto& c : g.cells) c = kinds[next() % std::size(kinds)];
+		for (size_t i = 0; i < g.cells.size(); ++i) if (g.cells[i] == SurfaceKind::Floor && next() % 5 == 0) g.doors.push_back(uint32_t(i));
+		for (const bool walls : {false, true}) {
+			const size_t n = g.cells.size();
+			auto outline = [&](size_t i) {
+				const size_t x = i % w, y = i / w;
+				return x == 0 || y == 0 || x + 1 == w || y + 1 == h || g.cells[i - 1] != SurfaceKind::Floor || g.cells[i + 1] != SurfaceKind::Floor || g.cells[i - w] != SurfaceKind::Floor || g.cells[i + w] != SurfaceKind::Floor;
+			};
+			std::vector<char> door(n, 0), ok(n, 0);
+			for (const auto d : g.doors) door[d] = 1;
+			for (size_t i = 0; i < n; ++i) {
+				const auto k = g.cells[i];
+				if (k == SurfaceKind::Floor) ok[i] = !walls || door[i] || !outline(i);
+				else ok[i] = k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Rock || k == SurfaceKind::Shore || k == SurfaceKind::Path;
+			}
+			long long bestD = -1; size_t start = n;
+			for (size_t i = 0; i < n; ++i) {
+				if (!ok[i]) continue;
+				const long long dx = 2LL * (long long)(i % w) - (long long)(w - 1), dy = 2LL * (long long)(i / w) - (long long)(h - 1);
+				if (bestD < 0 || dx * dx + dy * dy < bestD) { bestD = dx * dx + dy * dy; start = i; }
+			}
+			const auto got = poiReachabilityOf(g, walls);
+			if (!got) { check(false, "poi cross-check: result"); continue; }
+			if (start == n) { check(!got->hasStart, "poi cross-check: no start"); ++matched; continue; }
+			std::vector<char> seen(n, 0);
+			std::vector<size_t> queue {start};
+			seen[start] = 1;
+			for (size_t head = 0; head < queue.size(); ++head) {
+				const size_t i = queue[head];
+				const size_t x = i % w, y = i / w;
+				const size_t around[4] = {x > 0 ? i - 1 : n, x + 1 < w ? i + 1 : n, y > 0 ? i - w : n, y + 1 < h ? i + w : n};
+				for (const size_t m : around) if (m != n && ok[m] && !seen[m]) { seen[m] = 1; queue.push_back(m); }
+			}
+			uint32_t entrances = 0, entrancesReached = 0, exits = 0, exitsReached = 0;
+			for (const auto d : g.doors) { ++entrances; entrancesReached += seen[d]; }
+			for (int side = 0; side < 4; ++side) {
+				const long long length = side < 2 ? w : h;
+				long long best = -1, bestOffset = 0;
+				for (long long k = 0; k < length; ++k) {
+					const long long x = side == 0 ? k : side == 1 ? k : side == 2 ? 0 : (long long)w - 1;
+					const long long y = side == 0 ? 0 : side == 1 ? (long long)h - 1 : k;
+					const size_t cell = size_t(y * (long long)w + x);
+					if (!ok[cell]) continue;
+					const long long offset = std::llabs(2 * k - (length - 1));
+					if (best < 0 || offset < bestOffset) { best = (long long)cell; bestOffset = offset; }
+				}
+				if (best >= 0) { ++exits; exitsReached += seen[size_t(best)]; }
+			}
+			uint64_t component = 0;
+			for (size_t i = 0; i < n; ++i) component += seen[i];
+			const bool same = got->hasStart && got->start == start && got->entrances == entrances && got->entrancesReached == entrancesReached &&
+				got->exits == exits && got->exitsReached == exitsReached && got->startComponent == component;
+			check(same, "poi cross-check round " + std::to_string(round) + (walls ? " walls" : " open"));
+			matched += same;
+		}
+	}
+	check(matched == 160, "all 160 poi comparisons matched");
+}
+
 // A pocket of 12 cells (< 16) is not worth a ford: land x 0..2 (3 x 4), river x 3..5, land x 6..19.
 void testSmallPocket() {
 	SurfaceGrid g = grid(20, 4, SurfaceKind::Grass);
@@ -402,6 +506,8 @@ int main() {
 	testFords();
 	testMouths();
 	testNaturalFord();
+	testPoi();
+	testPoiCrossCheck();
 	testSmoothShores();
 	testTrimSpits();
 	testShoreRadius();

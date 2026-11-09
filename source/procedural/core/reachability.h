@@ -49,4 +49,19 @@ enum class ReachabilityError : uint8_t { InvalidGrid, Cancelled, AllocationFaile
 [[nodiscard]] std::expected<ReachabilityReport, ReachabilityError> reachabilityOf(
 	const SurfaceGrid& grid, bool walls, std::stop_token stop = {});
 
+// Reachability from a fixed start (G4 iteration 22, FAZA 5). Start: the walkable cell nearest to the middle of the area (squared
+// distance, ties: lower index). Entrances: the door cells of SurfaceGrid::doors. Exits: for each side the walkable cell on that edge
+// nearest to the middle of the side (ties: lower index); a side without a walkable edge cell has no exit. A point is reached when it
+// lies in the start's component. Same walkability model as reachabilityOf.
+struct PoiReport {
+	bool hasStart = false;
+	uint32_t start = 0;            // cell index
+	uint32_t entrances = 0, entrancesReached = 0;
+	uint32_t exits = 0, exitsReached = 0;
+	uint64_t walkable = 0, startComponent = 0;
+};
+
+[[nodiscard]] std::expected<PoiReport, ReachabilityError> poiReachabilityOf(
+	const SurfaceGrid& grid, bool walls, std::stop_token stop = {});
+
 } // namespace rme::procedural
