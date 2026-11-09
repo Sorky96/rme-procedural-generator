@@ -525,3 +525,20 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 4. Ocena wyglądu przez użytkownika ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** Czubek to heurystyka (może liczyć też narożniki stempla); przejście szlaku przez rzekę to piaszczysty bród 3–4 kafle (nie most); trasy do drzwi też mogą przechodzić przez rzeki; nie sprawdzano, czy szlak przez rzekę wygląda dobrze; punkt (4) (poszarpane brzegi piasek/trawa) **nie jest w tej iteracji** — wymaga osobnej diagnozy.
+
+### Iteracja 18 — wygładzenie brzegu piasek / trawa (zapisana 2026-11-09 przed implementacją i przed pomiarem; powód: uwaga użytkownika, zrzut z GUI, zoom 163 %: „poszarpane brzegi sand i grass, tak nie powinno wyglądać”)
+
+**Diagnoza (z kodu, nie zmierzona na obrazie).** Pierścienie plaży rosną o jedną komórkę na pierścień (sąsiedztwo 4) i każdy zewnętrzny pierścień jest ucinany niezależnie progiem szumu (`valueNoise`, krok 6); granica piasek / trawa jest więc sumą progów, a nie gładką krzywą: wyspy piasku o rozmiarze kilku komórek, wcięcia i schodki. Obramowanie (auto-border RME) między piaskiem a trawą nie wygładza tego w skali wielu komórek.
+
+**Zmiana (nowe pole `SurfaceTuning::shoreSmoothing`, 0..4 przejść, dopisane na końcu; 0 = jak dotąd, bajt w bajt; nie jest częścią profilu stylu; okno generatora: pole wyboru „Smooth beaches”, domyślnie zaznaczone = 2 przejścia).** Po pierścieniach plaży, przed `grassRim`: dla każdego przejścia, dla komórek rodzajów Shore, Grass i Dirt leżących w odległości Czebyszewa ≤ 3 od komórki Lake: komórka staje się Shore, gdy w oknie 5×5 większość komórek rodzajów Shore, Grass, Dirt i Lake to Shore lub Lake (skała, rzeka i poza obszarem nie są liczone), w przeciwnym razie ląd (Grass albo Dirt, zależnie od większości Grass / Dirt w oknie; remis: Grass). **Pierścień 0 (komórki 8-sąsiadujące z Lake) zostaje piaskiem** (plaża zawsze przy wodzie). Przejścia liczone na kopii (bez efektu kolejności komórek).
+
+**Miara (nowa, w `style_render`, wiersz `shore`).** `spurs` = komórki Shore mające ≤ 2 komórek Shore lub Lake wśród 8 sąsiadów; `notches` = komórki Grass lub Dirt mające ≥ 6 komórek Shore lub Lake wśród 8 sąsiadów; `checker` = okna 2×2 z dwiema przekątnymi komórkami Shore i dwiema przekątnymi komórkami Grass lub Dirt; `boundary` = komórki Shore mające 4-sąsiada Grass lub Dirt; `sand` = komórki Shore; wszystko na 65 536 komórek. Seedy 1001–1032, bok 512, profile v10 m06 i m19, ustawienia domyślne profilu plus `buildingDensity` 0, `pathLength` 0.
+
+**Kryteria.**
+1. `shoreSmoothing` 0: wszystkie testy rdzenia i odcisk Seed 1729 bez zmian, wynik `style_render` bajt w bajt jak dotąd.
+2. `shoreSmoothing` 2: mediana (`spurs` + `notches` + `checker`) co najmniej 5× mniejsza niż przy 0 w obu profilach; `boundary` (mediana) nie większa niż przy 0; `sand` (mediana) w granicach ±15 % wartości przy 0 (plaża nie znika ani nie rośnie).
+3. Testy ręczne (nowy test): samotna komórka Shore poza zasięgiem 3 od wody wraca do trawy; trawiasta dziura w pasie piasku przy wodzie zostaje wypełniona; prosty pas piasku bez zaburzeń zostaje bez zmian; pierścień 0 zostaje; wynik deterministyczny; maska i ochrona nie zmieniają się (obsługa jak dotąd).
+4. 16 testów rdzenia, obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne; w oknie generatora pole „Smooth beaches” (domyślnie zaznaczone).
+5. Ocena wyglądu przez użytkownika ma pierwszeństwo; z miary nie umiem ocenić, czy brzeg „wygląda dobrze”.
+
+**Zastrzeżenia z góry.** To zmiana kształtu plaż dla wszystkich, którzy zaznaczą pole (profile stylu dopasowywano bez wygładzenia: skład plaży w profilach może się lekko zmienić, mierzę przez `sand`); okno 5×5 i próg większości to moje wybory; granica na poziomie pojedynczych kafli może wciąż mieć schodki 1–2 komórek (rozdzielczość siatki); nie wygładza granicy trawa / dirt ani skała / trawa.
