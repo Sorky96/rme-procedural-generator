@@ -52,6 +52,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	const size_t kinds = profile.count;
 	const bool walled = !profile.wall.empty();
 	if (walled && (profile.count != GroundProfile::surfaceWithFloorCount || profile.wall.size() > 256)) return std::unexpected(ResolveError::InvalidProfile);
+	const bool fired = !profile.campfire.empty();
+	if (fired && (profile.count != GroundProfile::surfaceWithFloorCount || profile.campfire.size() > 256)) return std::unexpected(ResolveError::InvalidProfile);
 	const bool doored = !profile.door.empty();
 	if (doored && (!walled || !doorTypeOf(profile.door))) return std::unexpected(ResolveError::InvalidProfile);
 	const bool vegetation = input.config.vegetation;
@@ -62,7 +64,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	if (vegetation && (decor->region != grid.region || !decor->valid())) return std::unexpected(ResolveError::InvalidInput);
 	if (grid.cells.size() > (std::numeric_limits<size_t>::max() - sizeof(GroundPlan)) / sizeof(uint16_t) ||
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
-	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * (vegetation ? 2 : 1) + (doored ? 1 : 0));
+	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0)) + (doored ? 1 : 0));
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
 	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.active(), profile.activeDecor()})) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
@@ -132,6 +134,24 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			input.assetRevision, grid.fingerprint(), std::vector<uint16_t>(grid.cells.size(), 0)};
 		if (vegetation) result.decor.assign(grid.cells.size(), 0);
 		if (walled) result.walls.assign(grid.cells.size(), 0);
+		// Camp fires (iteration 26): one item of the campfire doodad brush per fire cell; the variation is picked from the cell so the fires differ.
+		if (fired) {
+			const auto* brush = g_brushes.getBrush(profile.campfire);
+			const auto* fireBrush = brush ? brush->as<DoodadBrush>() : nullptr;
+			if (!fireBrush) return std::unexpected(ResolveError::InvalidProfile);
+			std::vector<int> variations;
+			for (int variation = 0; variation <= fireBrush->getMaxVariation(); ++variation) if (fireBrush->hasSingleObjects(variation) && fireBrush->getSingleChance(variation) > 0) variations.push_back(variation);
+			if (variations.empty()) return std::unexpected(ResolveError::InvalidProfile);
+			result.fires.assign(grid.cells.size(), 0);
+			for (const uint32_t fire : grid.fires) {
+				const int variation = variations[(uint64_t(fire) + input.config.seed) % variations.size()];
+				const auto* item = fireBrush->getRandomSingleItem(variation, 1);
+				const auto definition = item && item->getID() ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
+				if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile() ||
+					definition.attribute(ItemAttributeKey::BorderBaseGroundId) > 0) return std::unexpected(ResolveError::InvalidItem);
+				result.fires[fire] = item->getID();
+			}
+		}
 		std::vector<uint8_t> gapCell;  // outline cells of ruins and camps that get no wall piece (G5 iteration 25)
 		if (walled && !grid.gaps.empty()) {
 			gapCell.assign(grid.cells.size(), 0);

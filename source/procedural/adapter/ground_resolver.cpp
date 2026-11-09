@@ -39,6 +39,14 @@ uint64_t GroundPlan::fingerprint() const {
 		hash = (hash ^ 0x6f) * 1099511628211ULL;
 		for (const auto flag : doors) hash = (hash ^ flag) * 1099511628211ULL;
 	}
+	// Appended only with camp fires, so plans without them keep their fingerprint.
+	if (!fires.empty()) {
+		hash = (hash ^ 0x63) * 1099511628211ULL;
+		for (const auto id : fires) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
 	return hash;
 }
 

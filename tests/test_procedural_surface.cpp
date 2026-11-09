@@ -672,6 +672,34 @@ void ruinsAndCamps() {
 	camps.tuning.campCount = 6;
 	const auto onlyCamps = generateSurface(camps, extent, budget);
 	require(onlyCamps.has_value() && onlyCamps->doors.empty() && !onlyCamps->sites.empty() && onlyCamps->gaps.size() == 8 * onlyCamps->sites.size(), "camps: each camp has one site and eight gaps");
+	require(onlyCamps->fires.size() == onlyCamps->sites.size(), "camps: one fire per camp");
+	// Geometry of one camp, counted by hand: the clearing is the 61 cells with dx^2 + dy^2 <= 18 around the fire; the tent is the 3 x 3 Floor
+	// centred 3 cells east, all of it inside the clearing (its farthest cells are 4 east and 1 north or south: 16 + 1 = 17 <= 18); so the clearing
+	// keeps 61 - 9 = 52 Path cells, the fire is one of them, the tent has 8 outline gaps and its centre is the site.
+	bool checkedOne = false;
+	for (uint64_t seed = 1; seed <= 80 && !checkedOne; ++seed) {
+		auto one = makeConfig(37, seed);
+		one.tuning.campCount = 50;
+		const auto single = generateSurface(one, extent, budget);
+		require(single.has_value(), "camp geometry: generation");
+		if (single->sites.size() != 1) continue;
+		checkedOne = true;
+		const int32_t fire = int32_t(single->fires[0]), fx = fire % 37, fy = fire / 37;
+		require(single->cells[size_t(fire)] == SurfaceKind::Path, "camp geometry: the fire is on a Path cell");
+		require(single->sites[0] == uint32_t(fy * 37 + fx + 3), "camp geometry: the site is the tent centre 3 east of the fire");
+		require(single->gaps.size() == 8, "camp geometry: eight gaps");
+		size_t floor = 0, pathInDisc = 0;
+		for (int32_t dy = -4; dy <= 4; ++dy) {
+			for (int32_t dx = -4; dx <= 4; ++dx) {
+				if (dx * dx + dy * dy > 18) continue;
+				const SurfaceKind kind = single->cells[size_t((fy + dy) * 37 + fx + dx)];
+				floor += kind == SurfaceKind::Floor;
+				pathInDisc += kind == SurfaceKind::Path;
+			}
+		}
+		require(floor == 9 && pathInDisc == 52, "camp geometry: 9 tent cells and 52 Path cells in the clearing");
+	}
+	require(checkedOne, "camp geometry: no seed placed exactly one camp");
 	camps.tuning.campCount = 51;
 	require(!validateSurface(camps, extent, budget).has_value(), "camps above 50 accepted");
 }

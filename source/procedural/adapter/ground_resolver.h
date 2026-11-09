@@ -30,6 +30,8 @@ struct GroundProfile {
 	std::string wall;
 	// Door kind (a name from door_types.h) for one door per building on the outline; empty = no doors. Needs a wall brush.
 	std::string door;
+	// Doodad brush for the fire in the middle of every camp (G5 iteration 26); empty = no fires. Needs a profile of eight brushes.
+	std::string campfire;
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
 };
@@ -52,6 +54,8 @@ struct GroundPlan {
 	std::vector<uint16_t> walls;
 	// 1 on the outline cell that gets a door (RME's DoorBrush replaces the wall piece there); empty when the profile has no door.
 	std::vector<uint8_t> doors;
+	// Camp fire item per cell (0 = none); empty when the profile has no campfire brush, otherwise one entry per cell.
+	std::vector<uint16_t> fires;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
 

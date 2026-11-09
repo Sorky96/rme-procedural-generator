@@ -134,6 +134,10 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.walls.size());
 		for (const auto id : plan.walls) hashField(hash, id, 2);
 	}
+	if (!plan.fires.empty()) {
+		hashField(hash, plan.fires.size());
+		for (const auto id : plan.fires) hashField(hash, id, 2);
+	}
 	return hash;
 }
 
@@ -274,6 +278,26 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			decorIds.push_back(item->getID());
 		}
 	}
+	// Camp fire items (iteration 26): every single item of every variation of the campfire brush may be placed.
+	if (plan.profile.campfire.empty() != plan.fires.empty() || (!plan.fires.empty() && (plan.fires.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount))) {
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	}
+	if (!plan.profile.campfire.empty()) {
+		const auto* brush = plan.profile.campfire.size() <= 256 ? g_brushes.getBrush(plan.profile.campfire) : nullptr;
+		const auto* fireBrush = brush ? brush->as<DoodadBrush>() : nullptr;
+		if (!fireBrush) co_return std::unexpected(PreviewError::InvalidPlan);
+		size_t found = 0;
+		for (int variation = 0; variation <= fireBrush->getMaxVariation(); ++variation) {
+			if (!fireBrush->hasSingleObjects(variation) || fireBrush->getSingleChance(variation) <= 0 || fireBrush->getSingleChance(variation) > 100000) continue;
+			for (int roll = 1; roll <= fireBrush->getSingleChance(variation); ++roll) {
+				const auto* item = fireBrush->getRandomSingleItem(variation, roll);
+				if (!item || !item->getID()) co_return std::unexpected(PreviewError::InvalidItem);
+				decorIds.push_back(item->getID());
+				++found;
+			}
+		}
+		if (!found) co_return std::unexpected(PreviewError::InvalidPlan);
+	}
 	// Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
 	std::vector<uint16_t> wallIds;
 	const WallBrush* wallBrush = nullptr;
@@ -310,6 +334,12 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!wallDefinition || !wallDefinition.clientId() || wallDefinition.isMetaItem() || wallDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 		}
 		if (!plan.doors.empty() && plan.doors[i] && (plan.walls.empty() || !plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (!plan.fires.empty() && plan.fires[i]) {
+			if (!plan.items[i] || !std::ranges::binary_search(decorIds, plan.fires[i])) co_return std::unexpected(PreviewError::InvalidItem);
+			const auto fireDefinition = g_item_definitions.get(plan.fires[i]);
+			if (!fireDefinition || !fireDefinition.clientId() || fireDefinition.isMetaItem() || fireDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
+			++decorPlacements;
+		}
 		if (!plan.items[i]) continue;
 		++placements;
 		if (!plan.decor.empty() && plan.decor[i]) {
@@ -444,6 +474,12 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.decor[i]));
+		}
+		for (size_t i = 0; i < plan.fires.size(); ++i) {
+			if (!plan.fires[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->addItem(Item::Create(plan.fires[i]));
 		}
 		// Walls follow the vegetation: the pieces are placed with the brush's first item and RME's own wall logic then
 		// picks the right piece (straight, corner) from the neighbouring walls.

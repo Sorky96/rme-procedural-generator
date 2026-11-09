@@ -548,6 +548,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	camp_count_spin_->SetToolTip("Clearings with an open tent floor per 65536 map cells. 0 = none. Uses the path and floor brushes.");
 	form->Add(camp_count_spin_, 1, wxEXPAND);
 
+	form->Add(label("Camp&fire brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	campfire_brush_choice_ = brushChoice("terrain-campfire-brush", "campfire", 1);
+	campfire_brush_choice_->SetToolTip("Doodad brush for the fire in the middle of every camp. Empty when the loaded client has no brush named campfire: pick another doodad brush to get a fire.");
+	if (doodad_names_.Index("campfire") == wxNOT_FOUND) campfire_brush_choice_->Clear();
+	form->Add(campfire_brush_choice_, 1, wxEXPAND);
+
 	section("Vegetation");
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
@@ -808,6 +814,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	building_density_spin_->Enable(natural);
 	ruin_percent_spin_->Enable(natural && building_density_spin_->GetValue() > 0);
 	camp_count_spin_->Enable(natural);
+	campfire_brush_choice_->Enable(natural && camp_count_spin_->GetValue() > 0);
 	ford_length_spin_->Enable(natural);
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
@@ -938,6 +945,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			request.profile.door = std::string(kind.utf8_str());
 		}
 	}
+
+	if (withFloors && config.surface.campCount > 0) request.profile.campfire = std::string(campfire_brush_choice_->GetValue().utf8_str());
 
 	config.vegetation = natural && vegetation_check_->GetValue();
 	if (config.vegetation) {

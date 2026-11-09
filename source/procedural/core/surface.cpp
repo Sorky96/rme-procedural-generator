@@ -595,17 +595,18 @@ void cutRuinGaps(const Foundation& f, uint32_t width, StableRandom& random, std:
 	sites.push_back(((f.y0 + f.y1) / 2) * width + (f.x0 + f.x1) / 2);
 }
 
-// Camps (iteration 25): a clearing (Path disc, radius 3) with an open tent floor (Floor 3 x 3 whose whole outline is a gap) on
-// ground that is Grass or Dirt within 5 cells and has no Floor within 12 cells; centres are at least 12 apart.
+// Camps (iterations 25 and 26): a clearing (Path disc, dx^2 + dy^2 <= 18) with a fire in the middle (a Path cell, SurfaceGrid::fires) and an open tent
+// floor (Floor 3 x 3, centre 3 cells east of the middle, whose whole outline is a gap) on ground that is Grass or Dirt within 7 cells and has
+// no Floor within 12 cells; centres are at least 12 apart.
 bool placeCamps(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config,
-	std::vector<uint32_t>& gaps, std::vector<uint32_t>& sites, std::stop_token stop) {
+	std::vector<uint32_t>& gaps, std::vector<uint32_t>& sites, std::vector<uint32_t>& fires, std::stop_token stop) {
 	const uint64_t wanted = uint64_t(config.tuning.campCount) * kinds.size() / 65536;
-	if (width < 13 || height < 13) return true;
+	if (width < 17 || height < 17) return true;
 	StableRandom random(config.seed, campStream);
 	std::vector<std::pair<int32_t, int32_t>> centres;
 	for (uint64_t attempt = 0; attempt < wanted * 60 + 60 && centres.size() < wanted; ++attempt) {
 		if (attempt % 64 == 0 && stop.stop_requested()) return false;
-		const int32_t cx = 6 + int32_t(random.bounded(width - 12)), cy = 6 + int32_t(random.bounded(height - 12));
+		const int32_t cx = 8 + int32_t(random.bounded(width - 16)), cy = 8 + int32_t(random.bounded(height - 16));
 		bool free = true;
 		for (const auto& [ox, oy] : centres) if (std::max(std::abs(ox - cx), std::abs(oy - cy)) < 12) { free = false; break; }
 		for (int32_t dy = -12; dy <= 12 && free; ++dy) {
@@ -614,20 +615,22 @@ bool placeCamps(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height
 				if (x < 0 || y < 0 || x >= int32_t(width) || y >= int32_t(height)) continue;
 				const SurfaceKind kind = kinds[size_t(y) * width + size_t(x)];
 				if (kind == SurfaceKind::Floor) { free = false; break; }
-				if (std::abs(dx) <= 5 && std::abs(dy) <= 5 && kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) { free = false; break; }
+				if (std::abs(dx) <= 7 && std::abs(dy) <= 7 && kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) { free = false; break; }
 			}
 		}
 		if (!free) continue;
 		centres.emplace_back(cx, cy);
-		for (int32_t dy = -3; dy <= 3; ++dy) for (int32_t dx = -3; dx <= 3; ++dx) if (dx * dx + dy * dy <= 10) kinds[size_t(cy + dy) * width + size_t(cx + dx)] = SurfaceKind::Path;
+		for (int32_t dy = -4; dy <= 4; ++dy) for (int32_t dx = -4; dx <= 4; ++dx) if (dx * dx + dy * dy <= 18) kinds[size_t(cy + dy) * width + size_t(cx + dx)] = SurfaceKind::Path;
+		fires.push_back(uint32_t(size_t(cy) * width + size_t(cx)));
+		const int32_t tentX = cx + 3;
 		for (int32_t dy = -1; dy <= 1; ++dy) {
 			for (int32_t dx = -1; dx <= 1; ++dx) {
-				const size_t cell = size_t(cy + dy) * width + size_t(cx + dx);
+				const size_t cell = size_t(cy + dy) * width + size_t(tentX + dx);
 				kinds[cell] = SurfaceKind::Floor;
 				if (dx || dy) gaps.push_back(uint32_t(cell));
 			}
 		}
-		sites.push_back(uint32_t(size_t(cy) * width + size_t(cx)));
+		sites.push_back(uint32_t(size_t(cy) * width + size_t(tentX)));
 	}
 	return true;
 }
@@ -871,6 +874,7 @@ bool SurfaceGrid::valid() const noexcept {
 	if (!std::ranges::all_of(doors, [&](uint32_t door) { return door < cells.size() && cells[door] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(gaps, [&](uint32_t gap) { return gap < cells.size() && cells[gap] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(sites, [&](uint32_t site) { return site < cells.size() && cells[site] == SurfaceKind::Floor; })) return false;
+	if (!std::ranges::all_of(fires, [&](uint32_t fire) { return fire < cells.size() && cells[fire] == SurfaceKind::Path; })) return false;
 	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Floor; });
 }
 
@@ -900,6 +904,11 @@ uint64_t SurfaceGrid::fingerprint() const {
 		byte('T');
 		word(static_cast<uint32_t>(sites.size()));
 		for (const uint32_t site : sites) word(site);
+	}
+	if (!fires.empty()) {
+		byte('R');
+		word(static_cast<uint32_t>(fires.size()));
+		for (const uint32_t fire : fires) word(fire);
 	}
 	return hash;
 }
@@ -1215,7 +1224,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);
 		std::vector<uint8_t>* crossings = config.tuning.fordLength ? &crossingMask : nullptr;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop, crossings)) return cancelled();
-		std::vector<uint32_t> doors, gaps, sites;
+		std::vector<uint32_t> doors, gaps, sites, fires;
 		if (config.tuning.buildingDensity) {
 			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
@@ -1230,7 +1239,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 			if (!placeDoorsAndTrails(kinds, width, height, config, config.tuning.ruinPercent ? std::span<const Foundation>(withDoors) : std::span<const Foundation>(foundations), doors, stop, crossings)) return cancelled();
 		}
-		if (config.tuning.campCount && !placeCamps(kinds, width, height, config, gaps, sites, stop)) return cancelled();
+		if (config.tuning.campCount && !placeCamps(kinds, width, height, config, gaps, sites, fires, stop)) return cancelled();
 		// Walkability treats doors and gaps alike (openings in a wall).
 		std::vector<uint32_t> openings = doors;
 		openings.insert(openings.end(), gaps.begin(), gaps.end());
@@ -1250,7 +1259,8 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::erase_if(doors, [&](uint32_t door) { return kinds[door] != SurfaceKind::Floor; });
 		std::erase_if(gaps, [&](uint32_t gap) { return kinds[gap] != SurfaceKind::Floor; });
 		std::erase_if(sites, [&](uint32_t site) { return kinds[site] != SurfaceKind::Floor; });
-		return SurfaceGrid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites) };
+		std::erase_if(fires, [&](uint32_t fire) { return kinds[fire] != SurfaceKind::Path; });
+		return SurfaceGrid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires) };
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}

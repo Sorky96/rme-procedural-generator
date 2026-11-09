@@ -626,6 +626,75 @@ void ruinsAndCamps(uint32_t side, std::ostream& report) {
 	report << "SURFACE_RUINS_E2E_PASS" << '\t' << side << '\t' << "gaps=" << grid->gaps.size() << '\t' << "sites=" << grid->sites.size() << '\t' << "walls=" << plannedWalls << '\n';
 }
 
+// Camp fires (G5 iteration 26). The 10.98 client of the probe has no "campfire" doodad brush, so "small rocks" stands in: the probe checks the mechanism
+// (one item of the brush on every fire cell and nowhere else, Undo and Redo, refusals), not the look.
+void campfires(uint32_t side, std::ostream& report) {
+	UndoLimits undoLimits;
+	check(g_gui.NewMap(), "Editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	GenerationConfig config {{100, 100, 7, side, side}, 1729};
+	config.algorithm = GenerationAlgorithm::Surface;
+	config.surface.campCount = 8;
+	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	auto plain = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(plain), "Camps without a fire failed, error index " + std::to_string(plain ? 0 : plain.error().index()));
+	profile.campfire = "small rocks";
+	const auto baselineTiles = editor.map.getTileCount();
+	const auto prior = editor.actionQueue->getCurrentIndex();
+	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(prepared), "Camp fire preparation failed, error index " + std::to_string(prepared ? 0 : prepared.error().index()) +
+		(prepared || prepared.error().index() != 4 ? std::string() : " preview error " + std::to_string(int(std::get<PreviewError>(prepared.error())))));
+	if (!plain || !prepared) return;
+	check(bool(validatePreparedTerrain(editor.map, *prepared, config, profile)), "Camp fire validation failed");
+	check(prepared->plan.fingerprint() != plain->plan.fingerprint(), "A fire did not change the plan fingerprint");
+	const auto grid = generateSurface({config.region, config.seed, config.surface}, MapExtent {65001, 65001, 16}, surfaceBudget);
+	check(bool(grid) && !grid->fires.empty(), "The surface has no camp fire cells");
+	if (!grid) return;
+	auto fireCells = grid->fires;
+	std::ranges::sort(fireCells);
+	size_t plannedFires = 0;
+	for (size_t i = 0; i < prepared->plan.fires.size(); ++i) {
+		const bool planned = prepared->plan.fires[i] != 0;
+		plannedFires += planned;
+		check(planned == std::ranges::binary_search(fireCells, uint32_t(i)), "The fire layer differs from the fire cells");
+	}
+	check(plannedFires == grid->fires.size(), "The number of planned fires differs from the fire cells");
+	auto unknown = profile;
+	unknown.campfire = "no such brush";
+	check(!prepareTerrain(editor.map, config, unknown, preparation), "An unknown fire brush was accepted");
+	auto ground = profile;
+	ground.campfire = "grass";
+	check(!prepareTerrain(editor.map, config, ground, preparation), "A ground brush was accepted as the fire brush");
+	auto sixBrushes = profile;
+	sixBrushes.count = GroundProfile::surfaceCount;
+	check(!prepareTerrain(editor.map, config, sixBrushes, preparation), "A fire was accepted without a floor brush");
+	const auto expectedFires = prepared->plan.fires;
+	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+	check(bool(receipt), "Camp fire commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
+	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Camp fire commit is not one history step");
+	const auto countFires = [&](bool placed) {
+		size_t found = 0;
+		for (size_t i = 0; i < expectedFires.size(); ++i) {
+			const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
+			size_t here = 0;
+			if (tile && expectedFires[i]) for (const auto& item : tile->items) here += item->getID() == expectedFires[i];
+			check(here == (placed && expectedFires[i] ? 1u : 0u), "Fire item count on a tile differs from the plan");
+			found += here;
+		}
+		return found;
+	};
+	check(countFires(true) == plannedFires, "The number of fire items differs from the plan");
+	const auto committedTiles = editor.map.getTileCount();
+	check(editor.actionQueue->undo(), "Camp fire Undo refused");
+	check(countFires(false) == 0 && editor.map.getTileCount() == baselineTiles, "Undo left fire items or changed the tile count");
+	check(editor.actionQueue->redo(), "Camp fire Redo refused");
+	check(countFires(true) == plannedFires && editor.map.getTileCount() == committedTiles, "Redo did not restore the fires");
+	editor.map.clearChanges();
+	report << "SURFACE_FIRES_E2E_PASS" << '\t' << side << '\t' << "fires=" << plannedFires << '\n';
+}
+
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
 // tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
 void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
@@ -704,6 +773,7 @@ void run() {
 		doors(100, report);
 		doors(250, report);
 		ruinsAndCamps(250, report);
+		campfires(250, report);
 		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);

@@ -46,6 +46,8 @@ struct SurfaceGrid {
 	// interior cell per ruin or camp (sites). Row-major cell indices on Floor cells. Empty unless ruins or camps are on.
 	std::vector<uint32_t> gaps;
 	std::vector<uint32_t> sites;
+	// Camp fires (G5 iteration 26): one Path cell in the middle of every camp clearing. Empty unless camps are on.
+	std::vector<uint32_t> fires;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };
