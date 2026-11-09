@@ -50,11 +50,11 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 		const auto* brush = g_brushes.getBrush(name);
 		return brush ? brush->as<DoodadBrush>() : nullptr;
 	};
-	const auto plain = [](const Item* item) {
+	const auto plain = [](const Item* item, bool allowGround = false) {
 		const auto def = item ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
 		return item && typeid(*item) == typeid(Item) && !item->getInvalidOTBMData() &&
 			(!item->getAttributesView() || item->getAttributesView()->empty()) && def && def.clientId() &&
-			!def.isMetaItem() && !def.isGroundTile() && !def.attribute(ItemAttributeKey::BorderBaseGroundId);
+			!def.isMetaItem() && (!def.isGroundTile() || (allowGround && def.hasFlag(ItemFlag::FloorChangeDown))) && !def.attribute(ItemAttributeKey::BorderBaseGroundId);
 	};
 	const auto* entrance = doodad(profile.caveEntrance);
 	const auto* exit = doodad(profile.caveExit);
@@ -93,7 +93,7 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 		ExitShape shape;
 		CaveBrushes::Items ids;
 		for (const auto& [pos, items] : *variant.composite) {
-			if (items.size() != 1 || !plain(items.front().get())) return std::unexpected(ResolveError::InvalidProfile);
+			if (items.size() != 1 || !plain(items.front().get(), pos.x == 0 && pos.y == 0 && pos.z == -1)) return std::unexpected(ResolveError::InvalidProfile);
 			const auto id = items.front()->getID();
 			if (pos.x == 0 && pos.y == 0 && pos.z == -1 && !ids.top) ids.top = id;
 			else if (pos.x == 0 && pos.y == 0 && pos.z == 0 && !ids.ramp) {

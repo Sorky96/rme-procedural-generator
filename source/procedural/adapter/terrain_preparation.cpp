@@ -6,6 +6,7 @@
 #include "app/managers/version_manager.h"
 #include "editor/operations/draw_operations.h"
 #include "map/map.h"
+#include "item_definitions/core/item_definition_store.h"
 #include "procedural/adapter/snapshot_memory.h"
 #include "procedural/adapter/surface_resolver.h"
 #include "procedural/core/decoration.h"
@@ -245,7 +246,7 @@ TerrainPreparationSteps runPreparation(
 		co_await std::suspend_always{};
 		if (g_version.GetAssetRevision() != input.assetRevision) co_return fail(PreviewError::StaleSnapshot);
 
-		// The semantic grid lives only in this scope, so it is released before the sandbox exists.
+		// Surface semantics stay alive for the lower preview; their full working estimate remains charged.
 		GroundPlan plan;
 		std::unique_ptr<PreparedTerrain> cave;
 		{
@@ -262,9 +263,7 @@ TerrainPreparationSteps runPreparation(
 					if (!generated) co_return fail(fromSurface(generated.error()));
 					decor = std::move(*generated);
 				}
-				auto resolved = resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear);
-				if (!resolved) co_return fail(resolved.error());
-				plan = std::move(*resolved);
+				const auto resolve = [&]() { return resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear); };
 				if (hasCave(profile)) {
 					auto brushes = resolveCaveBrushes(profile, input.config);
 					if (!brushes) co_return fail(brushes.error());
@@ -278,6 +277,9 @@ TerrainPreparationSteps runPreparation(
 					auto exits = placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
 					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
 						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
+					auto resolved = resolve();
+					if (!resolved) co_return fail(resolved.error());
+					plan = std::move(*resolved);
 					auto lowerConfig = input.config;
 					++lowerConfig.region.z;
 					if (!reserve(sizeof(PreparedTerrain) + planBytes)) co_return fail(PreparationInputError::MemoryLimit);
@@ -306,6 +308,7 @@ TerrainPreparationSteps runPreparation(
 						plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
 						if (!plan.decor.empty()) plan.decor[e] = 0;
 						plan.exitTops[p] = ids.top;
+						if (g_item_definitions.get(ids.top).isGroundTile()) plan.items[p] = ids.top;
 						lowerPlan.exits[p] = ids.ramp;
 						if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
 					}
@@ -323,6 +326,10 @@ TerrainPreparationSteps runPreparation(
 					const PreparationMemory lowerMemory {sizeof(PreparedTerrain), lowerSnapshot->estimatedBytes, 0, planBytes,
 						lowerPreviewBytes, sizeof(PreparedTerrain) + lowerSnapshot->estimatedBytes + planBytes + lowerPreviewBytes};
 					cave = std::make_unique<PreparedTerrain>(PreparedTerrain {std::move(*lowerSnapshot), std::move(lowerPlan), std::move(**lower), lowerMemory});
+				} else {
+					auto resolved = resolve();
+					if (!resolved) co_return fail(resolved.error());
+					plan = std::move(*resolved);
 				}
 			} else {
 				auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
