@@ -39,6 +39,9 @@ enum class SurfaceError {
 struct SurfaceGrid {
 	GenerationRegion region;
 	std::vector<SurfaceKind> cells;
+	// Door cells (G4 iteration 12), one per building foundation, as row-major cell indices; each lies on a Floor cell.
+	// Empty unless buildings are on, and then not part of the fingerprint.
+	std::vector<uint32_t> doors;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };

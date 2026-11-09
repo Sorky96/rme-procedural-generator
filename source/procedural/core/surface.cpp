@@ -21,6 +21,7 @@ constexpr uint64_t meanderStream = 0x6d65616e6465725fULL;  // "meander_"
 constexpr uint64_t rimStream = 0x72696d5f73733130ULL;      // "rim_ss10"
 constexpr uint64_t buildingStream = 0x6275696c645f7333ULL;  // "build_s3"
 constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
+constexpr uint64_t doorStream = 0x646f6f725f733132ULL;     // "door_s12"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
@@ -96,44 +97,16 @@ void grassRim(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, 
 	}
 }
 
-// Optional building foundations (G4 iteration 11): rectangles of Floor, 7-11 by 5-9 cells in either orientation, each with
-// a margin of two cells that must be Grass or Dirt, so a foundation never touches water, rock, a beach, a path or another one.
-void placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
-	const uint64_t wanted = uint64_t(config.tuning.buildingDensity) * kinds.size() / 65536;
-	StableRandom random(config.seed, buildingStream);
-	uint64_t placed = 0;
-	for (uint64_t attempt = 0; attempt < wanted * 40 + 40 && placed < wanted; ++attempt) {
-		if (attempt % 64 == 0 && stop.stop_requested()) return;
-		uint32_t longSide = 7 + uint32_t(random.bounded(5)), shortSide = 5 + uint32_t(random.bounded(5));
-		shortSide = std::min(shortSide, longSide);
-		if (random.bounded(2)) std::swap(longSide, shortSide);
-		if (longSide + 4 > width || shortSide + 4 > height) continue;
-		const uint32_t x0 = uint32_t(random.bounded(width - (longSide + 4) + 1)) + 2, y0 = uint32_t(random.bounded(height - (shortSide + 4) + 1)) + 2;
-		bool free = true;
-		for (uint32_t y = y0 - 2; y < y0 + shortSide + 2 && free; ++y) {
-			for (uint32_t x = x0 - 2; x < x0 + longSide + 2; ++x) {
-				const SurfaceKind kind = kinds[size_t(y) * width + x];
-				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) { free = false; break; }
-			}
-		}
-		if (!free) continue;
-		for (uint32_t y = y0; y < y0 + shortSide; ++y) for (uint32_t x = x0; x < x0 + longSide; ++x) kinds[size_t(y) * width + x] = SurfaceKind::Floor;
-		++placed;
-	}
-}
-
-// Optional paths (G4 iteration 9): winding routes over Grass, Dirt and Shore between random land cells, 3 to 4 cells
-// wide, smoothed so they do not turn at right angles and kept off the edge of rock. Rivers, lakes and rock are never
-// crossed. Returns false when cancelled.
-bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
-	const size_t count = kinds.size();
-	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
-	const auto land = [&](size_t i) { return kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt; };
-	// Distance (Chebyshev, 1..4) to the nearest Rock cell, 0 farther away: routes are pushed off the edge of the rock.
-	std::vector<uint8_t> rockDistance(count, 0);
-	{
+// Routes between land cells (G4 iteration 9) and stamps them as Path: A* over Grass, Dirt, Shore and Path, smoothed so the
+// route does not turn at right angles, stamped 3 to 4 cells wide and kept off the edge of rock. Rivers, lakes, rock and
+// foundations are never crossed. The distance-to-rock field is taken once, when the router is built.
+class PathRouter {
+public:
+	PathRouter(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config)
+		: kinds_(kinds), width_(width), height_(height), config_(config),
+		  rockDistance_(kinds.size(), 0), cost_(kinds.size(), std::numeric_limits<uint32_t>::max()), parent_(kinds.size(), -1), closed_(kinds.size(), 0) {
 		std::vector<size_t> frontier, next;
-		for (size_t i = 0; i < count; ++i) if (kinds[i] == SurfaceKind::Rock) frontier.push_back(i);
+		for (size_t i = 0; i < kinds.size(); ++i) if (kinds[i] == SurfaceKind::Rock) frontier.push_back(i);
 		for (uint8_t distance = 1; distance <= 4 && !frontier.empty(); ++distance) {
 			next.clear();
 			for (const size_t i : frontier) {
@@ -143,8 +116,8 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 						const int32_t nx = x + dx, ny = y + dy;
 						if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
 						const size_t j = size_t(ny) * width + size_t(nx);
-						if (kinds[j] == SurfaceKind::Rock || rockDistance[j]) continue;
-						rockDistance[j] = distance;
+						if (kinds[j] == SurfaceKind::Rock || rockDistance_[j]) continue;
+						rockDistance_[j] = distance;
 						next.push_back(j);
 					}
 				}
@@ -152,13 +125,116 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 			frontier.swap(next);
 		}
 	}
-	constexpr uint32_t rockPenalty[5] = {0, 60, 40, 25, 12};
+
+	// Stamps a route from `start` to `goal`; returns its length in cells, 0 when there is no acceptable route. Cells that
+	// become Path are appended to `stamped` when it is given.
+	size_t connect(size_t start, size_t goal, std::vector<uint32_t>* stamped = nullptr) {
+		std::vector<SurfaceKind>& kinds = kinds_;
+		const uint32_t width = width_, height = height_;
+		const SurfaceConfig& config = config_;
+		constexpr uint32_t rockPenalty[5] = {0, 60, 40, 25, 12};
+		const int32_t sx = int32_t(start % width), sy = int32_t(start / width);
+		const int32_t gx = int32_t(goal % width), gy = int32_t(goal / width);
+		// Octile distance: 10 per straight step, 14 per diagonal one; never above the real cost of a step.
+		const auto heuristic = [&](size_t i) {
+			const uint32_t dx = uint32_t(std::abs(int32_t(i % width) - gx)), dy = uint32_t(std::abs(int32_t(i / width) - gy));
+			return 10u * (dx + dy) - 6u * std::min(dx, dy);
+		};
+		using Entry = std::pair<uint32_t, uint32_t>; // estimated total, cell
+		std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
+		for (const size_t i : touched_) { cost_[i] = std::numeric_limits<uint32_t>::max(); parent_[i] = -1; closed_[i] = 0; }
+		touched_.clear();
+		cost_[start] = 0;
+		touched_.push_back(start);
+		open.push({heuristic(start), uint32_t(start)});
+		bool found = false;
+		uint32_t expanded = 0;
+		while (!open.empty() && expanded < 60000) {
+			const size_t current = open.top().second;
+			open.pop();
+			if (closed_[current]) continue;
+			closed_[current] = 1;
+			++expanded;
+			if (current == goal) { found = true; break; }
+			const int32_t x = int32_t(current % width), y = int32_t(current / width);
+			for (int32_t dy = -1; dy <= 1; ++dy) {
+				for (int32_t dx = -1; dx <= 1; ++dx) {
+					if (!dx && !dy) continue;
+					const int32_t nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
+					const size_t next = size_t(ny) * width + size_t(nx);
+					const SurfaceKind kind = kinds[next];
+					if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
+					if (closed_[next]) continue;
+					const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(nx),
+						uint32_t(config.region.y) + uint32_t(ny), 5)) * 10 / noiseBins);
+					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + rockPenalty[rockDistance_[next]];
+					if (dx && dy) step = step * 14 / 10;
+					const uint32_t candidate = cost_[current] + step;
+					if (candidate >= cost_[next]) continue;
+					if (cost_[next] == std::numeric_limits<uint32_t>::max()) touched_.push_back(next);
+					cost_[next] = candidate;
+					parent_[next] = int32_t(current);
+					open.push({candidate + heuristic(next), uint32_t(next)});
+				}
+			}
+		}
+		if (!found) return 0;
+		route_.clear();
+		for (int32_t cell = int32_t(goal); cell != -1; cell = parent_[size_t(cell)]) route_.push_back(size_t(cell));
+		const uint32_t chebyshev = uint32_t(std::max(std::abs(sx - gx), std::abs(sy - gy)));
+		if (route_.size() > 3u * std::max<uint32_t>(chebyshev, 1)) return 0;
+		// Moving average of the route points rounds the corners; the line between smoothed points is stamped.
+		constexpr int32_t window = 6;
+		smooth_.clear();
+		for (int32_t k = 0; k < int32_t(route_.size()); ++k) {
+			const int32_t lo = std::max(0, k - window), hi = std::min(int32_t(route_.size()) - 1, k + window);
+			int64_t sumX = 0, sumY = 0;
+			for (int32_t j = lo; j <= hi; ++j) { sumX += int64_t(route_[size_t(j)] % width); sumY += int64_t(route_[size_t(j)] / width); }
+			smooth_.emplace_back(int32_t(sumX / (hi - lo + 1)), int32_t(sumY / (hi - lo + 1)));
+		}
+		const auto stamp = [&](int32_t x, int32_t y) {
+			const uint32_t swell = valueNoise(config.seed, pathStream + 2, uint32_t(config.region.x) + uint32_t(x), uint32_t(config.region.y) + uint32_t(y), 7) >> 15;
+			for (int32_t dy = -1; dy <= 1 + int32_t(swell); ++dy) {
+				for (int32_t dx = -1; dx <= 1 + int32_t(swell); ++dx) {
+					const int32_t px = x + dx, py = y + dy;
+					if (px < 0 || py < 0 || px >= int32_t(width) || py >= int32_t(height)) continue;
+					const size_t i = size_t(py) * width + size_t(px);
+					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore) {
+						kinds[i] = SurfaceKind::Path;
+						if (stamped) stamped->push_back(uint32_t(i));
+					}
+				}
+			}
+		};
+		for (size_t k = 0; k + 1 < smooth_.size(); ++k) {
+			const auto [ax, ay] = smooth_[k];
+			const auto [bx, by] = smooth_[k + 1];
+			const int32_t steps = std::max(1, std::max(std::abs(bx - ax), std::abs(by - ay)));
+			for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
+		}
+		return route_.size();
+	}
+
+private:
+	std::vector<SurfaceKind>& kinds_;
+	uint32_t width_, height_;
+	const SurfaceConfig& config_;
+	std::vector<uint8_t> rockDistance_;  // Chebyshev distance (1..4) to the nearest Rock cell, 0 farther away
+	std::vector<uint32_t> cost_;
+	std::vector<int32_t> parent_;
+	std::vector<uint8_t> closed_;
+	std::vector<size_t> touched_, route_;
+	std::vector<std::pair<int32_t, int32_t>> smooth_;
+};
+
+// Optional paths (G4 iteration 9): winding routes between random land cells. Returns false when cancelled.
+bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
+	const size_t count = kinds.size();
+	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
+	const auto land = [&](size_t i) { return kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt; };
+	PathRouter router(kinds, width, height, config);
 	StableRandom random(config.seed, pathStream);
-	std::vector<uint32_t> cost(count, std::numeric_limits<uint32_t>::max());
-	std::vector<int32_t> parent(count, -1);
-	std::vector<uint8_t> closed(count, 0);
-	std::vector<size_t> touched, route;
-	std::vector<std::pair<int32_t, int32_t>> smooth;
 	uint64_t placed = 0;
 	const uint32_t span = std::max(width, height);
 	const uint32_t minDistance = std::min<uint32_t>(48, span / 3), maxDistance = std::max<uint32_t>(minDistance + 1, std::min<uint32_t>(160, span));
@@ -182,83 +258,103 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 			if (land(candidate)) goal = candidate;
 		}
 		if (goal == count) continue;
-		const int32_t gx = int32_t(goal % width), gy = int32_t(goal / width);
-		// Octile distance: 10 per straight step, 14 per diagonal one; never above the real cost of a step.
-		const auto heuristic = [&](size_t i) {
-			const uint32_t dx = uint32_t(std::abs(int32_t(i % width) - gx)), dy = uint32_t(std::abs(int32_t(i / width) - gy));
-			return 10u * (dx + dy) - 6u * std::min(dx, dy);
-		};
-		using Entry = std::pair<uint32_t, uint32_t>; // estimated total, cell
-		std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
-		for (const size_t i : touched) { cost[i] = std::numeric_limits<uint32_t>::max(); parent[i] = -1; closed[i] = 0; }
-		touched.clear();
-		cost[start] = 0;
-		touched.push_back(start);
-		open.push({heuristic(start), uint32_t(start)});
-		bool found = false;
-		uint32_t expanded = 0;
-		while (!open.empty() && expanded < 60000) {
-			const size_t current = open.top().second;
-			open.pop();
-			if (closed[current]) continue;
-			closed[current] = 1;
-			++expanded;
-			if (current == goal) { found = true; break; }
-			const int32_t x = int32_t(current % width), y = int32_t(current / width);
-			for (int32_t dy = -1; dy <= 1; ++dy) {
-				for (int32_t dx = -1; dx <= 1; ++dx) {
-					if (!dx && !dy) continue;
-					const int32_t nx = x + dx, ny = y + dy;
-					if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
-					const size_t next = size_t(ny) * width + size_t(nx);
-					const SurfaceKind kind = kinds[next];
-					if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
-					if (closed[next]) continue;
-					const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(nx),
-						uint32_t(config.region.y) + uint32_t(ny), 5)) * 10 / noiseBins);
-					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + rockPenalty[rockDistance[next]];
-					if (dx && dy) step = step * 14 / 10;
-					const uint32_t candidate = cost[current] + step;
-					if (candidate >= cost[next]) continue;
-					if (cost[next] == std::numeric_limits<uint32_t>::max()) touched.push_back(next);
-					cost[next] = candidate;
-					parent[next] = int32_t(current);
-					open.push({candidate + heuristic(next), uint32_t(next)});
-				}
+		placed += router.connect(start, goal);
+	}
+	return true;
+}
+
+// Optional building foundations (G4 iterations 11 and 12): rectangles of Floor, 7-11 by 5-9 cells in either orientation,
+// each with a margin of two cells that must be Grass or Dirt, so a foundation never touches water, rock, a beach, a path
+// or another one. 30 % of the attempts start a cluster at a random place; the rest put a building 3 to 6 cells from the
+// side of one that is already there. Returns the foundations in placement order.
+struct Foundation {
+	uint32_t x0, y0, x1, y1;  // inclusive
+};
+
+constexpr uint32_t clusterAnchorPercent = 30;
+constexpr uint32_t clusterGapMin = 3, clusterGapSpread = 4;  // gap 3..6
+constexpr uint32_t doorTargetReach = 60;                      // a door looks for a trail this close (Chebyshev, from the building centre)
+
+std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
+	std::vector<Foundation> placed;
+	const uint64_t wanted = uint64_t(config.tuning.buildingDensity) * kinds.size() / 65536;
+	StableRandom random(config.seed, buildingStream);
+	for (uint64_t attempt = 0; attempt < wanted * 40 + 40 && placed.size() < wanted; ++attempt) {
+		if (attempt % 64 == 0 && stop.stop_requested()) return placed;
+		uint32_t longSide = 7 + uint32_t(random.bounded(5)), shortSide = 5 + uint32_t(random.bounded(5));
+		shortSide = std::min(shortSide, longSide);
+		if (random.bounded(2)) std::swap(longSide, shortSide);
+		if (longSide + 4 > width || shortSide + 4 > height) continue;
+		int64_t x0, y0;
+		if (placed.empty() || random.bounded(100) < clusterAnchorPercent) {
+			x0 = int64_t(random.bounded(width - (longSide + 4) + 1)) + 2;
+			y0 = int64_t(random.bounded(height - (shortSide + 4) + 1)) + 2;
+		} else {
+			const Foundation& other = placed[size_t(random.bounded(placed.size()))];
+			const int64_t side = int64_t(random.bounded(4)), gap = clusterGapMin + int64_t(random.bounded(clusterGapSpread));
+			const int64_t otherW = int64_t(other.x1) - other.x0 + 1, otherH = int64_t(other.y1) - other.y0 + 1;
+			const int64_t alongX = int64_t(other.x0) - (int64_t(longSide) - 1) + int64_t(random.bounded(uint64_t(otherW + longSide - 1)));
+			const int64_t alongY = int64_t(other.y0) - (int64_t(shortSide) - 1) + int64_t(random.bounded(uint64_t(otherH + shortSide - 1)));
+			switch (side) {
+				case 0: x0 = alongX; y0 = int64_t(other.y0) - gap - (int64_t(shortSide) - 1); break;  // north
+				case 1: x0 = int64_t(other.x1) + gap; y0 = alongY; break;                              // east
+				case 2: x0 = alongX; y0 = int64_t(other.y1) + gap; break;                              // south
+				default: x0 = int64_t(other.x0) - gap - (int64_t(longSide) - 1); y0 = alongY; break;   // west
 			}
 		}
-		if (!found) continue;
-		route.clear();
-		for (int32_t cell = int32_t(goal); cell != -1; cell = parent[size_t(cell)]) route.push_back(size_t(cell));
-		const uint32_t chebyshev = uint32_t(std::max(std::abs(sx - gx), std::abs(sy - gy)));
-		if (route.size() > 3u * std::max<uint32_t>(chebyshev, 1)) continue;
-		// Moving average of the route points rounds the corners; the line between smoothed points is stamped.
-		constexpr int32_t window = 6;
-		smooth.clear();
-		for (int32_t k = 0; k < int32_t(route.size()); ++k) {
-			const int32_t lo = std::max(0, k - window), hi = std::min(int32_t(route.size()) - 1, k + window);
-			int64_t sumX = 0, sumY = 0;
-			for (int32_t j = lo; j <= hi; ++j) { sumX += int64_t(route[size_t(j)] % width); sumY += int64_t(route[size_t(j)] / width); }
-			smooth.emplace_back(int32_t(sumX / (hi - lo + 1)), int32_t(sumY / (hi - lo + 1)));
-		}
-		const auto stamp = [&](int32_t x, int32_t y) {
-			const uint32_t swell = valueNoise(config.seed, pathStream + 2, uint32_t(config.region.x) + uint32_t(x), uint32_t(config.region.y) + uint32_t(y), 7) >> 15;
-			for (int32_t dy = -1; dy <= 1 + int32_t(swell); ++dy) {
-				for (int32_t dx = -1; dx <= 1 + int32_t(swell); ++dx) {
-					const int32_t px = x + dx, py = y + dy;
-					if (px < 0 || py < 0 || px >= int32_t(width) || py >= int32_t(height)) continue;
-					const size_t i = size_t(py) * width + size_t(px);
-					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore) kinds[i] = SurfaceKind::Path;
-				}
+		if (x0 < 2 || y0 < 2 || x0 + longSide + 2 > width || y0 + shortSide + 2 > height) continue;
+		bool free = true;
+		for (int64_t y = y0 - 2; y < y0 + shortSide + 2 && free; ++y) {
+			for (int64_t x = x0 - 2; x < x0 + longSide + 2; ++x) {
+				const SurfaceKind kind = kinds[size_t(y) * width + size_t(x)];
+				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) { free = false; break; }
 			}
-		};
-		for (size_t k = 0; k + 1 < smooth.size(); ++k) {
-			const auto [ax, ay] = smooth[k];
-			const auto [bx, by] = smooth[k + 1];
-			const int32_t steps = std::max(1, std::max(std::abs(bx - ax), std::abs(by - ay)));
-			for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
 		}
-		placed += route.size();
+		if (!free) continue;
+		for (int64_t y = y0; y < y0 + shortSide; ++y) for (int64_t x = x0; x < x0 + longSide; ++x) kinds[size_t(y) * width + size_t(x)] = SurfaceKind::Floor;
+		placed.push_back({uint32_t(x0), uint32_t(y0), uint32_t(x0 + longSide - 1), uint32_t(y0 + shortSide - 1)});
+	}
+	return placed;
+}
+
+// One door per foundation on the middle cell of the outline side that faces the nearest trail (or a random side when none
+// is within doorTargetReach); the cell in front of the door becomes Path and is routed to that trail. Buildings are taken in
+// placement order, so each new one joins the trails the earlier ones made. Returns false when cancelled.
+bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config,
+	std::span<const Foundation> foundations, std::vector<uint32_t>& doors, std::stop_token stop) {
+	PathRouter router(kinds, width, height, config);
+	StableRandom random(config.seed, doorStream);
+	std::vector<uint32_t> trail;
+	for (size_t i = 0; i < kinds.size(); ++i) if (kinds[i] == SurfaceKind::Path) trail.push_back(uint32_t(i));
+	for (const Foundation& f : foundations) {
+		if (stop.stop_requested()) return false;
+		const int64_t centreX2 = int64_t(f.x0) + f.x1, centreY2 = int64_t(f.y0) + f.y1;  // doubled centre
+		int64_t bestDistance = int64_t(doorTargetReach) + 1;
+		size_t target = kinds.size();
+		for (const uint32_t cell : trail) {
+			const int64_t dx = std::abs((int64_t(cell % width) * 2 - centreX2)) / 2, dy = std::abs((int64_t(cell / width) * 2 - centreY2)) / 2;
+			const int64_t distance = std::max(dx, dy);
+			if (distance < bestDistance) { bestDistance = distance; target = cell; }
+		}
+		int side;  // 0 north, 1 east, 2 south, 3 west
+		if (target != kinds.size()) {
+			const int64_t dx = int64_t(target % width) * 2 - centreX2, dy = int64_t(target / width) * 2 - centreY2;
+			side = std::abs(dx) >= std::abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+		} else {
+			side = int(random.bounded(4));
+		}
+		const uint32_t midX = f.x0 + (f.x1 - f.x0) / 2, midY = f.y0 + (f.y1 - f.y0) / 2;
+		uint32_t doorX = midX, doorY = f.y0, stoopX = midX, stoopY = f.y0 - 1;
+		if (side == 1) { doorX = f.x1; doorY = midY; stoopX = f.x1 + 1; stoopY = midY; }
+		else if (side == 2) { doorY = f.y1; stoopY = f.y1 + 1; }
+		else if (side == 3) { doorX = f.x0; doorY = midY; stoopX = f.x0 - 1; stoopY = midY; }
+		doors.push_back(doorY * width + doorX);
+		const size_t stoop = size_t(stoopY) * width + stoopX;
+		if (kinds[stoop] == SurfaceKind::Grass || kinds[stoop] == SurfaceKind::Dirt) {
+			kinds[stoop] = SurfaceKind::Path;
+			trail.push_back(uint32_t(stoop));
+		}
+		if (target != kinds.size()) router.connect(stoop, target, &trail);
 	}
 	return true;
 }
@@ -394,6 +490,7 @@ uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y) 
 bool SurfaceGrid::valid() const noexcept {
 	if (region.x < 0 || region.y < 0 || region.z < 0 || region.width == 0 || region.height == 0 ||
 		uint64_t(region.width) * region.height != cells.size()) return false;
+	if (!std::ranges::all_of(doors, [&](uint32_t door) { return door < cells.size() && cells[door] == SurfaceKind::Floor; })) return false;
 	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Floor; });
 }
 
@@ -409,6 +506,11 @@ uint64_t SurfaceGrid::fingerprint() const {
 	word(uint32_t(region.x)); word(uint32_t(region.y)); word(uint32_t(region.z));
 	word(region.width); word(region.height);
 	for (const auto kind : cells) byte(static_cast<uint8_t>(kind));
+	if (!doors.empty()) {
+		byte('D');
+		word(static_cast<uint32_t>(doors.size()));
+		for (const uint32_t door : doors) word(door);
+	}
 	return hash;
 }
 
@@ -719,9 +821,11 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		grassRim(kinds, width, height, config);
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop)) return cancelled();
+		std::vector<uint32_t> doors;
 		if (config.tuning.buildingDensity) {
-			placeBuildings(kinds, width, height, config, stop);
+			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
+			if (!placeDoorsAndTrails(kinds, width, height, config, foundations, doors, stop)) return cancelled();
 		}
 
 		for (size_t i = 0; i < count; ++i) {
@@ -730,7 +834,8 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 		}
 		if (stop.stop_requested()) return cancelled();
-		return SurfaceGrid { config.region, std::move(kinds) };
+		std::erase_if(doors, [&](uint32_t door) { return kinds[door] != SurfaceKind::Floor; });
+		return SurfaceGrid { config.region, std::move(kinds), std::move(doors) };
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}

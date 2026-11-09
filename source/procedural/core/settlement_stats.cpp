@@ -200,6 +200,12 @@ SettlementStats settlementStatsOf(const SurfaceGrid& grid) {
 		view.path[i] = grid.cells[i] == SurfaceKind::Path;
 	}
 	view.buildings = floorBoxesOf(grid);
+	for (const uint32_t door : grid.doors) {
+		const uint32_t x = door % view.width, y = door / view.width;
+		for (BuildingBox& box : view.buildings) {
+			if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) { box.doorCells.push_back(door); break; }
+		}
+	}
 	SettlementStats stats;
 	addSettlementFloor(view, stats);
 	return stats;

@@ -514,8 +514,9 @@ void grassRimRule(uint32_t side, uint64_t seeds) {
 	require(dirtBesideRock > 0, "the rim removed every contact between dirt and rock");
 }
 
-// Optional building foundations (G4 iteration 11): off by default; when on, only Grass and Dirt become Floor, every
-// foundation is a solid rectangle of 7-11 by 5-9 cells, and no two foundations or a foundation and another kind touch.
+// Optional building foundations (G4 iterations 11-12): off by default; when on, only Grass and Dirt become Floor (door trails
+// may also turn Grass, Dirt and Shore into Path), every foundation is a solid rectangle of 7-11 by 5-9 cells, and no two
+// foundations or a foundation and another kind touch.
 void buildings(uint32_t side, uint64_t seeds) {
 	for (uint64_t seed = 1; seed <= seeds; ++seed) {
 		auto config = makeConfig(side, seed);
@@ -528,8 +529,9 @@ void buildings(uint32_t side, uint64_t seeds) {
 		require(first->valid(), "grid with buildings is not valid");
 		for (size_t i = 0; i < first->cells.size(); ++i) {
 			if (first->cells[i] == plain->cells[i]) continue;
-			require(first->cells[i] == SurfaceKind::Floor, "a building run changed a cell to something other than a floor");
-			require(plain->cells[i] == SurfaceKind::Grass || plain->cells[i] == SurfaceKind::Dirt, "a foundation replaced water, rock, shore or a river");
+			require(first->cells[i] == SurfaceKind::Floor || first->cells[i] == SurfaceKind::Path, "a building run changed a cell to something other than a floor or a trail");
+			if (first->cells[i] == SurfaceKind::Floor) require(plain->cells[i] == SurfaceKind::Grass || plain->cells[i] == SurfaceKind::Dirt, "a foundation replaced water, rock, shore or a river");
+			else require(plain->cells[i] == SurfaceKind::Grass || plain->cells[i] == SurfaceKind::Dirt || plain->cells[i] == SurfaceKind::Shore, "a door trail replaced water, rock or a river");
 		}
 		const auto shapes = floorBuildingsOf(*first);
 		for (const Building& b : shapes.buildings) {
@@ -550,12 +552,62 @@ void buildings(uint32_t side, uint64_t seeds) {
 	}
 }
 
+// Settlements (G4 iteration 12): exactly one door per foundation, on an outline cell; the cell in front of it is Path;
+// no doors without buildings; clusters keep a gap of at least 3 cells; doors survive only on cells that stay Floor.
+void settlements(uint32_t side, uint64_t seeds) {
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		auto config = makeConfig(side, seed);
+		const auto plain = generateSurface(config, extent, budget);
+		require(plain.has_value() && plain->doors.empty(), "doors appeared with buildingDensity 0");
+		config.tuning.buildingDensity = 40;
+		config.tuning.pathLength = seed % 2 ? 40 : 0;
+		const auto first = generateSurface(config, extent, budget);
+		const auto second = generateSurface(config, extent, budget);
+		require(first.has_value() && second.has_value() && first->doors == second->doors && first->cells == second->cells, "settlements are not deterministic");
+		require(first->fingerprint() == second->fingerprint() && first->valid(), "settlement grid fingerprint or validity");
+		const std::vector<BuildingBox> boxes = floorBoxesOf(*first);
+		require(first->doors.size() == boxes.size(), "not exactly one door per foundation");
+		for (const BuildingBox& box : boxes) {
+			size_t inside = 0;
+			for (const uint32_t door : first->doors) {
+				const uint32_t x = door % side, y = door / side;
+				if (x < box.x0 || x > box.x1 || y < box.y0 || y > box.y1) continue;
+				++inside;
+				const bool north = y == box.y0, south = y == box.y1, west = x == box.x0, east = x == box.x1;
+				require(north || south || west || east, "a door is not on the outline");
+				const size_t stoop = north ? door - side : south ? door + side : west ? door - 1 : door + 1;
+				require(first->cells[stoop] == SurfaceKind::Path, "the cell in front of a door is not a trail");
+			}
+			require(inside == 1, "a foundation has no door or more than one");
+		}
+		// Gap between two foundations: at least 3 cells (margin of two plus the cell between).
+		for (size_t a = 0; a < boxes.size(); ++a) {
+			for (size_t b = a + 1; b < boxes.size(); ++b) {
+				const int64_t dx = std::max<int64_t>({0, int64_t(boxes[a].x0) - boxes[b].x1, int64_t(boxes[b].x0) - boxes[a].x1});
+				const int64_t dy = std::max<int64_t>({0, int64_t(boxes[a].y0) - boxes[b].y1, int64_t(boxes[b].y0) - boxes[a].y1});
+				require(std::max(dx, dy) >= 3, "two foundations are closer than 3 cells");
+			}
+		}
+		require(first->fingerprint() != plain->fingerprint(), "buildings did not change the fingerprint");
+		// A mask that removes a foundation also removes its door.
+		auto masked = config;
+		std::vector<uint8_t> mask(size_t(side) * side, 1);
+		for (size_t i = 0; i < mask.size() / 2; ++i) mask[i] = 0;
+		masked.region.x = config.region.x;
+		const auto cut = generateSurface(masked, extent, budget, mask);
+		if (cut) {
+			require(cut->valid(), "masked settlement grid is not valid");
+			for (const uint32_t door : cut->doors) require(cut->cells[door] == SurfaceKind::Floor, "a door stayed on a cell that is not a floor");
+		}
+	}
+}
+
 int main() {
 	try {
 		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
-		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3);
+		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3);
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
 		return 0;
 	} catch (const std::exception& error) {
