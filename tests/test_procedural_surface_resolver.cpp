@@ -490,6 +490,23 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 				if (!walkableAt(n)) { ++blockedBeside; if (firstBlocked.empty()) firstBlocked = "beside: " + describe(n); }
 			}
 		}
+		// Kinds the validator calls walkable, counted on the committed tiles: how many block (D22).
+		size_t rockTiles = 0, rockBlocking = 0, shoreTiles = 0, shoreBlocking = 0, grassTiles = 0, grassBlocking = 0;
+		std::string rockSample;
+		for (size_t i = 0; i < count; ++i) {
+			const SurfaceKind kind = withFords->cells[i];
+			const auto* tile = tileAt(i);
+			if (!tile) continue;
+			if (kind == SurfaceKind::Rock) {
+				++rockTiles; rockBlocking += tile->isBlocking();
+				if (rockSample.empty() && tile->ground) {
+					rockSample = std::string(tile->ground->getName());
+					for (const auto& item : tile->items) rockSample += ", " + std::string(item->getName()) + (item->isBlocking() ? "(blocks)" : "");
+				}
+			} else if (kind == SurfaceKind::Shore) { ++shoreTiles; shoreBlocking += tile->isBlocking(); }
+			else if (kind == SurfaceKind::Grass) { ++grassTiles; grassBlocking += tile->isBlocking(); }
+		}
+		report << "KIND_BLOCKING\trock=" << rockTiles << "/" << rockBlocking << "\tshore=" << shoreTiles << "/" << shoreBlocking << "\tgrass=" << grassTiles << "/" << grassBlocking << "\t" << rockSample << '\n';
 		std::vector<uint32_t> real(count, 0);
 		std::vector<size_t> queue;
 		uint32_t realComponents = 0;
