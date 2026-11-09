@@ -29,6 +29,7 @@ parser.add_argument('out_file', type=Path)
 parser.add_argument('--side', type=int, default=512)
 parser.add_argument('--seeds', default='1001-1032')
 parser.add_argument('--profiles', default='m06,m19')
+parser.add_argument('--extra', action='append', default=[], help='extra style_render override for every profile, e.g. pathLength=0 (applied after the defaults)')
 args = parser.parse_args()
 first, last = (int(part) for part in args.seeds.split('-'))
 seeds = [str(seed) for seed in range(first, last + 1)]
@@ -36,8 +37,9 @@ seeds = [str(seed) for seed in range(first, last + 1)]
 NUMBER = r'(-?\d+|NA)'
 
 # Per-profile settings that are NOT part of the profile (D20): path length target and building density.
+import os
 DEFAULT_SETTINGS = {'m06': ['pathLength=40', 'buildingDensity=30'], 'm19': ['pathLength=80', 'buildingDensity=40']}
-LINE = re.compile(r'^(seed|channels seed|scale seed|trans seed|patch seed|paths seed|outline seed|build seed|settle seed) (\d+): (.*)$')
+LINE = re.compile(r'^(seed|channels seed|scale seed|trans seed|patch seed|paths seed|outline seed|build seed|settle seed|access seed) (\d+): (.*)$')
 PAIRS = re.compile(r'([A-Za-z0-9]+) (-?\d+|NA)(?= |$)')
 TRANS = re.compile(r'^R ' + ' '.join([NUMBER] * 4) + r' \| D ' + ' '.join([NUMBER] * 4) + '$')
 SHARES = re.compile(r'shares ' + ' '.join([NUMBER] * 5))
@@ -87,8 +89,8 @@ def report():
         if not profile.is_file():
             sys.exit(f'missing profile {profile}')
         with tempfile.TemporaryDirectory() as scratch:
-            samples = run_once(profile, Path(scratch), DEFAULT_SETTINGS.get(style, []))
-        lines.append(f'## {style} (settings: ' + (' '.join(DEFAULT_SETTINGS.get(style, [])) or 'profile only') + ')')
+            samples = run_once(profile, Path(scratch), DEFAULT_SETTINGS.get(style, []) + args.extra)
+        lines.append(f'## {style} (settings: ' + (' '.join(DEFAULT_SETTINGS.get(style, []) + args.extra) or 'profile only') + ')')
         for key in sorted(samples):
             values = [v for v in samples[key] if v is not None]
             if not values:

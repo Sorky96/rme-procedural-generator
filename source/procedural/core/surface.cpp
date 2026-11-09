@@ -273,6 +273,7 @@ struct Foundation {
 
 constexpr uint32_t clusterAnchorPercent = 60;
 constexpr uint32_t clusterGapMin = 3, clusterGapSpread = 4;  // gap 3..6
+constexpr uint32_t doorTrailReach = 24;                       // a door trail is routed only to a trail this close (Chebyshev, from the building centre)
 constexpr uint32_t doorTargetReach = 60;                      // a door looks for a trail this close (Chebyshev, from the building centre)
 
 std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
@@ -363,7 +364,7 @@ bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32
 			kinds[stoop] = SurfaceKind::Path;
 			trail.push_back(uint32_t(stoop));
 		}
-		if (target != kinds.size()) router.connect(stoop, target, &trail);
+		if (target != kinds.size() && bestDistance <= int64_t(doorTrailReach)) router.connect(stoop, target, &trail);
 	}
 	return true;
 }

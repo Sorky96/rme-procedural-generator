@@ -118,6 +118,42 @@ int main(int argc, char** argv) {
 				opt(t.gapMedian), opt(t.clustersPer64kMilli), opt(t.clusterSizeMedian), opt(t.aloneP), opt(t.inLargeP), opt(t.nearPathP), opt(t.pathControlP),
 				opt(t.nearWaterP), opt(t.waterControlP), opt(t.withDoorP), opt(t.doorsMedian), opt(t.boundaryDoorP), opt(t.facingP), opt(t.facingChanceP), t.facingSet);
 		}
+		if (!grid->doors.empty()) {
+			// A door is "isolated" when the Path component (8-connected) beside it holds no other door.
+			std::vector<int32_t> label(grid->cells.size(), -1);
+			std::vector<uint32_t> doorsIn;
+			std::vector<size_t> stack;
+			const size_t w = side;
+			auto stoopOf = [&](uint32_t door) -> int64_t {
+				for (const int64_t step : {int64_t(-1), int64_t(1), -int64_t(w), int64_t(w)}) {
+					const int64_t j = int64_t(door) + step;
+					if (j >= 0 && size_t(j) < grid->cells.size() && grid->cells[size_t(j)] == SurfaceKind::Path) return j;
+				}
+				return -1;
+			};
+			for (size_t start = 0; start < label.size(); ++start) {
+				if (label[start] >= 0 || grid->cells[start] != SurfaceKind::Path) continue;
+				const int32_t id = int32_t(doorsIn.size());
+				doorsIn.push_back(0);
+				stack.assign(1, start);
+				label[start] = id;
+				while (!stack.empty()) {
+					const size_t i = stack.back();
+					stack.pop_back();
+					const int64_t x = int64_t(i % w), y = int64_t(i / w);
+					for (int64_t dy = -1; dy <= 1; ++dy) for (int64_t dx = -1; dx <= 1; ++dx) {
+						const int64_t nx = x + dx, ny = y + dy;
+						if (nx < 0 || ny < 0 || nx >= int64_t(w) || ny >= int64_t(w)) continue;
+						const size_t j = size_t(ny) * w + size_t(nx);
+						if (label[j] < 0 && grid->cells[j] == SurfaceKind::Path) { label[j] = id; stack.push_back(j); }
+					}
+				}
+			}
+			uint32_t isolated = 0;
+			for (const uint32_t door : grid->doors) if (const int64_t s = stoopOf(door); s >= 0) ++doorsIn[size_t(label[size_t(s)])];
+			for (const uint32_t door : grid->doors) if (const int64_t s = stoopOf(door); s < 0 || doorsIn[size_t(label[size_t(s)])] == 1) ++isolated;
+			std::cout << std::format("access seed {}: doors {} isolated {} permille {}\n", seed, grid->doors.size(), isolated, isolated * 1000 / grid->doors.size());
+		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
 	}

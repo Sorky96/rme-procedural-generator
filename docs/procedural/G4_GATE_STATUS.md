@@ -399,3 +399,17 @@ Zakres i kontrole zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md),
 Reguła zapisana przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12f”). Pomiar po zmianie (seedy 1001–1032, bok 512, v10; dwa przebiegi bajtowo identyczne): G, Kn, Ks, Ki, Kb **bez zmian** względem 12d (rozmieszczenie budynków nie zależy od drzwi), Dp 1000 (jak dotąd), długość szlaków L 303 / 337 (było 299 / 344). Kryterium 12c nadal nie spełnione (5 z 8 w m06, 4 z 8 w m19). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme` (sonda drzwi: 6 i 38). **Nie zweryfikowano:** testem jednostkowym, że drzwi sąsiednich budynków bez szlaku są zwrócone ku sobie (zapisane w ocenie, ale nie napisane); poprawy na rzeczywistym zrzucie (ocena użytkownika).
 
 **Ocena użytkownika po 12f (2026-11-09, GUI, dwa zrzuty, Undo/Redo i Validate działają):** drzwi i szlaki do drzwi uznane za w porządku, użytkownik chce iść dalej. Moje uwagi z tych zrzutów (nie zmierzone): budynek bez szlaku w zasięgu ma tylko krótki schodek bez trasy (zrzut 1 u dołu, zrzut 2 przy prawym budynku); drzwi lewego budynku na zrzucie 2 zwracają się ku odległemu szlaku (zasięg 60), a nie ku sąsiadowi 25 kafli obok; długie szlaki 9d kończą się zaokrąglonym „blobem” w środku lądu; szlaki zajmują dużo powierzchni (L ok. 4× referencji, 12d). Ocena ogólna użytkownika ma pierwszeństwo przed metryką kryterium 12c (nadal niespełnionego); rozbieżność odnotowana.
+
+## Iteracja 12g — krótsze szlaki do drzwi (2026-11-09): L w paśmie przy `pathLength` 0; cena: ok. 2/3 budynków bez trasy
+
+Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12g”; grep potwierdził). Nowa stała `doorTrailReach`: trasa od schodka tylko do kafla Path w ≤ R od środka budynku. Wynik pomiaru wariantów (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi bajtowo identyczne):
+
+| R | L m06 (ref 70, pasmo 47–105) | L m19 (ref 78, 52–117) | bez dojścia m06 / m19 (‰) |
+| --- | ---: | ---: | ---: |
+| 16 | 20,5 | 25,5 | 696 / 672 |
+| **24 (wybrane wg reguły)** | **48** | **72,5** | 671 / 637 |
+| 36 | 116 ✗ | 151 ✗ | 629 / 597 |
+| poprzednio (60) | ok. 300 | ok. 340 | n/d |
+
+Wybór R = 24 (największy spełniający L ≤ 1,5·ref w obu profilach). G, Kn, Ks, Ki, Kb, Bp i Dp bez zmian względem 12d/12f (rozmieszczenie to samo). **Przy domyślnych ustawieniach profilu** (`pathLength` 40 / 80 jak w GUI-owych sugestiach) L wynosi 108 / 177, bo dochodzą losowe długie szlaki 9d; wynik m06 jest tuż nad pasmem, m19 powyżej.
+**Koszt:** „bez dojścia” (schodek bez trasy do innych drzwi) to ok. 64–67 % budynków; w referencjach tylko 9–21 % budynków ma szlak w pobliżu (Bp 93 / 209 ‰), więc odsetek jest tej samej klasy, ale wynika z krótkiego zasięgu, a nie z modelu referencji. 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`. **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika, ma pierwszeństwo); innych `doorTrailReach` poza trzema z zapisu; `style_render` ma teraz wiersz `access` (odsetek bez dojścia) liczony tylko, gdy są drzwi.
