@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
 		else if (name == "shoreWidth") tuning.shoreWidth = value;
 		else if (name == "pathLength") tuning.pathLength = value;
 		else if (name == "fordLength") tuning.fordLength = value;
+		else if (name == "rockPasses") tuning.rockPasses = value;
 		else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
@@ -186,6 +187,24 @@ int main(int argc, char** argv) {
 			std::cout << std::format("reach seed {}: walkable {} components {} largest {} largestPermille {} cutOff {} cutOffPer64k {} pockets {} buildings {} sealed {} doorBlocked {} fordCells {}\n", seed,
 				reach->walkable, reach->components, reach->largest, reach->largest * 1000 / reach->walkable, reach->cutOff, reach->cutOff * 65536 / reach->cells, reach->pockets,
 				reach->buildings, reach->sealed, doorBlocked, fordCells);
+		}
+		{
+			// Iteration 15: Path cells with Rock within 3 cells on both sides along one axis (a trail cutting through a rock band).
+			uint64_t cut = 0;
+			const auto rockWithin = [&](int64_t x, int64_t y, int64_t dx, int64_t dy) {
+				for (int64_t k = 1; k <= 3; ++k) {
+					const int64_t px = x + dx * k, py = y + dy * k;
+					if (px < 0 || py < 0 || px >= int64_t(side) || py >= int64_t(side)) return false;
+					if (grid->cells[size_t(py) * side + size_t(px)] == SurfaceKind::Rock) return true;
+				}
+				return false;
+			};
+			for (size_t c = 0; c < grid->cells.size(); ++c) {
+				if (grid->cells[c] != SurfaceKind::Path) continue;
+				const int64_t x = int64_t(c % side), y = int64_t(c / side);
+				if ((rockWithin(x, y, -1, 0) && rockWithin(x, y, 1, 0)) || (rockWithin(x, y, 0, -1) && rockWithin(x, y, 0, 1))) ++cut;
+			}
+			std::cout << std::format("cut seed {}: cut {} cutPer64k {}\n", seed, cut, cut * 65536 / grid->cells.size());
 		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));

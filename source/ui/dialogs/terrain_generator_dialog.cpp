@@ -459,6 +459,13 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a sand crossing up to this many water tiles wide. 0 = no fords. Uses the shore brush.");
 	form->Add(ford_length_spin_, 1, wxEXPAND);
 
+	form->Add(label("Rock &passes:"), 0, wxALIGN_CENTER_VERTICAL);
+	rock_passes_check_ = newd wxCheckBox(this, wxID_ANY, "Paths may cross bands of rock");
+	rock_passes_check_->SetName("terrain-rock-passes");
+	rock_passes_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	rock_passes_check_->SetToolTip("Paths take the narrowest way through a rock band instead of going around it. Needs a path length above 0.");
+	form->Add(rock_passes_check_, 1, wxEXPAND);
+
 	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
 	form->Add(path_brush_choice_, 1, wxEXPAND);
@@ -612,6 +619,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	walls_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	doors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	rock_passes_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	door_type_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
@@ -750,6 +758,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	path_length_spin_->Enable(natural);
 	building_density_spin_->Enable(natural);
 	ford_length_spin_->Enable(natural);
+	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
@@ -829,6 +838,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
 		config.surface.fordLength = uint32_t(ford_length_spin_->GetValue());
+		config.surface.rockPasses = rock_passes_check_->GetValue() && config.surface.pathLength > 0 ? 1 : 0;
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());

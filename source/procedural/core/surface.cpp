@@ -34,6 +34,7 @@ constexpr size_t fordNaturalLength = 8;                     // crossings of at l
 constexpr int32_t fordSwingMax = 4;                         // largest sideways swing of the axis in cells
 constexpr uint32_t fordShapeStep = 8;                       // noise step along the ford, in cells
 constexpr uint32_t fordWideThreshold = 40000;               // width noise above this (of 65536) makes the ford 5 cells wide instead of 3
+constexpr uint32_t passCrossCost = 40;                      // extra A* cost of a rock cell when trails may cross rock (iteration 15)
 constexpr int32_t fordMouthRadius = 3;                      // water within this Chebyshev distance of a ford end becomes sand too (iteration 14c)
 constexpr uint64_t fordBytesPerCell = 28;                   // estimate for the ford pass: labels, order, seen, parent, depth, queue, offsets
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
@@ -176,11 +177,12 @@ public:
 					if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
 					const size_t next = size_t(ny) * width + size_t(nx);
 					const SurfaceKind kind = kinds[next];
-					if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
+					const bool rockStep = kind == SurfaceKind::Rock && config.tuning.rockPasses;
+					if (!rockStep && kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
 					if (closed_[next]) continue;
 					const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(nx),
 						uint32_t(config.region.y) + uint32_t(ny), 5)) * 10 / noiseBins);
-					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + rockPenalty[rockDistance_[next]];
+					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + (rockStep ? passCrossCost : 0) + rockPenalty[rockDistance_[next]];
 					if (dx && dy) step = step * 14 / 10;
 					const uint32_t candidate = cost_[current] + step;
 					if (candidate >= cost_[next]) continue;
@@ -212,7 +214,7 @@ public:
 					const int32_t px = x + dx, py = y + dy;
 					if (px < 0 || py < 0 || px >= int32_t(width) || py >= int32_t(height)) continue;
 					const size_t i = size_t(py) * width + size_t(px);
-					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore) {
+					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore || (config.tuning.rockPasses && kinds[i] == SurfaceKind::Rock)) {
 						kinds[i] = SurfaceKind::Path;
 						if (stamped) stamped->push_back(uint32_t(i));
 					}
@@ -696,7 +698,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}

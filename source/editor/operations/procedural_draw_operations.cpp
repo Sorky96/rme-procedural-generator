@@ -83,6 +83,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
 			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
 			if (c.surface.fordLength) hashField(hash, c.surface.fordLength, 4);
+			if (c.surface.rockPasses) hashField(hash, c.surface.rockPasses, 4);
 			// Appended only when it differs from the built-in rules, so other plans keep their original fingerprint.
 			if (c.vegetation && !(c.decor == DecorTuning {})) {
 				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,

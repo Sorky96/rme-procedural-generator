@@ -45,6 +45,7 @@ struct SurfaceTuning {
 	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
 	uint32_t fordLength = 0;          // longest water crossing (cells) a ford may span, 0..256; 0 = no fords (not part of a style profile)
+	uint32_t rockPasses = 0;          // 1 = trails may cross bands of rock (iteration 15); 0 = they go around (not part of a style profile)
 	bool operator==(const SurfaceTuning&) const = default;
 };
 
