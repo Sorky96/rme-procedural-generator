@@ -378,3 +378,15 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 **Ocena.** Kryteria 12c bez zmian; oczekiwanie: Dp i pozostałe cechy skupisk nie pogarszają się, a drzwi dwóch sąsiednich budynków są zwrócone ku sobie (test: dla pary budynków bez szlaku strona drzwi każdego jest stroną ku drugiemu). Decyduje oglądowa ocena użytkownika; rozbieżność z metryką odnotuję.
 
 **Zastrzeżenia z góry.** Zwrot ku najbliższemu budynkowi nie gwarantuje zwrotu ku docelowemu szlakowi; zmiana po obserwacji z jednego zrzutu.
+
+### Iteracja 12g — krótsze szlaki do drzwi (zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Skrócić szlaki”)
+
+**Powód.** Przy włączonych budynkach długość szlaków (L na 65 536 kafli) wynosi ok. 300–340 wobec 70 / 78 w referencjach (M06 / M19), bo każdy budynek dostaje trasę do najbliższej sieci w zasięgu 60 od swojego środka.
+
+**Zmiana.** Nowa stała `doorTrailReach` (odległość Czebyszewa od środka budynku do najbliższego kafla Path): trasa od schodka jest wyznaczana tylko wtedy, gdy cel leży w tym zasięgu; inaczej budynek dostaje sam schodek (jak dotąd przy braku celu). Strona drzwi nadal wybierana w zasięgu 60 (`doorTargetReach`, reguła 12f). Rozmieszczenie budynków bez zmian.
+
+**Wybór wartości (reguła zapisana z góry).** Pomiar wariantów `doorTrailReach` ∈ {16, 24, 36} (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, **`pathLength` 0**, bo losowe długie szlaki 9d same dają L 53 / 89 i zależą od ustawienia użytkownika). Wybieram **największą** wartość, dla której mediana L ≤ 1,5 · ref w obu profilach (≤ 105 dla m06, ≤ 117 dla m19; ref 70 / 78). Jeśli żadna nie spełnia, wybieram 16 i zgłaszam kryterium jako niespełnione. Raportuję też **odsetek budynków bez dojścia** (schodek w składowej Path 8-spójnej, w której jest dokładnie jedne drzwi; przy `pathLength` 0 to znaczy: schodek bez trasy do sąsiada) oraz Bp, Dp, G, Kn, Ks, Ki, Kb (powinny być bez zmian: rozmieszczenie to samo).
+
+**Kryteria dodatkowe.** `buildingDensity` 0 bez zmian (odcisk Seed 1729); 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne; decyduje ocena wzrokowa użytkownika (jego wybór ma pierwszeństwo przed metryką).
+
+**Zastrzeżenia z góry.** Krótszy zasięg zostawi więcej budynków bez trasy (to cena skrócenia, mierzona jako odsetek bez dojścia); L liczone tylko dla `pathLength` 0, z długimi szlakami 9d suma będzie większa o ich wkład; pasmo dla L pochodzi z dwóch map (D17); zakres {16, 24, 36} wybrany z góry, nie dopasowany.
