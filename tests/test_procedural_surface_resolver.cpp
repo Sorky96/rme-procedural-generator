@@ -14,6 +14,8 @@
 #include "editor/operations/draw_operations.h"
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/adapter/terrain_validation.h"
+#include "procedural/adapter/snapshot_equal.h"
+#include <format>
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
@@ -695,6 +697,191 @@ void campfires(uint32_t side, std::ostream& report) {
 	report << "SURFACE_FIRES_E2E_PASS" << '\t' << side << '\t' << "fires=" << plannedFires << '\n';
 }
 
+// Iteration 28: real 10.98 cave brushes, two previews, two history steps and failure rollback.
+void caves(uint32_t side, std::ostream& report) {
+	UndoLimits undoLimits;
+	check(g_gui.NewMap(), "Cave editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	GenerationConfig config {{100, 100, 7, side, side}, 1729};
+	config.algorithm = GenerationAlgorithm::Surface;
+	config.surface.buildingDensity = 10;
+	config.surface.caveEntrances = 20;
+	config.surface.rockPermille = 200;
+	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
+	auto plain = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(plain), "Cave baseline preparation failed");
+	profile.caveEntrance = "cave enter";
+	profile.caveExit = "ramp";
+	profile.caveGround = "cave";
+	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+	check(bool(prepared), std::format("Cave preparation failed: domain {} value {}", prepared ? 0 : prepared.error().index(),
+		prepared ? 0 : std::visit([](auto error) { return int(error); }, prepared.error())));
+	check(bool(prepared->cave), "Cave unit missing");
+	check(bool(validateTerrainTarget(*prepared, config, profile)), "Cave validation failed");
+	check(plain->plan.fingerprint() != prepared->plan.fingerprint(), "Cave did not change fingerprint");
+	check(!prepared->preview.getChanges().empty() && !prepared->cave->preview.getChanges().empty(), "Both floors need preview changes");
+	const auto& input = prepared->snapshot.input;
+	const auto keepClear = surfaceKeepClear(prepared->snapshot, profileNeedsEdgeClearance(profile));
+	auto protection = input.protection;
+	for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
+	const auto grid = generateSurface({config.region, config.seed, config.surface}, input.extent, surfaceBudget, input.mask, protection);
+	check(bool(grid), "Cave reference surface failed");
+	const auto cave = generateCave(*grid, config.seed);
+	const auto brushes = resolveCaveBrushes(profile, config);
+	check(bool(cave) && bool(brushes), "Cave geometry/brush resolution failed");
+	const auto exits = placeCaveExits(*grid, *cave, brushes->shapes);
+	check(exits && exits->exits.size() >= 2, "Cave probe needs at least two entrances with exits");
+	std::vector<uint16_t> entrances(grid->cells.size(), 0), tops(entrances), ramps(entrances);
+	for (const auto& exit : exits->exits) {
+		const auto e = grid->entrances[exit.entrance];
+		const auto& ids = brushes->items[exit.shape];
+		const auto& shape = brushes->shapes[exit.shape];
+		entrances[e] = brushes->entrances[(uint64_t(e) + config.seed) % brushes->entrances.size()];
+		tops[exit.cell] = ids.top;
+		ramps[exit.cell] = ids.ramp;
+		if (shape.hasTail) ramps[size_t(int64_t(exit.cell) + shape.tailDx + int64_t(shape.tailDy) * side)] = ids.tail;
+	}
+	check(prepared->plan.entrances == entrances && prepared->plan.exitTops == tops && prepared->cave->plan.exits == ramps,
+		"Cave item layers differ from exit geometry");
+	size_t caveCells = 0;
+	for (size_t i = 0; i < cave->cells.size(); ++i) {
+		const Position upper(100 + int(i % side), 100 + int(i / side), 7), lower(upper.x, upper.y, 8);
+		const auto* tile = prepared->cave->preview.getBuffer().getTile(lower);
+		const bool floor = cave->cells[i] == CaveKind::Floor;
+		caveCells += floor;
+		check(bool(tile && tile->ground) == floor, "Cave ground differs from Floor/Solid cells");
+		if (floor) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveGround), "Foreign cave ground");
+		const auto checkItem = [&](const PreparedTerrain& unit, const Position& position, uint16_t expected, std::span<const uint16_t> allowed) {
+			const auto* here = unit.preview.getBuffer().getTile(position);
+			size_t found = 0;
+			if (here && here->ground && std::ranges::find(allowed, here->ground->getID()) != allowed.end()) {
+				check(here->ground->getID() == expected, "Exit top ground on wrong cell"); ++found;
+			}
+			if (here) for (const auto& item : here->items) {
+				if (std::ranges::find(allowed, item->getID()) == allowed.end()) continue;
+				check(item->getID() == expected, "Cave item on wrong cell"); ++found;
+			}
+			check(found == (expected ? 1u : 0u), "Cave item missing or duplicated");
+		};
+		std::vector<uint16_t> topIds, rampIds;
+		for (const auto& ids : brushes->items) { topIds.push_back(ids.top); rampIds.push_back(ids.ramp); if (ids.tail) rampIds.push_back(ids.tail); }
+		checkItem(*prepared, upper, entrances[i], brushes->entrances);
+		checkItem(*prepared, upper, tops[i], topIds);
+		checkItem(*prepared->cave, lower, ramps[i], rampIds);
+		if (!floor && tile) {
+			bool adjacent = false;
+			const int x = int(i % side), y = int(i / side);
+			for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
+				if (x + dx >= 0 && y + dy >= 0 && x + dx < int(side) && y + dy < int(side))
+					adjacent |= cave->cells[size_t(y + dy) * side + size_t(x + dx)] == CaveKind::Floor;
+			check(adjacent && std::ranges::all_of(tile->items, [](const auto& item) { return item->isBorder(); }), "Nonadjacent Solid cell changed");
+		}
+	}
+	for (int y = 97; y < 103 + int(side); ++y) for (int x = 97; x < 103 + int(side); ++x) {
+		if (x >= 100 && y >= 100 && x < 100 + int(side) && y < 100 + int(side)) continue;
+		check(!prepared->cave->preview.getBuffer().getTile(Position(x, y, 8)), "Cave preview escaped rectangle");
+	}
+	std::map<uint16_t, size_t> bordersAtTop, bordersBesideTop;
+	for (const auto& exit : exits->exits) {
+		const int x = 100 + int(exit.cell % side), y = 100 + int(exit.cell / side);
+		for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+			const auto* tile = prepared->preview.getBuffer().getTile(Position(x + dx, y + dy, 7));
+			if (tile) for (const auto& item : tile->items) if (item->isBorder()) ++(dx || dy ? bordersBesideTop : bordersAtTop)[item->getID()];
+		}
+	}
+	report << "SURFACE_CAVE_TOP_BORDERS" << '\t' << "atP=";
+	for (const auto [id, count] : bordersAtTop) report << id << ':' << count << ',';
+	report << "\tneighbours=";
+	for (const auto [id, count] : bordersBesideTop) report << id << ':' << count << ',';
+	report << '\n';
+	for (const auto id : brushes->entrances) check(!Item::Create(id)->isBlocking(), "Cave entrance blocks movement in client data");
+	for (const auto& ids : brushes->items) check(!Item::Create(ids.ramp)->isBlocking(), "Cave ramp blocks movement in client data");
+	const auto beforeUpper = stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6);
+	const auto beforeLower = stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6);
+	{ auto limited = preparation; limited.maxBytes = prepared->memory.totalBytes - 1;
+		check(!prepareTerrain(editor.map, config, profile, limited), "Joint preparation budget was exceeded"); }
+	{ auto limited = preparation; limited.maxChanges = prepared->preview.getChanges().size() + prepared->cave->preview.getChanges().size() - 1;
+		check(!prepareTerrain(editor.map, config, profile, limited), "Joint change budget was exceeded"); }
+	{ const auto saved = prepared->cave->plan.exits[exits->exits.front().cell];
+		prepared->cave->plan.exits[exits->exits.front().cell] ^= 1;
+		check(!validateTerrainTarget(*prepared, config, profile), "Tampered lower plan passed target validation");
+		prepared->cave->plan.exits[exits->exits.front().cell] = saved; }
+	const auto prior = editor.actionQueue->getCurrentIndex(), size = editor.actionQueue->getSize();
+	// A one-step history limit admits the provisional cave, then deterministically refuses surface.
+	g_settings.setInteger(Config::UNDO_SIZE, 1);
+	const auto refused = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+	g_settings.setInteger(Config::UNDO_SIZE, 1000);
+	check(!refused && std::holds_alternative<TerrainCommitFailure>(refused.error()) &&
+		std::get<TerrainCommitFailure>(refused.error()) == TerrainCommitFailure::HistoryRefused, "Step-two failure not exercised");
+	check(editor.actionQueue->getCurrentIndex() == prior && editor.actionQueue->getSize() == size && !editor.actionQueue->canRedo(), "Rollback left generator history/redo");
+	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Rollback changed map tiles");
+	check(bool(validateTerrainTarget(*prepared, config, profile)), "Rollback invalidated original preparation");
+	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+	check(bool(receipt), "Two-floor commit failed");
+	check(receipt->changes == prepared->preview.getChanges().size() + prepared->cave->preview.getChanges().size(), "Receipt lost changes");
+	check(editor.actionQueue->getCurrentIndex() == prior + 2 && editor.actionQueue->getSize() == size + 2, "Cave commit needs two steps");
+	for (const auto* unit : {&*prepared, prepared->cave.get()}) for (const auto& position : unit->preview.getChanges())
+		check(snapshotTilesEqual(editor.map.getTile(position), unit->preview.getBuffer().getTile(position)), "Map differs from preview");
+	const auto afterUpper = stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6);
+	const auto afterLower = stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6);
+	check(editor.actionQueue->undo(), "Surface Undo refused");
+	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == afterLower, "First Undo did not leave cave alone");
+	check(editor.actionQueue->undo(), "Cave Undo refused");
+	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Second Undo did not restore both floors");
+	check(editor.actionQueue->redo() && editor.actionQueue->redo(), "Cave Redo refused");
+	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == afterUpper &&
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == afterLower, "Redo did not restore both floors");
+	editor.map.clearChanges();
+	// Fresh map for fail-closed input tests, including an occupied cell outside a sparse mask.
+	check(g_gui.NewMap(), "Cave refusal editor failed");
+	auto& emptyMap = g_gui.GetCurrentEditor()->map;
+	const auto invalidProfile = [&](const GroundProfile& bad) {
+		const auto result = prepareTerrain(emptyMap, config, bad, preparation);
+		check(!result && ((std::holds_alternative<PreparationInputError>(result.error()) && std::get<PreparationInputError>(result.error()) == PreparationInputError::InvalidProfile) ||
+			(std::holds_alternative<ResolveError>(result.error()) && std::get<ResolveError>(result.error()) == ResolveError::InvalidProfile)), "Invalid cave profile accepted/wrong error");
+	};
+	for (const std::string name : {"no such brush", "grass"}) { auto bad = profile; bad.caveEntrance = name; invalidProfile(bad); }
+	{ auto bad = profile; bad.caveExit = "small rocks"; invalidProfile(bad); }
+	{ auto bad = profile; bad.caveGround = "small rocks"; invalidProfile(bad); }
+	{ auto bad = profile; bad.caveExit.clear(); invalidProfile(bad); }
+	{ auto bad = config; bad.region.z = 15; const auto result = prepareTerrain(emptyMap, bad, profile, preparation);
+		check(!result && std::get<PreparationInputError>(result.error()) == PreparationInputError::NoLowerFloor, "Floor 15 accepted"); }
+	{
+		auto vegetated = config; vegetated.vegetation = true;
+		auto decorated = profile; decorated.decorCount = GroundProfile::decorationCount;
+		decorated.decor = {"small rocks", "small rocks", "small rocks"};
+		std::vector<uint8_t> sparse(size_t(side) * side, 1); sparse[0] = 0;
+		const auto masked = prepareTerrain(emptyMap, vegetated, decorated, preparation, sparse);
+		check(masked && masked->cave && validateTerrainTarget(*masked, vegetated, decorated, sparse), "Masked vegetated cave failed");
+		for (size_t i = 0; i < masked->plan.items.size(); ++i)
+			if (masked->plan.entrances[i] || masked->plan.exitTops[i]) check(!masked->plan.decor[i], "Vegetation overlaps cave access");
+	}
+	{
+		auto noRock = config; noRock.surface.rockPermille = 0;
+		auto emptyCave = prepareTerrain(emptyMap, noRock, profile, preparation);
+		check(emptyCave && emptyCave->cave && emptyCave->cave->preview.getChanges().empty(), "Expected an empty cave without rocks");
+		auto* queue = g_gui.GetCurrentEditor()->actionQueue.get();
+		const auto before = queue->getCurrentIndex();
+		check(bool(DrawOperations::commitTerrainPreview(*emptyCave, noRock, profile, commit)), "Empty cave pair commit failed");
+		check(queue->getCurrentIndex() == before + 2 && queue->undo() && queue->undo(), "Empty cave did not retain two history steps");
+		check(stackImage(emptyMap, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
+			stackImage(emptyMap, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Empty cave undo changed the map");
+	}
+	const auto id = g_brushes.getBrush("grass")->as<GroundBrush>()->getPlacementItemId();
+	TerrainPlacement::placeBrushItem(*emptyMap.getOrCreateTile(Position(100, 100, 8)), id);
+	std::vector<uint8_t> mask(size_t(side) * side, 1); mask[0] = 0;
+	const auto occupied = prepareTerrain(emptyMap, config, profile, preparation, mask);
+	check(!occupied && std::get<PreparationInputError>(occupied.error()) == PreparationInputError::LowerFloorOccupied, "Masked occupied lower floor accepted");
+	emptyMap.clearChanges();
+	report << "SURFACE_CAVE_E2E_PASS	" << side << "	entrances=" << grid->entrances.size() << " exits=" << exits->exits.size()
+		<< " skipped=" << exits->skipped.size() << " caveCells=" << caveCells << '\n';
+}
+
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
 // tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
 void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
@@ -774,6 +961,7 @@ void run() {
 		doors(250, report);
 		ruinsAndCamps(250, report);
 		campfires(250, report);
+		caves(128, report);
 		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
