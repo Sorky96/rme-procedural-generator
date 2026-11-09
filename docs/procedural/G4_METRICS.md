@@ -576,3 +576,17 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** Okno 11×11 zaokrągla też drobne, naturalne cechy plaży (zatoczki mniejsze niż około 5 komórek znikają); schodki 1:1 na ukośnych odcinkach zostają (siatka kafli); granica trawa / dirt i skała / trawa nie jest wygładzana; promień 5 to mój wybór; może zmienić skład plaży w profilach (miara `sand`).
+
+### Iteracja 21 — układ okna „Generate Terrain” (zapisana 2026-11-09 przed zmianą kodu; decyzja użytkownika: „najpierw trzeba popracować nad GUI”, zrzut z GUI)
+
+**Problem (ze zrzutu).** Okno ma jedną kolumnę ok. 35 pól (obszar, wagi, pędzle, profil, szlaki, brody, plaże, budynki, ściany, drzwi, roślinność), która nie mieści się na ekranie 1080p: wiersz „Bush brush” jest uciety, tekst stanu nakłada się na dolne pola, a pola „Stone brush” i dalsze są niewidoczne.
+
+**Zmiana (tylko układ, bez zmiany zachowania).** Pola trafiają do zakładek `wxNotebook` w kolejności dotychczasowej: **Area** (obszar, X, Y, Z, szerokość, wysokość, ziarno), **Terrain** (wagi, pędzle trawy / dirt / wody, styl, profil, pędzle skały i brzegu, „Smooth beaches”), **Paths** („Path length”, „Ford length”, „Rock passes”, „Path brush”), **Buildings** (budynki, podłoga, ściany, drzwi), **Vegetation** (drzewa, krzewy, kamienie). Podgląd minimapy, tekst pomocniczy, status i przyciski zostają poza zakładkami. Nazwy kontrolek (`SetName`), wartości domyślne, logika włączania pól i działanie Preview, Validate, Place, Undo bez zmian.
+
+**Kryteria.**
+1. `rme` buduje się; 16 testów rdzenia i obie sondy G1 PASS (sondy nie otwierają okna, więc nie sprawdzają układu).
+2. Okno otwiera się z pięcioma zakładkami i ma wysokość mieszczącą się na ekranie 1080p bez przycinania pól i bez nakładania statusu na pola (**ocena użytkownika**, ja jej nie wykonuję w GUI).
+3. Każde dotychczasowe pole jest na dokładnie jednej zakładce, żadne nie zniknęło (sprawdzam w kodzie: liczba kontrolek `SetName("terrain-...")` przed i po jest taka sama).
+4. Zachowanie (domyślne wartości, włączanie pól, wynik Preview dla tych samych ustawień) bez zmian: **nie zweryfikuję w GUI**, sprawdza użytkownik.
+
+**Zastrzeżenia z góry.** Układ ocenia wyłącznie użytkownik; natywny `wxNotebook` może nie pasować do ciemnego motywu aplikacji; mnemoniki (&) są niepowtarzalne w obrębie okna dotąd, a po podziale mogą się powtarzać między zakładkami bez szkody dla działania; nie dodaję przewijania (zakładki mają po 3–11 pól).
