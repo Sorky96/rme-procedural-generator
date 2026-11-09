@@ -507,6 +507,25 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 			else if (kind == SurfaceKind::Grass) { ++grassTiles; grassBlocking += tile->isBlocking(); }
 		}
 		report << "KIND_BLOCKING\trock=" << rockTiles << "/" << rockBlocking << "\tshore=" << shoreTiles << "/" << shoreBlocking << "\tgrass=" << grassTiles << "/" << grassBlocking << "\t" << rockSample << '\n';
+		// Edge between sand and grass on the committed tiles: do the two kinds get a border item (iteration 18 diagnosis)?
+		size_t sandGrassPairs = 0, sandWithItems = 0, grassWithItems = 0;
+		std::string sandItems, grassItems;
+		for (size_t i = 0; i < count; ++i) {
+			if (withFords->cells[i] != SurfaceKind::Shore) continue;
+			for (const int step : {1, int(side)}) {
+				const size_t n = i + size_t(step);
+				if (n >= count || withFords->cells[n] != SurfaceKind::Grass) continue;
+				const auto* sand = tileAt(i);
+				const auto* grassTile = tileAt(n);
+				if (!sand || !grassTile) continue;
+				++sandGrassPairs;
+				sandWithItems += !sand->items.empty();
+				grassWithItems += !grassTile->items.empty();
+				if (sandItems.empty() && !sand->items.empty()) for (const auto& item : sand->items) sandItems += std::string(item->getName()) + ";";
+				if (grassItems.empty() && !grassTile->items.empty()) for (const auto& item : grassTile->items) grassItems += std::string(item->getName()) + ";";
+			}
+		}
+		report << "SAND_GRASS_EDGE\tpairs=" << sandGrassPairs << "\tsandWithItems=" << sandWithItems << "\tgrassWithItems=" << grassWithItems << "\t" << sandItems << "\t" << grassItems << '\n';
 		std::vector<uint32_t> real(count, 0);
 		std::vector<size_t> queue;
 		uint32_t realComponents = 0;

@@ -542,3 +542,20 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 5. Ocena wyglądu przez użytkownika ma pierwszeństwo; z miary nie umiem ocenić, czy brzeg „wygląda dobrze”.
 
 **Zastrzeżenia z góry.** To zmiana kształtu plaż dla wszystkich, którzy zaznaczą pole (profile stylu dopasowywano bez wygładzenia: skład plaży w profilach może się lekko zmienić, mierzę przez `sand`); okno 5×5 i próg większości to moje wybory; granica na poziomie pojedynczych kafli może wciąż mieć schodki 1–2 komórek (rozdzielczość siatki); nie wygładza granicy trawa / dirt ani skała / trawa.
+
+### Iteracja 19 — wąskie języki piasku między wodą (zapisana 2026-11-09 przed implementacją i przed pomiarem; powód: uwaga użytkownika „nadal wygląda na poszarpane” + cztery zrzuty z GUI po 18)
+
+**Co widać na zrzutach i co zmierzyłem.** (a) Wąskie pasy i półwyspy piasku o szerokości 1–2 kafli między wodą (zrzut 4: pas 1 kafla między jeziorem a rzeką, pojedyncze kwadraty piasku w wodzie), powstałe, gdy rzeka (nakładana po plażach) tnie pierścień plaży. (b) Prostokątne „wcięcia” trawy w piasek z prostymi, 90° krawędziami (zrzut 3). Pomiar na zatwierdzonej mapie (sonda `--surface`, wiersz `SAND_GRASS_EDGE`): **brzeg piasek / trawa ma elementy obramowania** (1760 z 1760 kafli piasku przy trawie ma elementy, np. `rocks`, `grass`; trawa 106), więc brak obramowania nie jest przyczyną. Filtr z iteracji 18 nie ruszał (a), bo **liczył Lake jako piasek** (półwysep w wodzie miał większość „piasku”), nie liczył rzek i działał tylko w zasięgu 9 od jeziora; (b) to schodki 90° na prostych odcinkach, których filtr większościowy nie usuwa (nie jest to szum).
+
+**Zmiana (tylko przy `shoreSmoothing` > 0, po nałożeniu rzek; przy 0 bajt w bajt jak dotąd).** `trimSpits`: komórka Shore, która leży w poziomym lub pionowym ciągu **≤ 2** kolejnych komórek Shore **ograniczonym po obu końcach wodą** (Lake lub River), staje się wodą (River, jeśli któryś koniec to River, inaczej Lake). Jedno przejście na migawce. Brody (iteracja 14) działają po tym kroku, więc ewentualne odcięcie lądu naprawia `fordLength`.
+
+**Miara (`style_render`, wiersz `shore`, nowe pole `spit`)** = liczba komórek Shore spełniających powyższy warunek, na 65 536. Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 0, `pathLength` 0.
+
+**Kryteria.**
+1. `shoreSmoothing` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian, wynik `style_render` jak dotąd.
+2. `shoreSmoothing` 2: mediana `spit` co najmniej 10× mniejsza niż przy 0 (stan bazowy zapisuję), `sand` (mediana) w ±15 %; jeśli baza `spit` jest ≤ 2, kryterium jest **N/A** (miara nie opisuje zrzutu).
+3. Testy ręczne: pas Shore 2 szerokości przez całą wysokość między wodą znika; pas 3 szerokości zostaje; pojedynczy kwadrat piasku w wodzie znika; ciąg 2 z trawą na jednym końcu zostaje; deterministyczność.
+4. Seedy z zamkniętymi budynkami przy `fordLength` 0 i 48 podaję przed i po (mogą się zmienić, bez pasma); 16 testów rdzenia i obie sondy G1 PASS; dwa przebiegi bajtowo identyczne.
+5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** (b) schodki 90° na prostych odcinkach nie są w tej iteracji (granica na siatce kafli zawsze ma schodki; usunięcie ich wymagałoby innego kształtu granicy niż noszona przez próg szumu); usunięcie wąskiego pasa może przeciąć lądowy przesmyk (brody mogą to naprawić); wygląd rzek przy brzegu może się zmienić.
