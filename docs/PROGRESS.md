@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: wejścia Z, jaskinia i wyjście rampą na mapie (iteracja 28) — PARTIAL
+
+Generator rysuje jaskinię na piętrze z + 1, przedmiot wejścia („cave enter”) na powierzchni i rampę w górę przy lądowisku każdego wejścia; wejście bez miejsca na rampę jest pomijane. Commit to dwa kroki historii (jaskinia, potem powierzchnia), błąd drugiego cofa pierwszy; zajęte piętro z + 1 = odmowa. Wyjście ma 100 % wejść w obu profilach (32 seedy, bez roślinności). Nowa zakładka okna „Underground”. 18 testów rdzenia i obie sondy G1 PASS. Do sprawdzenia przez użytkownika: wygląd i pola w GUI; chodzenie w grze nie sprawdzone. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 28”.
+
 ## 2026-11-09 — G5: wejścia Z i prosta jaskinia, rdzeń (iteracja 27) — PARTIAL
 
 `caveEntrances` (wejścia na brzegu skały), `generateCave` (jaskinia na z + 1: lądowiska, tunele, sale), `undergroundReachabilityOf` (osiągalność przez Z, kieszenie). W 32 z 32 seedów jaskinia ma jedną składową i 0 kieszeni, wszystkie wejścia osiągnięte z startu. 18 testów rdzenia i obie sondy G1 PASS. Nic nie jest jeszcze rysowane: adapter (przedmiot wejścia, pędzel gruntu jaskini, Preview i Undo dla dwóch pięter, okno) to iteracja 28. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 27”.
