@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: cele szlaków przez skałę (iteracja 16) — PARTIAL
+
+Przy `rockPasses` szlak szuka teraz startu i celu po przeciwnych stronach pasma skały (3–30 komórek). Szlaki przecinające skałę są w 10 z 32 seedów (było 3 i 8), kryterium 24 z 32 NIE spełnione; po fakcie przy koszcie skały 0 jest 21 i 27 z 32. Odkrycie: generator rysuje tylko 1–2 trasy na mapę 512×512 przy `pathLength` 40. L bez regresji, 16 testów rdzenia i obie sondy G1 PASS. Wygląd w GUI nie sprawdzony. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 16”.
+
 ## 2026-11-09 — G5: szlaki przez skałę, „przełęcze” część 1 (iteracja 15) — PARTIAL
 
 Skała z pędzla „rocky ground” jest przechodnia (19 z 4983 kafli blokuje), więc przełęcz nie jest potrzebą osiągalności. Dodano `rockPasses` (szlaki mogą przechodzić przez pasma skały) i pole „Rock passes” w oknie. Kryterium „przecinające szlaki w ≥ 75 % seedów” NIE spełnione (3 i 8 z 32; nawet przy darmowej skale 13 i 22 z 32), bo szlaki łączą losowe punkty i rzadko muszą przejść przez skałę. 16 testów rdzenia i obie sondy G1 PASS. Opcja „skała blokująca + przełęcze” czeka. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 15”.

@@ -523,3 +523,23 @@ Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Itera
 Wymagane było: mediana ≥ 2× większa niż przy 0 i `cut` > 0 w ≥ 24 z 32 seedów; wynik 3 i 8 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt 15 → 5 i 9 z 32; koszt 0 (skała bez dopłaty) → 13 i 22 z 32 (mediana `cut` m19 9). Nawet darmowe przejście przez skałę nie daje 24 z 32, więc **koszt nie jest wąskim gardłem**: szlaki łączą losowe punkty lądu i rzadko wymagają przejścia przez pasmo skały. Długość szlaków (L) bez regresji (162 / 296 wobec 166 / 295).
 
 **Wniosek.** Funkcja działa i nic nie psuje, ale w tych seedach prawie nie widać przełęczy; żeby je widzieć, szlaki musiałyby celowo łączyć obszary rozdzielone skałą (zmiana wyboru końców tras, osobna iteracja). Wygląd w GUI nie sprawdzony. **Nie zweryfikowano:** wyglądu; blokowania kafli Path na skale (sonda ich nie dotyka, bo `rockPasses` jest w sondzie wyłączone); pomiaru w referencjach (odchylenie opisane w zapisie); opcji 2 (skała blokująca z przełęczami): nie zaczęta.
+
+## Iteracja 16 — cele szlaków po drugiej stronie skały (2026-11-09): PARTIAL, kryterium 1 NIE spełnione
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 16”, commit `f258df4`; grep potwierdził). Zaimplementowano w `drawPaths` (tylko `rockPasses` = 1): co drugie podejście szuka startu i celu „przez skałę” (do 64 losowych komórek lądu jako start, z każdej do 8 losowych kierunków, do 48 kroków; ciąg 3–30 komórek Rock bez wody, potem ląd, cel 4 kroki dalej); bez powodzenia stary losowy cel. Przy `rockPasses` 0 strumień losowy i wynik bez zmian.
+
+**Odkrycie przy diagnozie:** przy `pathLength` 40 cel długości (160 komórek na 512×512) wypełnia już pierwsza trasa, więc generator rysuje tylko **1–2 trasy na mapę**; „co drugie podejście” w pierwszej wersji (jedna próba startu) dawało 4 i 6 z 32 seedów, a poszukiwanie startu wśród 64 komórek podniosło to do 10 i 10.
+
+**Kryterium 3: spełnione** (nowy test `surface` `rockPasses`: deterministyczny, zmienia wynik, wartość 2 odrzucona; 16 testów rdzenia, odcisk Seed 1729 bez zmian; dwa przebiegi bajtowo identyczne; obie sondy G1 PASS). **Kryterium 2: spełnione:** L (mediana) 159 / 307 przy limitach 249 / 443.
+
+**Kryterium 1: NIE spełnione** (seedy 1001–1032, bok 512, profile v10, koszt skały 40 z zapisu):
+
+| | m06 `cut` mediana (max), seedy z `cut` > 0 | m19 `cut` mediana (max), seedy z `cut` > 0 |
+| --- | ---: | ---: |
+| `rockPasses` 0 | 0 (0), 0 z 32 | 0 (1), 1 z 32 |
+| `rockPasses` 1, iteracja 15 (losowe cele) | 0 (6), 3 z 32 | 0 (15), 8 z 32 |
+| **`rockPasses` 1, iteracja 16** | **0 (16), 10 z 32** | **0 (25), 10 z 32** |
+
+Wymagane: mediana ≥ 2× i `cut` > 0 w ≥ 24 z 32 seedów; jest 10 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt skały 15 → 13 i 13 z 32; koszt 0 → 21 z 32 (mediana `cut` 3) w m06 i 27 z 32 (mediana 8) w m19; L 153–304. Przy zapisanym koszcie 40 A* woli objazd niż 3–30 komórek skały, więc z wybranymi celami szlak często i tak omija skałę. Wniosek: wąskim gardłem są teraz **koszt skały i to, że mapa dostaje tylko 1–2 trasy**, a nie cele; kryterium 75 % wymagałoby kosztu bliskiego 0 (m19 tak, m06 jeszcze nie) albo wymuszenia przejścia przez skałę, co zmienia charakter szlaków.
+
+**Nie zweryfikowano:** wyglądu w GUI (nie wiem, czy szlak przez skałę wygląda jak przełęcz, czy jak wycięty korytarz 3–4 kafle); blokowania kafli Path na skale; pomiaru w referencjach; opcji 2 (skała blokująca).
