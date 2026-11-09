@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: wygładzenie brzegu piasek / trawa (iteracja 18) — PARTIAL
+
+Pole „Smooth beaches” (domyślnie zaznaczone, 2 przejścia filtra większościowego 7×7 w zasięgu 9 od jeziora). Długość granicy piasek / trawa −22 %, drobne nierówności 2× mniej, ilość piasku bez zmian; kryterium 5× NIE spełnione, a reguła zapisana z góry (5×5) nie wygładzała wcale, więc użyłem silniejszej po pomiarze (odchylenie opisane). 16 testów rdzenia i obie sondy G1 PASS. Wygląd ocenia użytkownik. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 18”.
+
 ## 2026-11-09 — G5: szlaki dochodzą do celu i przechodzą przez rzekę (iteracja 17) — PARTIAL
 
 Po uwagach z GUI: znaleziony błąd z 12h (końce `reachEnds` połączone na krzyż; widoczny dopiero przy długich szlakach jako proste ukośne linie i pętle), poprawiony; szlaki dochodzą do prawdziwego celu przy `rockPasses`. Przy `fordLength` > 0 szlaki przechodzą przez rzeki piaszczystym brodem. Miara „czubków” okazała się zawodna (kryteria 1 i 2 z zapisu NIE spełnione), oceniam po renderach i użytkowniku; 16 testów rdzenia i obie sondy G1 PASS. Poszarpane brzegi piasku i trawy czekają na osobną diagnozę. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 17”.
