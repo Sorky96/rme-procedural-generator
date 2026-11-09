@@ -588,3 +588,5 @@ Zaimplementowano `trimSpits` (tylko przy `shoreSmoothing` > 0, po nałożeniu rz
 **Nie rozwiązane:** (b) prostokątne wcięcia i schodki 90° trawy w piasek na prostych odcinkach (to kształt granicy z progu szumu na siatce kafli, nie szum; usunięcie wymaga innego kształtu granicy); ocena wyglądu przez użytkownika; czy zrzut 3 (wcięcie trawy) ma dalej ten sam wygląd (nie zmieniałem); sonda G1 nadal nie obejmuje wygładzonego wyniku (działa z `shoreSmoothing` 0). **Nie zweryfikowano:** wyglądu na zatwierdzonej mapie po `trimSpits`.
 
 **Ocena użytkownika po 19 (2026-11-09, GUI): „Lepiej”.** Brzegi po usunięciu wąskich języków piasku wyglądają lepiej (ocena ogólna, bez liczb). Nadal otwarte: prostokątne wcięcia trawy w piasek (schodki 90°), szlaki przez skałę i rzekę oceniane tylko po renderach, mosty z przedmiotem, skała blokująca z przełęczami, graf regionów i POI, odrzucanie seedów.
+
+**Ocena użytkownika (2026-11-09, GUI): „Szlaki wyglądają ok”** (szlaki przez skałę, przez rzekę i z poprawionymi końcami; ocena ogólna, bez liczb).

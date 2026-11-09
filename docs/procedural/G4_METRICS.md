@@ -559,3 +559,20 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** (b) schodki 90° na prostych odcinkach nie są w tej iteracji (granica na siatce kafli zawsze ma schodki; usunięcie ich wymagałoby innego kształtu granicy niż noszona przez próg szumu); usunięcie wąskiego pasa może przeciąć lądowy przesmyk (brody mogą to naprawić); wygląd rzek przy brzegu może się zmienić.
+
+### Iteracja 20 — schodki i wcięcia 90° na granicy piasek / trawa (zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Możemy teraz wziąć schodki”)
+
+**Diagnoza (z zrzutu 3 po iteracji 18 i rozumowania, nie z pomiaru obrazu).** Granica piasek / trawa ma prostokątne występy o głębokości 1 i długości kilku komórek oraz długie proste odcinki. Filtr większościowy 7×7 z iteracji 18 ich nie usuwa: występ głębokości 1 i długości 5 wygrywa w oknie 7×7 (5 komórek trawy z 7 w kolumnie), więc zostaje. Okno o wysokości 11 przegrywa z takim występem (5 z 11), więc usuwa występy długości ≤ 5.
+
+**Zmiana.** Nowe pole `SurfaceTuning::shoreRadius` (0..8, dopisane na końcu; 0 = promień 3 jak dotąd; ma sens tylko przy `shoreSmoothing` > 0; nie jest częścią profilu stylu). `smoothShores` dostaje promień okna (okno (2r+1)×(2r+1)) i zasięg od jeziora `3r` (dotąd 9 dla r = 3). Okno generatora: „Smooth beaches” ustawia `shoreRadius` 5 (okno 11×11, zasięg 15). Reszta reguły bez zmian (pierścień 0 nietykalny, Lake liczy się jako piasek, Rock i brzeg obszaru nie są liczone, tie → Grass).
+
+**Miara (`style_render`, wiersz `shore`, nowe pole `corners`).** `corners` = okna 2×2 mające dokładnie 1 albo 3 komórki Shore, a pozostałe Grass lub Dirt (okno bez Lake, River, Rock, Path, Floor i poza obszarem), na 65 536 komórek; każdy występ lub wcięcie dodaje cztery takie okna, prosty odcinek żadnych. Seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 0, `pathLength` 0.
+
+**Kryteria.**
+1. `shoreSmoothing` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian; `shoreRadius` 0 przy `shoreSmoothing` > 0: wynik bajt w bajt jak w iteracji 19.
+2. `shoreSmoothing` 2, `shoreRadius` 5 wobec `shoreRadius` 0 (promień 3): mediana `corners` co najmniej 25 % mniejsza w obu profilach; `boundary` (mediana) nie większe; `sand` (mediana) w ±15 % wartości przy `shoreSmoothing` 0.
+3. Testy ręczne (nowe): występ 1×5 w prostej granicy zostaje przy r = 3 i znika przy r = 5; prosta granica bez zaburzeń nie zmienia się przy r = 5; deterministyczność; r = 0 jak dotąd.
+4. Seedy z zamkniętymi budynkami przy `fordLength` 0 i 48 podaję przed i po; 16 testów rdzenia i obie sondy G1 PASS; dwa przebiegi bajtowo identyczne.
+5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Okno 11×11 zaokrągla też drobne, naturalne cechy plaży (zatoczki mniejsze niż około 5 komórek znikają); schodki 1:1 na ukośnych odcinkach zostają (siatka kafli); granica trawa / dirt i skała / trawa nie jest wygładzana; promień 5 to mój wybór; może zmienić skład plaży w profilach (miara `sand`).
