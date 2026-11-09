@@ -590,3 +590,20 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 4. Zachowanie (domyślne wartości, włączanie pól, wynik Preview dla tych samych ustawień) bez zmian: **nie zweryfikuję w GUI**, sprawdza użytkownik.
 
 **Zastrzeżenia z góry.** Układ ocenia wyłącznie użytkownik; natywny `wxNotebook` może nie pasować do ciemnego motywu aplikacji; mnemoniki (&) są niepowtarzalne w obrębie okna dotąd, a po podziale mogą się powtarzać między zakładkami bez szkody dla działania; nie dodaję przewijania (zakładki mają po 3–11 pól).
+
+### Iteracja 22 — punkty POI i ustalony start w walidatorze osiągalności (FAZA 5, punkt 1 planu; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „zacznijmy według tego planu”)
+
+**Zakres.** G5 mówi o osiągalności „z ustalonego startu”: wymaganych POI, wejść i wyjść Z. Generator nie ma jeszcze startu ani POI. Ta iteracja dodaje do rdzenia **czyste funkcje liczące** (bez zmiany generatora, bez GUI, bez zapisu na mapę): `poiReachabilityOf(SurfaceGrid, walls)` w `reachability.*`. Zakres to **powierzchnia jednego piętra**; wyjścia Z i podziemia są osobnym etapem planu (decyzja domyślna, bo użytkownik nie odpowiedział na pytanie o zakres; do zmiany na jego polecenie).
+
+**Definicje (model przechodności jak w iteracji 13, ściany włączone).**
+- **Start:** komórka przechodnia najbliższa środkowi obszaru (odległość euklidesowa² do (szerokość/2, wysokość/2), remis: najmniejszy indeks wiersza). Start **nie musi** leżeć w największej składowej (inaczej niż w 13), więc osiągalność z niego to prawdziwy test.
+- **Wejścia (Entrance):** komórki drzwi z `SurfaceGrid::doors` (jedna na budynek); osiągnięte, gdy należą do składowej startu.
+- **Wyjścia (Exit):** dla każdego z czterech boków obszaru najbliższa środkowi boku komórka przechodnia na brzegu (remis: mniejszy indeks); brak komórki przechodniej na brzegu = bok bez wyjścia (nie liczy się). Wyjście osiągnięte, gdy należy do składowej startu.
+- **Wynik:** liczba wejść, osiągniętych wejść, liczba wyjść, osiągniętych wyjść, czy jest start, udział składowej startu w komórkach przechodnich (‰).
+
+**Kryteria.**
+1. Testy ręczne: jezioro dzielące ląd (start po jednej stronie: wejście i wyjście po drugiej nieosiągnięte); budynek z drzwiami osiągalny, bez drzwi nie ma wejścia; bok bez lądu nie ma wyjścia; start wybiera najbliższą środkowi przechodnią komórkę (remis: mniejszy indeks); pusta siatka = brak startu; deterministyczność; porównanie z niezależną implementacją (BFS od startu) na ≥ 50 losowych siatkach.
+2. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, `pathLength` z profilu; `fordLength` 0, 48 i 256): seedy z **wszystkimi** wejściami i wyjściami osiągniętymi z startu oraz mediana udziału składowej startu. **Kryterium przejścia (stan G5 dla powierzchni): ≥ 29 z 32 seedów ze wszystkimi POI osiągniętymi przy `fordLength` 256 w obu profilach.** Przy 0 i 48 wynik raportuję bez pasma.
+3. 16 testów rdzenia i obie sondy G1 PASS (rdzeń generatora bez zmian: odcisk Seed 1729 bez zmian); dwa przebiegi bajtowo identyczne.
+
+**Zastrzeżenia z góry.** Start „najbliższy środkowi” jest moim wyborem (w prawdziwej mapie start to miasto lub temple, którego generator nie tworzy); wyjścia na bokach nie wiedzą, co leży w sąsiednich obszarach; POI to dziś tylko drzwi i wyjścia brzegowe (nie ma ruin, obozowisk, punktów z listy); nie ma jeszcze naprawy ani odrzucania seedów (osobny punkt planu); wyniki dotyczą modelu przechodności z D22.
