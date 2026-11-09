@@ -52,6 +52,11 @@ struct SurfaceGrid {
 uint32_t surfaceValueNoise(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y, uint32_t step);
 uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y);
 
+// Shore smoothing (G4 iteration 18), exposed for tests: `passes` rounds of a 7 x 7 majority filter over Shore, Grass and Dirt
+// cells within 9 cells of a Lake cell (Lake counts as sand, Rock and the edge of the area are not counted); cells next to a Lake cell
+// (8-neighbours) are left alone. A Shore cell that turns into land becomes Grass or Dirt by the majority in its window (tie: Grass).
+void smoothShores(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t passes);
+
 // Fords (G4 iteration 14), exposed for tests: joins walkable components of at least 16 cells to another component across at
 // most `reach` River or Lake cells by stamping the shortest crossing (and the water beside it) as Shore. `kinds` is a
 // width * height grid, `doors` lie on Floor cells; walls are assumed on. Deterministic. generateSurface calls this when

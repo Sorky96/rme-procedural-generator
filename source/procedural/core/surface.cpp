@@ -266,6 +266,48 @@ private:
 // Optional paths (G4 iteration 9): winding routes between random land cells. Returns false when cancelled.
 } // namespace
 
+void smoothShores(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t passes) {
+	const size_t count = kinds.size();
+	std::vector<uint8_t> eligible(count, 0);
+	for (size_t i = 0; i < count; ++i) {
+		if (kinds[i] != SurfaceKind::Lake) continue;
+		const int32_t x = int32_t(i % width), y = int32_t(i / width);
+		for (int32_t dy = -9; dy <= 9; ++dy) {
+			for (int32_t dx = -9; dx <= 9; ++dx) {
+				const int32_t nx = x + dx, ny = y + dy;
+				if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
+				const size_t j = size_t(ny) * width + size_t(nx);
+				// Cells next to the water (ring 0 of the beach) are never touched.
+				if (std::abs(dx) <= 1 && std::abs(dy) <= 1) eligible[j] |= 2;
+				else eligible[j] |= 1;
+			}
+		}
+	}
+	for (uint32_t pass = 0; pass < passes; ++pass) {
+		const std::vector<SurfaceKind> before = kinds;
+		for (size_t i = 0; i < count; ++i) {
+			if (!(eligible[i] & 1) || (eligible[i] & 2)) continue;
+			const SurfaceKind own = before[i];
+			if (own != SurfaceKind::Shore && own != SurfaceKind::Grass && own != SurfaceKind::Dirt) continue;
+			const int32_t x = int32_t(i % width), y = int32_t(i / width);
+			uint32_t sand = 0, grass = 0, dirt = 0;
+			for (int32_t dy = -3; dy <= 3; ++dy) {
+				for (int32_t dx = -3; dx <= 3; ++dx) {
+					const int32_t nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= int32_t(width) || ny >= int32_t(height)) continue;
+					const SurfaceKind kind = before[size_t(ny) * width + size_t(nx)];
+					sand += kind == SurfaceKind::Shore || kind == SurfaceKind::Lake;
+					grass += kind == SurfaceKind::Grass;
+					dirt += kind == SurfaceKind::Dirt;
+				}
+			}
+			const bool becomesSand = sand * 2 > sand + grass + dirt;
+			if (becomesSand) kinds[i] = SurfaceKind::Shore;
+			else if (own == SurfaceKind::Shore) kinds[i] = grass >= dirt ? SurfaceKind::Grass : SurfaceKind::Dirt;
+		}
+	}
+}
+
 // Fords (G4 iteration 14): while a walkable component of at least reachabilityPocketCells cells outside the largest one
 // has another component within `reach` water cells (River or Lake, 4-neighbour moves), the smallest such component gets the
 // shortest crossing stamped as Shore (sand: Path next to water gets a blocking water edge from the auto-border), together
@@ -748,7 +790,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 ||
+		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 ||
 		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
 		return std::unexpected(SurfaceError::InvalidParameters);
 	}
@@ -1048,6 +1090,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				}
 			}
 		}
+		if (config.tuning.shoreSmoothing) smoothShores(kinds, width, height, config.tuning.shoreSmoothing);
 		grassRim(kinds, width, height, config);
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
 		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);

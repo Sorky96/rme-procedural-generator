@@ -245,6 +245,53 @@ void testNaturalFord() {
 	check(highest - lowest >= 2.0, "wide sea: the ford is not a straight line (mean row moves by " + std::to_string(highest - lowest) + ")");
 }
 
+// Shore smoothing (iteration 18), hand counted on 12 x 8 grids with Lake x 0..1 (cells within 9 of the lake: x <= 10; ring 0: x = 2),
+// 7 x 7 windows clipped to the grid:
+//   band of Shore x 2..4: an untouched band stays (band cells (4,3): 28 sand of 49, (4,0): 16 of 28; grass (5,0): 12 of 28, (5,3): 21 of 49);
+//   a Grass hole at (3,4): window x 0..6, y 1..7 holds 14 Lake + 20 Shore = 34 sand of 49 -> filled;
+//   a lone Shore at (4,3) in Grass (ring 0 at x = 2 only): window x 1..7, y 0..6 holds 7 Lake + ring 0 + itself = 9 sand of 49 -> Grass (Dirt in Dirt);
+//   a ring 0 Shore at (2,3) alone in Grass stays.
+void testSmoothShores() {
+	const auto lakeGrid = [](SurfaceKind land) {
+		SurfaceGrid g = grid(12, 8, land);
+		fillRect(g, 0, 0, 1, 7, SurfaceKind::Lake);
+		return g;
+	};
+	SurfaceGrid band = lakeGrid(SurfaceKind::Grass);
+	fillRect(band, 2, 0, 4, 7, SurfaceKind::Shore);
+	const SurfaceGrid bandBefore = band;
+	smoothShores(band.cells, 12, 8, 2);
+	check(band.cells == bandBefore.cells, "smoothing: an even band stays as it is");
+
+	SurfaceGrid hole = bandBefore;
+	hole.cells[4 * 12 + 3] = SurfaceKind::Grass;
+	smoothShores(hole.cells, 12, 8, 1);
+	check(hole.cells == bandBefore.cells, "smoothing: a hole in the band is filled");
+
+	SurfaceGrid lone = lakeGrid(SurfaceKind::Grass);
+	fillRect(lone, 2, 3, 2, 3, SurfaceKind::Shore);
+	lone.cells[3 * 12 + 4] = SurfaceKind::Shore;
+	smoothShores(lone.cells, 12, 8, 1);
+	check(lone.cells[3 * 12 + 4] == SurfaceKind::Grass && lone.cells[3 * 12 + 2] == SurfaceKind::Shore, "smoothing: a lone sand cell turns to grass, ring 0 stays");
+
+	SurfaceGrid loneInDirt = lakeGrid(SurfaceKind::Dirt);
+	loneInDirt.cells[3 * 12 + 4] = SurfaceKind::Shore;
+	smoothShores(loneInDirt.cells, 12, 8, 1);
+	check(loneInDirt.cells[3 * 12 + 4] == SurfaceKind::Dirt, "smoothing: a lone sand cell in dirt turns to dirt");
+
+	SurfaceGrid again = lakeGrid(SurfaceKind::Grass);
+	again.cells[3 * 12 + 4] = SurfaceKind::Shore;
+	SurfaceGrid second = again;
+	smoothShores(again.cells, 12, 8, 3);
+	smoothShores(second.cells, 12, 8, 3);
+	check(again.cells == second.cells, "smoothing: deterministic");
+	SurfaceGrid none = lakeGrid(SurfaceKind::Grass);
+	none.cells[3 * 12 + 4] = SurfaceKind::Shore;
+	const SurfaceGrid noneBefore = none;
+	smoothShores(none.cells, 12, 8, 0);
+	check(none.cells == noneBefore.cells, "smoothing: 0 passes change nothing");
+}
+
 // A pocket of 12 cells (< 16) is not worth a ford: land x 0..2 (3 x 4), river x 3..5, land x 6..19.
 void testSmallPocket() {
 	SurfaceGrid g = grid(20, 4, SurfaceKind::Grass);
@@ -294,6 +341,7 @@ int main() {
 	testFords();
 	testMouths();
 	testNaturalFord();
+	testSmoothShores();
 	testSmallPocket();
 	testLakeAndFar();
 	testCrossCheck();
