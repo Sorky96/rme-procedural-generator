@@ -618,3 +618,5 @@ Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 21�
 **Kryterium 1: spełnione** (`rme` buduje się; 16 testów rdzenia i obie sondy G1 PASS; sondy nie otwierają okna). **Kryterium 3: spełnione według liczby nazw `terrain-`:** 39 przed, 40 po (dodana `terrain-sections` dla zakładek), żadna nie zniknęła. **Kryteria 2 i 4: nie sprawdzone**, bo wymagają oceny w GUI (wysokość okna na ekranie 1080p, brak przycinania, brak nakładania statusu na pola, działanie Preview / Validate / Place / Undo i logika włączania pól).
 
 **Nie zweryfikowano:** wyglądu okna (natywny `wxNotebook` w ciemnym motywie); działania przełączania zakładek z klawiatury i mnemoników; czy zakładki mają sensowną wysokość (Terrain ma 11 wierszy, najwięcej); czy pola nieaktywne (np. wagi przy stylu Natural surface) są czytelne.
+
+**Ocena użytkownika po 21 (2026-11-09, GUI): „Wygląda ok”.** Układ okna w zakładkach potwierdzony wzrokowo (kryterium 2 spełnione według użytkownika; zachowanie Preview / Validate / Place / Undo nie było osobno opisane).
