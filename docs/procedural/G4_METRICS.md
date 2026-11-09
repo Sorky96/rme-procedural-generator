@@ -445,3 +445,18 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 **Kryteria.** (1) Sonda `--surface`: po Commit **żaden kafel brodu nie jest blokujący** i każdy ma grunt (nowa asercja; to kryterium zawiodło w 14). (2) Liczba seedów z zamkniętymi budynkami dla `fordLength` 8/16/32/48/64 identyczna jak w iteracji 14 (m06 9/9/5/2/1, m19 9/9/5/2/2 z 32 seedów); jeśli się różni, zapisać różnicę. (3) Zasięg 256: pomiar czasu `style_render` na 32 seedach m06 (obecnie 6–7 s przy 32 wobec 4 s bez brodów) i liczba seedów z zamkniętymi; bez pasma, tylko raport. (4) 16 testów rdzenia, obie sondy G1 PASS, odcisk Seed 1729 bez zmian; testy rdzenia brodów zmieniają się z Path na Shore (hand-count bez zmian poza nazwą rodzaju).
 
 **Zastrzeżenia z góry.** Brod z piasku wygląda jak mielizna/piaszczysta ławica, nie most; most z osobnym przedmiotem nadal poza zakresem. Czy sam `sand` na wodzie jest przechodni na kliencie sprawdza tylko asercja na kaflach (właściwość blokowania z danych klienta), nie chodzenie w grze. Sąsiednie kafle wody mogą dostać krawędzie piasku (to normalne obramowanie).
+
+### Iteracja 14c — rozszerzone końce brodu (zapisana 2026-11-09 przed zmianą kodu; powód: uwaga użytkownika po 14b, zrzut z GUI: „zbyt wąskie przy początku/końcu”)
+
+**Obserwacja użytkownika:** brod z piasku (14b) jest w środku dość szeroki, ale na początku i na końcu zbyt wąski, żeby nim przejść. **Co wiem z pomiaru (nowa asercja w sondzie, bok 250, lakePermille 250, `fordLength` 256, 71 kafli brodu, 3 kieszenie):** żaden kafel brodu ani lądowy kafel obok niego nie ma flagi blokowania, a każda kieszeń połączona brodem w modelu jest połączona także na zatwierdzonej mapie (ruch 4-sąsiedzki). Czyli według flag klienta bród jest przechodni; skargę użytkownika odczytuję jako wąskie przewężenie przy styku z lądem (bród kończy się w rogu brzegu, więc styk to 1–2 kafle), a nie jako błąd flag. Jeśli użytkownik sprawdzał chodzenie w grze i wciąż się nie da, przyczyny nie znam.
+
+**Zmiana (tylko przy `fordLength` > 0).** Dla pierwszej i ostatniej komórki trasy brodu wszystkie komórki wody (River, Lake) w odległości Czebyszewa ≤ **3** stają się Shore (stała `fordMouthRadius = 3`, w granicach obszaru). Środek brodu bez zmian (3 szerokości). Łączność składowych bez zmian (tylko więcej piasku przy końcach).
+
+**Kryteria.**
+1. Testy ręcznie policzone (rzeka 3 szerokości, 20×8, zasięg 3): krawędź stykowa brodu z lądem (komórki brodu 4-sąsiadujące z lądem) wynosi na każdym końcu **4** (rzędy 0..3 przy górnym brzegu obszaru) zamiast 2; liczba komórek Shore w całości brodu zmienia się z 6 na liczbę policzoną z rysunku (zapisana w teście); jezioro 4 szerokości analogicznie.
+2. W środku obszaru (nie przy brzegu) styk wynosi 7 na każdym końcu (test na siatce 20×16 z rzeką 3 szerokości, trasa w środkowym rzędzie).
+3. Sonda `--surface`: nadal 0 blokujących kafli brodu i obok niego, kieszenie połączone na zatwierdzonej mapie.
+4. Liczby seedów z zamkniętymi budynkami dla `fordLength` 8/16/32/48/64/256 bez zmian względem 14b (m06 9/9/5/2/1/0, m19 9/9/5/2/2/0); komórki brodów rosną (raport, bez pasma); 16 testów rdzenia, obie sondy G1, odcisk Seed 1729 bez zmian (przy `fordLength` 0 nic się nie zmienia).
+5. Ocena wyglądu przez użytkownika ma pierwszeństwo; nie potrafię z metryki ocenić, czy „da się przejść” w jego rozumieniu.
+
+**Zastrzeżenia z góry.** Promień 3 to mój wybór (bez pomiaru referencji; w referencjach nie ma brodów z piasku); większe piaszczyste „łaty” na końcach mogą wyglądać nienaturalnie; sąsiednie kafle wody dostają krawędzie piasku.
