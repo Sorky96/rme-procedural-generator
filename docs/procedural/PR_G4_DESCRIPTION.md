@@ -9,6 +9,7 @@ Generator powierzchni (Natural surface) uczy się stylu z prywatnych map referen
 1. **G4: profile stylu** (`source/procedural/core/style_*.cpp`, `reference_split.*`, `similarity.*`, narzędzia w `source/procedural/tools/`): odciski map, podział na rodziny, mapowanie klucz gruntu → rodzaj, dopasowanie parametrów generatora, profile per styl z paletami brushy i doodadów, oferta profili w oknie generatora.
 2. **Kształt terenu** (`surface.cpp`, `water_shape.*`, `scale_stats.*`): meander rzek, duże struktury (`featureSize`, więcej oktaw szumu), szersza plaża, obwódka trawy wokół skały i plaży.
 3. **Opcjonalne dodatki** (domyślnie wyłączone, ustawiane w oknie generatora): szlaki (`pathLength`, siódmy pędzel), budynki z podłogą (`buildingDensity`, ósmy pędzel) i ścianami (`GroundPlan::walls`, pędzel ściany wyrównywany przez `WallBrush::doWalls`).
+3a. **Osady (FAZA 5 cz. 1):** budynki w skupiskach, drzwi (`SurfaceGrid::doors`, `GroundProfile::door`, `GroundPlan::doors`, pola „Doors” i „Door kind” w oknie generatora), szlaki do drzwi (`PathRouter`), metryki osad (`settlement_stats.*`), zestaw regresji `docs/procedural/smoke/g5_run_suite.py`. Wynik dla `buildingDensity` 0 bez zmian bajt w bajt.
 4. **Metryki i dokumentacja:** `docs/procedural/G4_*.md`, `G4_METRICS.md` (kryteria zapisane przed pomiarami), `G4_GATE_STATUS.md` (wyniki z zastrzeżeniami), `TECH_DEBT.md` (D17–D21), narzędzie `style_render` (podgląd generatora jako PNG), rozszerzenia sondy referencji.
 
 Mapy referencyjne są prywatne: nie ma ich w repo, katalog `local-data/` jest w `.gitignore`, nie ma kopii kafli w dokumentach (tylko zbiorcze liczby).
@@ -35,7 +36,7 @@ Uruchomione 2026-11-08 na bieżącym kodzie:
 
 - **Bramka G4 z planu (poprawa nad ręcznymi presetami na mapach niewidzianych) nie jest spełniona**; opis i liczby w `G4_GATE_STATUS.md` (iteracje 1–3). Jedyny dowód na mapie niewidzianej: swamp, n = 2.
 - Metryki kształtu (iteracje 4–11) opierają się na dwóch referencjach (M06, M19), in-sample (D17); kilka kryteriów jest świadomie niespełnionych: rozgałęzienia szlaków (artefakt szkieletowania, D18), skład granic dla m19, E64 przy boku 256, granica skały.
-- Brak drzwi, dachów i wnętrz budynków, osad jako skupisk, mostów, podziemi i wielopiętrowych gór (D9, D19).
+- Brak dachów i wnętrz budynków, mostów, podziemi i wielopiętrowych gór (D9, D19). Drzwi, skupiska i szlaki do drzwi są (FAZA 5 cz. 1, iteracje 12a–12h w `G4_GATE_STATUS.md`): jedne drzwi na budynek przez `DoorBrush`, trasy dochodzą do celu, bez kikutów; ocena wzrokowa użytkownika „lepiej”, ale długość szlaków w m19 jest poza zapisanym pasmem (174 wobec ≤ 117) i kryterium 12c jako całość nie jest spełnione; wrażliwość stałych nie była badana.
 - Profile stylu są stare względem bieżącego generatora (D20): `style_styles` nie dopasowuje `featureSize`, `shoreWidth`, `transitionWidth`, `meander` na nowych metrykach.
 - Wydajności nowych etapów (szlaki, budynki, obwódka) nie mierzono osobno; w oknie 500×500 podgląd działał w GUI.
 - Tylko Windows x64 i klient 10.98 (profil prywatny `1098-BlackTek` w sondach).
