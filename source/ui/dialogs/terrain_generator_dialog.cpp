@@ -147,6 +147,10 @@ wxString describe(PreparationInputError error) {
 			return cancelledMessage;
 		case PreparationInputError::InvalidParameters:
 			return "The surface settings are not valid.";
+		case PreparationInputError::LowerFloorOccupied:
+			return "The entire rectangle on the floor below must be empty.";
+		case PreparationInputError::NoLowerFloor:
+			return "There is no floor below this area.";
 		case PreparationInputError::AllocationFailed:
 			return memoryMessage;
 	}
@@ -605,6 +609,21 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	region_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	region_label_->SetMinSize(wxSize(Theme::Grid(60), Theme::Grid(8)));
 	right->Add(region_label_, 0, wxEXPAND | wxBOTTOM, gap);
+	preview_floor_label_ = label("Preview floor:");
+	preview_floor_choice_ = newd wxChoice(this, wxID_ANY);
+	preview_floor_choice_->Append("Surface");
+	preview_floor_choice_->Append("Cave below");
+	preview_floor_choice_->SetSelection(0);
+	preview_floor_choice_->SetName("terrain-preview-floor");
+	preview_floor_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+		if (!prepared_) return;
+		if (!BuildPreviewBitmap()) { ReleasePreview(); SetStatus(memoryMessage, true); }
+		preview_panel_->Refresh();
+	});
+	right->Add(preview_floor_label_, 0, wxBOTTOM, gap);
+	right->Add(preview_floor_choice_, 0, wxEXPAND | wxBOTTOM, gap);
+	preview_floor_label_->Hide();
+	preview_floor_choice_->Hide();
 	right->Add(preview_panel_, 1, wxEXPAND);
 
 	auto* body = newd wxBoxSizer(wxHORIZONTAL);
@@ -801,6 +820,9 @@ void TerrainGeneratorDialog::ReleasePreview() {
 	prepared_.reset();
 	selection_.reset();
 	preview_bitmap_ = wxNullBitmap;
+	preview_floor_choice_->SetSelection(0);
+	preview_floor_choice_->Hide();
+	preview_floor_label_->Hide();
 	validate_button_->Disable();
 	place_button_->Disable();
 	preview_panel_->Refresh();
@@ -808,6 +830,8 @@ void TerrainGeneratorDialog::ReleasePreview() {
 
 void TerrainGeneratorDialog::UpdateControlStates() {
 	const bool natural = NaturalSurface();
+	preview_floor_choice_->Show(prepared_ && prepared_->cave);
+	preview_floor_label_->Show(prepared_ && prepared_->cave);
 	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
 	path_length_spin_->Enable(natural);
@@ -870,7 +894,7 @@ void TerrainGeneratorDialog::SetStatus(const wxString& text, bool error) {
 }
 
 std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadRequest() try {
-	Request request;
+	Request request; // caveEntrance/caveExit/caveGround stay empty until the separate form task.
 	auto& config = request.config;
 
 	const std::string seed = seed_text_->GetValue().ToStdString();
@@ -1142,10 +1166,11 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 }
 
 bool TerrainGeneratorDialog::BuildPreviewBitmap() {
-	const auto& snapshot = prepared_->snapshot;
+	const auto& unit = prepared_->cave && preview_floor_choice_->GetSelection() == 1 ? *prepared_->cave : *prepared_;
+	const auto& snapshot = unit.snapshot;
 	const auto& region = snapshot.input.config.region;
 	const auto& context = snapshot.context;
-	const BaseMap& buffer = prepared_->preview.getBuffer();
+	const BaseMap& buffer = unit.preview.getBuffer();
 	const wxColour empty = Theme::Get(Theme::Role::Background);
 
 	wxImage image(int(region.width), int(region.height), false);

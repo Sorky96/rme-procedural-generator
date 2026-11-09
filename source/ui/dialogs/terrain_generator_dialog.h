@@ -124,6 +124,8 @@ private:
 	wxStaticText* client_label_ = nullptr;
 	wxStaticText* status_text_ = nullptr;
 	wxPanel* preview_panel_ = nullptr;
+	wxChoice* preview_floor_choice_ = nullptr;
+	wxStaticText* preview_floor_label_ = nullptr;
 	wxButton* preview_button_ = nullptr;
 	wxButton* validate_button_ = nullptr;
 	wxButton* place_button_ = nullptr;
