@@ -490,3 +490,17 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 4. Ocena wyglądu przez użytkownika ma pierwszeństwo.
 
 **Zastrzeżenia z góry.** Cena 40 i zasięg 3 są moimi wyborami bez referencji; szlak przez skałę jest szerszy niż prawdziwa przełęcz (stempel 3–4 kafle) i może wyglądać jak wycięty korytarz; kafle Path na skale używają pędzla szlaku (jego krawędzie względem skały nie były sprawdzane pod kątem blokowania, tak jak przy brodzie; będzie to w sondzie, jeśli kryterium 3 to wykaże); osiągalność się nie zmienia (skała jest przechodnia).
+
+### Iteracja 16 — cele szlaków po drugiej stronie skały (zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Cele szlaków przez skałę”)
+
+**Powód.** W iteracji 15 szlaki mogły przechodzić przez skałę, ale prawie tego nie robiły (3 i 8 z 32 seedów; nawet przy darmowej skale 13 i 22), bo końce tras są losowymi punktami lądu. Wąskie gardło to wybór celów, nie koszt.
+
+**Zmiana (tylko `rockPasses` = 1 i `pathLength` > 0; przy 0 wynik i strumień losowy bajt w bajt jak dotąd).** W `drawPaths` co drugie podejście (parzyste numery prób) szuka celu „przez skałę”: z losowej komórki lądu (Grass lub Dirt) w losowym z 8 kierunków, do 8 prób, maks. 48 kroków: po drodze nie może być wody, musi pojawić się ciąg 3–30 komórek Rock, a po nim komórka lądu; cel to ta komórka przesunięta o 4 kroki dalej, jeśli nadal jest lądem. Gdy się nie uda, podejście używa dotychczasowego losowego celu. Router (koszt skały 40, z 15) bez zmian.
+
+**Kryteria (bez pasma z referencji, N/A jak w 15).** Seedy 1001–1032, bok 512, profile v10, `pathLength` 40 / 80, `buildingDensity` 30 / 40, `rockPasses` 1, miara `cut` jak w iteracji 15:
+1. Mediana `cut` ≥ 2× większa niż przy `rockPasses` 0 **i** `cut` > 0 w ≥ 24 z 32 seedów, w obu profilach.
+2. Długość szlaków L (mediana) ≤ 1,5× wartość przy `rockPasses` 0 (166 / 295 → ≤ 249 / ≤ 443).
+3. `rockPasses` 0: 16 testów rdzenia i odcisk Seed 1729 bez zmian, wynik `style_render` identyczny; dwa przebiegi bajtowo identyczne; obie sondy G1 PASS; nowy test `surface`: `rockPasses` 1 jest deterministyczny i daje inny wynik niż 0.
+4. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Stałe (3–30 komórek skały, 48 kroków, 4 kroki za skałą, co drugie podejście) to moje wybory; część seedów może nie mieć pasma skały w zasięgu, wtedy 75 % jest nieosiągalne i napiszę to; szlak przez skałę jest szeroki jak zwykły szlak (3–4 kafle); pędzel szlaku na skale nie był sprawdzany pod kątem blokowania.
