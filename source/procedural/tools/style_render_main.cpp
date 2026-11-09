@@ -206,6 +206,29 @@ int main(int argc, char** argv) {
 			}
 			std::cout << std::format("cut seed {}: cut {} cutPer64k {}\n", seed, cut, cut * 65536 / grid->cells.size());
 		}
+		{
+			// Iteration 17: trail tips (a Path cell with at most 3 Path cells among its 8 neighbours) lying in rock or at water.
+			uint64_t tipRock = 0, tipWater = 0;
+			const int64_t w = int64_t(side);
+			for (size_t c = 0; c < grid->cells.size(); ++c) {
+				if (grid->cells[c] != SurfaceKind::Path) continue;
+				const int64_t x = int64_t(c % side), y = int64_t(c / side);
+				int paths = 0, rocks = 0, waters = 0;
+				for (int64_t dy = -1; dy <= 1; ++dy) for (int64_t dx = -1; dx <= 1; ++dx) {
+					if (!dx && !dy) continue;
+					const int64_t nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= w || ny >= w) continue;
+					const SurfaceKind kind = grid->cells[size_t(ny) * side + size_t(nx)];
+					paths += kind == SurfaceKind::Path;
+					rocks += kind == SurfaceKind::Rock;
+					waters += kind == SurfaceKind::River || kind == SurfaceKind::Lake;
+				}
+				if (paths > 3) continue;
+				tipRock += rocks >= 3;
+				tipWater += waters >= 3;
+			}
+			std::cout << std::format("tips seed {}: tipRock {} tipWater {}\n", seed, tipRock, tipWater);
+		}
 		std::ofstream file(outDir / std::format("{}.png", seed), std::ios::binary);
 		file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
 	}

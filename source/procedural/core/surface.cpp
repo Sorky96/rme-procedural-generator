@@ -34,6 +34,7 @@ constexpr size_t fordNaturalLength = 8;                     // crossings of at l
 constexpr int32_t fordSwingMax = 4;                         // largest sideways swing of the axis in cells
 constexpr uint32_t fordShapeStep = 8;                       // noise step along the ford, in cells
 constexpr uint32_t fordWideThreshold = 40000;               // width noise above this (of 65536) makes the ford 5 cells wide instead of 3
+constexpr uint32_t waterCrossCost = 25;                     // extra A* cost of a river cell when trails may cross rivers (iteration 17)
 constexpr uint32_t passCrossCost = 40;                      // extra A* cost of a rock cell when trails may cross rock (iteration 15)
 constexpr int32_t fordMouthRadius = 3;                      // water within this Chebyshev distance of a ford end becomes sand too (iteration 14c)
 constexpr uint64_t fordBytesPerCell = 28;                   // estimate for the ford pass: labels, order, seen, parent, depth, queue, offsets
@@ -115,8 +116,10 @@ void grassRim(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, 
 // foundations are never crossed. The distance-to-rock field is taken once, when the router is built.
 class PathRouter {
 public:
-	PathRouter(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config)
-		: kinds_(kinds), width_(width), height_(height), config_(config),
+	// `crossings` (optional, one byte per cell) switches on river crossings (iteration 17): cells of River under a route become Shore
+	// and are marked there, so a later trail does not turn them into Path (Path over water gets a blocking water edge).
+	PathRouter(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::vector<uint8_t>* crossings = nullptr)
+		: kinds_(kinds), width_(width), height_(height), config_(config), crossings_(crossings),
 		  rockDistance_(kinds.size(), 0), cost_(kinds.size(), std::numeric_limits<uint32_t>::max()), parent_(kinds.size(), -1), closed_(kinds.size(), 0) {
 		std::vector<size_t> frontier, next;
 		for (size_t i = 0; i < kinds.size(); ++i) if (kinds[i] == SurfaceKind::Rock) frontier.push_back(i);
@@ -178,11 +181,12 @@ public:
 					const size_t next = size_t(ny) * width + size_t(nx);
 					const SurfaceKind kind = kinds[next];
 					const bool rockStep = kind == SurfaceKind::Rock && config.tuning.rockPasses;
-					if (!rockStep && kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
+					const bool waterStep = kind == SurfaceKind::River && crossings_;
+					if (!rockStep && !waterStep && kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
 					if (closed_[next]) continue;
 					const uint32_t noise = uint32_t(uint64_t(valueNoise(config.seed, pathStream + 1, uint32_t(config.region.x) + uint32_t(nx),
 						uint32_t(config.region.y) + uint32_t(ny), 5)) * 10 / noiseBins);
-					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + (rockStep ? passCrossCost : 0) + rockPenalty[rockDistance_[next]];
+					uint32_t step = 10 + noise + (kind == SurfaceKind::Shore ? 20 : 0) + (rockStep ? passCrossCost : 0) + (waterStep ? waterCrossCost : 0) + rockPenalty[rockDistance_[next]];
 					if (dx && dy) step = step * 14 / 10;
 					const uint32_t candidate = cost_[current] + step;
 					if (candidate >= cost_[next]) continue;
@@ -198,6 +202,9 @@ public:
 		for (int32_t cell = int32_t(goal); cell != -1; cell = parent_[size_t(cell)]) route_.push_back(size_t(cell));
 		const uint32_t chebyshev = uint32_t(std::max(std::abs(sx - gx), std::abs(sy - gy)));
 		if (route_.size() > 3u * std::max<uint32_t>(chebyshev, 1)) return 0;
+		// Only a route that really crosses a river turns river cells into sand; a trail beside a river leaves it alone.
+		bool wet = false;
+		for (const size_t cell : route_) wet = wet || kinds[cell] == SurfaceKind::River;
 		// Moving average of the route points rounds the corners; the line between smoothed points is stamped.
 		constexpr int32_t window = 6;
 		smooth_.clear();
@@ -214,7 +221,10 @@ public:
 					const int32_t px = x + dx, py = y + dy;
 					if (px < 0 || py < 0 || px >= int32_t(width) || py >= int32_t(height)) continue;
 					const size_t i = size_t(py) * width + size_t(px);
-					if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || kinds[i] == SurfaceKind::Shore || (config.tuning.rockPasses && kinds[i] == SurfaceKind::Rock)) {
+					if (crossings_ && wet && kinds[i] == SurfaceKind::River) {
+						kinds[i] = SurfaceKind::Shore;
+						(*crossings_)[i] = 1;
+					} else if (kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt || (kinds[i] == SurfaceKind::Shore && !(crossings_ && (*crossings_)[i])) || (config.tuning.rockPasses && kinds[i] == SurfaceKind::Rock)) {
 						kinds[i] = SurfaceKind::Path;
 						if (stamped) stamped->push_back(uint32_t(i));
 					}
@@ -228,13 +238,14 @@ public:
 			for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
 		}
 		if (reachEnds && !smooth_.empty()) {
-			// The moving average pulls both ends of the line inwards; join them to the real start and goal.
+			// The moving average pulls both ends of the line inwards; join them to the real start and goal. route_ runs from the goal
+			// back to the start, so the front of smooth_ is the goal end.
 			const auto line = [&](int32_t ax, int32_t ay, int32_t bx, int32_t by) {
 				const int32_t steps = std::max(1, std::max(std::abs(bx - ax), std::abs(by - ay)));
 				for (int32_t t = 0; t <= steps; ++t) stamp(ax + (bx - ax) * t / steps, ay + (by - ay) * t / steps);
 			};
-			line(sx, sy, smooth_.front().first, smooth_.front().second);
-			line(smooth_.back().first, smooth_.back().second, gx, gy);
+			line(gx, gy, smooth_.front().first, smooth_.front().second);
+			line(smooth_.back().first, smooth_.back().second, sx, sy);
 		}
 		return route_.size();
 	}
@@ -243,6 +254,7 @@ private:
 	std::vector<SurfaceKind>& kinds_;
 	uint32_t width_, height_;
 	const SurfaceConfig& config_;
+	std::vector<uint8_t>* crossings_;
 	std::vector<uint8_t> rockDistance_;  // Chebyshev distance (1..4) to the nearest Rock cell, 0 farther away
 	std::vector<uint32_t> cost_;
 	std::vector<int32_t> parent_;
@@ -388,11 +400,11 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 
 namespace {
 
-bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop) {
+bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop, std::vector<uint8_t>* crossings) {
 	const size_t count = kinds.size();
 	const uint64_t target = std::max<uint64_t>(uint64_t(config.tuning.pathLength) * count / 65536, 24);
 	const auto land = [&](size_t i) { return kinds[i] == SurfaceKind::Grass || kinds[i] == SurfaceKind::Dirt; };
-	PathRouter router(kinds, width, height, config);
+	PathRouter router(kinds, width, height, config, crossings);
 	StableRandom random(config.seed, pathStream);
 	uint64_t placed = 0;
 	const uint32_t span = std::max(width, height);
@@ -455,7 +467,7 @@ bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height,
 			if (land(candidate)) goal = candidate;
 		}
 		if (goal == count) continue;
-		placed += router.connect(start, goal);
+		placed += router.connect(start, goal, nullptr, config.tuning.rockPasses != 0);
 	}
 	return true;
 }
@@ -519,8 +531,8 @@ std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t
 // is within doorTargetReach, else the nearest other building); the cell in front of the door becomes Path and is routed to that trail. Buildings are taken in
 // placement order, so each new one joins the trails the earlier ones made. Returns false when cancelled.
 bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config,
-	std::span<const Foundation> foundations, std::vector<uint32_t>& doors, std::stop_token stop) {
-	PathRouter router(kinds, width, height, config);
+	std::span<const Foundation> foundations, std::vector<uint32_t>& doors, std::stop_token stop, std::vector<uint8_t>* crossings) {
+	PathRouter router(kinds, width, height, config, crossings);
 	StableRandom random(config.seed, doorStream);
 	std::vector<uint32_t> trail;
 	for (size_t i = 0; i < kinds.size(); ++i) if (kinds[i] == SurfaceKind::Path) trail.push_back(uint32_t(i));
@@ -1038,12 +1050,14 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		}
 		grassRim(kinds, width, height, config);
 		for (size_t i = 0; i < count; ++i) if (river[i]) kinds[i] = SurfaceKind::River;
-		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop)) return cancelled();
+		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);
+		std::vector<uint8_t>* crossings = config.tuning.fordLength ? &crossingMask : nullptr;
+		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop, crossings)) return cancelled();
 		std::vector<uint32_t> doors;
 		if (config.tuning.buildingDensity) {
 			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
-			if (!placeDoorsAndTrails(kinds, width, height, config, foundations, doors, stop)) return cancelled();
+			if (!placeDoorsAndTrails(kinds, width, height, config, foundations, doors, stop, crossings)) return cancelled();
 		}
 		if (config.tuning.fordLength) {
 			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, doors, stop, FordShape {config.seed, config.region.x, config.region.y}); !fords) return std::unexpected(fords.error());
