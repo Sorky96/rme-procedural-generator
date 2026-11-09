@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: wejścia Z i prosta jaskinia, rdzeń (iteracja 27) — PARTIAL
+
+`caveEntrances` (wejścia na brzegu skały), `generateCave` (jaskinia na z + 1: lądowiska, tunele, sale), `undergroundReachabilityOf` (osiągalność przez Z, kieszenie). W 32 z 32 seedów jaskinia ma jedną składową i 0 kieszeni, wszystkie wejścia osiągnięte z startu. 18 testów rdzenia i obie sondy G1 PASS. Nic nie jest jeszcze rysowane: adapter (przedmiot wejścia, pędzel gruntu jaskini, Preview i Undo dla dwóch pięter, okno) to iteracja 28. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 27”.
+
 ## 2026-11-09 — G5: ognisko w obozowisku (iteracja 26) — PARTIAL
 
 Obozowisko ma ognisko w środku polany (pędzel doodad z pola „Campfire brush”, warstwa planu `fires`, niezależna od roślinności) i większą polanę (dysk 61 komórek, namiot 3×3 obok). Sonda `--surface` sprawdza mechanizm z zamiennikiem pędzla (klient 10.98 w repo nie ma pędzla „campfire”); 17 testów rdzenia PASS, wszystkie miejsca osiągnięte w 32 z 32 seedów, w m19 w niektórych seedach tylko 12 z 24 obozowisk. Wygląd i prawdziwe ognisko czekają na użytkownika. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 26”.
