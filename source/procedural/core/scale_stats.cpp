@@ -249,44 +249,54 @@ PatchSummary summarizePatches(const PatchStats& stats) {
 	return s;
 }
 
+std::vector<BuildingBox> buildingBoxesOf(const SemanticFloor& floor) {
+	std::vector<BuildingBox> found;
+	std::vector<uint8_t> seen(floor.traits.size(), 0);
+	std::vector<size_t> stack;
+	const uint32_t wallBits = bit(Trait::Wall) | bit(Trait::Door);
+	const size_t width = size_t(floor.bounds.width), height = size_t(floor.bounds.height);
+	for (size_t start = 0; start < floor.traits.size(); ++start) {
+		if (seen[start] || !(floor.traits[start] & wallBits)) continue;
+		BuildingBox box;
+		box.x0 = box.x1 = uint32_t(start % width);
+		box.y0 = box.y1 = uint32_t(start / width);
+		stack.assign(1, start);
+		seen[start] = 1;
+		while (!stack.empty()) {
+			const size_t i = stack.back();
+			stack.pop_back();
+			++box.cells;
+			if (floor.traits[i] & bit(Trait::Door)) box.doorCells.push_back(uint32_t(i));
+			const size_t x = i % width, y = i / width;
+			box.x0 = std::min(box.x0, uint32_t(x)); box.x1 = std::max(box.x1, uint32_t(x));
+			box.y0 = std::min(box.y0, uint32_t(y)); box.y1 = std::max(box.y1, uint32_t(y));
+			for (int dy = -1; dy <= 1; ++dy) {
+				for (int dx = -1; dx <= 1; ++dx) {
+					if (!dx && !dy) continue;
+					const int64_t nx = int64_t(x) + dx, ny = int64_t(y) + dy;
+					if (nx < 0 || ny < 0 || nx >= int64_t(width) || ny >= int64_t(height)) continue;
+					const size_t j = size_t(ny) * width + size_t(nx);
+					if (!seen[j] && (floor.traits[j] & wallBits)) { seen[j] = 1; stack.push_back(j); }
+				}
+			}
+		}
+		const uint32_t w = box.x1 - box.x0 + 1, h = box.y1 - box.y0 + 1;
+		if (box.cells >= buildingMinCells && w >= buildingMinSide && h >= buildingMinSide) found.push_back(std::move(box));
+	}
+	return found;
+}
+
 std::expected<BuildingShapes, StatsError> extractBuildingShapes(const SemanticMap& map, int zMin, int zMax, std::stop_token stop) {
 	if (zMin > zMax) return std::unexpected(StatsError::InvalidRange);
 	try {
 		BuildingShapes result;
-		std::vector<uint8_t> seen;
-		std::vector<size_t> stack;
-		const uint32_t wallBits = bit(Trait::Wall) | bit(Trait::Door);
 		for (const SemanticFloor& floor : map.floors()) {
 			if (floor.bounds.z < zMin || floor.bounds.z > zMax) continue;
 			if (stop.stop_requested()) return std::unexpected(StatsError::Cancelled);
-			const size_t width = size_t(floor.bounds.width), height = size_t(floor.bounds.height);
-			seen.assign(floor.traits.size(), 0);
-			for (size_t i = 0; i < floor.traits.size(); ++i) result.regionCells += (floor.traits[i] & bit(Trait::Present)) != 0;
-			for (size_t start = 0; start < floor.traits.size(); ++start) {
-				if (seen[start] || !(floor.traits[start] & wallBits)) continue;
-				uint32_t cells = 0, doors = 0;
-				size_t x0 = start % width, x1 = x0, y0 = start / width, y1 = y0;
-				stack.assign(1, start);
-				seen[start] = 1;
-				while (!stack.empty()) {
-					const size_t i = stack.back();
-					stack.pop_back();
-					++cells;
-					doors += (floor.traits[i] & bit(Trait::Door)) != 0;
-					const size_t x = i % width, y = i / width;
-					x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y);
-					for (int dy = -1; dy <= 1; ++dy) {
-						for (int dx = -1; dx <= 1; ++dx) {
-							if (!dx && !dy) continue;
-							const int64_t nx = int64_t(x) + dx, ny = int64_t(y) + dy;
-							if (nx < 0 || ny < 0 || nx >= int64_t(width) || ny >= int64_t(height)) continue;
-							const size_t j = size_t(ny) * width + size_t(nx);
-							if (!seen[j] && (floor.traits[j] & wallBits)) { seen[j] = 1; stack.push_back(j); }
-						}
-					}
-				}
-				const uint32_t w = uint32_t(x1 - x0 + 1), h = uint32_t(y1 - y0 + 1);
-				if (cells >= buildingMinCells && w >= buildingMinSide && h >= buildingMinSide) result.buildings.push_back({cells, std::max(w, h), std::min(w, h), doors});
+			for (const uint32_t t : floor.traits) result.regionCells += (t & bit(Trait::Present)) != 0;
+			for (const BuildingBox& box : buildingBoxesOf(floor)) {
+				const uint32_t w = box.x1 - box.x0 + 1, h = box.y1 - box.y0 + 1;
+				result.buildings.push_back({box.cells, std::max(w, h), std::min(w, h), uint32_t(box.doorCells.size())});
 			}
 		}
 		return result;
@@ -295,32 +305,42 @@ std::expected<BuildingShapes, StatsError> extractBuildingShapes(const SemanticMa
 	}
 }
 
-BuildingShapes floorBuildingsOf(const SurfaceGrid& grid) {
-	BuildingShapes result;
-	result.regionCells = grid.cells.size();
+std::vector<BuildingBox> floorBoxesOf(const SurfaceGrid& grid) {
+	std::vector<BuildingBox> found;
 	const size_t width = grid.region.width, height = grid.region.height;
 	std::vector<uint8_t> seen(grid.cells.size(), 0);
 	std::vector<size_t> stack;
 	for (size_t start = 0; start < grid.cells.size(); ++start) {
 		if (seen[start] || grid.cells[start] != SurfaceKind::Floor) continue;
-		uint32_t cells = 0;
-		size_t x0 = start % width, x1 = x0, y0 = start / width, y1 = y0;
+		BuildingBox box;
+		box.x0 = box.x1 = uint32_t(start % width);
+		box.y0 = box.y1 = uint32_t(start / width);
 		stack.assign(1, start);
 		seen[start] = 1;
 		while (!stack.empty()) {
 			const size_t i = stack.back();
 			stack.pop_back();
-			++cells;
+			++box.cells;
 			const size_t x = i % width, y = i / width;
-			x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y);
+			box.x0 = std::min(box.x0, uint32_t(x)); box.x1 = std::max(box.x1, uint32_t(x));
+			box.y0 = std::min(box.y0, uint32_t(y)); box.y1 = std::max(box.y1, uint32_t(y));
 			auto visit = [&](size_t j) { if (!seen[j] && grid.cells[j] == SurfaceKind::Floor) { seen[j] = 1; stack.push_back(j); } };
 			if (x > 0) visit(i - 1);
 			if (x + 1 < width) visit(i + 1);
 			if (y > 0) visit(i - width);
 			if (y + 1 < height) visit(i + width);
 		}
-		const uint32_t w = uint32_t(x1 - x0 + 1), h = uint32_t(y1 - y0 + 1);
-		result.buildings.push_back({cells, std::max(w, h), std::min(w, h), 0});
+		found.push_back(std::move(box));
+	}
+	return found;
+}
+
+BuildingShapes floorBuildingsOf(const SurfaceGrid& grid) {
+	BuildingShapes result;
+	result.regionCells = grid.cells.size();
+	for (const BuildingBox& box : floorBoxesOf(grid)) {
+		const uint32_t w = box.x1 - box.x0 + 1, h = box.y1 - box.y0 + 1;
+		result.buildings.push_back({box.cells, std::max(w, h), std::min(w, h), 0});
 	}
 	return result;
 }
