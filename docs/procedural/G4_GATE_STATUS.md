@@ -326,3 +326,32 @@ Zakres, model i kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRI
 **Naprawa.** Kolejność pól przywrócona (pierwsze jedenaście jak w profilu, potem `pathLength`, `buildingDensity`), parser przypisuje pola po nazwach. Wszystkie 14 testów rdzenia PASS.
 
 **Powtórzenie pomiarów z poprawnym wczytywaniem profilu (seedy 1001–1032, bok 512, v10):** szlaki 9d: m06 L 53 / W 4 381 (poprzednio 55,5 / 4 434), m19 L 89 / W 4 618 (91 / 4 655), „szlak przy skale” średnia 8,2 / 16,9 ‰ (8,2 / 16,7): bez zmian w pasmach; przejścia 10c: **m06 7 z 8** (poprzednio 8 z 8: DW 55 wobec 4 wypadło o 5 ‰ poza pasmo ±50 ‰, bo rzeki z meandrem częściej stykają się z ziemią), m19 2 z 8 (bez zmian); budynki 11b: bez zmian (30 / 9 / 7, 40 / 9 / 7), udziały m06 0,8, m19 1,7 punktu procentowego. Kryteria iteracji 10 dla m06 (8 z 8) podane wcześniej były liczone bez meandru; poprawna wartość to 7 z 8.
+
+## Iteracja 12a — osady: skupiska, szlaki i drzwi w referencjach (2026-11-09): PARTIAL, pomiar opisowy
+
+Definicje, stałe i pasma zapisane przed implementacją i pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12”, commit `46b7024`; potwierdzone grepem przed implementacją). Kod: `settlement_stats` (rdzeń; test z ręcznie policzonymi wartościami PASS, commit `ff142e6`), wyjście sondy `settlements-surface.txt`, jedno polecenie `docs/procedural/smoke/g5_reference_settlements.py`. Wszystkie 19 map (kopie w `local-data/`, runner hashuje źródło przed i po), piętra z 0..7, klient 10.98, mapowanie `accepted-10.98-v3`. Dwa przebiegi M06 dały bajtowo identyczny plik (`cmp`); pozostałe mapy raz.
+
+| Mapa | budynków | G | Kn (×1000) | Ks | Ki ‰ | Kb ‰ | Bp / Cp ‰ | Bv / Cv ‰ | Dh ‰ | Dn | Db ‰ | Dp / Dp0 ‰ (\|S\|) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- |
+| M06 | 1 313 | 4 | 11 167 | 1 | 265 | 661 | 93 / 14 | 287 / 316 | 512 | 2 | 231 | 855 / 594 (69) |
+| M19 | 582 | 4 | 11 955 | 1 | 189 | 714 | 209 / 25 | 245 / 268 | 613 | 4 | 563 | 750 / 546 (76) |
+| M01 | 47 | 4 | 34 204 | 2 | 148 | 765 | 0 / 0 | 319 / 169 | 0 | N/A | N/A | N/A (0) |
+| M05, M11, M12, M15 | 13, 1, 2, 5 | N/A (< 30 budynków) | | | | | | | | | | |
+| pozostałe 12 | 0 | N/A | | | | | | | | | | |
+
+Kwalifikują się trzy mapy (≥ 30 budynków): M06, M19, M01. M01 to według 11a raczej płoty (0 drzwi, 0 kafli szlaku wg listy 9a), więc dla skupisk i odstępów jest dowodem pomocniczym, a nie wzorcem osady. Cechy drzwi i orientacji dają tylko M06 i M19.
+
+**Co z tego wynika (opisowo, bez oceny generatora).**
+- **Skupiska.** Najbliższy sąsiad leży typowo w odstępie 4 kafli (M06, M19, M01), a 66–71 % budynków (M06, M19) należy do skupisk ≥ 3; samotnych jest 19–27 %. Skupisk jest ok. 11–12 na 65 536 kafli wobec 31–37 budynków na 65 536, więc średnio ok. 3 budynki na skupisko, ale mediana skupiska to 1 (wiele pojedynczych, kilka dużych). Losowe rozmieszczenie z 11b, o gęstości 30–40 na 65 536, daje pewnie znacznie mniej bliskich sąsiadów; to jest do zmierzenia w 12c, nie zakładam.
+- **Szlak.** Budynki leżą przy szlaku 6,6× (M06: 93 vs 14 ‰) i 8,4× (M19: 209 vs 25 ‰) częściej niż przeciętny kafel lądu. Relacja jest wyraźna, choć bezwzględnie tylko co 11. (M06) i co 5. (M19) budynek ma kafel szlaku w odległości ≤ 3: szlaki w sensie listy 9a to jedynie część dróg.
+- **Woda.** Brak związku: Bv ≤ Cv w M06 (287 vs 316) i M19 (245 vs 268); M01 (319 vs 169) jest jedyną mapą z większym Bv, ale to płoty. Wniosek: generator nie potrzebuje modelu „budynek blisko wody”, wystarczy, że budynek nie stoi na wodzie (już zapewnione marginesem na Grass/Dirt).
+- **Drzwi.** Drzwi ma 51 % (M06) i 61 % (M19) budynków, mediana kafli Door to 2 i 4, a tylko 23 % i 56 % kafli Door leży na krawędzi obwiedni. Czyli „drzwi” w referencji to często wiele kafli (okna-drzwi, bramy, drzwi wewnętrzne); założenie „jedno wejście na budynek” to **celowa idealizacja** (odstępstwo zapisane z góry), nie odwzorowanie referencji.
+- **Orientacja drzwi względem szlaku.** Wśród budynków z drzwiami brzegowymi i szlakiem w pobliżu (|S| = 69 w M06, 76 w M19) strona z drzwiami jest stroną ze szlakiem w 855 ‰ i 750 ‰ przypadków, wobec 594 ‰ i 546 ‰ przy losowej stronie: drzwi zwracają się ku szlakowi o 26 i 20 punktów procentowych częściej niż przypadek. Niepewność próby (jedna mapa, n ≈ 70): ok. ±40 ‰ (1 odchylenie standardowe z rozkładu dwumianowego), więc kierunek jest wiarygodny, wielkość nie.
+
+**Czego NIE zweryfikowano.**
+- Niezależności: wszystko pochodzi z M06 i M19 (D17), M01 jest tylko pomocnicza; brak trzeciej mapy z domami, więc nie ma odrębnej walidacji.
+- Rozrzutu między mapami (jedna wartość na mapę; podano tylko niepewność dwumianową dla Dp).
+- Szlaków spoza listy 9a (ubita ziemia, trawa wydeptana), a więc rzeczywistej liczby budynków przy drogach: Bp jest dolnym oszacowaniem.
+- Czy „budynek” to dom: Wall/Door w referencji obejmuje płoty, bramy i murki (D19); odległości 3, 8 i 12 są stałymi z góry, nie badano czułości na nie.
+- Piętra > 7, wnętrz, dachów, mostów.
+- Pomiaru generatora: baseline generatora w tych miarach (12c) nie był jeszcze liczony; projekt 12b nie został napisany.
