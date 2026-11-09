@@ -610,3 +610,11 @@ Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Itera
 Wymagane było −25 % wobec promienia 3, jest −10 % (promień 5) i −12 % (promień 6); `boundary` i `sand` spełniają warunki. **Wniosek:** liczba narożników rośnie razem z długością granicy (stosunek narożników do granicy ≈ 0,9–0,95 przy każdym promieniu), czyli to zwykłe schodki siatki kafli, a nie osobne występy; filtr większościowy usuwa pojedyncze występy (test), ale nie zmienia charakteru schodkowej granicy. Dłuższy czas (+2 s przy promieniu 5 na 512×512, pomiar z jednego uruchomienia 32 seedów) to koszt pętli zasięgu 3r wokół każdej komórki jeziora.
 
 **Decyzja:** pole „Smooth beaches” w oknie zostaje przy promieniu 3 (`shoreRadius` 0), bo promień 5 daje −10 % narożników za +2 s i nie zmienia wyglądu w skali, którą widać na zrzucie. `shoreRadius` jest dostępne w rdzeniu i w `style_render`. **Nie zweryfikowano:** czy promień 5 wygląda lepiej w GUI (nie włączony w oknie, nie oceniany); wpływu na wygląd zrzutu 3; zamkniętych budynków (nie mierzone).
+
+## Iteracja 21 — układ okna „Generate Terrain” (2026-11-09): wdrożone, czeka na ocenę użytkownika
+
+Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 21”, commit `2f078ca`; grep potwierdził). Pola okna trafiły do zakładek `wxNotebook`: **Area**, **Terrain** (z „Smooth beaches”, przeniesionym z miejsca między brodami a skałą), **Paths**, **Buildings**, **Vegetation**; podgląd, tekst pomocniczy, status i przyciski poza zakładkami. Kontrolki tworzone są na stronie bieżącej zakładki (`host`), nazwy i wartości domyślne bez zmian.
+
+**Kryterium 1: spełnione** (`rme` buduje się; 16 testów rdzenia i obie sondy G1 PASS; sondy nie otwierają okna). **Kryterium 3: spełnione według liczby nazw `terrain-`:** 39 przed, 40 po (dodana `terrain-sections` dla zakładek), żadna nie zniknęła. **Kryteria 2 i 4: nie sprawdzone**, bo wymagają oceny w GUI (wysokość okna na ekranie 1080p, brak przycinania, brak nakładania statusu na pola, działanie Preview / Validate / Place / Undo i logika włączania pól).
+
+**Nie zweryfikowano:** wyglądu okna (natywny `wxNotebook` w ciemnym motywie); działania przełączania zakładek z klawiatury i mnemoników; czy zakładki mają sensowną wysokość (Terrain ma 11 wierszy, najwięcej); czy pola nieaktywne (np. wagi przy stylu Natural surface) są czytelne.
