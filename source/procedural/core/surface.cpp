@@ -27,6 +27,7 @@ constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
 constexpr uint64_t doorStream = 0x646f6f725f733132ULL;     // "door_s12"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
+constexpr int32_t fordMouthRadius = 3;                      // water within this Chebyshev distance of a ford end becomes sand too (iteration 14c)
 constexpr uint64_t fordBytesPerCell = 28;                   // estimate for the ford pass: labels, order, seen, parent, depth, queue, offsets
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
 constexpr uint32_t noiseBins = 65536;
@@ -300,6 +301,17 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 							const size_t cx = cell % width, cy = cell / width;
 							const size_t beside[4] = {cx > 0 ? cell - 1 : count, cx + 1 < width ? cell + 1 : count, cy > 0 ? cell - width : count, cy + 1 < height ? cell + width : count};
 							for (const size_t b : beside) if (b != count && isWater(b)) kinds[b] = SurfaceKind::Shore;
+						}
+						// Both ends get a wider mouth so the ford does not meet the land in a single corner cell.
+						for (const size_t end : {crossing.front(), crossing.back()}) {
+							const int32_t ex = int32_t(end % width), ey = int32_t(end / width);
+							for (int32_t dy = -fordMouthRadius; dy <= fordMouthRadius; ++dy) {
+								for (int32_t dx = -fordMouthRadius; dx <= fordMouthRadius; ++dx) {
+									const int32_t mx = ex + dx, my = ey + dy;
+									if (mx < 0 || my < 0 || mx >= int32_t(width) || my >= int32_t(height)) continue;
+									if (const size_t m = size_t(my) * width + size_t(mx); isWater(m)) kinds[m] = SurfaceKind::Shore;
+								}
+							}
 						}
 						stamped = true;
 						break;

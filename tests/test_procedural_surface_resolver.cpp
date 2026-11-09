@@ -5,6 +5,7 @@
 #include "app/main.h"
 #include "procedural_probe_warnings.h"
 #include "procedural/adapter/generation_input.h"
+#include "procedural/core/reachability.h"
 #include "procedural/adapter/surface_resolver.h"
 #include "app/managers/version_manager.h"
 #include "app/settings.h"
@@ -423,6 +424,7 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	GenerationConfig config {{100, 100, 7, side, side}, seed};
 	config.algorithm = GenerationAlgorithm::Surface;
 	config.surface.riverCount = 8;
+	config.surface.lakePermille = 250;
 	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea"}, GroundProfile::surfaceCount};
 	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
 	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
@@ -461,21 +463,68 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	check(bool(receipt), "Ford commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
 	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Ford commit is not one history step");
 	if (withFords && without) {
-		size_t blocking = 0, noGround = 0, checkedCells = 0;
-		std::string firstItems;
-		for (size_t i = 0; i < withFords->cells.size(); ++i) {
+		// Walkability on the committed tiles (not the model): ford tiles and every land tile beside one must not block, and
+		// each pocket the fords joined to the main land must be joined on the real map too (4-neighbour moves).
+		const size_t count = withFords->cells.size();
+		const auto tileAt = [&](size_t i) { return editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7)); };
+		const auto walkableAt = [&](size_t i) { const auto* tile = tileAt(i); return tile && tile->ground && !tile->isBlocking(); };
+		size_t fordCells = 0, blockedFord = 0, blockedBeside = 0;
+		std::string firstBlocked;
+		const auto describe = [&](size_t i) {
+			const auto* tile = tileAt(i);
+			std::string text = "(" + std::to_string(i % side) + "," + std::to_string(i / side) + ") kind " + std::to_string(int(withFords->cells[i]));
+			if (!tile || !tile->ground) return text + " no ground";
+			text += " ground " + std::string(tile->ground->getName()) + (tile->ground->isBlocking() ? "(blocks)" : "");
+			for (const auto& item : tile->items) text += ", " + std::string(item->getName()) + (item->isBlocking() ? "(blocks)" : "");
+			return text;
+		};
+		for (size_t i = 0; i < count; ++i) {
 			if (withFords->cells[i] == without->cells[i]) continue;
-			const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
-			++checkedCells;
-			if (!tile || !tile->ground) { ++noGround; continue; }
-			if (tile->isBlocking()) ++blocking;
-			if (firstItems.empty() && tile->isBlocking()) {
-				firstItems = "ground " + std::to_string(tile->ground->getID()) + (tile->ground->isBlocking() ? "(blocks)" : "") + " " + std::string(tile->ground->getName()) + " items";
-				for (const auto& item : tile->items) firstItems += " " + std::to_string(item->getID()) + (item->isBlocking() ? "(blocks)" : "") + " " + std::string(item->getName());
+			++fordCells;
+			if (!walkableAt(i)) { ++blockedFord; if (firstBlocked.empty()) firstBlocked = describe(i); }
+			for (const int step : {-1, 1, -int(side), int(side)}) {
+				const size_t n = size_t(int64_t(i) + step);
+				if (n >= count || withFords->cells[n] == without->cells[n]) continue;
+				const SurfaceKind kind = withFords->cells[n];
+				if (kind == SurfaceKind::Lake || kind == SurfaceKind::River) continue;
+				if (!walkableAt(n)) { ++blockedBeside; if (firstBlocked.empty()) firstBlocked = "beside: " + describe(n); }
 			}
 		}
-		report << "FORD_TILES\t" << checkedCells << "\tblocking=" << blocking << "\twithoutGround=" << noGround << "\t" << firstItems << '\n';
-		check(blocking == 0 && noGround == 0, "A ford tile blocks or has no ground");
+		std::vector<uint32_t> real(count, 0);
+		std::vector<size_t> queue;
+		uint32_t realComponents = 0;
+		for (size_t start = 0; start < count; ++start) {
+			if (real[start] || !walkableAt(start)) continue;
+			real[start] = ++realComponents;
+			queue.assign(1, start);
+			for (size_t head = 0; head < queue.size(); ++head) {
+				const size_t at = queue[head];
+				for (const int step : {-1, 1, -int(side), int(side)}) {
+					if ((step == -1 && at % side == 0) || (step == 1 && at % side + 1 == side)) continue;
+					const size_t n = size_t(int64_t(at) + step);
+					if (n >= count || real[n] || !walkableAt(n)) continue;
+					real[n] = realComponents;
+					queue.push_back(n);
+				}
+			}
+		}
+		const auto before = walkableLabelsOf(without->cells, side, side, {}, false);
+		const auto after = walkableLabelsOf(withFords->cells, side, side, {}, false);
+		check(bool(before) && bool(after), "Walkable labels failed");
+		size_t joined = 0, notJoinedOnMap = 0;
+		if (before && after) {
+			std::vector<size_t> first(before->sizes.size(), count);
+			for (size_t i = count; i-- > 0;) if (before->label[i]) first[before->label[i]] = i;
+			const size_t main = first[before->largest];
+			for (uint32_t id = 1; id < before->sizes.size(); ++id) {
+				if (id == before->largest || before->sizes[id] < reachabilityPocketCells || after->label[first[id]] != after->label[main]) continue;
+				++joined;
+				if (!real[first[id]] || real[first[id]] != real[main]) ++notJoinedOnMap;
+			}
+		}
+		report << "FORD_TILES\t" << fordCells << "\tblocked=" << blockedFord << "\tblockedBeside=" << blockedBeside << "\tjoined=" << joined << "\tnotJoinedOnMap=" << notJoinedOnMap << "\t" << firstBlocked << '\n';
+		check(blockedFord == 0 && blockedBeside == 0, "A ford tile or a land tile beside it blocks: " + firstBlocked);
+		check(joined > 0 && notJoinedOnMap == 0, "A pocket joined by a ford is not joined on the committed map");
 	}
 	const auto committedTiles = editor.map.getTileCount();
 	check(editor.actionQueue->undo(), "Ford Undo refused");
