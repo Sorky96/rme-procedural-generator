@@ -209,6 +209,42 @@ void testMouths() {
 	check(contacts(bigBefore, big, 11, 10) == 7 && contacts(bigBefore, big, 7, 8) == 4, "20 x 16: 7 contact cells east, 4 west");
 }
 
+// Natural ford (iteration 14d): 64 x 24, land x 0..7 and x 56..63 on rows 8..15 only (64 cells each), river everywhere else.
+// The crossing is 48 water cells long, so the ford swings and varies in width. Properties, not hand counts:
+//   one component afterwards; same seed twice gives the same cells, another seed another shape; only River became Shore;
+//   in the middle third (columns 24..40) every column holds 3 to 9 sand cells and the mean row of the sand moves by at least 2
+//   rows between columns (the ford is not a straight line).
+SurfaceGrid wideSea() {
+	SurfaceGrid g = grid(64, 24, SurfaceKind::River);
+	fillRect(g, 0, 8, 7, 15, SurfaceKind::Grass);
+	fillRect(g, 56, 8, 63, 15, SurfaceKind::Grass);
+	return g;
+}
+
+void testNaturalFord() {
+	const SurfaceGrid before = wideSea();
+	SurfaceGrid a = before, again = before, other = before;
+	check(placeFords(a.cells, 64, 24, 64, a.doors, {}, FordShape {7, 0, 0}).has_value(), "wide sea: ford runs");
+	check(placeFords(again.cells, 64, 24, 64, again.doors, {}, FordShape {7, 0, 0}).has_value() && again.cells == a.cells, "wide sea: same seed, same ford");
+	check(placeFords(other.cells, 64, 24, 64, other.doors, {}, FordShape {8, 0, 0}).has_value() && other.cells != a.cells, "wide sea: another seed, another ford");
+	const auto joined = reachabilityOf(a, false);
+	check(joined.has_value() && joined->components == 1, "wide sea: one component after the ford");
+	bool onlyWater = true;
+	for (size_t i = 0; i < a.cells.size(); ++i) onlyWater = onlyWater && (a.cells[i] == before.cells[i] || (before.cells[i] == SurfaceKind::River && a.cells[i] == SurfaceKind::Shore));
+	check(onlyWater, "wide sea: only river cells became sand");
+	double lowest = 1e9, highest = -1e9;
+	bool widthsOk = true;
+	for (uint32_t x = 24; x <= 40; ++x) {
+		size_t sand = 0;
+		double rows = 0;
+		for (uint32_t y = 0; y < 24; ++y) if (a.cells[size_t(y) * 64 + x] == SurfaceKind::Shore) { ++sand; rows += y; }
+		widthsOk = widthsOk && sand >= 3 && sand <= 9;
+		if (sand) { lowest = std::min(lowest, rows / double(sand)); highest = std::max(highest, rows / double(sand)); }
+	}
+	check(widthsOk, "wide sea: 3 to 9 sand cells in every middle column");
+	check(highest - lowest >= 2.0, "wide sea: the ford is not a straight line (mean row moves by " + std::to_string(highest - lowest) + ")");
+}
+
 // A pocket of 12 cells (< 16) is not worth a ford: land x 0..2 (3 x 4), river x 3..5, land x 6..19.
 void testSmallPocket() {
 	SurfaceGrid g = grid(20, 4, SurfaceKind::Grass);
@@ -257,6 +293,7 @@ int main() {
 	testErrors();
 	testFords();
 	testMouths();
+	testNaturalFord();
 	testSmallPocket();
 	testLakeAndFar();
 	testCrossCheck();

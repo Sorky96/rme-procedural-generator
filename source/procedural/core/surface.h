@@ -56,8 +56,12 @@ uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y);
 // most `reach` River or Lake cells by stamping the shortest crossing (and the water beside it) as Shore. `kinds` is a
 // width * height grid, `doors` lie on Floor cells; walls are assumed on. Deterministic. generateSurface calls this when
 // SurfaceTuning::fordLength is set.
+// Crossings of at least 8 water cells get a natural shape (swinging axis, varying width, iteration 14d) driven by the seed and the
+// absolute position of the area; shorter ones stay straight.
+struct FordShape { uint64_t seed = 0; int32_t x = 0; int32_t y = 0; };
+
 std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
-	std::span<const uint32_t> doors, std::stop_token stop = {});
+	std::span<const uint32_t> doors, std::stop_token stop = {}, FordShape shape = {});
 
 std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,

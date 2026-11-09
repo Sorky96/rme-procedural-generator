@@ -4,6 +4,7 @@
 #include "procedural/core/reachability.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <new>
@@ -27,6 +28,12 @@ constexpr uint64_t pathStream = 0x706174685f737332ULL;     // "path_ss2"
 constexpr uint64_t doorStream = 0x646f6f725f733132ULL;     // "door_s12"
 constexpr size_t meanderWave = 16;       // route steps between two random swing values; stamps are interpolated, so the line never breaks
 constexpr size_t meanderRamp = 12;       // route steps over which the swing grows from the ends and from junctions
+constexpr uint64_t fordShapeStream = 0x666f72645f736831ULL;  // "ford_sh1"
+constexpr uint64_t fordWidthStream = 0x666f72645f776431ULL;  // "ford_wd1"
+constexpr size_t fordNaturalLength = 8;                     // crossings of at least this many water cells get the natural shape
+constexpr int32_t fordSwingMax = 4;                         // largest sideways swing of the axis in cells
+constexpr uint32_t fordShapeStep = 8;                       // noise step along the ford, in cells
+constexpr uint32_t fordWideThreshold = 40000;               // width noise above this (of 65536) makes the ford 5 cells wide instead of 3
 constexpr int32_t fordMouthRadius = 3;                      // water within this Chebyshev distance of a ford end becomes sand too (iteration 14c)
 constexpr uint64_t fordBytesPerCell = 28;                   // estimate for the ford pass: labels, order, seen, parent, depth, queue, offsets
 constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
@@ -251,7 +258,7 @@ private:
 // with the water cells beside it (about three cells wide). Components are
 // numbered row-major and tried in label order; every ford relabels the surface.
 std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint32_t reach,
-	std::span<const uint32_t> doors, std::stop_token stop) {
+	std::span<const uint32_t> doors, std::stop_token stop, FordShape shape) {
 	const size_t count = kinds.size();
 	std::vector<uint32_t> seen(count, 0), order(count), queue;
 	std::vector<int32_t> parent(count, -1);
@@ -296,23 +303,72 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 						if (depth[i] == 0) continue;
 						std::vector<size_t> crossing;
 						for (int32_t at = int32_t(i); at >= 0 && depth[size_t(at)] > 0; at = parent[size_t(at)]) crossing.push_back(size_t(at));
-						for (const size_t cell : crossing) {
-							kinds[cell] = SurfaceKind::Shore;
-							const size_t cx = cell % width, cy = cell / width;
-							const size_t beside[4] = {cx > 0 ? cell - 1 : count, cx + 1 < width ? cell + 1 : count, cy > 0 ? cell - width : count, cy + 1 < height ? cell + width : count};
-							for (const size_t b : beside) if (b != count && isWater(b)) kinds[b] = SurfaceKind::Shore;
-						}
-						// Both ends get a wider mouth so the ford does not meet the land in a single corner cell.
-						for (const size_t end : {crossing.front(), crossing.back()}) {
-							const int32_t ex = int32_t(end % width), ey = int32_t(end / width);
-							for (int32_t dy = -fordMouthRadius; dy <= fordMouthRadius; ++dy) {
-								for (int32_t dx = -fordMouthRadius; dx <= fordMouthRadius; ++dx) {
-									const int32_t mx = ex + dx, my = ey + dy;
+						const auto stampSquare = [&](size_t cell, int32_t radius, bool plus) {
+							const int32_t cx = int32_t(cell % width), cy = int32_t(cell / width);
+							for (int32_t dy = -radius; dy <= radius; ++dy) {
+								for (int32_t dx = -radius; dx <= radius; ++dx) {
+									if (plus && std::abs(dx) + std::abs(dy) > radius) continue;
+									const int32_t mx = cx + dx, my = cy + dy;
 									if (mx < 0 || my < 0 || mx >= int32_t(width) || my >= int32_t(height)) continue;
 									if (const size_t m = size_t(my) * width + size_t(mx); isWater(m)) kinds[m] = SurfaceKind::Shore;
 								}
 							}
+						};
+						const auto stampStraight = [&] { for (const size_t cell : crossing) { kinds[cell] = SurfaceKind::Shore; stampSquare(cell, 1, true); } };
+						bool natural = false;
+						if (crossing.size() >= fordNaturalLength) {
+							// Natural shape (iteration 14d): an axis that swings sideways between the two ends, with a width that varies.
+							const size_t startCell = crossing.back(), endCell = crossing.front();
+							const int32_t sx = int32_t(startCell % width), sy = int32_t(startCell / width), tx = int32_t(endCell % width), ty = int32_t(endCell / width);
+							const bool alongX = std::abs(tx - sx) >= std::abs(ty - sy);
+							const int32_t major = alongX ? std::abs(tx - sx) : std::abs(ty - sy);
+							if (major > 0) {
+								const int32_t majorStep = (alongX ? tx - sx : ty - sy) > 0 ? 1 : -1;
+								const int32_t minorDelta = alongX ? ty - sy : tx - sx;
+								const int32_t amplitude = std::min<int32_t>(fordSwingMax, int32_t(crossing.size()) / 6);
+								int32_t previousMinor = 0;
+								for (int32_t pos = 0; pos <= major; ++pos) {
+									const int32_t baseMinor = (alongX ? sy : sx) + (minorDelta * pos + (minorDelta >= 0 ? major / 2 : -major / 2)) / major;
+									const int32_t baseMajor = (alongX ? sx : sy) + majorStep * pos;
+									const uint32_t bx = uint32_t(shape.x) + uint32_t(alongX ? baseMajor : baseMinor), by = uint32_t(shape.y) + uint32_t(alongX ? baseMinor : baseMajor);
+									const int64_t envelope = int64_t(4) * pos * (major - pos) * 1024 / (int64_t(major) * major);
+									const int64_t swing = (int64_t(valueNoise(shape.seed, fordShapeStream, bx, by, fordShapeStep)) - noiseBins / 2) * 2 * amplitude * envelope / (int64_t(noiseBins) * 1024);
+									const int32_t minor = baseMinor + int32_t(swing);
+									const int32_t radius = valueNoise(shape.seed, fordWidthStream, bx, by, fordShapeStep) > fordWideThreshold ? 2 : 1;
+									// Fill the gap to the previous column so the axis stays 4-connected.
+									const int32_t from = pos == 0 ? minor : previousMinor;
+									const int32_t direction = minor >= from ? 1 : -1;
+									for (int32_t m = from; m != minor + direction; m += direction) {
+										const int32_t ax = alongX ? baseMajor : m, ay = alongX ? m : baseMajor;
+										if (ax < 0 || ay < 0 || ax >= int32_t(width) || ay >= int32_t(height)) continue;
+										const size_t axis = size_t(ay) * width + size_t(ax);
+										if (isWater(axis)) kinds[axis] = SurfaceKind::Shore;
+										stampSquare(axis, radius, false);
+									}
+									previousMinor = minor;
+								}
+								// The axis must really join the two ends over walkable cells; otherwise the straight crossing is added.
+								for (const size_t endCellToOpen : {startCell, endCell}) stampSquare(endCellToOpen, fordMouthRadius, false);
+								++token;
+								std::vector<uint32_t> flood {uint32_t(startCell)};
+								seen[startCell] = token;
+								for (size_t head = 0; head < flood.size() && !natural; ++head) {
+									const size_t at = flood[head];
+									const size_t ax = at % width, ay = at / width;
+									const size_t around[4] = {ax > 0 ? at - 1 : count, ax + 1 < width ? at + 1 : count, ay > 0 ? at - width : count, ay + 1 < height ? at + width : count};
+									for (const size_t m : around) {
+										if (m == count || seen[m] == token) continue;
+										const SurfaceKind kind = kinds[m];
+										if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && kind != SurfaceKind::Rock && kind != SurfaceKind::Shore && kind != SurfaceKind::Path) continue;
+										seen[m] = token;
+										if (labels->label[m] == labels->label[n]) { natural = true; break; }
+										flood.push_back(uint32_t(m));
+									}
+								}
+							}
 						}
+						if (!natural) stampStraight();
+						for (const size_t endCellToOpen : {crossing.front(), crossing.back()}) stampSquare(endCellToOpen, fordMouthRadius, false);
 						stamped = true;
 						break;
 					}
@@ -950,7 +1006,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			if (!placeDoorsAndTrails(kinds, width, height, config, foundations, doors, stop)) return cancelled();
 		}
 		if (config.tuning.fordLength) {
-			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, doors, stop); !fords) return std::unexpected(fords.error());
+			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, doors, stop, FordShape {config.seed, config.region.x, config.region.y}); !fords) return std::unexpected(fords.error());
 		}
 
 		for (size_t i = 0; i < count; ++i) {

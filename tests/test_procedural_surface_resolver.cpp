@@ -424,7 +424,7 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	GenerationConfig config {{100, 100, 7, side, side}, seed};
 	config.algorithm = GenerationAlgorithm::Surface;
 	config.surface.riverCount = 8;
-	config.surface.lakePermille = 250;
+	config.surface.lakePermille = 450;
 	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea"}, GroundProfile::surfaceCount};
 	constexpr PreparationBudget preparation {250000, 254016, 250000, 512ULL * 1024 * 1024};
 	constexpr TerrainCommitBudget commit {250000, 768ULL * 1024 * 1024};
