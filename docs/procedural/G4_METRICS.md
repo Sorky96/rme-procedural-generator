@@ -607,3 +607,19 @@ Odstępstwa celowe (poza pasmem z założenia): Dn 1 (ref 2 / 4), Db 1000 (ref 2
 3. 16 testów rdzenia i obie sondy G1 PASS (rdzeń generatora bez zmian: odcisk Seed 1729 bez zmian); dwa przebiegi bajtowo identyczne.
 
 **Zastrzeżenia z góry.** Start „najbliższy środkowi” jest moim wyborem (w prawdziwej mapie start to miasto lub temple, którego generator nie tworzy); wyjścia na bokach nie wiedzą, co leży w sąsiednich obszarach; POI to dziś tylko drzwi i wyjścia brzegowe (nie ma ruin, obozowisk, punktów z listy); nie ma jeszcze naprawy ani odrzucania seedów (osobny punkt planu); wyniki dotyczą modelu przechodności z D22.
+
+### Iteracja 23 — naprawa osiągalności i odrzucanie seedów (FAZA 5, punkt 2 planu; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Tak, punkt 2”)
+
+**Zakres.** Iteracja 22 mierzy, czy wszystkie wejścia i wyjścia są osiągalne z ustalonego startu; przy `fordLength` 48 w 3–4 z 32 seedów nie są. Dwa mechanizmy:
+- **Naprawa (opcja `SurfaceTuning::repairReach`, 0/1, dopisana na końcu, nie jest częścią profilu stylu; 0 = bajt w bajt jak dotąd):** po zwykłych brodach (iteracja 14) kolejne przejście `placeFords` w trybie naprawy: dopóki istnieje składowa **zawierająca wejście lub wyjście** (definicje z iteracji 22) i różna od składowej startu, dostaje bród (ten sam kształt, wlot i naturalna oś co w 14d) przez wodę (River, Lake) o szerokości do **256** komórek do najbliższej innej składowej; start jest wyznaczany raz, na początku. Składowe bez POI nie dostają brodów w tym przejściu (bez względu na rozmiar, nawet 1 komórka).
+- **Odrzucanie seedów (`generateReachableSurface`, funkcja rdzenia):** próbuje ziaren `seed`, `seed + 1`, … do `maxAttempts`, zwraca pierwszą siatkę, w której wszystkie wejścia i wyjścia są osiągnięte z startu, wraz z użytym ziarnem i liczbą prób; gdy żadna nie przechodzi, zwraca pierwszą próbę (oryginalne ziarno) z `allReached` = false. Bez zmiany GUI w tej iteracji (okno dostaje tylko naprawę).
+
+**Okno generatora:** pole wyboru „Repair unreachable places” w zakładce Paths (domyślnie zaznaczone, ustawia `repairReach` 1 przy trybie Natural surface).
+
+**Kryteria.**
+1. `repairReach` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian, wynik `style_render` jak dotąd.
+2. Testy ręczne: dwa lądy rozdzielone rzeką 6 szerokości, `fordLength` 3 ich nie łączy, a naprawa z drzwiami po drugiej stronie tak (jedna składowa); po drugiej stronie sam ląd bez POI: naprawa nic nie dodaje; składowa 1 komórki z drzwiami dostaje bród; deterministyczność; `generateReachableSurface`: zwraca pierwszą przechodzącą próbę, liczbę prób, deterministycznie, a przy `maxAttempts` 1 pierwszą siatkę z `allReached` = false, gdy nie przechodzi.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, `pathLength` 40 / 80, `fordLength` 48): seedy ze wszystkimi POI osiągniętymi z `repairReach` 1: **kryterium ≥ 31 z 32 w obu profilach** (stan bez naprawy: 28 i 29 z 32); komórki dodane brodami (mediana, max) nie większe niż przy samym `fordLength` 256 (naprawa ma budować mniej); seedy bez naprawy z `repairReach` 1 i `fordLength` 0 podaję bez pasma. Odrzucanie: odsetek seedów, dla których pierwsza próba nie przechodzi, i średnia liczba prób (z `maxAttempts` 8) bez naprawy i z naprawą.
+4. 16 testów rdzenia i obie sondy G1 PASS; dwa przebiegi bajtowo identyczne.
+
+**Zastrzeżenia z góry.** Naprawa przez bród o szerokości do 256 daje bardzo długie ławice (wygląd oceniany tylko do zasięgu 48); POI to tylko drzwi i wyjścia brzegowe; start „najbliższy środkowi” to mój wybór; naprawa nie zmienia stanu, gdy woda jest szersza niż 256 (wtedy działa odrzucanie); odrzucanie zmienia ziarno względem tego, które wpisał użytkownik (w oknie nie jest używane); maski i ochrona mogą przerwać bród (Preserve).
