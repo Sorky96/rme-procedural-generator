@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: naprawa osiągalności i odrzucanie seedów (iteracja 23) — PARTIAL
+
+`repairReach` (pole „Repair unreachable places”, domyślnie zaznaczone) łączy brodem każdą składową z drzwiami lub wyjściem, której nie osiąga się z startu; `generateReachableSurface` odrzuca seedy, w których POI nie da się osiągnąć. Wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 48 z naprawą (28 i 29 bez) i przy 0 z naprawą. 16 testów rdzenia i obie sondy G1 PASS. Wygląd brodów z naprawy (do 256 komórek) czeka na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 23”.
+
 ## 2026-11-09 — G5: POI i ustalony start w walidatorze (iteracja 22) — PARTIAL
 
 `poiReachabilityOf`: start najbliższy środkowi obszaru, wejścia (drzwi) i wyjścia (po jednym na bok); osiągalność z startu. Wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 256 (m06 i m19), 19 i 20 z 32 przy 0, 28 i 29 z 32 przy 48. Testy ręczne i porównanie z niezależną implementacją 160 z 160; 16 testów rdzenia i obie sondy G1 PASS. Zakres: powierzchnia jednego piętra, bez podłączenia do okna. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 22”.

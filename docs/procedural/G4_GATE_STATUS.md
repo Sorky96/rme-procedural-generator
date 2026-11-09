@@ -638,3 +638,23 @@ Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Itera
 Wymagane było ≥ 29 z 32 w obu profilach przy 256: jest 32 z 32 (przy 0 i 48 raportuję bez pasma; przy 48 m06 ma 28). Najmniejszy udział składowej startu w komórkach przechodnich: 647 ‰ przy 0, 978 ‰ przy 48, 999 ‰ przy 256.
 
 **Zastrzeżenia (z zapisu i nowe):** start „najbliższy środkowi” to mój wybór (w prawdziwej mapie start to miasto lub temple, którego generator nie tworzy); POI to dziś tylko drzwi i wyjścia brzegowe (nie ma ruin, obozowisk ani punktów z listy); wyjścia na bokach nie wiedzą, co leży w sąsiednich obszarach; **zasięg 256 oznacza bardzo długie ławice przez morze**, więc spełnienie kryterium kosztuje wygląd (oceniane wcześniej tylko przy 48); nie ma jeszcze naprawy ani odrzucania seedów (kolejny punkt planu); walidator nie jest podłączony do okna; model przechodności z D22. **Nie zweryfikowano:** wejść i wyjść Z, podziemi, piętra innego niż 7 (rdzeń jest od piętra niezależny, ale nie testowany), POI w oknie lub w sondzie RME.
+
+## Iteracja 23 — naprawa osiągalności i odrzucanie seedów (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd naprawy czeka na użytkownika
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 23”, commit `a47cec8`; grep potwierdził). Zaimplementowano: `SurfaceTuning::repairReach` (0/1, dopisane na końcu, nie jest częścią profilu stylu; 0 = bajt w bajt jak dotąd) i tryb naprawy `placeFords` (`FordShape::repair`): po zwykłych brodach każda składowa zawierająca wejście lub wyjście i różna od składowej startu dostaje bród przez wodę do 256 komórek (start liczony raz, bez względu na rozmiar składowej, kształt i wlot jak w 14d); `generateReachableSurface` (odrzucanie seedów: próby `seed`, `seed + 1`, … do `maxAttempts`, pierwsza siatka z wszystkimi POI osiągniętymi, inaczej pierwsza próba z `allReached` = false); wspólne `fixedStartOf` i `exitCellsOf` w `reachability.*`; pole „Repair unreachable places” w zakładce Paths (domyślnie zaznaczone); `repairReach` w odcisku konfiguracji planu tylko gdy ustawione.
+
+**Kryterium 1: spełnione** (`repairReach` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 2: spełnione** (testy ręczne 24×9: rzeka 6 szerokości, zwykły bród zasięgu 3 nic nie robi, naprawa daje 24 komórki piasku i 30 rzeki, po niej wejście i 4 wyjścia osiągnięte, deterministyczność; wyspa bez drzwi i wyjścia zostaje sama; pokój 2 komórki z drzwiami w wodzie dostaje bród; test `reachableSurface`: pierwsza próba, arytmetyka ziarna, determinizm, `maxAttempts` 1 zwraca pierwszą siatkę z `allReached` = false, `maxAttempts` 0 odrzucone). **Kryterium 4: spełnione** (16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne).
+
+**Kryterium 3: spełnione.** Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80 (próby odrzucania liczone na seedach 1001–1039, `maxAttempts` 8); wszystkie POI osiągnięte z startu, m06 / m19:
+
+| `fordLength`, `repairReach` | wszystkie POI osiągnięte | pierwsza próba zawodzi | średnia liczba prób |
+| --- | ---: | ---: | ---: |
+| 0, 0 | 19 / 20 z 32 | 13 / 12 | 1,53 / 1,50 |
+| 48, 0 | 28 / 29 z 32 | 4 / 3 | 1,12 / 1,09 |
+| **48, 1** | **32 / 32 z 32** | **0 / 0** | **1,00 / 1,00** |
+| 0, 1 | 32 / 32 z 32 | 0 / 0 | 1,00 / 1,00 |
+| 256, 0 | 32 / 32 z 32 | 0 / 0 | 1,00 / 1,00 |
+
+Wymagane było ≥ 31 z 32 w obu profilach przy `fordLength` 48 z naprawą: jest 32 z 32. Naprawa działa też bez zwykłych brodów (`fordLength` 0). **Zastrzeżenie do miary „komórki brodów”:** wiersz `reach` liczy różnicę względem tej samej siatki z `fordLength` 0, a od iteracji 17 szlaki przechodzą przez rzeki tylko przy `fordLength` > 0, więc ta różnica obejmuje też zmianę tras (mediana 13 495–13 735 w m19), nie tylko brody; dla naprawy bez zwykłych brodów jest 0 (różnica nie widzi naprawy). Porównanie „nie więcej niż przy samym 256” spełnione tylko formalnie (mediana m06 571 wobec 674, m19 13 495 wobec 13 735; max 25 457 wobec 25 850), **nie traktuję go jako dowodu**.
+
+**Nie zweryfikowano:** wyglądu brodów z naprawy (zasięg do 256 daje bardzo długie ławice; w GUI oceniałeś tylko brody do 48); odrzucania seedów w oknie (funkcja tylko w rdzeniu); wpływu masek i ochrony (Preserve może przerwać bród); wejść i wyjść Z oraz podziemi; czasu generowania (`style_render` na 39 seedach: 8,6–9,2 s z naprawą wobec 8,1–8,7 s bez, ale to jeden pomiar).
