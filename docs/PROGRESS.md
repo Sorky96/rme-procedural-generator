@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: schodki granicy piasek / trawa (iteracja 20) — PARTIAL
+
+Dodano `shoreRadius` (okno wygładzania do 17×17). Kryterium −25 % narożników NIE spełnione (promień 5: −10 %, +2 s generowania), bo narożniki to schodki siatki kafli proporcjonalne do długości granicy, nie osobne występy; pojedyncze występy 1×5 filtr usuwa (test). W oknie „Smooth beaches” zostaje przy promieniu 3. 16 testów rdzenia i obie sondy G1 PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 20”.
+
 ## 2026-11-09 — G5: wąskie języki piasku między wodą (iteracja 19) — PARTIAL
 
 Po czterech zrzutach z GUI: pasy i półwyspy piasku 1–2 kafle szerokości między jeziorem a rzeką (rzeka tnie plażę) są usuwane przy „Smooth beaches” (`spit` 10 → 0 na 65 536 komórek). Brzeg piasek / trawa ma obramowanie na zatwierdzonej mapie (1760 z 1760), więc przyczyna była geometryczna. Koszt: kilka więcej odciętych budynków (brody to naprawiają). Prostokątne wcięcia trawy w piasek (schodki 90°) nie są rozwiązane. 16 testów rdzenia i obie sondy G1 PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 19”.

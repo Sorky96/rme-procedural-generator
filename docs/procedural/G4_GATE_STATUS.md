@@ -590,3 +590,23 @@ Zaimplementowano `trimSpits` (tylko przy `shoreSmoothing` > 0, po nałożeniu rz
 **Ocena użytkownika po 19 (2026-11-09, GUI): „Lepiej”.** Brzegi po usunięciu wąskich języków piasku wyglądają lepiej (ocena ogólna, bez liczb). Nadal otwarte: prostokątne wcięcia trawy w piasek (schodki 90°), szlaki przez skałę i rzekę oceniane tylko po renderach, mosty z przedmiotem, skała blokująca z przełęczami, graf regionów i POI, odrzucanie seedów.
 
 **Ocena użytkownika (2026-11-09, GUI): „Szlaki wyglądają ok”** (szlaki przez skałę, przez rzekę i z poprawionymi końcami; ocena ogólna, bez liczb).
+
+## Iteracja 20 — schodki i wcięcia 90° na granicy piasek / trawa (2026-11-09): PARTIAL, kryterium 2 NIE spełnione; domyślnie nie włączone w oknie
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 20”, commit `efcfa40`; grep potwierdził). Zaimplementowano `SurfaceTuning::shoreRadius` (0..8, dopisane na końcu; 0 = promień 3 jak w 19), `smoothShores` z parametrem promienia (okno (2r+1)², zasięg od jeziora 3r), miarę `corners` w `style_render`.
+
+**Kryterium 1: spełnione** (`shoreSmoothing` 0 i `shoreRadius` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 3: spełnione** (nowy `testShoreRadius`, 20×15: występ głębokości 1 i długości 5 zostaje przy r = 3 (np. 26 piasku z 49), znika przy r = 5 (60 z 121), prosta granica bez zmian przy r = 5, r = 0 znaczy 3, deterministyczność). **Kryterium 4: spełnione** (16 testów rdzenia i obie sondy G1 PASS, dwa przebiegi bajtowo identyczne).
+
+**Kryterium 2: NIE spełnione.** `corners` (okna 2×2 z 1 lub 3 komórkami piasku, na 65 536, mediana, seedy 1001–1032, bok 512, m06 / m19; `shoreSmoothing` 2):
+
+| promień | `corners` | `boundary` | `sand` | czas `style_render` na 32 seedy |
+| --- | ---: | ---: | ---: | ---: |
+| (bez wygładzania) | 573 / 572 | 627 / 626 | 2990 / 2987 | 3,3 s |
+| 3 (stan z 19) | 460 / 459 | 485 / 484 | 3001 / 3002 | 4,6 s |
+| 4 | 435 / 435 | 471 / 469 | 3010 / 3011 | 5,8 s |
+| **5** | **415 / 415** | 455 / 453 | 2993 / 3004 | 6,8 s |
+| 6 | 404 / 403 | 447 / 447 | 3006 / 3017 | 9,0 s |
+
+Wymagane było −25 % wobec promienia 3, jest −10 % (promień 5) i −12 % (promień 6); `boundary` i `sand` spełniają warunki. **Wniosek:** liczba narożników rośnie razem z długością granicy (stosunek narożników do granicy ≈ 0,9–0,95 przy każdym promieniu), czyli to zwykłe schodki siatki kafli, a nie osobne występy; filtr większościowy usuwa pojedyncze występy (test), ale nie zmienia charakteru schodkowej granicy. Dłuższy czas (+2 s przy promieniu 5 na 512×512, pomiar z jednego uruchomienia 32 seedów) to koszt pętli zasięgu 3r wokół każdej komórki jeziora.
+
+**Decyzja:** pole „Smooth beaches” w oknie zostaje przy promieniu 3 (`shoreRadius` 0), bo promień 5 daje −10 % narożników za +2 s i nie zmienia wyglądu w skali, którą widać na zrzucie. `shoreRadius` jest dostępne w rdzeniu i w `style_render`. **Nie zweryfikowano:** czy promień 5 wygląda lepiej w GUI (nie włączony w oknie, nie oceniany); wpływu na wygląd zrzutu 3; zamkniętych budynków (nie mierzone).
