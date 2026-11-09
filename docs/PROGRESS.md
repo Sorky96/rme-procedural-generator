@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-09 — G5: ruiny i obozowiska (iteracja 25) — PARTIAL
+
+`ruinPercent` (ruina = budynek bez drzwi z lukami w murze) i `campCount` (polana z otwartym namiotem), `SurfaceGrid::gaps` i `sites`, luki przechodnie w walidatorze, resolver pomija ścianę na lukach, pola „Ruins (%)” i „Camps” w zakładce Buildings. Ruiny ≈ 29 % budynków, 24 obozowiska na mapę, wszystkie miejsca osiągnięte w 32 z 32 seedów po naprawie; sonda `--surface` z Commit, Undo, Redo i bez ściany na lukach PASS; 17 testów rdzenia PASS. Wygląd w GUI czeka na użytkownika. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 25”.
+
 ## 2026-11-09 — G5: graf regionów (iteracja 24) — PARTIAL
 
 `buildRegionGraph`: regiony (Land, Rock, Water, ≥ 16 komórek), krawędzie sąsiedztwa z wagą i węzły POI (start, wejścia, wyjścia) z odległością trasy od startu; tylko rdzeń i `style_render`, bez GUI. Test ręczny 14×6 i 17 testów rdzenia oraz obie sondy G1 PASS; w 32 z 32 seedów wszystkie POI mają trasę, graf sąsiedztwa jest spójny. Od tej iteracji kryteria i wyniki G5 są w [G5_METRICS.md](procedural/G5_METRICS.md) i [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md).
