@@ -294,7 +294,7 @@ CaveExitPlan bruteExits(const SurfaceGrid& g, const CaveGrid& c, std::span<const
 				const auto& shape = shapes[si];
 				const int t = shape.hasTail ? shifted(p, shape.tailDx, shape.tailDy) : p;
 				const int d = dest(p, shape.direction), l = dest(p, shape.direction, -1);
-				if (!surfaceOK(d) || l < 0 || t < 0 || (shape.hasTail && t == l) ||
+				if (!surfaceOK(d) || l < 0 || t < 0 ||
 					c.cells[size_t(p)] != CaveKind::Floor || c.cells[size_t(l)] != CaveKind::Floor || c.cells[size_t(t)] != CaveKind::Floor) continue;
 				bool conflict = false;
 				for (const auto& old : plan.exits) {
@@ -351,17 +351,17 @@ void testExits() {
 		c.cells[landing] = CaveKind::Solid; skipped(); c.cells[landing] = CaveKind::Floor;
 		c.cells[40] = CaveKind::Solid; skipped(); c.cells[40] = CaveKind::Floor;
 		const ExitShape tailOnLanding[] = {{ExitDirection::South, 0, -1, true}};
-		const auto rejected = placeCaveExits(g, c, tailOnLanding);
-		check(rejected && rejected->exits.empty() && rejected->skipped.size() == 1, "tail equal landing rejected");
+		const auto onLanding = placeCaveExits(g, c, tailOnLanding);
+		check(onLanding && onLanding->exits.size() == 1 && onLanding->skipped.empty(), "tail on the landing accepted");
 		const ExitShape tailEast[] = {{ExitDirection::South, 1, 0, true}};
 		c.cells[41] = CaveKind::Solid;
 		const auto solidTail = placeCaveExits(g, c, tailEast);
 		check(solidTail && solidTail->exits.empty(), "non-Floor tail rejected");
 		c.cells[41] = CaveKind::Floor;
 	}
-	// Real ramp geometry: every tail overlaps its landing, so no variant fits.
+	// Real ramp geometry: every tail lies on its landing (the ramp's lower half), and the variant fits.
 	plan = placeCaveExits(g, c, ramps);
-	check(plan && plan->exits.empty() && plan->skipped.size() == 1, "client ramp tail/landing conflict is skipped");
+	check(plan && plan->exits.size() == 1 && plan->skipped.empty() && samePlan(*plan, bruteExits(g, c, ramps, {})), "client ramp with tail on the landing is placed");
 	g.entrances = {41, 40}; g.cells[41] = g.cells[40] = SurfaceKind::Rock;
 	disc(c, 5, 4);
 	plan = placeCaveExits(g, c, north);

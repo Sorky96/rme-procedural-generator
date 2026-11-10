@@ -57,7 +57,7 @@ struct CaveExitPlan {
 };
 
 // P = entrance only, first fitting shape in list order. Reserve lower P, landing P - direction
-// and optional tail (distinct from landing), and open surface destination P + direction.
+// and optional tail (the ramp's lower half, usually on the landing), and open surface destination P + direction.
 // Entrances without a fit are skipped; never search adjacent ramp cells.
 // occupied, when present, has one byte per surface cell (nonzero blocks placement).
 [[nodiscard]] std::expected<CaveExitPlan, UndergroundError> placeCaveExits(

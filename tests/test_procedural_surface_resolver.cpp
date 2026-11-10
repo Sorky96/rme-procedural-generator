@@ -1030,7 +1030,7 @@ void run() {
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
 		nextToTerrain(250, 1729, false, report);
-		check(rockCaves && holeCaves, "Cave probes need at least two entrances with exits per style; tail overlaps landing in all client ramp variants");
+		check(rockCaves && holeCaves, "Cave probes need at least two entrances with exits per style");
 		report << "SURFACE_RESOLVER_PASS\n";
 		report.close();
 		wxTheApp->CallAfter([] { g_gui.root->Close(); });

@@ -162,7 +162,7 @@ std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 				const auto destination = cell(destX, destY), landing = cell(landX, landY);
 				if (!freeUpper(destination) || lower[landing] || cave.cells[landing] != CaveKind::Floor) continue;
 				const int64_t tx = ex + shape.tailDx, ty = ey + shape.tailDy;
-				if (shape.hasTail && (!inside(tx, ty) || cell(tx, ty) == landing ||
+				if (shape.hasTail && (!inside(tx, ty) ||
 					lower[cell(tx, ty)] || cave.cells[cell(tx, ty)] != CaveKind::Floor)) continue;
 				plan.exits.push_back({uint32_t(e), p, uint8_t(s)});
 				lower[p] = lower[landing] = 1;

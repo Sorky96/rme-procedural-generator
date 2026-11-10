@@ -167,4 +167,6 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 5. Wszystkie testy rdzenia i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS` w dwóch przebiegach; ostrzeżenia SetFocus to jedyne tolerowane stderr.
 6. Ocena w GUI należy do użytkownika: brak czarnej dziury przed wejściem, rampa w jaskini pod wejściem.
 
+**Korekta po implementacji, przed pomiarem (2026-11-10): odchylenie od definicji.** Warunek „ogon różny od L” był błędem specyfikacji: we wszystkich wariantach ramp 10.98 ogon (dolna połowa rampy, przedmiot bez `floorchange`) leży dokładnie na L, więc reguła odrzucała każde wyjście (wykonawca: 0 wyjść, `SUITE_FAIL`). Obowiązuje: ogon może leżeć na L; nadal musi być Floor i niezarezerwowany. W kryterium 2 przypadek „ogon równy L” jest przyjmowany, nie odrzucany. Pozostałe kryteria bez zmian.
+
 **Zastrzeżenia z góry.** Przesunięcie gracza po zejściu na rampę (na L) i po wejściu rampą (na D) opisuję z pamięci zachowania serwerów typu TFS; kodu serwera nie sprawdzam, działania w grze nie da się sprawdzić w edytorze.
