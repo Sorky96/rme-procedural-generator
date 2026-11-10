@@ -137,7 +137,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.fires.size());
 		for (const auto id : plan.fires) hashField(hash, id, 2);
 	}
-	for (const auto layer : {std::span(plan.entrances), std::span(plan.exitTops), std::span(plan.exits)}) {
+	for (const auto layer : {std::span(plan.entrances), std::span(plan.exits)}) {
 		if (layer.empty()) continue;
 		hashField(hash, layer.size());
 		for (const auto id : layer) hashField(hash, id, 2);
@@ -316,20 +316,20 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		}
 		if (!found) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	std::vector<uint16_t> entranceIds, topIds, exitIds;
+	std::vector<uint16_t> entranceIds, exitIds;
 	if (hasCave(plan.profile)) {
 		const auto resolved = resolveCaveBrushes(plan.profile, plan.config);
 		if (!resolved) co_return std::unexpected(PreviewError::InvalidPlan);
 		entranceIds = resolved->entrances;
 		for (const auto& ids : resolved->items) {
-			topIds.push_back(ids.top); exitIds.push_back(ids.ramp);
+			exitIds.push_back(ids.ramp);
 			if (ids.tail) exitIds.push_back(ids.tail);
 		}
-		if (cave ? (!plan.entrances.empty() || !plan.exitTops.empty() || plan.exits.size() != plan.items.size()) :
-			(!plan.exits.empty() || plan.entrances.size() != plan.items.size() || plan.exitTops.size() != plan.items.size()))
+		if (cave ? (!plan.entrances.empty() || plan.exits.size() != plan.items.size()) :
+			(!plan.exits.empty() || plan.entrances.size() != plan.items.size()))
 			co_return std::unexpected(PreviewError::InvalidPlan);
-		for (const auto* ids : {&entranceIds, &topIds, &exitIds}) decorIds.insert(decorIds.end(), ids->begin(), ids->end());
-	} else if (cave || !plan.entrances.empty() || !plan.exitTops.empty() || !plan.exits.empty()) co_return std::unexpected(PreviewError::InvalidPlan);
+		for (const auto* ids : {&entranceIds, &exitIds}) decorIds.insert(decorIds.end(), ids->begin(), ids->end());
+	} else if (cave || !plan.entrances.empty() || !plan.exits.empty()) co_return std::unexpected(PreviewError::InvalidPlan);
 	// Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
 	std::vector<uint16_t> wallIds;
 	const WallBrush* wallBrush = nullptr;
@@ -374,7 +374,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			}
 		}
 		for (const auto [layer, allowed] : {std::pair{std::span(plan.entrances), std::span(entranceIds)},
-			std::pair{std::span(plan.exitTops), std::span(topIds)}, std::pair{std::span(plan.exits), std::span(exitIds)}}) {
+			std::pair{std::span(plan.exits), std::span(exitIds)}}) {
 			if (layer.empty() || !layer[i]) continue;
 			if (!plan.items[i] || std::ranges::find(allowed, layer[i]) == allowed.end()) co_return std::unexpected(PreviewError::InvalidItem);
 			++decorPlacements;
@@ -415,14 +415,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}
-		// A ground exit top replaces the surface brush only at the authenticated P cell.
-		const bool groundTop = !cave && !plan.exitTops.empty() && plan.exitTops[i] == plan.items[i] &&
-			definition.isGroundTile() && definition.hasFlag(ItemFlag::FloorChangeDown) &&
-			std::ranges::find(topIds, plan.items[i]) != topIds.end();
 		const bool groundHole = !cave && plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole &&
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&
 			definition.hasFlag(ItemFlag::FloorChangeDown) && std::ranges::find(entranceIds, plan.items[i]) != entranceIds.end();
-		if (!found && !groundTop && !groundHole) co_return std::unexpected(PreviewError::InvalidItem);
+		if (!found && !groundHole) co_return std::unexpected(PreviewError::InvalidItem);
 	}
 	if (placements > budget.maxChanges) co_return std::unexpected(PreviewError::Limit);
 	const uint64_t count = snapshot.cells.size();
@@ -540,13 +536,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.fires[i]));
 		}
-		for (const auto layer : {std::span(plan.entrances), std::span(plan.exitTops), std::span(plan.exits)}) {
+		for (const auto layer : {std::span(plan.entrances), std::span(plan.exits)}) {
 			for (size_t i = 0; i < layer.size(); ++i) {
 				if (!layer[i]) continue;
 				auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 				if (!tile || !tile->ground) co_return std::unexpected(PreviewError::InvalidPlan);
 				if (g_item_definitions.get(layer[i]).isGroundTile()) {
-					if (plan.items[i] != layer[i] || ((plan.exitTops.empty() || plan.exitTops[i] != layer[i]) && (plan.entrances.empty() || plan.entrances[i] != layer[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
+					if (plan.items[i] != layer[i] || (plan.entrances.empty() || plan.entrances[i] != layer[i])) co_return std::unexpected(PreviewError::InvalidPlan);
 					continue; // already placed as ground before the normal border pass
 				}
 				tile->addItem(Item::Create(layer[i]));

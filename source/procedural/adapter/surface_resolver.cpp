@@ -124,10 +124,11 @@ std::expected<CaveExitBrush, ResolveError> resolveCaveExitBrush(const DoodadBrus
 		if (!variant.composite || variant.single_item || variant.alternative_index != i || result.shapes.size() >= 256) return std::unexpected(ResolveError::InvalidProfile);
 		ExitShape shape;
 		CaveExitBrush::Items ids;
+		bool hasUpperPart = false;
 		for (const auto& [pos, items] : *variant.composite) {
 			if (items.size() != 1 || !plainCaveItem(items.front().get(), pos.x == 0 && pos.y == 0 && pos.z == -1)) return std::unexpected(ResolveError::InvalidProfile);
 			const auto id = items.front()->getID();
-			if (pos.x == 0 && pos.y == 0 && pos.z == -1 && !ids.top) ids.top = id;
+			if (pos.x == 0 && pos.y == 0 && pos.z == -1 && !hasUpperPart) hasUpperPart = true;
 			else if (pos.x == 0 && pos.y == 0 && pos.z == 0 && !ids.ramp) {
 				ids.ramp = id;
 				const auto def = g_item_definitions.get(id);
@@ -142,7 +143,7 @@ std::expected<CaveExitBrush, ResolveError> resolveCaveExitBrush(const DoodadBrus
 				ids.tail = id; shape.hasTail = true; shape.tailDx = int8_t(pos.x); shape.tailDy = int8_t(pos.y);
 			} else return std::unexpected(ResolveError::InvalidProfile);
 		}
-		if (!ids.top || !ids.ramp) return std::unexpected(ResolveError::InvalidProfile);
+		if (!hasUpperPart || !ids.ramp) return std::unexpected(ResolveError::InvalidProfile);
 		result.shapes.push_back(shape);
 		result.items.push_back(ids);
 	}

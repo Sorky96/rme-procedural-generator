@@ -60,7 +60,6 @@ struct GroundPlan {
 	std::vector<uint16_t> fires;
 	[[nodiscard]] uint64_t fingerprint() const;
 	std::vector<uint16_t> entrances;
-	std::vector<uint16_t> exitTops;
 	std::vector<uint16_t> exits;
 	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band; authenticates placement and borders.
 	std::vector<uint8_t> caveFloor;

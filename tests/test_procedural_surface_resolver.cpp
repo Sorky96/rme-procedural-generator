@@ -699,7 +699,7 @@ void campfires(uint32_t side, std::ostream& report) {
 }
 
 // Iteration 28: real 10.98 cave brushes, two previews, two history steps and failure rollback.
-void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
+bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	UndoLimits undoLimits;
 	check(g_gui.NewMap(), "Cave editor creation failed");
 	auto& editor = *g_gui.GetCurrentEditor();
@@ -742,25 +742,34 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	const auto brushes = resolveCaveBrushes(profile, config);
 	check(bool(cave) && bool(brushes), "Cave geometry/brush resolution failed");
 	const auto exits = placeCaveExits(*grid, *cave, brushes->shapes);
-	check(exits && exits->exits.size() >= 2, "Cave probe needs at least two entrances with exits");
-	std::vector<uint16_t> entrances(grid->cells.size(), 0), tops(entrances), ramps(entrances);
+	if (exits) report << std::format("SURFACE_CAVE_LAYOUT style={} entrances={} exits={} skipped={}\n",
+		style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole", grid->entrances.size(), exits->exits.size(), exits->skipped.size());
+	check(bool(exits), "Cave exit planning failed");
+	const bool sufficientExits = exits->exits.size() >= 2;
+	std::vector<uint16_t> entrances(grid->cells.size(), 0), ramps(entrances);
 	for (const auto& exit : exits->exits) {
 		const auto e = grid->entrances[exit.entrance];
 		const auto& ids = brushes->items[exit.shape];
 		const auto& shape = brushes->shapes[exit.shape];
 		entrances[e] = brushes->entrances[(uint64_t(e) + config.seed) % brushes->entrances.size()];
-		tops[exit.cell] = ids.top;
 		ramps[exit.cell] = ids.ramp;
 		if (shape.hasTail) ramps[size_t(int64_t(exit.cell) + shape.tailDx + int64_t(shape.tailDy) * side)] = ids.tail;
 	}
-	check(prepared->plan.entrances == entrances && prepared->plan.exitTops == tops && prepared->cave->plan.exits == ramps,
+	check(prepared->plan.entrances == entrances && prepared->cave->plan.exits == ramps,
 		"Cave item layers differ from exit geometry");
 	for (const auto e : grid->entrances) check(caveEntranceAllowed(grid->cells, side, side, e, style), "Entrance violates style rule");
 	constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
 	for (const auto& exit : exits->exits) {
 		const auto d = size_t(brushes->shapes[exit.shape].direction);
 		const auto destination = size_t(int64_t(exit.cell) + dx[d] + int64_t(dy[d]) * side);
-		check(grid->cells[exit.cell] != SurfaceKind::Rock && grid->cells[destination] != SurfaceKind::Rock, "Exit on Rock");
+		check(exit.cell == grid->entrances[exit.entrance], "Ramp not directly under entrance");
+		const auto kind = grid->cells[destination];
+		check(kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Shore || kind == SurfaceKind::Path, "Destination not open");
+		check(prepared->plan.items[destination] == plain->plan.items[destination], "Destination ground changed");
+		const auto landing = size_t(int64_t(exit.cell) - dx[d] - int64_t(dy[d]) * side);
+		const Position lower(100 + int(landing % side), 100 + int(landing / side), 8);
+		const auto* tile = prepared->cave->preview.getBuffer().getTile(lower);
+		check(tile && tile->ground && brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveGround), "Landing lacks cave ground");
 	}
 	// Resolve the other style on the same empty target to authenticate distinct plans.
 	{ auto otherConfig = config; auto otherProfile = profile;
@@ -783,6 +792,9 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		wallCells += wall;
 		check(bool(tile && tile->ground) == (floor || wall), "Cave Floor/wall band mismatch");
 		if (wall) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveWall), "Foreign cave wall ground");
+		if (style == CaveEntranceStyle::RockFace && entrances[i]) {
+			check(prepared->plan.items[i] == plain->plan.items[i], "Rock entrance ground changed");
+		}
 		if (style == CaveEntranceStyle::FloorHole && entrances[i]) {
 			const auto* hole = prepared->preview.getBuffer().getTile(upper);
 			check(hole && hole->ground && hole->ground->getID() == entrances[i], "Hole ground missing");
@@ -801,9 +813,14 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 			check(found == (expected ? 1u : 0u), "Cave item missing or duplicated");
 		};
 		std::vector<uint16_t> topIds, rampIds;
-		for (const auto& ids : brushes->items) { topIds.push_back(ids.top); rampIds.push_back(ids.ramp); if (ids.tail) rampIds.push_back(ids.tail); }
+		for (const auto& ids : brushes->items) { rampIds.push_back(ids.ramp); if (ids.tail) rampIds.push_back(ids.tail); }
+		// Independently inspect the source composite, since the resolved plan has no top layer.
+		const auto* exitBrush = g_brushes.getBrush(profile.caveExit)->as<DoodadBrush>();
+		for (int variant = 0; variant < exitBrush->getTotalVariants(); ++variant)
+			for (const auto& [pos, items] : *exitBrush->getVariant(variant).composite)
+				if (pos.z == -1) for (const auto& item : items) topIds.push_back(item->getID());
 		checkItem(*prepared, upper, entrances[i], brushes->entrances);
-		checkItem(*prepared, upper, tops[i], topIds);
+		checkItem(*prepared, upper, 0, topIds);
 		checkItem(*prepared->cave, lower, ramps[i], rampIds);
 		if (!floor && tile) {
 			bool adjacent = false;
@@ -818,19 +835,6 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		if (x >= 100 && y >= 100 && x < 100 + int(side) && y < 100 + int(side)) continue;
 		check(!prepared->cave->preview.getBuffer().getTile(Position(x, y, 8)), "Cave preview escaped rectangle");
 	}
-	std::map<uint16_t, size_t> bordersAtTop, bordersBesideTop;
-	for (const auto& exit : exits->exits) {
-		const int x = 100 + int(exit.cell % side), y = 100 + int(exit.cell / side);
-		for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
-			const auto* tile = prepared->preview.getBuffer().getTile(Position(x + dx, y + dy, 7));
-			if (tile) for (const auto& item : tile->items) if (item->isBorder()) ++(dx || dy ? bordersBesideTop : bordersAtTop)[item->getID()];
-		}
-	}
-	report << "SURFACE_CAVE_TOP_BORDERS" << '\t' << "atP=";
-	for (const auto [id, count] : bordersAtTop) report << id << ':' << count << ',';
-	report << "\tneighbours=";
-	for (const auto [id, count] : bordersBesideTop) report << id << ':' << count << ',';
-	report << '\n';
 	for (const auto id : brushes->entrances) check(!Item::Create(id)->isBlocking(), "Cave entrance blocks movement in client data");
 	for (const auto& ids : brushes->items) check(!Item::Create(ids.ramp)->isBlocking(), "Cave ramp blocks movement in client data");
 	const auto beforeUpper = stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6);
@@ -839,10 +843,11 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		check(!prepareTerrain(editor.map, config, profile, limited), "Joint preparation budget was exceeded"); }
 	{ auto limited = preparation; limited.maxChanges = prepared->preview.getChanges().size() + prepared->cave->preview.getChanges().size() - 1;
 		check(!prepareTerrain(editor.map, config, profile, limited), "Joint change budget was exceeded"); }
-	{ const auto saved = prepared->cave->plan.exits[exits->exits.front().cell];
-		prepared->cave->plan.exits[exits->exits.front().cell] ^= 1;
+	{ const auto cell = exits->exits.empty() ? grid->entrances.front() : exits->exits.front().cell;
+		const auto saved = prepared->cave->plan.exits[cell];
+		prepared->cave->plan.exits[cell] ^= 1;
 		check(!validateTerrainTarget(*prepared, config, profile), "Tampered lower plan passed target validation");
-		prepared->cave->plan.exits[exits->exits.front().cell] = saved; }
+		prepared->cave->plan.exits[cell] = saved; }
 	const auto prior = editor.actionQueue->getCurrentIndex(), size = editor.actionQueue->getSize();
 	// A one-step history limit admits the provisional cave, then deterministically refuses surface.
 	g_settings.setInteger(Config::UNDO_SIZE, 1);
@@ -914,7 +919,7 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		const auto masked = prepareTerrain(emptyMap, vegetated, decorated, preparation, sparse);
 		check(masked && masked->cave && validateTerrainTarget(*masked, vegetated, decorated, sparse), "Masked vegetated cave failed");
 		for (size_t i = 0; i < masked->plan.items.size(); ++i)
-			if (masked->plan.entrances[i] || masked->plan.exitTops[i]) check(!masked->plan.decor[i], "Vegetation overlaps cave access");
+			if (masked->plan.entrances[i]) check(!masked->plan.decor[i], "Vegetation overlaps cave access");
 	}
 	{
 		auto noRock = config; noRock.surface.rockPermille = 0;
@@ -935,8 +940,9 @@ void caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	const auto occupied = prepareTerrain(emptyMap, config, profile, preparation, mask);
 	check(!occupied && std::get<PreparationInputError>(occupied.error()) == PreparationInputError::LowerFloorOccupied, "Masked occupied lower floor accepted");
 	emptyMap.clearChanges();
-	report << "SURFACE_CAVE_E2E_PASS	" << side << "	style=" << (style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole") << " entrances=" << grid->entrances.size() << " exits=" << exits->exits.size()
+	report << (sufficientExits ? "SURFACE_CAVE_E2E_PASS	" : "SURFACE_CAVE_E2E_FAIL	") << side << "	style=" << (style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole") << " entrances=" << grid->entrances.size() << " exits=" << exits->exits.size()
 		<< " skipped=" << exits->skipped.size() << " caveCells=" << caveCells << " wallCells=" << wallCells << " exitBrushes=" << exitBrushes.size() << '\n';
+	return sufficientExits;
 }
 
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
@@ -1018,12 +1024,13 @@ void run() {
 		doors(250, report);
 		ruinsAndCamps(250, report);
 		campfires(250, report);
-		caves(256, CaveEntranceStyle::RockFace, report);
-		caves(256, CaveEntranceStyle::FloorHole, report);
+		const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report);
+		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report);
 		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
 		nextToTerrain(250, 1729, false, report);
+		check(rockCaves && holeCaves, "Cave probes need at least two entrances with exits per style; tail overlaps landing in all client ramp variants");
 		report << "SURFACE_RESOLVER_PASS\n";
 		report.close();
 		wxTheApp->CallAfter([] { g_gui.root->Close(); });

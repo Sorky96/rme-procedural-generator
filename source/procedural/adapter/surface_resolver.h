@@ -12,7 +12,7 @@ class DoodadBrush;
 namespace rme::procedural {
 
 struct CaveExitBrush {
-	struct Items { uint16_t top = 0, ramp = 0, tail = 0; };
+	struct Items { uint16_t ramp = 0, tail = 0; };
 	std::vector<ExitShape> shapes;
 	std::vector<Items> items;
 };

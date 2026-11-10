@@ -292,7 +292,6 @@ TerrainPreparationSteps runPreparation(
 					lowerPlan.caveFloor.resize(cellCount);
 					lowerPlan.exits.assign(cellCount, 0);
 					plan.entrances.assign(cellCount, 0);
-					plan.exitTops.assign(cellCount, 0);
 					for (size_t i = 0; i < cellCount; ++i) {
 						const bool floor = generated->cells[i] == CaveKind::Floor;
 						bool wall = false;
@@ -306,7 +305,7 @@ TerrainPreparationSteps runPreparation(
 					}
 					for (const auto& exit : exits->exits) {
 						const auto e = grid->entrances[exit.entrance], p = exit.cell;
-						if (!plan.items[e] || !plan.items[p] || !lowerPlan.items[p]) continue;
+						if (!plan.items[e] || !lowerPlan.items[p]) continue;
 						const auto& ids = brushes->items[exit.shape];
 						const auto& shape = brushes->shapes[exit.shape];
 						const auto tail = size_t(int64_t(p) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
@@ -314,8 +313,6 @@ TerrainPreparationSteps runPreparation(
 						plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
 						if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
 						if (!plan.decor.empty()) plan.decor[e] = 0;
-						plan.exitTops[p] = ids.top;
-						if (g_item_definitions.get(ids.top).isGroundTile()) plan.items[p] = ids.top;
 						lowerPlan.exits[p] = ids.ramp;
 						if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
 					}
