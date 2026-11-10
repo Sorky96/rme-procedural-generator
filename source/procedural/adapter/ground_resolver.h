@@ -35,6 +35,7 @@ struct GroundProfile {
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
+	std::string caveWall;
 };
 
 struct GroundPlan {
@@ -61,7 +62,7 @@ struct GroundPlan {
 	std::vector<uint16_t> entrances;
 	std::vector<uint16_t> exitTops;
 	std::vector<uint16_t> exits;
-	// Nonempty only for the lower-floor unit: authenticates sparse Floor placement and Solid borders.
+	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band; authenticates placement and borders.
 	std::vector<uint8_t> caveFloor;
 };
 

@@ -40,13 +40,13 @@ bool plainCaveItem(const Item* item, bool allowGround = false) {
 }
 
 bool hasCave(const GroundProfile& profile) noexcept {
-	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty();
+	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }
 
 bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept {
 	return !hasCave(profile) || (config.algorithm == GenerationAlgorithm::Surface && config.surface.caveEntrances > 0 &&
 		profile.count == GroundProfile::surfaceWithFloorCount && !profile.caveEntrance.empty() && profile.caveEntrance.size() <= 256 &&
-		!profile.caveExit.empty() && profile.caveExit.size() <= 256 && !profile.caveGround.empty() && profile.caveGround.size() <= 256);
+		!profile.caveExit.empty() && profile.caveExit.size() <= 256 && !profile.caveGround.empty() && profile.caveGround.size() <= 256 && !profile.caveWall.empty() && profile.caveWall.size() <= 256);
 }
 
 std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile& profile, const GenerationConfig& config) try {
@@ -61,36 +61,54 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 	const auto* exit = doodad(profile.caveExit);
 	const auto* brush = g_brushes.getBrush(profile.caveGround);
 	const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
-	if (!entrance || !exit || !ground || ground->getTotalChance() <= 0 || ground->getBorderItems().empty()) return std::unexpected(ResolveError::InvalidProfile);
+	const auto* wallBrush = g_brushes.getBrush(profile.caveWall);
+	const auto* wall = wallBrush ? wallBrush->as<GroundBrush>() : nullptr;
+	const auto* entranceBrush = g_brushes.getBrush(profile.caveEntrance);
+	const auto* hole = entranceBrush ? entranceBrush->as<GroundBrush>() : nullptr;
+	const bool floorHole = config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole;
+	if (!exit || !ground || !wall || (floorHole ? !hole : !entrance)) return std::unexpected(ResolveError::InvalidProfile);
 	CaveBrushes result;
-	int previous = 0;
-	for (const auto& variant : ground->getBorderItems()) {
-		const auto def = g_item_definitions.get(variant.id);
-		const auto base = def.attribute(ItemAttributeKey::BorderBaseGroundId);
-		const auto actual = def.isGroundTile() ? def : (base > 0 && base <= UINT16_MAX ? g_item_definitions.get(uint16_t(base)) : ItemDefinitionView{});
-		if (variant.chance < previous || variant.chance > ground->getTotalChance() || !actual || !actual.isGroundTile() ||
-			!def.clientId() || def.isMetaItem() || !actual.clientId() || actual.isMetaItem() || actual.editorData().brush != ground) return std::unexpected(ResolveError::InvalidProfile);
-		previous = variant.chance;
-	}
-	if (previous != ground->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
+	const auto validGround = [](const GroundBrush* ground) {
+		if (!ground || ground->getTotalChance() <= 0 || ground->getBorderItems().empty()) return false;
+		int previous = 0;
+		for (const auto& variant : ground->getBorderItems()) {
+			const auto def = g_item_definitions.get(variant.id);
+			const auto base = def.attribute(ItemAttributeKey::BorderBaseGroundId);
+			const auto actual = def.isGroundTile() ? def : (base > 0 && base <= UINT16_MAX ? g_item_definitions.get(uint16_t(base)) : ItemDefinitionView{});
+			if (variant.chance < previous || variant.chance > ground->getTotalChance() || !actual || !actual.isGroundTile() ||
+				!def.clientId() || def.isMetaItem() || !actual.clientId() || actual.isMetaItem() || actual.editorData().brush != ground) return false;
+			previous = variant.chance;
+		}
+		if (previous != ground->getTotalChance()) return false;
+		return true;
+	};
+	if (!validGround(ground) || !validGround(wall) || (floorHole && !validGround(hole))) return std::unexpected(ResolveError::InvalidProfile);
 	result.ground = ground->getPlacementItemId();
-	if (entrance->getAlternativeCount() > 256) return std::unexpected(ResolveError::InvalidProfile);
+	result.wall = wall->getPlacementItemId();
+	if (!floorHole && entrance->getAlternativeCount() > 256) return std::unexpected(ResolveError::InvalidProfile);
 	auto exitBrush = resolveCaveExitBrush(*exit);
 	if (!exitBrush) return std::unexpected(exitBrush.error());
 	static_cast<CaveExitBrush&>(result) = std::move(*exitBrush);
-	int priorAlternative = -1;
-	for (int i = 0; i < entrance->getTotalVariants(); ++i) {
-		const auto variant = entrance->getVariant(i);
-		if (variant.composite || !plainCaveItem(variant.single_item)) return std::unexpected(ResolveError::InvalidProfile);
-		if (variant.alternative_index != priorAlternative) {
-			const auto* item = entrance->getRandomSingleItem(variant.alternative_index, 1);
-			if (!plainCaveItem(item)) return std::unexpected(ResolveError::InvalidProfile);
-			result.entrances.push_back(item->getID());
-			priorAlternative = variant.alternative_index;
+	if (floorHole) {
+		const auto id = hole->getPlacementItemId();
+		const auto def = g_item_definitions.get(id);
+		if (!def || !def.isGroundTile() || !def.hasFlag(ItemFlag::FloorChangeDown)) return std::unexpected(ResolveError::InvalidProfile);
+		result.entrances.push_back(id);
+	} else {
+		int priorAlternative = -1;
+		for (int i = 0; i < entrance->getTotalVariants(); ++i) {
+			const auto variant = entrance->getVariant(i);
+			if (variant.composite || !plainCaveItem(variant.single_item)) return std::unexpected(ResolveError::InvalidProfile);
+			if (variant.alternative_index != priorAlternative) {
+				const auto* item = entrance->getRandomSingleItem(variant.alternative_index, 1);
+				if (!plainCaveItem(item)) return std::unexpected(ResolveError::InvalidProfile);
+				result.entrances.push_back(item->getID());
+				priorAlternative = variant.alternative_index;
+			}
 		}
+		if (result.entrances.size() != entrance->getAlternativeCount()) return std::unexpected(ResolveError::InvalidProfile);
 	}
-	if (result.entrances.size() != entrance->getAlternativeCount()) return std::unexpected(ResolveError::InvalidProfile);
-	if (result.entrances.empty() || !result.ground) return std::unexpected(ResolveError::InvalidProfile);
+	if (result.entrances.empty() || !result.ground || !result.wall) return std::unexpected(ResolveError::InvalidProfile);
 	return result;
 } catch (const std::bad_alloc&) {
 	return std::unexpected(ResolveError::AllocationFailed);
@@ -179,7 +197,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall}) {
 		if (name->empty()) continue;
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;

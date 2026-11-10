@@ -146,7 +146,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
 	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
@@ -295,8 +295,14 @@ TerrainPreparationSteps runPreparation(
 					plan.exitTops.assign(cellCount, 0);
 					for (size_t i = 0; i < cellCount; ++i) {
 						const bool floor = generated->cells[i] == CaveKind::Floor;
-						lowerPlan.caveFloor[i] = floor;
-						if (floor && lowerSnapshot->input.mask[i] && !lowerSnapshot->input.protection[i]) lowerPlan.items[i] = brushes->ground;
+						bool wall = false;
+						const int x = int(i % grid->region.width), y = int(i / grid->region.width);
+						if (!floor) for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+							if (x + dx >= 0 && y + dy >= 0 && x + dx < int(grid->region.width) && y + dy < int(grid->region.height))
+								wall |= generated->cells[size_t(y + dy) * grid->region.width + size_t(x + dx)] == CaveKind::Floor;
+						}
+						lowerPlan.caveFloor[i] = floor ? 1 : wall ? 2 : 0;
+						if ((floor || wall) && lowerSnapshot->input.mask[i] && !lowerSnapshot->input.protection[i]) lowerPlan.items[i] = floor ? brushes->ground : brushes->wall;
 					}
 					for (const auto& exit : exits->exits) {
 						const auto e = grid->entrances[exit.entrance], p = exit.cell;
@@ -306,6 +312,7 @@ TerrainPreparationSteps runPreparation(
 						const auto tail = size_t(int64_t(p) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
 						if (shape.hasTail && !lowerPlan.items[tail]) continue;
 						plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
+						if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
 						if (!plan.decor.empty()) plan.decor[e] = 0;
 						plan.exitTops[p] = ids.top;
 						if (g_item_definitions.get(ids.top).isGroundTile()) plan.items[p] = ids.top;

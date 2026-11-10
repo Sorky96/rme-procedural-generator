@@ -20,6 +20,7 @@ struct CaveExitBrush {
 struct CaveBrushes : CaveExitBrush {
 	std::vector<uint16_t> entrances;
 	uint16_t ground = 0;
+	uint16_t wall = 0;
 };
 
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
