@@ -95,3 +95,30 @@ Dwa przebiegi bajtowo identyczne. **Odchylenie:** `style_render` nie generuje ro
 **Nie zweryfikowane:** działanie w grze (gdzie serwer stawia gracza po `floorchange=down` i po rampie), wygląd wejścia (wariant „cave enter” wybierany po komórce, może być zwrócony w złą stronę), wygląd jaskini i obramowań w RME, pola okna w GUI, odsetek wyjść przy włączonej roślinności, inne klienty niż 10.98.
 
 **Poprawka po teście GUI użytkownika (2026-11-10):** lista „Cave exit brush” była pusta z rampami (okno brało tylko doodady z pojedynczymi przedmiotami, rampy to kompozyty), więc pole wyjścia zostawało puste. Okno buduje teraz osobną listę z tej samej kontroli co adapter (`resolveCaveExitBrush`); sonda sprawdza, że w 10.98 to dokładnie „bamboo ramp”, „dirt ramp”, „pyramid ramp”, „ramp”, „snowy ramp” (`exitBrushes=5`). Sonda omijała okno, dlatego błąd nie był wykryty.
+
+## Iteracja 29 — ściany jaskini, style wejścia, wyjścia poza skałą (2026-11-10): PARTIAL, kryterium 3a NIE spełnione dla RockFace, pozostałe spełnione, ocena w GUI (7) czeka na użytkownika
+
+Kryteria zapisane przed implementacją ([G5_METRICS.md](G5_METRICS.md), „Iteracja 29”, commit `41924a7`; grep potwierdził). Commity: `277ebf4`, `eb9bdb1` (rdzeń: `CaveEntranceStyle`, `caveEntranceAllowed`, Rock usunięty z pól wyjścia), `46b83ec` (adapter: `caveWall`, dziura jako grunt), `17cec10` (okno: „Entrance style”, „Cave wall brush”), `ab7bb9c` (sonda dla obu stylów).
+
+**Kryterium 1: spełnione.** Odcisk Seed 1729 100×100 = 17159159863505677800 bez zmian; przy `caveEntrances` 0 wyniki bez zmian; stare przypadki sondy bez zmian poza polami czasu i szacunkami pamięci (+112 bajtów, nowe pola struktur; **odchylenie** jak w iteracji 28). Wiersz `SURFACE_CAVE_E2E_PASS` zmienił się zgodnie z zapowiedzią.
+
+**Kryterium 2: spełnione.** Testy ręczne obu stylów (z odrzuceniami), odrzucenie P lub P + d na Rock, porównanie z niezależnym przeszukiwaniem dla obu stylów, deterministyczność; 18 z 18 testów rdzenia.
+
+**Kryterium 3: (a) NIE spełnione dla RockFace, (b), (c), (d) spełnione.** Seedy 1001–1032, bok 512, opcje z iteracji 28:
+
+| profil, styl | wejścia | z wyjściem | odsetek | reguła stylu / wyjścia poza Rock |
+|---|---|---|---|---|
+| m06 RockFace | 3 [0..7] | 3 [0..7] | 100 % | 100 / 100 |
+| m06 FloorHole | 16 [16..16] | 16 [16..16] | 100 % | 512 / 512 |
+| m19 RockFace | 6 [1..11] | 6 [1..11] | 100 % | 174 / 174 |
+| m19 FloorHole | 16 [16..16] | 16 [16..16] | 100 % | 512 / 512 |
+
+RockFace daje medianę 3 (m06) i 6 (m19) wejść przy wymaganych ≥ 8: reguła „północ, zachód i wschód to skała, południe otwarte” rzadko jest spełniona na pasach skały tych profili. Kryterium nie zmieniam; decyzja o regule należy do użytkownika. Dwa przebiegi bajtowo identyczne.
+
+**Kryterium 4: spełnione.** `SURFACE_CAVE_E2E_PASS	256	style=rockface entrances=18 exits=18 skipped=0 caveCells=7146 wallCells=3821 exitBrushes=5` oraz `style=floorhole entrances=20 exits=20 skipped=0 caveCells=5935 wallCells=3108 exitBrushes=5` (pędzle „cave enter” / „cave hole”, „ramp”, „cave”, „mountain”). Sprawdzone: reguła stylu, przedmiot wejścia albo grunt dziury, P i P + d poza Rock, grunt ściany dokładnie na Solid z sąsiadem Floor, brak gruntu na pozostałych Solid, nic poza prostokątem, Commit, Undo, Redo, wymuszony błąd kroku 2, nowe odmowy, różne odciski stylów.
+
+**Kryterium 5: spełnione (bez oceny w GUI).** Zakładka „Underground”: „Entrance style” (Rock face / Floor hole), lista „Z entrance brush” przełącza się między doodadami a gruntami, „Cave wall brush” (domyślnie „mountain”).
+
+**Kryterium 6: spełnione.** 18 z 18 testów rdzenia, obie sondy PASS, `SUITE_PASS` w dwóch przebiegach (worktree wykonawcy i główny checkout po kanonicznym `build_ninja.bat`), te same wiersze sondy. **Odchylenie:** wykonawca budował w worktree obejściem (brak pamięci i dysku przy kanonicznym buildzie); kanoniczny build przeszedł w głównym checkout.
+
+**Nie zweryfikowane:** wygląd ścian „mountain” w jaskini (lica tylko od wschodu i południa), kierunek wariantów „cave enter”, wygląd „cave hole” na trawie, działanie w grze, inne klienty niż 10.98.

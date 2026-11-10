@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-10 — G5: ściany jaskini, wejście w ścianie skały albo dziura, wyjścia poza skałą (iteracja 29) — PARTIAL
+
+Jaskinia na z + 1 dostaje pas gruntu ściany („mountain”) wokół podłogi. Wejście w dwóch stylach do wyboru w oknie: w południowej ścianie skały („cave enter”) albo dziura w trawie lub ziemi („cave hole”). Wyjście rampą nie stoi już na skale. Styl dziury: 16 wejść na 16 zamówionych; styl ściany: mediana 3 (m06) i 6 (m19), poniżej kryterium 8. 18 testów rdzenia i obie sondy PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 29”.
+
 ## 2026-11-09 — G5: wejścia Z, jaskinia i wyjście rampą na mapie (iteracja 28) — PARTIAL
 
 Generator rysuje jaskinię na piętrze z + 1, przedmiot wejścia („cave enter”) na powierzchni i rampę w górę przy lądowisku każdego wejścia; wejście bez miejsca na rampę jest pomijane. Commit to dwa kroki historii (jaskinia, potem powierzchnia), błąd drugiego cofa pierwszy; zajęte piętro z + 1 = odmowa. Wyjście ma 100 % wejść w obu profilach (32 seedy, bez roślinności). Nowa zakładka okna „Underground”. 18 testów rdzenia i obie sondy G1 PASS. Do sprawdzenia przez użytkownika: wygląd i pola w GUI; chodzenie w grze nie sprawdzone. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 28”.
