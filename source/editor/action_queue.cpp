@@ -210,7 +210,7 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	const uint64_t limit = uint64_t(configuredMemory) * 1024 * 1024;
 	if (incoming > limit) return false;
 	if (terrainPair) {
-		if (terrainPairCount >= 2 || current != terrainPairStart + terrainPairCount) return false;
+		if (terrainPairCount >= terrainPairLimit || current != terrainPairStart + terrainPairCount) return false;
 		// Admission only: redo and the oldest steps before the pair are dropped by finishTerrainPair(true), so a refused
 		// pair leaves the earlier history untouched. The pair itself is never trimmed.
 		size_t retained = memory_size;
@@ -234,11 +234,11 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	if (stop.stop_requested() || !batch->canApply()) return false;
 	if (!batch->batch.front()->prepareExactSelection()) return false;
 	if (terrainPair) {
-		// Retain all prior history, including redo, until both floors have succeeded.
+		// Retain all prior history, including redo, until every floor has succeeded.
 		// Insertion is the last allocation; rollback needs only noexcept swaps and erasure.
 		auto slot = actions.emplace(actions.begin() + current, nullptr);
 		batch->commit();
-		terrainPairBatches[terrainPairCount++] = batch.get();
+		++terrainPairCount;
 		*slot = std::move(batch);
 		memory_size += incoming;
 		++current;
@@ -276,8 +276,9 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	return true;
 }
 
-bool ActionQueue::beginTerrainPair() noexcept {
-	if (applyingTerrain || terrainPair) return false;
+bool ActionQueue::beginTerrainPair(size_t steps) noexcept {
+	if (applyingTerrain || terrainPair || !steps) return false;
+	terrainPairLimit = steps;
 	terrainPair = true;
 	terrainPairStart = current;
 	terrainPairCount = 0;
@@ -289,8 +290,7 @@ void ActionQueue::finishTerrainPair(bool success) noexcept {
 	TerrainTransition transition(applyingTerrain);
 	if (!success) {
 		while (terrainPairCount) {
-			ASSERT(current && actions[current - 1].get() == terrainPairBatches[terrainPairCount - 1] &&
-				actions[current - 1]->getType() == ACTION_GENERATE_TERRAIN);
+			ASSERT(current && actions[current - 1]->getType() == ACTION_GENERATE_TERRAIN);
 			auto& batch = actions[current - 1];
 			batch->undo(); // exact prepared tile/selection swaps; no allocation or observers
 			memory_size -= batch->memsize();
@@ -311,7 +311,7 @@ void ActionQueue::finishTerrainPair(bool success) noexcept {
 	}
 	terrainPair = false;
 	terrainPairCount = 0;
-	terrainPairBatches.fill(nullptr);
+	terrainPairLimit = 0;
 	if (success) notifyTerrainTransition();
 	transition.release();
 	if (success) emitTerrainHistoryChange();

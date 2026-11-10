@@ -19,7 +19,6 @@
 #define RME_EDITOR_ACTION_QUEUE_H
 
 #include <deque>
-#include <array>
 #include <string>
 #include <vector>
 #include <memory>
@@ -71,9 +70,9 @@ private:
 	bool applyingTerrain = false;
 	bool terrainPair = false;
 	size_t terrainPairStart = 0;
-	std::array<BatchAction*, 2> terrainPairBatches {};
+	size_t terrainPairLimit = 0;
 	size_t terrainPairCount = 0;
-	bool beginTerrainPair() noexcept;
+	bool beginTerrainPair(size_t steps = 2) noexcept;
 	void finishTerrainPair(bool success) noexcept;
 	// Prepared terrain only: reserve before apply, never merge, notify after publication.
 	bool commitTerrainBatch(std::unique_ptr<BatchAction> batch, std::span<const Position> positions, std::stop_token stop);
