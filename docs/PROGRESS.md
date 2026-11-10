@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-10 — G5: góry do trzech pięter bez ścian, limit w % (iteracja 33) — PASS, GUI czeka
+
+Piętra z − 1..z − 3 z trawą do krawędzi i roślinnością, rampy między piętrami, korytarze lądowisk, limit procentowy obszaru na każdym piętrze. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 33”.
+
 ## 2026-11-10 — G5: płaskowyż na górach (iteracja 32) — PASS, GUI czeka
 
 Piętro z − 1 nad dużymi polami skały: trawa z roślinnością, krawędź z gruntu górskiego, rampy z powierzchni. Zakładka „Levels”. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 32”.

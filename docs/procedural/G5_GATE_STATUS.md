@@ -171,3 +171,21 @@ Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 32”, commit `246b922`. C
 **Kryterium 4–5: spełnione.** Kolejność historii: płaskowyż, jaskinia, powierzchnia. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
 
 **Nie zweryfikowane:** wygląd w GUI, ruch w grze, wczytanie w oryginalnym RME.
+
+## Iteracja 33 — góry bez ścian, piętra z − 2 i z − 3, limit procentowy (2026-11-10): PASS w pomiarach i sondzie, ocena w GUI czeka
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 33” (`7a54575`, poprawki `e0d2a76`, `250fc86`, `c3c0cdd`, `ad59acc`, `507c43e`). Commity: `71d02da` (rdzeń), `2d29a41` (podgląd, commit, okno), test i pomiar w ostatnim commicie.
+
+**Kryterium 1: spełnione.** Odcisk Seed 1729 i przypadki bez płaskowyżu bez zmian; przypadek płaskowyżu zmieniony świadomie (pas z gruntem trawy, nie „mountain”). Stary profil z `plateauEdge` wczytuje się, pole jest ignorowane.
+**Kryterium 2: spełnione.** Ręczne siatki i porównanie z niezależnym przeszukiwaniem na 60 siatkach (3 piętra, korytarze, limity).
+**Kryterium 3: spełnione** (`plateauMaxPercent` 10, mediana [min..max] komórek piętra):
+
+| Profil | z − 1 | z − 2 | z − 3 |
+|---|---:|---:|---:|
+| m06 | 20476,5 [19713..20905] (≈ 7,8 %) | 1894 [1597..2027] | 141,5 [0..195] |
+| m19 | 25621,5 [23938..26201] (≈ 9,8 %) | 2406 [2152..2580] | 184,5 [0..238] |
+
+Rampa w każdym płaskowyżu, wszystkie piętra osiągalne z powierzchni, limity (f) i (g) spełnione, dwa przebiegi identyczne. Minimalne odsunięcie wyższych pięter 4 pola (poprawka zatwierdzona przez orkiestratora).
+**Kryteria 4–5: spełnione.** Kolejność historii: najwyższe piętro, niższe, jaskinia, powierzchnia. Odmowa przy zajętym piętrze i przy zakresie z ponad 0. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
+
+**Nie zweryfikowane:** wygląd w GUI, ruch w grze, wczytanie w oryginalnym RME.
