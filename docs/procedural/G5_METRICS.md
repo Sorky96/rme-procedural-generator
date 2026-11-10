@@ -185,3 +185,29 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 3. Okno: przy `buildingDensity` 0 i `campCount` 0 pole „Cave entrances” i pola jaskini są aktywne, żądanie niesie `caveEntrances`, a sonda z budynkami 0 przechodzi kryterium 2.
 4. Wszystkie testy rdzenia (przebudowane cele `test_procedural_*` i `style_render`, D25) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
 5. Ocena w GUI należy do użytkownika: wejście nad każdą rampą, jaskinia bez budynków.
+
+### Iteracja 32 — płaskowyż na górach (z − 1) z roślinnością, wejście rampą (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; decyzje użytkownika: „1 piętro z roślinnością”, „Rampa z listy”)
+
+**Zakres.** Na dużych polach skały powierzchni (z) powstaje piętro z − 1: płaskowyż z trawą i roślinnością w środku, skałą na krawędzi i rampą z powierzchni na górę. Bez identyfikatorów przedmiotów w kodzie; pędzle z profilu.
+
+**Definicje.**
+- **Nowe pole `SurfaceTuning::plateauMinTop`** (na końcu struktury, 0 = wyłączone, 16..4096, haszowane tylko gdy > 0, poza profilem stylu): minimalna liczba komórek Top płaskowyżu.
+- **Rdzeń, `generatePlateau(SurfaceGrid, seed)` → `PlateauGrid`** (ten sam prostokąt, z − 1; komórki None, Edge, Top) i lista ramp:
+  - komponent skały (4-sąsiedztwo) powierzchni; **Top** = komórki skały w odległości (Chebyshev) ≥ 2 od komórki nie-skały i ≥ 3 od brzegu obszaru; komponent Top (4-sąsiedztwo) mniejszy niż `plateauMinTop` odpada w całości;
+  - **Edge** = komórki skały tego komponentu w odległości 1 od Top (pas skały wokół Top na z − 1);
+  - **Rampy**: 1 na płaskowyż plus 1 na każde pełne 400 komórek Top, najwyżej 4, odstęp ≥ 16 (Chebyshev) między rampami; rampa to pole P na powierzchni (Grass, Dirt albo Path, bez dekoru, drzwi, ogniska, przerwy, obrysu, wejścia Z i wyjścia jaskini) z kształtem z listy kształtów; cel D = P + kierunek na z − 1 ma być komórką Top albo komórką Edge zamienioną na **lądowisko** (wtedy jej sąsiad w kierunku rampy musi być Top); ogon kształtu (jeśli jest) leży na powierzchni, na polu otwartym jak P; kolejność: stały strumień losowy, deterministycznie;
+  - płaskowyż bez rampy jest usuwany (None) — brak niedostępnych płaskowyżów;
+  - **roślinność na Top**: ten sam algorytm co `generateDecoration`, osobny strumień losowy, tylko na komórkach Top (lądowiska i komórki obok rampy bez dekoru).
+- **Profil:** nowe pola `plateauGround` (grunt Top, domyślnie „grass”), `plateauEdge` (grunt Edge, domyślnie „mountain”), `plateauRamp` (pędzel z listy ramp jak „Cave exit brush”, domyślnie „ramp”); wszystkie trzy albo żadne, inaczej `InvalidProfile`. Na lądowisku grunt Top. Przedmiot „top” szablonu rampy nie jest kładziony (jak w iteracji 30). Przedmioty roślinności z tych samych pędzli co powierzchnia.
+- **Adapter i historia:** piętro z − 1 to kolejna jednostka przygotowania; piętro z − 1 musi być puste w całym prostokącie (jak z + 1 dla jaskini), inaczej odmowa z komunikatem w oknie. Każde piętro to osobny krok historii (płaskowyż, jaskinia, powierzchnia — kolejność do ustalenia przez wykonawcę i opisania), Commit, Undo i Redo wszystkich kroków; błąd dowolnego kroku cofa poprzednie (jak iteracja 28). Jeśli `beginTerrainPair` / `finishTerrainPair` obsługuje tylko dwa kroki, uogólnienie na N kroków w osobnym commicie.
+- **Okno:** w zakładce „Underground” (albo nowej „Levels”, decyzja wykonawcy z uzasadnieniem) pola „Mountain tops (min cells)”, „Plateau ground brush”, „Plateau edge brush”, „Plateau ramp brush”; podgląd piętra z − 1 w wyborze „Preview floor”. Kolory i odstępy z `Theme`. Dostępne bez budynków.
+
+**Kryteria.**
+1. `plateauMinTop` 0: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i stare przypadki sondy bez zmian.
+2. Testy rdzenia na ręcznych siatkach: Top / Edge / None według definicji, odrzucenie małego komponentu, rampa (P otwarte, D na Top albo lądowisku, ogon otwarty), płaskowyż bez rampy usunięty, odstęp ramp, roślinność tylko na Top; porównanie z niezależnym przeszukiwaniem na ≥ 50 losowych siatkach; deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, opcje jak iteracja 29 plus `plateauMinTop` 64; w narzędziu `style_render`): płaskowyże, komórki Top, rampy (mediana [min..max]). **Kryteria:** (a) 100 % płaskowyżów ma ≥ 1 rampę; (b) 100 % komórek Top osiągalnych (4-sąsiedztwo po Top i lądowiskach) z celu którejś rampy; (c) 100 % ramp spełnia regułę P / D / ogon; (d) dwa przebiegi bajtowo identyczne. Liczba płaskowyżów podawana bez progu (zależy od profilu).
+4. Sonda G1 `--surface`, nowy przypadek `SURFACE_PLATEAU_E2E_PASS` (klient 10.98: „grass”, „mountain”, „ramp”): grunt Top / Edge / lądowiska dokładnie według planu, nic poza prostokątem na z − 1, rampa na powierzchni na P i ogon, brak przedmiotu „top”, roślinność tylko na Top, Commit, Undo wszystkich kroków po kolei, Redo, wymuszony błąd ostatniego kroku cofa poprzednie, odmowa przy niepustym z − 1, odmowy profilu (brak jednego z trzech pól, Edge nie gruntem, rampa nie z listy); przypadek z płaskowyżem i jaskinią naraz.
+5. Wszystkie testy rdzenia (przebudowane cele, D25) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: wygląd płaskowyżu (krawędź, trawa, drzewa), rampy na górę, przesunięcie rysowania piętra z − 1.
+
+**Zastrzeżenia z góry.** Krawędź z gruntu „mountain” na z − 1 rysuje lica tylko od wschodu i południa (jak ściany jaskini). Wejście rampą na z − 1 opisuję z pamięci zachowania serwera; działania w grze nie sprawdzam. Gdy na z jest wejście Z do jaskini w ścianie skały, nad nim może leżeć Edge płaskowyżu (dozwolone).
