@@ -897,6 +897,7 @@ bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uin
 	if (style == CaveEntranceStyle::RockFace) {
 		if (cells[e] != SurfaceKind::Rock || !open(cells[e + width]) || cells[e - width] != SurfaceKind::Rock ||
 			cells[e - 1] != SurfaceKind::Rock || cells[e + 1] != SurfaceKind::Rock) return false;
+		return true;
 	} else {
 		if ((cells[e] != SurfaceKind::Grass && cells[e] != SurfaceKind::Dirt) || !open(cells[e - 1]) ||
 			!open(cells[e + 1]) || !open(cells[e - width]) || !open(cells[e + width])) return false;

@@ -115,7 +115,7 @@ void testEntranceStyles() {
 				if (expected) {
 					if (style == CaveEntranceStyle::RockFace) expected = at(0,0) == SurfaceKind::Rock && at(-1,0) == SurfaceKind::Rock && at(1,0) == SurfaceKind::Rock && at(0,-1) == SurfaceKind::Rock && open(at(0,1));
 					else expected = (at(0,0) == SurfaceKind::Grass || at(0,0) == SurfaceKind::Dirt) && open(at(-1,0)) && open(at(1,0)) && open(at(0,-1)) && open(at(0,1));
-					for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) if (at(dx,dy) == SurfaceKind::Lake || at(dx,dy) == SurfaceKind::River || at(dx,dy) == SurfaceKind::Floor) expected = false;
+					if (style == CaveEntranceStyle::FloorHole) for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) if (at(dx,dy) == SurfaceKind::Lake || at(dx,dy) == SurfaceKind::River || at(dx,dy) == SurfaceKind::Floor) expected = false;
 				}
 				check(caveEntranceAllowed(g.cells, 11, 11, y * 11 + x, style) == expected, "independent entrance geometry comparison");
 			}
