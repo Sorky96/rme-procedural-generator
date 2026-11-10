@@ -963,12 +963,18 @@ uint64_t SurfaceGrid::fingerprint() const {
 std::expected<SurfaceLayout, SurfaceError> validateSurface(
 	const SurfaceConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
-	if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500 ||
-		config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8 || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256 || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8 || config.tuning.repairReach > 1 || config.tuning.ruinPercent > 100 || config.tuning.campCount > 50 || config.tuning.caveEntrances > 20 || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole ||
-		config.tuning.dirtPermille > 1000 || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
-		return std::unexpected(SurfaceError::InvalidParameters);
-	}
-	// Region, mask and budget rules are shared with v1 through a unit-weight config.
+    if (config.tuning.featureSize < 1 || config.tuning.featureSize > 4096 || config.tuning.lakePermille > 500
+        || config.tuning.rockPermille > 500 || config.tuning.riverCount > 1024 || config.tuning.shoreWidth > 8
+        || config.tuning.pathLength > 400 || config.tuning.buildingDensity > 100 || config.tuning.fordLength > 256
+        || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8
+        || config.tuning.repairReach > 1 || config.tuning.ruinPercent > 100 || config.tuning.campCount > 50
+        || config.tuning.caveEntrances > 20
+        || (config.tuning.plateauMinTop && (config.tuning.plateauMinTop < 16 || config.tuning.plateauMinTop > 4096))
+        || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole || config.tuning.dirtPermille > 1000
+        || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
+        return std::unexpected(SurfaceError::InvalidParameters);
+    }
+    // Region, mask and budget rules are shared with v1 through a unit-weight config.
 	const GenerationConfig shared { config.region, config.seed, 1, 0, 0 };
 	const auto layout = validateGeneration(shared, extent, { budget.maxCells, budget.maxOutputBytes },
 		mask, protection, stop);

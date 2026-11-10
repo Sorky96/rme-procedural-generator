@@ -234,4 +234,223 @@ std::expected<UndergroundReport, UndergroundError> undergroundReachabilityOf(
 	return report;
 }
 
+std::expected<PlateauGrid, SurfaceError> generatePlateau(
+    const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied,
+    std::stop_token stop
+)
+try {
+    if (stop.stop_requested()) {
+        return std::unexpected(SurfaceError::Cancelled);
+    }
+    if (!surface.valid() || surface.region.z <= 0) {
+        return std::unexpected(SurfaceError::InvalidRegion);
+    }
+    if ((minTop && (minTop < 16 || minTop > 4096)) || shapes.size() > 256
+        || (!occupied.empty() && occupied.size() != surface.cells.size())) {
+        return std::unexpected(SurfaceError::InvalidParameters);
+    }
+    const int w = int(surface.region.width), h = int(surface.region.height);
+    const size_t n = surface.cells.size();
+    PlateauGrid out {surface.region, std::vector<PlateauKind>(n), std::vector<uint8_t>(n)};
+    --out.region.z;
+    if (!minTop) {
+        return out;
+    }
+    const auto index = [w](int x, int y) { return size_t(y) * w + size_t(x); };
+    const auto inside = [w, h](int x, int y) { return x >= 0 && y >= 0 && x < w && y < h; };
+    std::vector<uint8_t> candidate(n), reserved(n);
+    for (const auto* cells : {&surface.doors, &surface.gaps, &surface.fires, &surface.entrances}) {
+        for (auto i : *cells) {
+            reserved[i] = 1;
+        }
+    }
+    // A Floor cell is never open; include its outline defensively via kind checks below.
+    const auto open = [&](int x, int y) {
+        if (!inside(x, y)) {
+            return false;
+        }
+        auto i = index(x, y);
+        auto k = surface.cells[i];
+        return !reserved[i] && (occupied.empty() || !occupied[i])
+            && (k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Path);
+    };
+    for (int y = 3; y < h - 3; ++y) {
+        if (stop.stop_requested()) {
+            return std::unexpected(SurfaceError::Cancelled);
+        }
+        for (int x = 3; x < w - 3; ++x) {
+            bool rock = true;
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    rock &= surface.cells[index(x + dx, y + dy)] == SurfaceKind::Rock;
+                }
+            }
+            candidate[index(x, y)] = rock;
+        }
+    }
+    std::vector<uint32_t> labels(n, 0), queue;
+    std::vector<std::vector<uint32_t>> tops;
+    constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+    for (size_t start = 0; start < n; ++start) {
+        if (candidate[start] && !labels[start]) {
+            if (stop.stop_requested()) {
+                return std::unexpected(SurfaceError::Cancelled);
+            }
+            queue.clear();
+            queue.push_back(uint32_t(start));
+            labels[start] = uint32_t(tops.size() + 1);
+            for (size_t q = 0; q < queue.size(); ++q) {
+                int x = int(queue[q] % w), y = int(queue[q] / w);
+                for (size_t d = 0; d < 4; ++d) {
+                    if (inside(x + dx[d], y + dy[d])) {
+                        auto j = index(x + dx[d], y + dy[d]);
+                        if (candidate[j] && !labels[j]) {
+                            labels[j] = labels[start];
+                            queue.push_back(uint32_t(j));
+                        }
+                    }
+                }
+            }
+            tops.push_back(queue);
+        }
+    }
+    StableRandom random(seed, 0x706c617465617531ULL);
+    for (size_t component = 0; component < tops.size(); ++component) {
+        const auto& top = tops[component];
+        if (top.size() < minTop) {
+            continue;
+        }
+        if (stop.stop_requested()) {
+            return std::unexpected(SurfaceError::Cancelled);
+        }
+        std::vector<uint32_t> order;
+        for (size_t i = 0; i < n; ++i) {
+            if (surface.cells[i] != SurfaceKind::Rock) {
+                order.push_back(uint32_t(i));
+            }
+        }
+        // Stable Fisher-Yates, independent from all existing generator streams.
+        for (size_t i = order.size(); i > 1; --i) {
+            std::swap(order[i - 1], order[size_t(random.bounded(i))]);
+        }
+        const auto first = out.ramps.size();
+        const auto wanted = std::min<size_t>(4, 1 + top.size() / 400);
+        for (auto p : order) {
+            int x = int(p % w), y = int(p / w);
+            if (!open(x, y)) {
+                continue;
+            }
+            bool spaced = true;
+            for (const auto& ramp : out.ramps) {
+                if (std::max(std::abs(x - int(ramp.cell % w)), std::abs(y - int(ramp.cell / w))) < 16) {
+                    spaced = false;
+                }
+            }
+            if (!spaced) {
+                continue;
+            }
+            for (size_t shape = 0; shape < shapes.size(); ++shape) {
+                const auto& s = shapes[shape];
+                auto d = size_t(s.direction);
+                if (d >= 4) {
+                    return std::unexpected(SurfaceError::InvalidParameters);
+                }
+                int tx = x + dx[d], ty = y + dy[d];
+                if (!inside(tx, ty) || surface.cells[index(tx, ty)] != SurfaceKind::Rock) {
+                    continue;
+                }
+                const auto dest = index(tx, ty);
+                bool fits = labels[dest] == component + 1;
+                if (!fits && inside(tx + dx[d], ty + dy[d])) {
+                    fits = labels[index(tx + dx[d], ty + dy[d])] == component + 1;
+                }
+                if (!fits || (s.hasTail && !open(x + s.tailDx, y + s.tailDy))) {
+                    continue;
+                }
+                out.ramps.push_back({p, uint32_t(dest), out.components, uint8_t(shape)});
+                reserved[p] = 1;
+                if (s.hasTail) {
+                    reserved[index(x + s.tailDx, y + s.tailDy)] = 1;
+                }
+                if (labels[dest] != component + 1) {
+                    out.landings[dest] = 1;
+                }
+                break;
+            }
+            if (out.ramps.size() - first == wanted) {
+                break;
+            }
+        }
+        if (out.ramps.size() == first) {
+            continue;
+        }
+        ++out.components;
+        for (auto i : top) {
+            out.cells[i] = PlateauKind::Top;
+        }
+        for (auto i : top) {
+            int x = int(i % w), y = int(i / w);
+            for (int yy = y - 1; yy <= y + 1; ++yy) {
+                for (int xx = x - 1; xx <= x + 1; ++xx) {
+                    auto j = index(xx, yy);
+                    if (surface.cells[j] == SurfaceKind::Rock && out.cells[j] == PlateauKind::None) {
+                        out.cells[j] = PlateauKind::Edge;
+                    }
+                }
+            }
+        }
+    }
+    return out;
+} catch (const std::bad_alloc&) {
+    return std::unexpected(SurfaceError::AllocationFailed);
+}
+
+std::expected<DecorGrid, SurfaceError>
+generatePlateauDecoration(const PlateauGrid& plateau, uint64_t seed, const DecorTuning& tuning, std::stop_token stop)
+try {
+    if (stop.stop_requested()) {
+        return std::unexpected(SurfaceError::Cancelled);
+    }
+    if (!plateau.region.width || !plateau.region.height || uint64_t(plateau.region.width) * plateau.region.height != plateau.cells.size()
+        || plateau.landings.size() != plateau.cells.size()
+        || std::ranges::any_of(plateau.cells, [](auto k) { return k > PlateauKind::Top; })) {
+        return std::unexpected(SurfaceError::InvalidRegion);
+    }
+    for (const auto& ramp : plateau.ramps) {
+        if (ramp.destination >= plateau.cells.size()) {
+            return std::unexpected(SurfaceError::InvalidParameters);
+        }
+    }
+    SurfaceGrid grid;
+    grid.region = plateau.region;
+    grid.cells.resize(plateau.cells.size(), SurfaceKind::Preserve);
+    for (size_t i = 0; i < grid.cells.size(); ++i) {
+        if (plateau.cells[i] == PlateauKind::Top) {
+            grid.cells[i] = SurfaceKind::Grass;
+        } else if (plateau.cells[i] == PlateauKind::Edge) {
+            grid.cells[i] = SurfaceKind::Rock;
+        }
+    }
+    auto decor = generateDecoration(grid, seed ^ 0x706c61745f646563ULL, tuning, stop);
+    if (!decor) {
+        return decor;
+    }
+    const int w = int(grid.region.width), h = int(grid.region.height);
+    for (const auto& ramp : plateau.ramps) {
+        int x = int(ramp.destination % w), y = int(ramp.destination / w);
+        for (int yy = std::max(0, y - 1); yy <= std::min(h - 1, y + 1); ++yy) {
+            for (int xx = std::max(0, x - 1); xx <= std::min(w - 1, x + 1); ++xx) {
+                decor->cells[size_t(yy) * w + xx] = DecorKind::None;
+            }
+        }
+    }
+    for (size_t i = 0; i < grid.cells.size(); ++i) {
+        if (plateau.landings[i]) {
+            decor->cells[i] = DecorKind::None;
+        }
+    }
+    return decor;
+} catch (const std::bad_alloc&) {
+    return std::unexpected(SurfaceError::AllocationFailed);
+}
 } // namespace rme::procedural

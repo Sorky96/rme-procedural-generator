@@ -462,8 +462,110 @@ void testExitCrossCheck() {
 }
 } // namespace
 
+void testPlateaus()
+{
+    constexpr ExitShape ramps[]
+        = {{ExitDirection::North, 0, 1, true},
+           {ExitDirection::South, 0, -1, true},
+           {ExitDirection::East, -1, 0, true},
+           {ExitDirection::West, 1, 0, true}};
+    auto g = grid(24, 24, SurfaceKind::Grass);
+    fillRect(g, 4, 4, 15, 15, SurfaceKind::Rock);
+    auto p = generatePlateau(g, 1729, 64, ramps);
+    check(p && p->components == 1 && p->ramps.size() == 1, "hand plateau: one ramp");
+    check(
+        p && std::ranges::count(p->cells, PlateauKind::Top) == 100 && std::ranges::count(p->cells, PlateauKind::Edge) == 44,
+        "hand plateau: Top 100 Edge 44"
+    );
+    auto small = generatePlateau(g, 1729, 101, ramps);
+    check(small && small->components == 0, "small Top removed");
+    auto noRamp = generatePlateau(g, 1729, 64, {});
+    check(noRamp && std::ranges::count(noRamp->cells, PlateauKind::None) == 576, "inaccessible plateau removed");
+    std::vector<uint8_t> blocked(g.cells.size(), 1);
+    auto occupied = generatePlateau(g, 1729, 64, ramps, blocked);
+    check(occupied && occupied->components == 0, "occupied ramps removed");
+    auto off = generatePlateau(g, 1729, 0, ramps);
+    check(off && off->components == 0, "plateau off");
+    std::stop_source source;
+    source.request_stop();
+    check(!generatePlateau(g, 1729, 64, ramps, {}, source.get_token()), "plateau cancellation");
+    for (uint64_t seed = 1; seed <= 60; ++seed) {
+        // Independent brute erosion on randomized rectangular rock patches and holes.
+        auto s = grid(48, 48, SurfaceKind::Grass);
+        fillRect(s, 4, 4, 42, 42, SurfaceKind::Rock);
+        StableRandom r(seed, 123);
+        for (int i = 0; i < 30; ++i) {
+            s.cells[size_t(r.bounded(s.cells.size()))] = SurfaceKind::Grass;
+        }
+        auto a = generatePlateau(s, seed, 16, ramps);
+        auto b = generatePlateau(s, seed, 16, ramps);
+        check(a && b && a->cells == b->cells && a->ramps == b->ramps, "plateau deterministic");
+        if (!a) {
+            continue;
+        }
+        std::vector<uint8_t> eligible(s.cells.size());
+        for (int y = 3; y < 45; ++y) {
+            for (int x = 3; x < 45; ++x) {
+                bool ok = true;
+                for (int yy = 0; yy < 48; ++yy) {
+                    for (int xx = 0; xx < 48; ++xx) {
+                        if (s.cells[size_t(yy) * 48 + xx] != SurfaceKind::Rock && std::max(std::abs(xx - x), std::abs(yy - y)) < 2) {
+                            ok = false;
+                        }
+                    }
+                }
+                eligible[size_t(y) * 48 + x] = ok;
+            }
+        }
+        std::vector<uint8_t> seen(eligible.size());
+        for (size_t start = 0; start < eligible.size(); ++start) {
+            if (eligible[start] && !seen[start]) {
+                std::vector<size_t> q {start};
+                seen[start] = 1;
+                for (size_t k = 0; k < q.size(); ++k) {
+                    int x = int(q[k] % 48), y = int(q[k] / 48);
+                    for (auto [xx, yy] : {std::pair {x - 1, y}, std::pair {x + 1, y}, std::pair {x, y - 1}, std::pair {x, y + 1}}) {
+                        if (xx >= 0 && yy >= 0 && xx < 48 && yy < 48) {
+                            size_t j = size_t(yy) * 48 + xx;
+                            if (eligible[j] && !seen[j]) {
+                                seen[j] = 1;
+                                q.push_back(j);
+                            }
+                        }
+                    }
+                }
+                if (q.size() < 16) {
+                    for (auto i : q) {
+                        eligible[i] = 0;
+                    }
+                }
+            }
+        }
+        for (size_t i = 0; i < eligible.size(); ++i) {
+            check((a->cells[i] == PlateauKind::Top) == bool(eligible[i]), "brute Top erosion matches");
+        }
+        auto d = generatePlateauDecoration(*a, seed, {});
+        check(bool(d), "plateau vegetation generated");
+        for (size_t i = 0; d && i < eligible.size(); ++i) {
+            check(d->cells[i] == DecorKind::None || (a->cells[i] == PlateauKind::Top && !a->landings[i]), "vegetation only Top");
+        }
+        for (size_t i = 0; i < a->ramps.size(); ++i) {
+            auto p = a->ramps[i].cell;
+            check(s.cells[p] == SurfaceKind::Grass, "ramp on open surface");
+            for (size_t j = 0; j < i; ++j) {
+                check(
+                    std::max(std::abs(int(p % 48) - int(a->ramps[j].cell % 48)), std::abs(int(p / 48) - int(a->ramps[j].cell / 48))) >= 16,
+                    "ramp spacing"
+                );
+            }
+        }
+    }
+    std::cout << "PLATEAU_CROSS_CHECK 60/60\n";
+}
+
 int main() {
-	testExits();
+    testPlateaus();
+    testExits();
 	testExitCrossCheck();
 	testEntrances();
 	testEntranceStyles();

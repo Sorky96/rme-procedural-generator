@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "procedural/core/decoration.h"
 #include "procedural/core/surface.h"
 
 #include <cstdint>
@@ -68,5 +69,26 @@ struct CaveExitPlan {
 // 4-connected component of Floor cells that holds the landing of a reached entrance.
 [[nodiscard]] std::expected<UndergroundReport, UndergroundError> undergroundReachabilityOf(
 	const SurfaceGrid& surface, const CaveGrid& cave, bool walls, std::stop_token stop = {});
+
+// Upper-floor plateau geometry. Landings are tracked separately from Top.
+enum class PlateauKind : uint8_t { None = 0, Edge, Top };
+struct PlateauRamp {
+    uint32_t cell = 0, destination = 0, component = 0;
+    uint8_t shape = 0;
+    bool operator==(const PlateauRamp&) const = default;
+};
+struct PlateauGrid {
+    GenerationRegion region;
+    std::vector<PlateauKind> cells;
+    std::vector<uint8_t> landings;
+    std::vector<PlateauRamp> ramps;
+    uint32_t components = 0;
+};
+std::expected<PlateauGrid, SurfaceError> generatePlateau(
+    const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied = {},
+    std::stop_token stop = {}
+);
+std::expected<DecorGrid, SurfaceError>
+generatePlateauDecoration(const PlateauGrid& plateau, uint64_t seed, const DecorTuning& tuning, std::stop_token stop = {});
 
 } // namespace rme::procedural

@@ -64,8 +64,11 @@ int main(int argc, char** argv) {
 		else if (name == "repairReach") tuning.repairReach = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
-		else if (name == "caveEntrances") tuning.caveEntrances = value;
-		else if (name == "buildingDensity") tuning.buildingDensity = value;
+        else if (name == "plateauMinTop") {
+            tuning.plateauMinTop = value;
+        } else if (name == "caveEntrances")
+            tuning.caveEntrances = value;
+        else if (name == "buildingDensity") tuning.buildingDensity = value;
 		else { std::cerr << "unknown override " << name << '\n'; return 2; }
 	}
 	for (int i = firstSeed; i < argc; ++i) {
@@ -228,7 +231,89 @@ int main(int argc, char** argv) {
 			}
 			if (under) std::cout << '\n';
 		}
-		if (const auto graph = buildRegionGraph(*grid, true)) {
+
+        if (tuning.plateauMinTop) {
+            constexpr ExitShape ramp[]
+                = {{ExitDirection::North, 0, 1, true},
+                   {ExitDirection::West, 1, 0, true},
+                   {ExitDirection::South, 0, -1, true},
+                   {ExitDirection::East, -1, 0, true}};
+            std::vector<uint8_t> occupied(grid->cells.size());
+            if (caveExitShapes && !grid->entrances.empty()) {
+                auto cave = generateCave(*grid, seed);
+                if (!cave) {
+                    return 8;
+                }
+                auto exits = placeCaveExits(*grid, *cave, ramp);
+                if (!exits) {
+                    return 8;
+                }
+                constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+                for (const auto& e : exits->exits) {
+                    auto d = size_t(ramp[e.shape].direction);
+                    occupied[size_t(int64_t(e.cell) + dx[d] + int64_t(dy[d]) * side)] = 1;
+                }
+            }
+            auto p = generatePlateau(*grid, seed, tuning.plateauMinTop, ramp, occupied);
+            if (!p) {
+                return 8;
+            }
+            std::vector<uint8_t> reached(grid->cells.size());
+            std::vector<uint32_t> q, counts(p->components);
+            size_t ruleOk = 0;
+            constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+            for (const auto& r : p->ramps) {
+                ++counts[r.component];
+                q.push_back(r.destination);
+                reached[r.destination] = 1;
+                auto s = ramp[r.shape];
+                auto d = size_t(s.direction);
+                auto dest = size_t(int64_t(r.cell) + dx[d] + int64_t(dy[d]) * side);
+                auto open = [&](size_t i) {
+                    auto k = grid->cells[i];
+                    if (occupied[i]) return false;
+                    for (const auto* forbidden : {&grid->doors, &grid->gaps, &grid->fires, &grid->entrances})
+                        if (std::ranges::find(*forbidden, i) != forbidden->end()) return false;
+                    return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Path;
+                };
+                for (const auto& other : p->ramps) if (&other != &r)
+                    if (std::max(std::abs(int(other.cell % side) - int(r.cell % side)),
+                                 std::abs(int(other.cell / side) - int(r.cell / side))) < 16) return 9;
+                auto tail = size_t(int64_t(r.cell) + s.tailDx + int64_t(s.tailDy) * side);
+                ruleOk += open(r.cell) && (!s.hasTail || open(tail)) && dest == r.destination
+                    && (p->cells[dest] == PlateauKind::Top || (p->landings[dest] &&
+                        p->cells[size_t(int64_t(dest) + dx[d] + int64_t(dy[d]) * side)] == PlateauKind::Top));
+            }
+            for (size_t i = 0; i < q.size(); ++i) {
+                int x = int(q[i] % side), y = int(q[i] / side);
+                for (size_t d = 0; d < 4; ++d) {
+                    int xx = x + dx[d], yy = y + dy[d];
+                    if (xx < 0 || yy < 0 || xx >= int(side) || yy >= int(side)) {
+                        continue;
+                    }
+                    auto j = size_t(yy) * side + xx;
+                    if (!reached[j] && (p->cells[j] == PlateauKind::Top || p->landings[j])) {
+                        reached[j] = 1;
+                        q.push_back(uint32_t(j));
+                    }
+                }
+            }
+            size_t top = 0, accessible = 0;
+            for (size_t i = 0; i < reached.size(); ++i) {
+                if (p->cells[i] == PlateauKind::Top) {
+                    ++top;
+                    accessible += reached[i];
+                }
+            }
+            if (ruleOk != p->ramps.size() || accessible != top || std::ranges::find(counts, 0) != counts.end()) {
+                return 9;
+            }
+            std::cout << std::format(
+                "plateau seed {}: plateaus {} top {} ramps {} reached {} ruleOk {}\n", seed, p->components, top, p->ramps.size(),
+                accessible, ruleOk
+            );
+        }
+        if (const auto graph = buildRegionGraph(*grid, true)) {
 			// Iteration 24: size of the graph, POIs without a route from the start, travel distances and whether the adjacency graph is connected.
 			uint32_t land = 0, rock = 0, water = 0, unreached = 0, maxExit = 0, maxEntrance = 0;
 			for (const auto& node : graph->regions) { land += node.kind == RegionClass::Land; rock += node.kind == RegionClass::Rock; water += node.kind == RegionClass::Water; }
