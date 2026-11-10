@@ -211,16 +211,20 @@ int main(int argc, char** argv) {
 				// This tool does not generate decoration, so no occupied mask is available.
 				const auto exits = cave ? placeCaveExits(*grid, *cave, ramp) : std::unexpected(UndergroundError::InvalidGrid);
 				if (!exits) { std::cerr << "cave exit placement failed\n"; return 6; }
-				size_t ruleOk = 0, exitsOffRock = 0;
+				size_t ruleOk = 0, exitsUnderEntrance = 0, destinationsOpen = 0, landingsFloor = 0;
 				for (const auto e : grid->entrances) ruleOk += caveEntranceAllowed(grid->cells, side, side, e, tuning.caveEntranceStyle);
 				constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
 				for (const auto& exit : exits->exits) {
 					const auto d = size_t(ramp[exit.shape].direction);
 					const auto dest = size_t(int64_t(exit.cell) + dx[d] + int64_t(dy[d]) * side);
-					exitsOffRock += grid->cells[exit.cell] != SurfaceKind::Rock && grid->cells[dest] != SurfaceKind::Rock;
+					const auto landing = size_t(int64_t(exit.cell) - dx[d] - int64_t(dy[d]) * side);
+					exitsUnderEntrance += exit.cell == grid->entrances[exit.entrance];
+					const auto kind = grid->cells[dest];
+					destinationsOpen += kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Shore || kind == SurfaceKind::Path;
+					landingsFloor += cave->cells[landing] == CaveKind::Floor;
 				}
-				if (ruleOk != grid->entrances.size() || exitsOffRock != exits->exits.size()) return 7;
-				if (under) std::cout << std::format(" exits {} skipped {} ruleOk {} exitsOffRock {}", exits->exits.size(), exits->skipped.size(), ruleOk, exitsOffRock);
+				if (ruleOk != grid->entrances.size() || exitsUnderEntrance != exits->exits.size() || destinationsOpen != exits->exits.size() || landingsFloor != exits->exits.size()) return 7;
+				if (under) std::cout << std::format(" exits {} skipped {} ruleOk {} exitsUnderEntrance {} destinationsOpen {} landingsFloor {}", exits->exits.size(), exits->skipped.size(), ruleOk, exitsUnderEntrance, destinationsOpen, landingsFloor);
 			}
 			if (under) std::cout << '\n';
 		}

@@ -4,7 +4,6 @@
 #include "procedural/core/reachability.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -136,7 +135,7 @@ std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 		const auto cell = [&](int64_t x, int64_t y) { return uint32_t(y * width + x); };
 		const size_t count = surface.cells.size();
 		std::vector<uint8_t> lower(count, 0), upper(count, 0);
-		for (const auto e : surface.entrances) { lower[e] = 1; upper[e] = 1; }
+		for (const auto e : surface.entrances) upper[e] = 1;
 		for (const auto i : surface.fires) upper[i] = 1;
 		for (const auto i : surface.doors) upper[i] = 1;
 		for (const auto i : surface.gaps) upper[i] = 1;
@@ -147,17 +146,6 @@ std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 				(k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore || k == SurfaceKind::Path);
 		};
 		struct Offset { int dx, dy; };
-		constexpr auto offsets = [] {
-			std::array<Offset, 20> result {};
-			size_t n = 0;
-			for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx)
-				if (const int d = dx * dx + dy * dy; d > 0 && d <= 5) result[n++] = {dx, dy};
-			std::ranges::sort(result, [](Offset a, Offset b) {
-				const int da = a.dx * a.dx + a.dy * a.dy, db = b.dx * b.dx + b.dy * b.dy;
-				return da != db ? da < db : a.dy != b.dy ? a.dy < b.dy : a.dx < b.dx;
-			});
-			return result;
-		}();
 		constexpr Offset directions[] = {{0, -1}, {0, 1}, {1, 0}, {-1, 0}};
 		CaveExitPlan plan;
 		for (size_t e = 0; e < surface.entrances.size(); ++e) {
@@ -165,28 +153,23 @@ std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 			const auto entrance = surface.entrances[e];
 			const int64_t ex = entrance % surface.region.width, ey = entrance / surface.region.width;
 			bool placed = false;
-			for (const auto [dx, dy] : offsets) {
-				const int64_t x = ex + dx, y = ey + dy;
-				if (!inside(x, y)) continue;
-				const auto p = cell(x, y);
-				if (lower[p] || cave.cells[p] != CaveKind::Floor || !freeUpper(p)) continue;
-				for (size_t s = 0; s < shapes.size(); ++s) {
-					const auto& shape = shapes[s];
-					const int64_t tx = x + shape.tailDx, ty = y + shape.tailDy;
-					if (shape.hasTail && (!inside(tx, ty) || lower[cell(tx, ty)] || cave.cells[cell(tx, ty)] != CaveKind::Floor)) continue;
-					const auto [ddx, ddy] = directions[static_cast<uint8_t>(shape.direction)];
-					const int64_t destX = x + ddx, destY = y + ddy;
-					if (!inside(destX, destY)) continue;
-					const auto destination = cell(destX, destY);
-					if (destination == p || !freeUpper(destination)) continue;
-					plan.exits.push_back({uint32_t(e), p, uint8_t(s)});
-					lower[p] = 1;
-					if (shape.hasTail) lower[cell(tx, ty)] = 1;
-					upper[p] = upper[destination] = 1;
-					placed = true;
-					break;
-				}
-				if (placed) break;
+			const auto p = entrance;
+			if (!lower[p] && cave.cells[p] == CaveKind::Floor) for (size_t s = 0; s < shapes.size(); ++s) {
+				const auto& shape = shapes[s];
+				const auto [dx, dy] = directions[static_cast<uint8_t>(shape.direction)];
+				const int64_t destX = ex + dx, destY = ey + dy, landX = ex - dx, landY = ey - dy;
+				if (!inside(destX, destY) || !inside(landX, landY)) continue;
+				const auto destination = cell(destX, destY), landing = cell(landX, landY);
+				if (!freeUpper(destination) || lower[landing] || cave.cells[landing] != CaveKind::Floor) continue;
+				const int64_t tx = ex + shape.tailDx, ty = ey + shape.tailDy;
+				if (shape.hasTail && (!inside(tx, ty) || cell(tx, ty) == landing ||
+					lower[cell(tx, ty)] || cave.cells[cell(tx, ty)] != CaveKind::Floor)) continue;
+				plan.exits.push_back({uint32_t(e), p, uint8_t(s)});
+				lower[p] = lower[landing] = 1;
+				if (shape.hasTail) lower[cell(tx, ty)] = 1;
+				upper[destination] = 1;
+				placed = true;
+				break;
 			}
 			if (!placed) plan.skipped.push_back(uint32_t(e));
 		}

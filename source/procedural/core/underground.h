@@ -37,7 +37,7 @@ struct UndergroundReport {
 enum class UndergroundError : uint8_t { InvalidGrid, Cancelled, AllocationFailed };
 
 // Geometry only: the lower ramp at P leads to P + direction on the surface.
-// An optional lower-floor tail is relative to P; the upper ramp part is at P.
+// An optional lower-floor tail is relative to P; no upper ramp part is placed.
 enum class ExitDirection : uint8_t { North = 0, South, East, West };
 struct ExitShape {
 	ExitDirection direction = ExitDirection::North;
@@ -56,7 +56,9 @@ struct CaveExitPlan {
 	std::vector<uint32_t> skipped; // entrance indices without an exit
 };
 
-// First fit in (squared distance, y, x, shape) order, processing entrances in list order.
+// P = entrance only, first fitting shape in list order. Reserve lower P, landing P - direction
+// and optional tail (distinct from landing), and open surface destination P + direction.
+// Entrances without a fit are skipped; never search adjacent ramp cells.
 // occupied, when present, has one byte per surface cell (nonzero blocks placement).
 [[nodiscard]] std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 	const SurfaceGrid& surface, const CaveGrid& cave, std::span<const ExitShape> shapes,
