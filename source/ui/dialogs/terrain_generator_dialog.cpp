@@ -890,7 +890,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	ruin_percent_spin_->Enable(natural && building_density_spin_->GetValue() > 0);
 	camp_count_spin_->Enable(natural);
 	campfire_brush_choice_->Enable(natural && camp_count_spin_->GetValue() > 0);
-	const bool caveProfile = natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0);
+	const bool caveProfile = natural;
 	cave_entrances_spin_->Enable(caveProfile);
 	cave_entrance_style_choice_->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
 	for (wxComboBox* control : { cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_ }) control->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
@@ -898,8 +898,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
 	repair_check_->Enable(natural);
-	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0));
-	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0));
+	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
+	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
 	doors_check_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
@@ -997,8 +997,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const classicFields[] = { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_ };
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
-	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0);
-	config.surface.caveEntrances = withFloors ? uint32_t(cave_entrances_spin_->GetValue()) : 0;
+	config.surface.caveEntrances = natural ? uint32_t(cave_entrances_spin_->GetValue()) : 0;
+	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0 || config.surface.caveEntrances > 0);
 	config.surface.caveEntranceStyle = cave_entrance_style_choice_->GetSelection() == 1 ? CaveEntranceStyle::FloorHole : CaveEntranceStyle::RockFace;
 	const bool withPaths = natural && config.surface.pathLength > 0;
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
