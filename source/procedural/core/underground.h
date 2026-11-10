@@ -71,7 +71,7 @@ struct CaveExitPlan {
 	const SurfaceGrid& surface, const CaveGrid& cave, bool walls, std::stop_token stop = {});
 
 // Upper-floor plateau geometry. Landings are tracked separately from Top.
-enum class PlateauKind : uint8_t { None = 0, Edge, Top };
+enum class PlateauKind : uint8_t { None = 0, Top };
 struct PlateauRamp {
     uint32_t cell = 0, destination = 0, component = 0;
     uint8_t shape = 0;
@@ -83,7 +83,7 @@ struct PlateauGrid {
     std::vector<uint8_t> landings;
     std::vector<PlateauRamp> ramps;
     uint32_t components = 0;
-    uint32_t inset = 2; // accepted global inset, including corridor/area checks
+    uint32_t inset = 1; // 1 for the whole first component; Chebyshev distance threshold >= 3 above it
 };
 std::expected<PlateauGrid, SurfaceError> generatePlateau(
     const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied = {},

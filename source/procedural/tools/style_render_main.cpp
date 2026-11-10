@@ -269,6 +269,7 @@ int main(int argc, char** argv) {
             uint64_t lowerCovered = uint64_t(side) * side;
             std::vector<PlateauKind> lowerCells;
             std::vector<uint8_t> lowerLandings, lowerReached(grid->cells.size(), 1), lowerForbidden;
+            std::ofstream mountainData(outDir / std::format("{}.mountains", seed), std::ios::binary);
             for (uint32_t level = 1; level <= tuning.plateauLevels; ++level) {
                 std::vector<uint8_t> reached(grid->cells.size());
                 std::vector<uint32_t> q, counts(p->components);
@@ -308,30 +309,11 @@ int main(int argc, char** argv) {
                         }
                     }
                     auto tail = size_t(int64_t(r.cell) + s.tailDx + int64_t(s.tailDy) * side);
-                    bool corridor = false;
-                    for (uint32_t step = 0; step < p->inset; ++step) {
-                        int x = int(dest % side) + int(step) * dx[d], y = int(dest / side) + int(step) * dy[d];
-                        if (x < 0 || y < 0 || x >= int(side) || y >= int(side)) {
-                            break;
-                        }
-                        auto i = size_t(y) * side + x;
-                        const bool base = level == 1 ? grid->cells[i] == SurfaceKind::Rock
-                                                     : lowerCells[i] != PlateauKind::None && !lowerLandings[i] && !lowerForbidden[i];
-                        if (!base) {
-                            break;
-                        }
-                        if (p->cells[i] == PlateauKind::Top) {
-                            corridor = true;
-                            break;
-                        }
-                        if (!p->landings[i]) {
-                            break;
-                        }
-                    }
+                    const bool supported = level == 1 ? grid->cells[dest] == SurfaceKind::Rock : lowerCells[dest] == PlateauKind::Top;
                     const bool lowerRule = level == 1
                         || (lowerCells[r.cell] == PlateauKind::Top && p->cells[r.cell] == PlateauKind::None && lowerReached[r.cell]
                             && (!s.hasTail || lowerReached[tail]));
-                    ruleOk += corridor && lowerRule && open(r.cell) && (!s.hasTail || open(tail)) && dest == r.destination
+                    ruleOk += supported && lowerRule && open(r.cell) && (!s.hasTail || open(tail)) && dest == r.destination
                         && (p->cells[dest] == PlateauKind::Top || p->landings[dest]);
                 }
                 for (size_t i = 0; i < q.size(); ++i) {
@@ -400,6 +382,37 @@ int main(int argc, char** argv) {
                 std::cout << std::format(
                     "plateau area seed {} level {}: cells {} reachedAll {} inset {}\n", seed, level, covered, reachedAll, p->inset
                 );
+                auto next = level < tuning.plateauLevels
+                    ? generateNextPlateau(*p, seed ^ (uint64_t(level + 1) << 48), ramp, {}, tuning.plateauMaxPercent)
+                    : std::expected<PlateauGrid, SurfaceError>(PlateauGrid{});
+                if (!next) return 8;
+                auto capDecor = generatePlateauDecoration(*p, seed ^ (uint64_t(level - 1) << 48), profile->decorTuning.value_or(DecorTuning{}));
+                auto surfaceDecor = generateDecoration(*grid, seed, profile->decorTuning.value_or(DecorTuning{}));
+                if (!capDecor || !surfaceDecor) return 8;
+                // Mirror the adapter's vegetation clearance for ramps on the next terrace.
+                for (const auto& r : next->ramps) {
+                    int x = int(r.cell % side), y = int(r.cell / side);
+                    for (int yy = std::max(0, y - 1); yy <= std::min(int(side) - 1, y + 1); ++yy)
+                        for (int xx = std::max(0, x - 1); xx <= std::min(int(side) - 1, x + 1); ++xx)
+                            capDecor->cells[size_t(yy) * side + xx] = DecorKind::None;
+                }
+                size_t grass = 0, flora = 0, surfaceGrass = 0, surfaceFlora = 0;
+                for (size_t i = 0; i < p->cells.size(); ++i) {
+                    // Explicit semantic bytes, with no structure padding or platform endianness.
+                    mountainData.put(char(p->cells[i]));
+                    mountainData.put(char(p->landings[i]));
+                    const bool cliff = !next->cells.empty() && next->cells[i] == PlateauKind::Top;
+                    mountainData.put(char(cliff));
+                    mountainData.put(char(cliff ? DecorKind::None : capDecor->cells[i]));
+                    if (p->cells[i] == PlateauKind::Top && (next->cells.empty() || next->cells[i] == PlateauKind::None)) {
+                        ++grass; flora += capDecor->cells[i] != DecorKind::None;
+                    }
+                    if (grid->cells[i] == SurfaceKind::Grass) { ++surfaceGrass; surfaceFlora += surfaceDecor->cells[i] != DecorKind::None; }
+                }
+                for (const auto& r : p->ramps)
+                    mountainData << std::format("{} {} {} {}\n", r.cell, r.destination, r.component, r.shape);
+                if (!mountainData) return 5;
+                std::cout << std::format("plateau flora seed {} level {}: grass {} flora {} surfaceGrass {} surfaceFlora {}\n", seed, level, grass, flora, surfaceGrass, surfaceFlora);
                 if (level < tuning.plateauLevels) {
                     lowerCovered = uint64_t(covered);
                     lowerCells = p->cells;
@@ -414,7 +427,7 @@ int main(int argc, char** argv) {
                             lowerForbidden[size_t(tail)] = 1;
                         }
                     }
-                    p = generateNextPlateau(*p, seed ^ (uint64_t(level + 1) << 48), ramp, {}, tuning.plateauMaxPercent);
+                    p = std::move(next);
                     if (!p) {
                         return 8;
                     }

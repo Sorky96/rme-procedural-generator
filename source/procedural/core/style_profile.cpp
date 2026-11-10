@@ -256,7 +256,7 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 		}
 		const auto f = splitTabs(line, line.starts_with("key\t") ? 4 : 12);
 		const std::string_view type = f[0];
-        // Iteration 32 edge-brush overrides are obsolete: all mountain cells use plateauGround.
+        // Legacy edge overrides are ignored: grass reaches the cap edge.
         if (type == "plateauEdge" && f.size() == 2) {
             continue;
         }

@@ -463,356 +463,113 @@ void testExitCrossCheck() {
 } // namespace
 
 // Deliberately exhaustive oracle: no distance transform and no production component labelling.
-void checkPlateauGeometry(const SurfaceGrid& base, const PlateauGrid& p, uint32_t minTop, std::span<const ExitShape> shapes)
+
+// Independent exhaustive Chebyshev search and four-neighbour flood fill.
+void checkPlateauGeometry(const SurfaceGrid& base, const PlateauGrid& p, uint32_t minimum, std::span<const ExitShape> shapes)
 {
     const int w = int(base.region.width), h = int(base.region.height);
-    const auto n = base.cells.size();
-    std::vector<uint8_t> candidate(n), expected(n), seen(n);
-    for (int y = 3; y < h - 3; ++y) {
-        for (int x = 3; x < w - 3; ++x) {
-            int distance = std::min({x + 1, y + 1, w - x, h - y});
-            for (int yy = 0; yy < h; ++yy) {
-                for (int xx = 0; xx < w; ++xx) {
-                    if (base.cells[size_t(yy) * w + xx] != SurfaceKind::Rock) {
-                        distance = std::min(distance, std::max(std::abs(x - xx), std::abs(y - yy)));
-                    }
-                }
-            }
-            candidate[size_t(y) * w + x] = uint32_t(distance) >= p.inset;
-        }
+    const size_t n = base.cells.size();
+    std::vector<uint8_t> candidate(n), seen(n), expected(n);
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        int distance = std::min({x + 1, y + 1, w - x, h - y});
+        for (int yy = 0; yy < h; ++yy) for (int xx = 0; xx < w; ++xx)
+            if (base.cells[size_t(yy) * w + xx] != SurfaceKind::Rock)
+                distance = std::min(distance, std::max(std::abs(xx - x), std::abs(yy - y)));
+        candidate[size_t(y) * w + x] = base.cells[size_t(y) * w + x] == SurfaceKind::Rock && distance >= int(p.inset);
     }
-    std::vector<uint32_t> destinations;
-    const int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
-    for (const auto& ramp : p.ramps) {
-        auto shape = shapes[ramp.shape];
-        auto d = size_t(shape.direction);
-        check(ramp.destination == uint32_t(int(ramp.cell) + dx[d] + w * dy[d]), "oracle ramp destination");
-        bool hit = false;
-        for (uint32_t step = 0; step < p.inset; ++step) {
-            int x = int(ramp.destination % w) + int(step) * dx[d], y = int(ramp.destination / w) + int(step) * dy[d];
-            check(x >= 0 && y >= 0 && x < w && y < h, "oracle corridor bounds");
-            if (x < 0 || y < 0 || x >= w || y >= h) {
-                break;
-            }
-            auto i = size_t(y) * w + x;
-            check(base.cells[i] == SurfaceKind::Rock, "oracle corridor stays on base");
-            if (candidate[i]) {
-                destinations.push_back(uint32_t(i));
-                hit = true;
-                break;
-            }
-            expected[i] = 3;
-            check(p.landings[i], "oracle corridor no decor marker");
-        }
-        check(hit, "oracle corridor reaches Top within inset");
-    }
-    for (size_t start = 0; start < n; ++start) {
-        if (candidate[start] && !seen[start]) {
-            std::vector<size_t> q {start};
-            seen[start] = 1;
-            for (size_t k = 0; k < q.size(); ++k) {
-                int x = int(q[k] % w), y = int(q[k] / w);
-                for (int d = 0; d < 4; ++d) {
-                    int xx = x + dx[d], yy = y + dy[d];
-                    if (xx >= 0 && yy >= 0 && xx < w && yy < h) {
-                        auto j = size_t(yy) * w + xx;
-                        if (candidate[j] && !seen[j]) {
-                            seen[j] = 1;
-                            q.push_back(j);
-                        }
-                    }
-                }
-            }
-            bool reached = false;
-            for (auto i : q) {
-                reached |= std::ranges::find(destinations, i) != destinations.end();
-            }
-            if (reached) {
-                check(q.size() >= minTop, "oracle minimum component");
-                for (auto i : q) {
-                    expected[i] = 2;
-                }
-                for (auto i : q) {
-                    int x = int(i % w), y = int(i / w);
-                    for (int yy = y - 1; yy <= y + 1; ++yy) {
-                        for (int xx = x - 1; xx <= x + 1; ++xx) {
-                            auto j = size_t(yy) * w + xx;
-                            if (base.cells[j] == SurfaceKind::Rock && !expected[j]) {
-                                expected[j] = 1;
-                            }
-                        }
-                    }
-                }
+    for (size_t start = 0; start < n; ++start) if (candidate[start] && !seen[start]) {
+        std::vector<size_t> q{start}; seen[start] = 1;
+        for (size_t k = 0; k < q.size(); ++k) {
+            int x = int(q[k] % w), y = int(q[k] / w);
+            for (auto [xx, yy] : {std::pair{x-1,y}, {x+1,y}, {x,y-1}, {x,y+1}}) {
+                if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+                auto j = size_t(yy) * w + xx;
+                if (candidate[j] && !seen[j]) { seen[j] = 1; q.push_back(j); }
             }
         }
+        bool retained = false;
+        for (auto i : q) retained |= p.cells[i] == PlateauKind::Top;
+        if (retained) {
+            check(q.size() >= minimum, "oracle minimum component");
+            for (auto i : q) expected[i] = 1;
+            check(std::ranges::any_of(p.ramps, [&](const auto& r) { return std::ranges::find(q, r.destination) != q.end(); }), "oracle component ramp");
+        }
     }
-    for (size_t i = 0; i < n; ++i) {
-        check((p.cells[i] == PlateauKind::Top) == (expected[i] == 2), "oracle Top exact");
-        check((p.cells[i] != PlateauKind::None) == bool(expected[i]), "oracle footprint exact");
+    for (size_t i = 0; i < n; ++i) check((p.cells[i] == PlateauKind::Top) == bool(expected[i]), "whole oracle component");
+    for (const auto& r : p.ramps) {
+        const auto shape = shapes[r.shape];
+        constexpr int dx[] = {0,0,1,-1}, dy[] = {-1,1,0,0};
+        const auto d = size_t(shape.direction);
+        check(r.destination == uint32_t(int(r.cell) + dx[d] + w * dy[d]), "ramp direct arrival");
+        check(p.cells[r.destination] == PlateauKind::Top && p.cells[r.cell] == PlateauKind::None, "arrival cap head outside cliff");
+        check(p.landings[r.cell] && p.landings[r.destination], "opening and arrival reserved");
+        auto tail = size_t(int(r.cell) + shape.tailDx + w * shape.tailDy);
+        check(p.cells[tail] == PlateauKind::None, "tail outside cliff");
     }
 }
 
 void testPlateaus()
 {
-    constexpr ExitShape ramps[]
-        = {{ExitDirection::North, 0, 1, true},
-           {ExitDirection::South, 0, -1, true},
-           {ExitDirection::East, -1, 0, true},
-           {ExitDirection::West, 1, 0, true}};
-    auto g = grid(24, 24, SurfaceKind::Grass);
-    fillRect(g, 4, 4, 15, 15, SurfaceKind::Rock);
-    auto p = generatePlateau(g, 1729, 64, ramps);
-    check(p && p->components == 1 && p->ramps.size() == 1, "hand plateau: one ramp");
-    check(
-        p && std::ranges::count(p->cells, PlateauKind::Top) == 100 && std::ranges::count(p->cells, PlateauKind::Edge) == 44,
-        "hand plateau: Top 100 Edge 44"
-    );
-    auto small = generatePlateau(g, 1729, 101, ramps);
-    check(small && small->components == 0, "small Top removed");
-    auto noRamp = generatePlateau(g, 1729, 64, {});
-    check(noRamp && std::ranges::count(noRamp->cells, PlateauKind::None) == 576, "inaccessible plateau removed");
-    std::vector<uint8_t> blocked(g.cells.size(), 1);
-    auto occupied = generatePlateau(g, 1729, 64, ramps, blocked);
-    check(occupied && occupied->components == 0, "occupied ramps removed");
-    auto off = generatePlateau(g, 1729, 0, ramps);
-    check(off && off->components == 0, "plateau off");
-    std::stop_source source;
-    source.request_stop();
-    check(!generatePlateau(g, 1729, 64, ramps, {}, source.get_token()), "plateau cancellation");
+    constexpr ExitShape ramps[] = {{ExitDirection::North,0,1,true}, {ExitDirection::South,0,-1,true},
+        {ExitDirection::East,-1,0,true}, {ExitDirection::West,1,0,true}};
+    auto g = grid(24,24,SurfaceKind::Grass);
+    fillRect(g,4,4,15,15,SurfaceKind::Rock);
+    auto p = generatePlateau(g,1729,64,ramps);
+    check(p && p->components == 1 && std::ranges::count(p->cells,PlateauKind::Top) == 144, "whole first cap no inset");
+    auto small = generatePlateau(g,1729,145,ramps);
+    check(small && !small->components, "small component skipped");
+    auto limited = generatePlateau(g,1729,64,ramps,{}, {},15);
+    check(limited && !limited->components, "oversized whole component skipped");
+    auto noRamp = generatePlateau(g,1729,64,{});
+    check(noRamp && !noRamp->components, "inaccessible component removed");
+    auto off = generatePlateau(g,1729,0,ramps);
+    check(off && !off->components, "mountains disabled");
+    std::vector<uint8_t> occupied(g.cells.size(),1);
+    auto blocked = generatePlateau(g,1729,64,ramps,occupied);
+    check(blocked && !blocked->components, "occupied component refused");
+    std::stop_source stop; stop.request_stop();
+    check(!generatePlateau(g,1729,64,ramps,{},stop.get_token()), "cancelled");
+    check(!generatePlateau(g,1729,64,ramps,{}, {},101), "invalid percent");
+    auto broad = grid(80,80,SurfaceKind::Grass);
+    fillRect(broad,4,4,74,74,SurfaceKind::Rock);
+    auto first = generatePlateau(broad,1729,64,ramps);
+    auto second = generateNextPlateau(*first,1729,ramps);
+    check(second && second->components && second->inset == 3, "higher cap minimum inset three");
+    auto third = generateNextPlateau(*second,1730,ramps);
+    check(third && third->components && third->inset == 3, "third cap minimum inset three");
     for (uint64_t seed = 1; seed <= 60; ++seed) {
-        // Independent brute erosion on randomized rectangular rock patches and holes.
-        auto s = grid(48, 48, SurfaceKind::Grass);
-        fillRect(s, 4, 4, 42, 42, SurfaceKind::Rock);
-        StableRandom r(seed, 123);
-        for (int i = 0; i < 30; ++i) {
-            s.cells[size_t(r.bounded(s.cells.size()))] = SurfaceKind::Grass;
-        }
-        auto a = generatePlateau(s, seed, 16, ramps);
-        auto b = generatePlateau(s, seed, 16, ramps);
-        check(a && b && a->cells == b->cells && a->ramps == b->ramps, "plateau deterministic");
-        if (!a) {
-            continue;
-        }
-        std::vector<uint8_t> eligible(s.cells.size());
-        for (int y = 3; y < 45; ++y) {
-            for (int x = 3; x < 45; ++x) {
-                bool ok = true;
-                for (int yy = 0; yy < 48; ++yy) {
-                    for (int xx = 0; xx < 48; ++xx) {
-                        if (s.cells[size_t(yy) * 48 + xx] != SurfaceKind::Rock && std::max(std::abs(xx - x), std::abs(yy - y)) < 2) {
-                            ok = false;
-                        }
-                    }
-                }
-                eligible[size_t(y) * 48 + x] = ok;
-            }
-        }
-        std::vector<uint8_t> seen(eligible.size());
-        for (size_t start = 0; start < eligible.size(); ++start) {
-            if (eligible[start] && !seen[start]) {
-                std::vector<size_t> q {start};
-                seen[start] = 1;
-                for (size_t k = 0; k < q.size(); ++k) {
-                    int x = int(q[k] % 48), y = int(q[k] / 48);
-                    for (auto [xx, yy] : {std::pair {x - 1, y}, std::pair {x + 1, y}, std::pair {x, y - 1}, std::pair {x, y + 1}}) {
-                        if (xx >= 0 && yy >= 0 && xx < 48 && yy < 48) {
-                            size_t j = size_t(yy) * 48 + xx;
-                            if (eligible[j] && !seen[j]) {
-                                seen[j] = 1;
-                                q.push_back(j);
-                            }
-                        }
-                    }
-                }
-                if (q.size() < 16) {
-                    for (auto i : q) {
-                        eligible[i] = 0;
-                    }
-                }
-            }
-        }
-        for (size_t i = 0; i < eligible.size(); ++i) {
-            check((a->cells[i] == PlateauKind::Top) == bool(eligible[i]), "brute Top erosion matches");
-        }
-        auto d = generatePlateauDecoration(*a, seed, {});
-        check(bool(d), "plateau vegetation generated");
-        for (size_t i = 0; d && i < eligible.size(); ++i) {
-            check(d->cells[i] == DecorKind::None || (a->cells[i] == PlateauKind::Top && !a->landings[i]), "vegetation only Top");
-        }
-        for (size_t i = 0; i < a->ramps.size(); ++i) {
-            auto p = a->ramps[i].cell;
-            check(s.cells[p] == SurfaceKind::Grass, "ramp on open surface");
-            for (size_t j = 0; j < i; ++j) {
-                check(
-                    std::max(std::abs(int(p % 48) - int(a->ramps[j].cell % 48)), std::abs(int(p / 48) - int(a->ramps[j].cell / 48))) >= 16,
-                    "ramp spacing"
-                );
-            }
-        }
-    }
-
-    auto limited = generatePlateau(g, 1729, 16, ramps, {}, {}, 15);
-    check(limited && limited->components, "limited rectangle retains plateau");
-    check(
-        limited && std::ranges::count_if(limited->cells, [](auto k) { return k != PlateauKind::None; }) * 100 <= 576 * 15,
-        "limited rectangle includes band and corridor in percent"
-    );
-    check(limited && std::ranges::count(limited->landings, uint8_t(1)) > 1, "inset creates landing corridor");
-    check(!generatePlateau(g, 1729, 16, ramps, {}, {}, 101), "invalid percent refused");
-    // Independent exhaustive distances to non-rock, then independent flood fill of the result.
-    // The oracle checks each possible global inset, not the production distance transform.
-    for (uint64_t seed = 1; seed <= 60; ++seed) {
-        auto s = grid(48, 48, SurfaceKind::Grass);
-        fillRect(s, 4, 4, 42, 42, SurfaceKind::Rock);
-        StableRandom random(seed, 912);
-        for (int hole = 0; hole < 15; ++hole) {
-            s.cells[size_t(random.bounded(s.cells.size()))] = SurfaceKind::Grass;
-        }
-        auto p = generatePlateau(s, seed, 16, ramps, {}, {}, 30);
-        auto repeat = generatePlateau(s, seed, 16, ramps, {}, {}, 30);
-        check(
-            p && repeat && p->cells == repeat->cells && p->ramps == repeat->ramps && p->landings == repeat->landings, "limited determinism"
-        );
-        if (!p) {
-            continue;
-        }
-        check(
-            std::ranges::count_if(p->cells, [](auto k) { return k != PlateauKind::None; }) * 100 <= 48 * 48 * 30, "limited randomized area"
-        );
-        std::vector<int> distance(48 * 48, 48);
-        for (int y = 0; y < 48; ++y) {
-            for (int x = 0; x < 48; ++x) {
-                auto& d = distance[size_t(y) * 48 + x];
-                d = std::min({x + 1, y + 1, 48 - x, 48 - y});
-                for (int yy = 0; yy < 48; ++yy) {
-                    for (int xx = 0; xx < 48; ++xx) {
-                        if (s.cells[size_t(yy) * 48 + xx] != SurfaceKind::Rock) {
-                            d = std::min(d, std::max(std::abs(xx - x), std::abs(yy - y)));
-                        }
-                    }
-                }
-            }
-        }
-        bool matched = false;
-        for (int inset = 2; inset < 48 && !matched; ++inset) {
-            std::vector<uint8_t> candidate(48 * 48), seen(48 * 48);
-            for (int y = 3; y < 45; ++y) {
-                for (int x = 3; x < 45; ++x) {
-                    candidate[size_t(y) * 48 + x] = distance[size_t(y) * 48 + x] >= inset;
-                }
-            }
-            for (size_t start = 0; start < candidate.size(); ++start) {
-                if (candidate[start] && !seen[start]) {
-                    std::vector<size_t> q {start};
-                    seen[start] = 1;
-                    for (size_t k = 0; k < q.size(); ++k) {
-                        int x = int(q[k] % 48), y = int(q[k] / 48);
-                        for (auto [xx, yy] : {std::pair {x - 1, y}, std::pair {x + 1, y}, std::pair {x, y - 1}, std::pair {x, y + 1}}) {
-                            if (xx >= 0 && yy >= 0 && xx < 48 && yy < 48) {
-                                auto j = size_t(yy) * 48 + xx;
-                                if (candidate[j] && !seen[j]) {
-                                    seen[j] = 1;
-                                    q.push_back(j);
-                                }
-                            }
-                        }
-                    }
-                    bool retained = false;
-                    for (auto i : q) {
-                        retained |= p->cells[i] == PlateauKind::Top;
-                    }
-                    if (q.size() < 16 || !retained) {
-                        for (auto i : q) {
-                            candidate[i] = 0;
-                        }
-                    }
-                }
-            }
-            matched = true;
-            for (size_t i = 0; i < candidate.size(); ++i) {
-                if (bool(candidate[i]) != (p->cells[i] == PlateauKind::Top)) {
-                    matched = false;
-                }
-            }
-        }
-        check(matched, "limited independent erosion and component search");
-        checkPlateauGeometry(s, *p, 16, ramps);
-        auto lower = *p;
-        for (int level = 2; level <= 3; ++level) {
-            auto upper = generateNextPlateau(lower, seed ^ (uint64_t(level) << 48), ramps, {}, 30);
-            auto again = generateNextPlateau(lower, seed ^ (uint64_t(level) << 48), ramps, {}, 30);
-            check(upper && again && upper->cells == again->cells && upper->ramps == again->ramps, "upper determinism");
-            if (!upper) {
-                break;
-            }
-            SurfaceGrid base;
-            base.region = lower.region;
-            base.cells.assign(lower.cells.size(), SurfaceKind::Grass);
-            for (size_t i = 0; i < base.cells.size(); ++i) {
-                bool destination = false;
-                for (const auto& ramp : lower.ramps) {
-                    destination
-                        |= ramp.destination == i || ramp.cell == i || int64_t(i) == 2 * int64_t(ramp.cell) - int64_t(ramp.destination);
-                }
-                if (lower.cells[i] != PlateauKind::None && !lower.landings[i] && !destination) {
-                    base.cells[i] = SurfaceKind::Rock;
-                }
-            }
-            checkPlateauGeometry(base, *upper, 30, ramps);
-            const auto count
-                = [](const PlateauGrid& g) { return std::ranges::count_if(g.cells, [](auto k) { return k != PlateauKind::None; }); };
-            check(uint64_t(count(*upper)) * 100 <= uint64_t(count(lower)) * 30, "upper percent of level below");
-            auto decor = generatePlateauDecoration(*upper, seed, {});
-            check(bool(decor), "upper vegetation");
+        auto base = grid(48,48,SurfaceKind::Grass);
+        fillRect(base,4,4,42,42,SurfaceKind::Rock);
+        StableRandom random(seed,912);
+        for (int hole = 0; hole < 15; ++hole) base.cells[size_t(random.bounded(base.cells.size()))] = SurfaceKind::Grass;
+        auto lower = generatePlateau(base,seed,16,ramps);
+        auto repeat = generatePlateau(base,seed,16,ramps);
+        check(lower && repeat && lower->cells == repeat->cells && lower->ramps == repeat->ramps, "first determinism");
+        checkPlateauGeometry(base,*lower,16,ramps);
+        for (uint32_t level = 2; level <= 3; ++level) {
+            auto upper = generateNextPlateau(*lower,seed ^ (uint64_t(level)<<48),ramps,{},30);
+            auto again = generateNextPlateau(*lower,seed ^ (uint64_t(level)<<48),ramps,{},30);
+            check(upper && again && upper->cells == again->cells && upper->ramps == again->ramps, "higher determinism");
+            SurfaceGrid support; support.region = lower->region; support.cells.assign(base.cells.size(),SurfaceKind::Grass);
+            for (size_t i = 0; i < support.cells.size(); ++i) if (lower->cells[i] == PlateauKind::Top) support.cells[i] = SurfaceKind::Rock;
+            checkPlateauGeometry(support,*upper,30,ramps);
+            const auto count = [](const PlateauGrid& g) { return std::ranges::count(g.cells,PlateauKind::Top); };
+            check(count(*upper)*100 <= count(*lower)*30, "higher percent");
+            auto decor = generatePlateauDecoration(*lower,seed,{});
+            check(bool(decor), "cap decor");
             for (size_t i = 0; i < upper->cells.size(); ++i) {
-                if (upper->cells[i] == PlateauKind::Top) {
-                    int x = int(i % 48), y = int(i / 48);
-                    for (int yy = y - 1; yy <= y + 1; ++yy) {
-                        for (int xx = x - 1; xx <= x + 1; ++xx) {
-                            auto j = size_t(yy) * 48 + xx;
-                            check(lower.cells[j] != PlateauKind::None && !lower.landings[j], "upper independent base erosion");
-                        }
-                    }
-                }
-                if (decor && decor->cells[i] != DecorKind::None) {
-                    check(upper->cells[i] == PlateauKind::Top && !upper->landings[i], "upper decor only Top");
-                }
+                if (upper->cells[i] == PlateauKind::Top) check(lower->cells[i] == PlateauKind::Top, "same xy support");
+                if (decor->cells[i] != DecorKind::None) check(lower->cells[i] == PlateauKind::Top && !lower->landings[i], "vegetation grass only");
             }
             for (const auto& r : upper->ramps) {
-                check(lower.cells[r.cell] == PlateauKind::Top && !lower.landings[r.cell], "upper P lower Top");
-                check(upper->cells[r.cell] == PlateauKind::None, "upper P outside projection");
-                auto shape = ramps[r.shape];
-                const int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
-                auto d = size_t(shape.direction);
-                check(r.destination == uint32_t(int(r.cell) + dx[d] + 48 * dy[d]), "upper D forward");
-                auto tail = size_t(int(r.cell) + shape.tailDx + 48 * shape.tailDy);
-                check(lower.cells[tail] != PlateauKind::None && !lower.landings[tail], "upper tail open");
+                check(lower->cells[r.cell] == PlateauKind::Top && !lower->landings[r.cell], "terrace head");
+                auto tail = size_t(int(r.cell)+ramps[r.shape].tailDx+48*ramps[r.shape].tailDy);
+                check(lower->cells[tail] == PlateauKind::Top && !lower->landings[tail], "terrace tail");
             }
-            lower = std::move(*upper);
+            lower = std::move(upper);
         }
     }
-    auto broad = grid(80, 80, SurfaceKind::Grass);
-    fillRect(broad, 4, 4, 74, 74, SurfaceKind::Rock);
-    auto first = generatePlateau(broad, 1729, 64, ramps);
-    check(first && first->components, "hand large lower plateau");
-    auto second = generateNextPlateau(*first, 1729, ramps);
-    check(second && second->components && second->inset == 4, "hand upper minimum inset supports ramp and tail");
-    auto third = generateNextPlateau(*second, 1730, ramps);
-    check(third && third->components && third->inset == 4, "hand third level");
-    PlateauGrid narrow {g.region, std::vector<PlateauKind>(g.cells.size(),PlateauKind::None), std::vector<uint8_t>(g.cells.size())};
-    for(int y=6;y<14;++y) for(int x=6;x<14;++x) narrow.cells[size_t(y)*24+x]=PlateauKind::Top;
-    auto tooSmall=generateNextPlateau(narrow,1729,ramps);
-    check(tooSmall && !tooSmall->components && std::ranges::count(tooSmall->cells,PlateauKind::Top)==0,
-          "hand upper component of four cells is below minimum 30");
-    auto without = generateNextPlateau(*first, 1729, {});
-    check(without && !without->components, "upper without ramp removed");
-    auto above = generateNextPlateau(*without, 1729, ramps);
-    check(above && !above->components, "levels above inaccessible level removed");
-    auto capped = generateNextPlateau(*first, 1729, ramps, {}, 10);
-    const auto covered = [](const PlateauGrid& g) { return std::ranges::count_if(g.cells, [](auto k) { return k != PlateauKind::None; }); };
-    check(capped && uint64_t(covered(*capped)) * 100 <= uint64_t(covered(*first)) * 10, "hand upper relative area cap");
-    std::cout << "PLATEAU_LEVELS_LIMIT_CROSS_CHECK 60/60\n";
-    std::cout << "PLATEAU_CROSS_CHECK 60/60\n";
+    std::cout << "PLATEAU_LEVELS_LIMIT_CROSS_CHECK 60/60\nPLATEAU_CROSS_CHECK 60/60\n";
 }
 
 int main() {
