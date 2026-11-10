@@ -60,7 +60,7 @@ with (args.output / 'stdout.log').open('w', encoding='utf-8') as stdout, \
     process = subprocess.Popen([str(args.output / 'snapshot_probe.exe')], cwd=run, env=env,
                                stdout=stdout, stderr=stderr, startupinfo=startup)
     (args.output / 'probe-pid.txt').write_text(str(process.pid), encoding='utf-8')
-    code = process.wait(timeout=180)  # Timeout leaves the same child alive for inspection.
+    code = process.wait(timeout=1800 if args.surface else 180)  # Timeout leaves the same child alive for inspection.
 report = (run / 'resolver-probe.log').read_text(encoding='utf-8')
 unchanged = all(hashlib.sha256(Path(path).read_bytes()).hexdigest() == value for path, value in original.items())
 stderr_empty = (args.output / 'stderr.log').stat().st_size == 0

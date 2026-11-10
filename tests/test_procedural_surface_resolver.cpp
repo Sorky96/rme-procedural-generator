@@ -945,6 +945,84 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	return sufficientExits;
 }
 
+// Iteration 31: GUI-sized offset rectangles through the real preparation and commit path.
+void guiCaves(std::ostream& report) {
+	UndoLimits undoLimits;
+	constexpr uint32_t side = 512;
+	constexpr PreparationBudget preparation {600000, 610000, 600000, 2ULL * 1024 * 1024 * 1024};
+	constexpr TerrainCommitBudget commit {600000, 3ULL * 1024 * 1024 * 1024};
+	for (const auto style : {CaveEntranceStyle::RockFace, CaveEntranceStyle::FloorHole})
+	for (const uint32_t buildings : {0u, 40u})
+	for (const std::string rockBrush : {"rocky ground", "mountain"})
+	for (const uint64_t seed : {1729u, 1001u, 1002u, 1003u, 1004u, 1005u, 1006u, 1007u}) {
+		check(g_gui.NewMap(), "GUI cave editor creation failed");
+		auto& editor = *g_gui.GetCurrentEditor();
+		GenerationConfig config {{800, 1000, 7, side, side}, seed};
+		config.algorithm = GenerationAlgorithm::Surface;
+		config.vegetation = true;
+		config.surface.pathLength = 80;
+		config.surface.repairReach = 1;
+		config.surface.shoreSmoothing = 2;
+		config.surface.buildingDensity = buildings;
+		config.surface.caveEntrances = 20;
+		config.surface.caveEntranceStyle = style;
+		config.surface.rockPermille = 200;
+		GroundProfile profile {{"grass", "dirt", "mountain", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+		profile.brushes[2] = rockBrush;
+		profile.decor = {"trees", "bushes", "small rocks"};
+		profile.decorCount = GroundProfile::decorationCount;
+		if (buildings) profile.wall = "stone wall";
+		profile.caveEntrance = style == CaveEntranceStyle::RockFace ? "cave enter" : "cave hole";
+		profile.caveExit = "ramp";
+		profile.caveGround = "cave";
+		profile.caveWall = "mountain";
+		const auto combination = std::format("style={} buildings={} rock={} seed={}",
+			style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole", buildings, rockBrush, seed);
+		auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+		check(prepared && prepared->cave, std::format("GUI cave preparation failed {}", combination));
+		check(bool(validateTerrainTarget(*prepared, config, profile)), "GUI cave validation failed");
+		const auto brushes = resolveCaveBrushes(profile, config);
+		check(bool(brushes), "GUI cave brushes failed");
+		const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
+		check(bool(receipt), std::format("GUI cave commit failed {}", combination));
+		size_t entrances = 0, exits = 0;
+		for (size_t i = 0; i < size_t(side) * side; ++i) {
+			const Position upper(config.region.x + int(i % side), config.region.y + int(i / side), config.region.z);
+			const auto* surface = editor.map.getTile(upper);
+			const auto* lower = editor.map.getTile(Position(upper.x, upper.y, upper.z + 1));
+			const auto countIds = [](const Tile* tile, const auto& matches) {
+				size_t count = 0;
+				if (tile) {
+					if (tile->ground) count += matches(tile->ground->getID());
+					for (const auto& item : tile->items) count += matches(item->getID());
+				}
+				return count;
+			};
+			const auto entranceCount = countIds(surface, [&](uint16_t id) {
+				return std::ranges::find(brushes->entrances, id) != brushes->entrances.end();
+			});
+			const auto rampCount = countIds(lower, [&](uint16_t id) {
+				return std::ranges::any_of(brushes->items, [&](const auto& ids) { return ids.ramp == id; });
+			});
+			check(entranceCount == rampCount && entranceCount <= 1,
+				std::format("GUI cave mismatch {} cell=({},{},{}) entrances={} ramps={} plannedEntrance={} plannedExit={}",
+					combination, upper.x, upper.y, upper.z, entranceCount, rampCount,
+					prepared->plan.entrances[i], prepared->cave->plan.exits[i]));
+			if (style == CaveEntranceStyle::FloorHole && entranceCount)
+				check(surface && surface->ground && surface->ground->getID() == prepared->plan.entrances[i], "GUI hole is not ground");
+			check(entranceCount == (prepared->plan.entrances[i] ? 1u : 0u), "GUI commit lost planned entrance");
+			entrances += entranceCount;
+			exits += rampCount;
+		}
+		check(entrances > 0 && exits > 0, std::format("GUI cave case has no entrances {}", combination));
+		editor.map.clearChanges();
+		report << std::format("SURFACE_CAVE_GUI_PASS\t512\t{} entrances={} exits={} fingerprint={} caveFingerprint={} preview={} cavePreview={}\n",
+			combination, entrances, exits, prepared->plan.fingerprint(), prepared->cave->plan.fingerprint(),
+			prepared->preview.getFingerprint(), prepared->cave->preview.getFingerprint());
+		g_gui.CloseCurrentEditor();
+	}
+}
+
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing
 // tile inside it) must neither be refused nor touch those tiles. Cells beside existing ground stay empty.
 void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& report) {
@@ -1024,6 +1102,7 @@ void run() {
 		doors(250, report);
 		ruinsAndCamps(250, report);
 		campfires(250, report);
+		guiCaves(report);
 		const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report);
 		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report);
 		fords(250, 1729, report);
