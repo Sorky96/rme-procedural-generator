@@ -82,6 +82,7 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(
 				cells[i] = DecorKind::Stone;
 			}
 		}
+		for (const auto e : grid.entrances) cells[e] = DecorKind::None;
 		return DecorGrid { grid.region, std::move(cells) };
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);

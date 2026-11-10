@@ -48,13 +48,20 @@ void disc(CaveGrid& cave, int32_t cx, int32_t cy) {
 // Entrances placed by generateSurface: on Rock, next to open ground, 3 from the edge, 24 apart; off by default.
 void testEntrances() {
 	size_t checkedSurfaces = 0;
-	for (uint64_t seed = 1; seed <= 12; ++seed) {
+	for (const auto style : {CaveEntranceStyle::RockFace, CaveEntranceStyle::FloorHole}) for (uint64_t seed = 1; seed <= 12; ++seed) {
 		SurfaceConfig config {{100, 100, 7, 200, 200}, seed, {}};
 		const SurfaceBudget budget {200 * 200, 200 * 200 * 8, 200 * 200 * 96 + (1u << 20)};
 		const MapExtent extent {65001, 65001, 16};
+		config.tuning.caveEntranceStyle = style;
 		const auto off = generateSurface(config, extent, budget);
+		auto defaultStyle = config; defaultStyle.tuning.caveEntranceStyle = CaveEntranceStyle::RockFace;
+		const auto baseline = generateSurface(defaultStyle, extent, budget);
+		check(off && baseline && off->fingerprint() == baseline->fingerprint(), "inactive style preserves fingerprint");
+		auto invalid = config; invalid.tuning.caveEntranceStyle = static_cast<CaveEntranceStyle>(2);
+		check(!generateSurface(invalid, extent, budget), "invalid style rejected");
 		check(off.has_value() && off->entrances.empty(), "entrances: none with caveEntrances 0");
 		config.tuning.caveEntrances = 20;
+		config.tuning.caveEntranceStyle = style;
 		const auto on = generateSurface(config, extent, budget);
 		const auto again = generateSurface(config, extent, budget);
 		check(on.has_value() && again.has_value() && on->entrances == again->entrances && on->cells == again->cells, "entrances: deterministic");
@@ -64,7 +71,7 @@ void testEntrances() {
 		for (size_t a = 0; a < on->entrances.size(); ++a) {
 			const uint32_t cell = on->entrances[a];
 			const uint32_t x = cell % 200, y = cell / 200;
-			check(on->cells[cell] == SurfaceKind::Rock, "entrances: on Rock");
+			check(caveEntranceAllowed(on->cells, 200, 200, cell, style), "entrances: style geometry");
 			check(x >= 3 && y >= 3 && x + 3 < 200 && y + 3 < 200, "entrances: 3 cells from the edge");
 			const auto open = [&](size_t i) { const auto k = on->cells[i]; return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore || k == SurfaceKind::Path; };
 			check(open(cell - 1) || open(cell + 1) || open(cell - 200) || open(cell + 200), "entrances: next to open ground");
@@ -75,6 +82,45 @@ void testEntrances() {
 		}
 	}
 	check(checkedSurfaces > 0, "entrances: no surface got two entrances (test setup)");
+}
+
+void testEntranceStyles() {
+	for (const auto style : {CaveEntranceStyle::RockFace, CaveEntranceStyle::FloorHole}) {
+		auto g = grid(11, 11, SurfaceKind::Grass);
+		constexpr uint32_t e = 5 * 11 + 5;
+		if (style == CaveEntranceStyle::RockFace) for (const auto i : {e, e - 11, e - 1, e + 1}) g.cells[i] = SurfaceKind::Rock;
+		check(caveEntranceAllowed(g.cells, 11, 11, e, style), "hand entrance accepted");
+		for (const auto k : {SurfaceKind::Rock, SurfaceKind::Lake, SurfaceKind::Floor}) {
+			auto bad = g; bad.cells[e + 11] = k;
+			check(!caveEntranceAllowed(bad.cells, 11, 11, e, style), "bad south neighbour rejected");
+		}
+		for (const auto k : {SurfaceKind::Path, SurfaceKind::Floor, SurfaceKind::Lake}) {
+			auto bad = g; bad.cells[e] = k;
+			check(!caveEntranceAllowed(bad.cells, 11, 11, e, style), "bad entrance cell rejected");
+		}
+		auto corner = g; corner.cells[e - 1] = SurfaceKind::Grass;
+		if (style == CaveEntranceStyle::RockFace) check(!caveEntranceAllowed(corner.cells, 11, 11, e, style), "rock corner rejected");
+		uint64_t state = 1729;
+		for (int round = 0; round < 80; ++round) {
+			for (auto& k : g.cells) { state = state * 6364136223846793005ULL + 1; k = static_cast<SurfaceKind>((state >> 32) % 9); }
+			// Keep a mixture of positive and negative samples, not only random rejections.
+			if (round % 2 == 0) {
+				fillRect(g, 3, 3, 7, 7, SurfaceKind::Grass);
+				if (style == CaveEntranceStyle::RockFace) for (const auto i : {e, e - 11, e - 1, e + 1}) g.cells[i] = SurfaceKind::Rock;
+			}
+			for (uint32_t y = 0; y < 11; ++y) for (uint32_t x = 0; x < 11; ++x) {
+				const auto at = [&](int dx, int dy) { return g.cells[size_t(int(y) + dy) * 11 + size_t(int(x) + dx)]; };
+				const auto open = [](SurfaceKind k) { return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore || k == SurfaceKind::Path; };
+				bool expected = x >= 3 && y >= 3 && x < 8 && y < 8;
+				if (expected) {
+					if (style == CaveEntranceStyle::RockFace) expected = at(0,0) == SurfaceKind::Rock && at(-1,0) == SurfaceKind::Rock && at(1,0) == SurfaceKind::Rock && at(0,-1) == SurfaceKind::Rock && open(at(0,1));
+					else expected = (at(0,0) == SurfaceKind::Grass || at(0,0) == SurfaceKind::Dirt) && open(at(-1,0)) && open(at(1,0)) && open(at(0,-1)) && open(at(0,1));
+					for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) if (at(dx,dy) == SurfaceKind::Lake || at(dx,dy) == SurfaceKind::River || at(dx,dy) == SurfaceKind::Floor) expected = false;
+				}
+				check(caveEntranceAllowed(g.cells, 11, 11, y * 11 + x, style) == expected, "independent entrance geometry comparison");
+			}
+		}
+	}
 }
 
 // Cave of two entrances on an all-rock 40 x 20 surface: entrances (10,10) and (30,10).
@@ -236,7 +282,7 @@ CaveExitPlan bruteExits(const SurfaceGrid& g, const CaveGrid& c, std::span<const
 		if (p < 0 || contains(g.entrances, p) || contains(g.fires, p) || contains(g.doors, p) ||
 			contains(g.gaps, p) || contains(g.sites, p) || (!occupied.empty() && occupied[size_t(p)])) return false;
 		switch (g.cells[size_t(p)]) {
-			case SurfaceKind::Grass: case SurfaceKind::Dirt: case SurfaceKind::Rock: case SurfaceKind::Shore: case SurfaceKind::Path: return true;
+			case SurfaceKind::Grass: case SurfaceKind::Dirt: case SurfaceKind::Shore: case SurfaceKind::Path: return true;
 			default: return false;
 		}
 	};
@@ -289,6 +335,12 @@ void testExits() {
 	const auto again = placeCaveExits(g, c, north);
 	check(plan && again && samePlan(*plan, *again), "exit: deterministic");
 
+	for (const auto rock : {31u, 22u}) {
+		g.cells[rock] = SurfaceKind::Rock;
+		const auto blocked = placeCaveExits(g, c, north);
+		check(blocked && blocked->exits.size() == 1 && blocked->exits[0].cell == 39, "exit: Rock P or destination rejected");
+		g.cells[rock] = SurfaceKind::Grass;
+	}
 	std::vector<uint8_t> occupied(81, 0);
 	occupied[31] = 1;
 	plan = placeCaveExits(g, c, north, occupied);
@@ -356,11 +408,11 @@ void testExitCrossCheck() {
 	uint64_t state = 0xa8459b3127ULL;
 	auto next = [&] { state ^= state << 13; state ^= state >> 7; state ^= state << 17; return state; };
 	int matched = 0;
-	for (int round = 0; round < 80; ++round) {
+	for (const auto style : {CaveEntranceStyle::RockFace, CaveEntranceStyle::FloorHole}) for (int round = 0; round < 80; ++round) {
 		auto g = grid(5 + uint32_t(next() % 10), 5 + uint32_t(next() % 10), SurfaceKind::Grass);
 		for (auto& kind : g.cells) kind = static_cast<SurfaceKind>(next() % 9);
 		for (uint32_t i = 0; i < g.cells.size(); ++i) {
-			if (g.cells[i] == SurfaceKind::Rock && next() % 2 == 0) g.entrances.push_back(i);
+			if (g.cells[i] == (style == CaveEntranceStyle::RockFace ? SurfaceKind::Rock : SurfaceKind::Grass) && next() % 2 == 0) g.entrances.push_back(i);
 			if (g.cells[i] == SurfaceKind::Path && next() % 2 == 0) g.fires.push_back(i);
 			if (g.cells[i] == SurfaceKind::Floor) {
 				switch (next() % 3) { case 0: g.doors.push_back(i); break; case 1: g.gaps.push_back(i); break; default: g.sites.push_back(i); }
@@ -384,8 +436,8 @@ void testExitCrossCheck() {
 		check(same, std::format("exit cross-check round {}", round));
 		matched += same;
 	}
-	std::cout << std::format("EXIT_CROSS_CHECK {}/80\n", matched);
-	check(matched == 80, "all 80 independent exit comparisons matched");
+	std::cout << std::format("EXIT_CROSS_CHECK {}/160\n", matched);
+	check(matched == 160, "all 160 independent exit comparisons matched");
 }
 } // namespace
 
@@ -393,6 +445,7 @@ int main() {
 	testExits();
 	testExitCrossCheck();
 	testEntrances();
+	testEntranceStyles();
 	testCave();
 	testValidator();
 	testCrossCheck();

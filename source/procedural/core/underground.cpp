@@ -144,7 +144,7 @@ std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 		const auto freeUpper = [&](uint32_t i) {
 			const auto k = surface.cells[i];
 			return !upper[i] && (occupied.empty() || !occupied[i]) &&
-				(k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Rock || k == SurfaceKind::Shore || k == SurfaceKind::Path);
+				(k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore || k == SurfaceKind::Path);
 		};
 		struct Offset { int dx, dy; };
 		constexpr auto offsets = [] {

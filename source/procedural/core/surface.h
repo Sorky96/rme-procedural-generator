@@ -48,11 +48,14 @@ struct SurfaceGrid {
 	std::vector<uint32_t> sites;
 	// Camp fires (G5 iteration 26): one Path cell in the middle of every camp clearing. Empty unless camps are on.
 	std::vector<uint32_t> fires;
-	// Z entrances (G5 iteration 27): Rock cells on the edge of a rock band that lead down to the cave below (same x, y one floor lower).
+	// Z entrances: RockFace on Rock or FloorHole on Grass/Dirt; same x/y one floor below.
 	std::vector<uint32_t> entrances;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };
+
+// Local entrance geometry including margin and water/building clearance.
+[[nodiscard]] bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t cell, CaveEntranceStyle style) noexcept;
 
 // Empty mask/protection: same rules as validateGeneration. Rivers end at a lake or
 // at the border of the generated rectangle, never inside the land.

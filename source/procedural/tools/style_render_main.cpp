@@ -48,6 +48,11 @@ int main(int argc, char** argv) {
 		const std::string_view name = arg.substr(0, arg.find('='));
 		const uint32_t value = static_cast<uint32_t>(std::strtoul(argv[firstSeed] + name.size() + 1, nullptr, 10));
 		if (name == "caveExitShapes") caveExitShapes = arg.substr(name.size() + 1) == "ramp";
+		else if (name == "caveEntranceStyle") {
+			const auto style = arg.substr(name.size() + 1);
+			if (style != "rockface" && style != "floorhole") return 2;
+			tuning.caveEntranceStyle = style == "floorhole" ? CaveEntranceStyle::FloorHole : CaveEntranceStyle::RockFace;
+		}
 		else if (name == "featureSize") tuning.featureSize = value;
 		else if (name == "transitionWidth") tuning.transitionWidth = value;
 		else if (name == "shoreWidth") tuning.shoreWidth = value;
@@ -206,7 +211,16 @@ int main(int argc, char** argv) {
 				// This tool does not generate decoration, so no occupied mask is available.
 				const auto exits = cave ? placeCaveExits(*grid, *cave, ramp) : std::unexpected(UndergroundError::InvalidGrid);
 				if (!exits) { std::cerr << "cave exit placement failed\n"; return 6; }
-				if (under) std::cout << std::format(" exits {} skipped {}", exits->exits.size(), exits->skipped.size());
+				size_t ruleOk = 0, exitsOffRock = 0;
+				for (const auto e : grid->entrances) ruleOk += caveEntranceAllowed(grid->cells, side, side, e, tuning.caveEntranceStyle);
+				constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+				for (const auto& exit : exits->exits) {
+					const auto d = size_t(ramp[exit.shape].direction);
+					const auto dest = size_t(int64_t(exit.cell) + dx[d] + int64_t(dy[d]) * side);
+					exitsOffRock += grid->cells[exit.cell] != SurfaceKind::Rock && grid->cells[dest] != SurfaceKind::Rock;
+				}
+				if (ruleOk != grid->entrances.size() || exitsOffRock != exits->exits.size()) return 7;
+				if (under) std::cout << std::format(" exits {} skipped {} ruleOk {} exitsOffRock {}", exits->exits.size(), exits->skipped.size(), ruleOk, exitsOffRock);
 			}
 			if (under) std::cout << '\n';
 		}

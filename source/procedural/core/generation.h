@@ -30,6 +30,8 @@ enum class GenerationAlgorithm : uint8_t { GroundRoll = 1, Surface = 2 };
 // validateSurface.
 // The first eleven members are the ones a style profile stores, in that order (positional initialisation in tests and in
 // the profile parser relies on it); the members after them are set by the user in the generator dialog only.
+enum class CaveEntranceStyle : uint8_t { RockFace = 0, FloorHole = 1 };
+
 struct SurfaceTuning {
 	uint32_t featureSize = 24;        // coarsest noise lattice step in cells, 1..4096
 	uint32_t lakePermille = 60;       // share of lowest cells that start as lake, 0..500
@@ -52,6 +54,7 @@ struct SurfaceTuning {
 	uint32_t ruinPercent = 0;        // share of the buildings (percent, 0..100) that become ruins: no door, gaps in the wall (iteration 25); not part of a style profile
 	uint32_t campCount = 0;           // clearings with an open tent floor per 65536 cells, 0..50 (iteration 25); not part of a style profile
 	uint32_t caveEntrances = 0;      // Z entrances on the edge of rock bands per 65536 cells, 0..20 (iteration 27); not part of a style profile
+	CaveEntranceStyle caveEntranceStyle = CaveEntranceStyle::RockFace;
 	bool operator==(const SurfaceTuning&) const = default;
 };
 
