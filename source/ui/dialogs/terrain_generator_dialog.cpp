@@ -359,13 +359,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			control->Append(initial);
 			control->SetSelection(0);
 		}
-		control->Bind(wxEVT_COMBOBOX_DROPDOWN, [control, &names](wxCommandEvent& event) {
+		control->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, control, &names](wxCommandEvent& event) {
 			event.Skip();
-			if (control->GetCount() > 1 || names.size() < 2) return;
+			const auto& activeNames = control == cave_entrance_brush_choice_ && cave_entrance_style_choice_->GetSelection() == 1 ? ground_names_ : names;
+			if (control->GetCount() > 1 || activeNames.size() < 2) return;
 			const wxString current = control->GetValue();
 			control->Freeze();
 			control->Clear();
-			control->Append(names);
+			control->Append(activeNames);
 			control->SetStringSelection(current);
 			control->Thaw();
 		});
@@ -567,12 +568,29 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	section("Underground");
 	form->Add(label("Cave entrances:"), 0, wxALIGN_CENTER_VERTICAL);
 	cave_entrances_spin_ = spin("terrain-cave-entrances", 0, 20, 0);
-	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells on the edge of rock, each with a cave below (floor z+1) and a ramp back up. The floor below must be empty in the whole rectangle.");
+	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells in the selected style, each with a cave below (floor z+1) and a ramp back up. The floor below must be empty in the whole rectangle.");
 	form->Add(cave_entrances_spin_, 1, wxEXPAND);
 
+	form->Add(label("Entrance style:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_entrance_style_choice_ = newd wxChoice(host, wxID_ANY);
+	cave_entrance_style_choice_->SetName("terrain-cave-entrance-style");
+	cave_entrance_style_choice_->SetBackgroundColour(fieldBackground);
+	cave_entrance_style_choice_->SetForegroundColour(fieldText);
+	cave_entrance_style_choice_->Append("Rock face");
+	cave_entrance_style_choice_->Append("Floor hole");
+	cave_entrance_style_choice_->SetSelection(0);
+	form->Add(cave_entrance_style_choice_, 1, wxEXPAND);
 	form->Add(label("Z entrance brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	cave_entrance_brush_choice_ = brushChoice("terrain-cave-entrance-brush", "cave enter", 1);
 	if (doodad_names_.Index("cave enter") == wxNOT_FOUND) cave_entrance_brush_choice_->Clear();
+	cave_entrance_style_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) {
+		const bool hole = cave_entrance_style_choice_->GetSelection() == 1;
+		const auto& names = hole ? ground_names_ : doodad_names_;
+		const wxString preferred = hole ? "cave hole" : "cave enter";
+		cave_entrance_brush_choice_->Clear();
+		if (names.Index(preferred) != wxNOT_FOUND) { cave_entrance_brush_choice_->Append(preferred); cave_entrance_brush_choice_->SetSelection(0); }
+		OnInputChanged(event);
+	});
 	form->Add(cave_entrance_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave exit brush:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -585,6 +603,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	cave_ground_brush_choice_ = brushChoice("terrain-cave-ground-brush", "cave", 0);
 	if (ground_names_.Index("cave") == wxNOT_FOUND) cave_ground_brush_choice_->Clear();
 	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", "mountain", 0);
+	if (ground_names_.Index("mountain") == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
+	form->Add(cave_wall_brush_choice_, 1, wxEXPAND);
 
 	section("Vegetation");
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -710,7 +733,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_ }) {
+	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_ }) {
 		control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	}
 	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -869,7 +892,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	campfire_brush_choice_->Enable(natural && camp_count_spin_->GetValue() > 0);
 	const bool caveProfile = natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0);
 	cave_entrances_spin_->Enable(caveProfile);
-	for (wxComboBox* control : { cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_ }) control->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
+	cave_entrance_style_choice_->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
+	for (wxComboBox* control : { cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_ }) control->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
 	ford_length_spin_->Enable(natural);
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
@@ -975,6 +999,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
 	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0);
 	config.surface.caveEntrances = withFloors ? uint32_t(cave_entrances_spin_->GetValue()) : 0;
+	config.surface.caveEntranceStyle = cave_entrance_style_choice_->GetSelection() == 1 ? CaveEntranceStyle::FloorHole : CaveEntranceStyle::RockFace;
 	const bool withPaths = natural && config.surface.pathLength > 0;
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
 		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
@@ -1007,6 +1032,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		request.profile.caveEntrance = std::string(cave_entrance_brush_choice_->GetValue().utf8_str());
 		request.profile.caveExit = std::string(cave_exit_brush_choice_->GetValue().utf8_str());
 		request.profile.caveGround = std::string(cave_ground_brush_choice_->GetValue().utf8_str());
+		request.profile.caveWall = std::string(cave_wall_brush_choice_->GetValue().utf8_str());
 	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();

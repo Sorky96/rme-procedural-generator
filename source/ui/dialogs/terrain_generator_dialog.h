@@ -102,6 +102,8 @@ private:
 	wxComboBox* cave_entrance_brush_choice_ = nullptr;
 	wxComboBox* cave_exit_brush_choice_ = nullptr;
 	wxComboBox* cave_ground_brush_choice_ = nullptr;
+	wxComboBox* cave_wall_brush_choice_ = nullptr;
+	wxChoice* cave_entrance_style_choice_ = nullptr;
 	wxSpinCtrl* building_density_spin_ = nullptr;
 	wxComboBox* floor_brush_choice_ = nullptr;
 	wxCheckBox* walls_check_ = nullptr;
