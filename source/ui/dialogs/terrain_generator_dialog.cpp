@@ -19,6 +19,7 @@
 #include "lua/lua_api.h"
 #include "map/map.h"
 #include "procedural/adapter/door_types.h"
+#include "procedural/adapter/surface_resolver.h"
 #include "procedural/adapter/terrain_commit.h"
 #include "procedural/adapter/terrain_target.h"
 #include "rendering/drawers/tiles/tile_color_calculator.h"
@@ -322,7 +323,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	// A read-only list of the brushes the loaded client offers, so a name can only be picked.
 	// Ground brushes feed the terrain fields, doodad brushes the vegetation fields.
 	{
-		std::string previousGround, previousDoodad;
+		std::string previousGround, previousDoodad, previousExit;
 		for (const auto& [brushName, brush] : g_brushes.getMap()) {
 			if (brushName.empty()) continue;
 			if (brush->is<GroundBrush>()) {
@@ -332,6 +333,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			} else if (brush->is<WallBrush>() && !brush->is<WallDecorationBrush>()) {
 				wall_names_.Add(wxstr(brushName));
 			} else if (const auto* doodad = brush->as<DoodadBrush>()) {
+				// Cave exits are composites (ramps), so they get their own list with the resolver's own check.
+				if (brushName != previousExit && resolveCaveExitBrush(*doodad)) {
+					previousExit = brushName;
+					cave_exit_names_.Add(wxstr(brushName));
+				}
 				// The resolver only places single items of variation 0.
 				if (brushName == previousDoodad || !doodad->hasSingleObjects(0)) continue;
 				previousDoodad = brushName;
@@ -339,9 +345,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			}
 		}
 	}
-	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes.
+	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes, 3 cave exit (ramp) brushes.
 	const auto brushChoice = [&](const wxString& name, const wxString& preferred, int listKind) {
-		const wxArrayString& names = listKind == 2 ? wall_names_ : listKind == 1 ? doodad_names_ : ground_names_;
+		const wxArrayString& names = listKind == 3 ? cave_exit_names_ : listKind == 2 ? wall_names_ : listKind == 1 ? doodad_names_ : ground_names_;
 		// Only the preferred (or first) entry exists until the list is first opened: filling
 		// thousands of entries into eight lists made opening the dialog slow.
 		wxString initial = names.Index(preferred) != wxNOT_FOUND ? preferred : (names.IsEmpty() ? wxString() : names[0]);
@@ -570,9 +576,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(cave_entrance_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave exit brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	cave_exit_brush_choice_ = brushChoice("terrain-cave-exit-brush", "ramp", 1);
-	cave_exit_brush_choice_->SetToolTip("Must be a ramp-like doodad: a composite with a floor-change tile and a tile on the floor above.");
-	if (doodad_names_.Index("ramp") == wxNOT_FOUND) cave_exit_brush_choice_->Clear();
+	cave_exit_brush_choice_ = brushChoice("terrain-cave-exit-brush", "ramp", 3);
+	cave_exit_brush_choice_->SetToolTip("Ramp-like doodad brushes only: every variant a floor-change tile, a tile on the floor above and at most one tail tile.");
+	if (cave_exit_names_.Index("ramp") == wxNOT_FOUND) cave_exit_brush_choice_->Clear();
 	form->Add(cave_exit_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave ground brush:"), 0, wxALIGN_CENTER_VERTICAL);

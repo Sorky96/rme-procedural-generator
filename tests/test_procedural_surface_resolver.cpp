@@ -16,6 +16,7 @@
 #include "procedural/adapter/terrain_validation.h"
 #include "procedural/adapter/snapshot_equal.h"
 #include <format>
+#include "brushes/doodad/doodad_brush.h"
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
@@ -861,6 +862,18 @@ void caves(uint32_t side, std::ostream& report) {
 	{ auto bad = profile; bad.caveExit = "small rocks"; invalidProfile(bad); }
 	{ auto bad = profile; bad.caveGround = "small rocks"; invalidProfile(bad); }
 	{ auto bad = profile; bad.caveExit.clear(); invalidProfile(bad); }
+	// The dialog's exit list is every doodad brush resolveCaveExitBrush accepts: in 10.98 exactly the five four-way ramps.
+	std::vector<std::string> exitBrushes;
+	for (const auto& [name, brush] : g_brushes.getMap()) {
+		const auto* doodad = brush->as<DoodadBrush>();
+		if (!doodad) continue;
+		const auto resolved = resolveCaveExitBrush(*doodad);
+		if (!resolved) continue;
+		check(resolved->shapes.size() == 4, "Exit brush " + name + " has not four variants");
+		if (std::ranges::find(exitBrushes, name) == exitBrushes.end()) exitBrushes.push_back(name);
+	}
+	std::ranges::sort(exitBrushes);
+	check(exitBrushes == std::vector<std::string>{"bamboo ramp", "dirt ramp", "pyramid ramp", "ramp", "snowy ramp"}, "Unexpected cave exit brush list");
 	{ auto bad = config; bad.region.z = 15; const auto result = prepareTerrain(emptyMap, bad, profile, preparation);
 		check(!result && std::get<PreparationInputError>(result.error()) == PreparationInputError::NoLowerFloor, "Floor 15 accepted"); }
 	{
@@ -891,7 +904,7 @@ void caves(uint32_t side, std::ostream& report) {
 	check(!occupied && std::get<PreparationInputError>(occupied.error()) == PreparationInputError::LowerFloorOccupied, "Masked occupied lower floor accepted");
 	emptyMap.clearChanges();
 	report << "SURFACE_CAVE_E2E_PASS	" << side << "	entrances=" << grid->entrances.size() << " exits=" << exits->exits.size()
-		<< " skipped=" << exits->skipped.size() << " caveCells=" << caveCells << '\n';
+		<< " skipped=" << exits->skipped.size() << " caveCells=" << caveCells << " exitBrushes=" << exitBrushes.size() << '\n';
 }
 
 // D5: a surface generated next to existing terrain (a ring around the area, optionally one existing

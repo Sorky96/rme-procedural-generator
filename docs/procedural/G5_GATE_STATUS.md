@@ -93,3 +93,5 @@ Dwa przebiegi bajtowo identyczne. **Odchylenie:** `style_render` nie generuje ro
 **Kryterium 6: spełnione.** 18 z 18 testów rdzenia, obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS` w dwóch przebiegach; jedyne stderr to znane ostrzeżenia SetFocus.
 
 **Nie zweryfikowane:** działanie w grze (gdzie serwer stawia gracza po `floorchange=down` i po rampie), wygląd wejścia (wariant „cave enter” wybierany po komórce, może być zwrócony w złą stronę), wygląd jaskini i obramowań w RME, pola okna w GUI, odsetek wyjść przy włączonej roślinności, inne klienty niż 10.98.
+
+**Poprawka po teście GUI użytkownika (2026-11-10):** lista „Cave exit brush” była pusta z rampami (okno brało tylko doodady z pojedynczymi przedmiotami, rampy to kompozyty), więc pole wyjścia zostawało puste. Okno buduje teraz osobną listę z tej samej kontroli co adapter (`resolveCaveExitBrush`); sonda sprawdza, że w 10.98 to dokładnie „bamboo ramp”, „dirt ramp”, „pyramid ramp”, „ramp”, „snowy ramp” (`exitBrushes=5`). Sonda omijała okno, dlatego błąd nie był wykryty.

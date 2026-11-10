@@ -7,18 +7,26 @@
 #include "procedural/core/surface.h"
 #include "procedural/core/underground.h"
 
+class DoodadBrush;
+
 namespace rme::procedural {
 
-struct CaveBrushes {
+struct CaveExitBrush {
 	struct Items { uint16_t top = 0, ramp = 0, tail = 0; };
 	std::vector<ExitShape> shapes;
 	std::vector<Items> items;
+};
+
+struct CaveBrushes : CaveExitBrush {
 	std::vector<uint16_t> entrances;
 	uint16_t ground = 0;
 };
 
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
 [[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+// Translates a ramp-like doodad (every alternate a composite: a floor-change tile, a tile on the floor
+// above and at most one tail tile) into exit shapes in alternate order. GUI thread, client loaded.
+std::expected<CaveExitBrush, ResolveError> resolveCaveExitBrush(const DoodadBrush& exit);
 std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile& profile, const GenerationConfig& config);
 
 // Resolves a surface grid into the same GroundPlan the rest of the pipeline already consumes.

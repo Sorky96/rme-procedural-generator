@@ -120,6 +120,7 @@ private:
 	wxArrayString ground_names_;
 	wxArrayString doodad_names_;
 	wxArrayString wall_names_;
+	wxArrayString cave_exit_names_;
 	wxComboBox* tree_brush_choice_ = nullptr;
 	wxComboBox* bush_brush_choice_ = nullptr;
 	wxComboBox* stone_brush_choice_ = nullptr;
