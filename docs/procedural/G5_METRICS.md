@@ -211,3 +211,30 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 6. Ocena w GUI należy do użytkownika: wygląd płaskowyżu (krawędź, trawa, drzewa), rampy na górę, przesunięcie rysowania piętra z − 1.
 
 **Zastrzeżenia z góry.** Krawędź z gruntu „mountain” na z − 1 rysuje lica tylko od wschodu i południa (jak ściany jaskini). Wejście rampą na z − 1 opisuję z pamięci zachowania serwera; działania w grze nie sprawdzam. Gdy na z jest wejście Z do jaskini w ścianie skały, nad nim może leżeć Edge płaskowyżu (dozwolone).
+
+### Iteracja 33 — płaskowyż bez ścian, piętra z − 2 i z − 3, rampy między piętrami (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; decyzje użytkownika: „piętro +1 nie powinno mieć ścian”, „Trawa do krawędzi”, „wszędzie rampy wybrane”, z − 3 tylko gdy jest miejsce na co najmniej 30 pól)
+
+**Zakres.** Zmiana iteracji 32: bez pasa skały na krawędzi płaskowyżu i nowe piętra z − 2 oraz z − 3. Na wszystkich przejściach w górę stoi ta sama wybrana rampa (`plateauRamp`).
+
+**Definicje.**
+- **Bez ścian na z − 1:** komórki Edge z iteracji 32 dostają grunt Top (`plateauGround`), nie `plateauEdge`. Nadal są bez dekoru (pas przy krawędzi bez drzew). Pole profilu `plateauEdge` usunięte z profilu, okna i walidacji. Jeśli usunięcie zmienia format profilu, wykonawca opisuje zgodność wstecz: stary plik z `plateauEdge` ma się wczytać, a pole jest ignorowane albo daje jasny błąd, decyzja z uzasadnieniem. Odcisk przy `plateauMinTop` 0 bez zmian.
+- **Piętro k (k = 2, 3), nowe pole `SurfaceTuning::plateauLevels`** (1..3, domyślnie 1, haszowane tylko gdy > 1, na końcu struktury):
+  - **Podstawa** = komórki pokryte na piętrze k − 1 (Top i dawne Edge, bez lądowisk i bez komórek rampy, ogona i celu).
+  - **Top_k** = komórki podstawy w odległości (Chebyshev) ≥ 2 od komórki spoza podstawy.
+  - Komponent Top_k (4-sąsiedztwo) mniejszy niż **30 komórek** odpada w całości.
+  - **Pas_k** = komórki podstawy w odległości 1 od Top_k. Leżą na piętrze k, mają grunt Top i nie mają dekoru.
+  - Piętro k − 1 pod piętrem k zostaje bez zmian (stropów nie ma w Tibii, piętro k rysuje się nad nim z przesunięciem).
+- **Rampy na piętrach k ≥ 2:** pole P leży na piętrze k − 1 (Top bez dekoru, poza rzutem piętra k, poza celami i ogonami innych ramp), a kształt pochodzi z listy jak w iteracji 32. Cel D = P + kierunek leży na piętrze k (Top_k albo lądowisko z pasa_k, wtedy sąsiad w tym kierunku to Top_k). Ogon, jeśli jest, leży na piętrze k − 1, na polu otwartym. Liczba ramp jak w iteracji 32 (1 + 1 na każde 400 komórek, najwyżej 4, odstęp ≥ 16). Piętro bez rampy jest usuwane razem z piętrami nad nim. Z P i z ogona usuwa się dekor piętra k − 1, a sąsiedzi P na piętrze k − 1 zostają otwarci.
+- **Roślinność** na Top_k jak na z − 1 (osobny strumień losowy na każde piętro), bez dekoru na pasie_k i lądowiskach.
+- **Adapter i historia:** każde piętro z − 1, z − 2, z − 3 musi być puste w całym prostokącie, inaczej odmowa z komunikatem. Każde niepuste piętro to osobny krok historii. Kolejność: najwyższe piętro najpierw, potem niższe, jaskinia, powierzchnia. Błąd dowolnego kroku cofa wszystkie poprzednie. Gdy obszar leży przy z = 0..2, piętra wychodzące poza z = 0 są odrzucane w walidacji z komunikatem (nie obcinane po cichu).
+- **Okno, zakładka „Levels”:** usunięte pole „Plateau edge brush”, dodane „Mountain levels” (1..3). „Preview floor” pokazuje każde piętro z wyniku.
+
+**Kryteria.**
+1. `plateauMinTop` 0: odcisk Seed 1729 100×100 = 17159159863505677800, testy rdzenia, odciski planu i stare przypadki sondy (bez płaskowyżu) bez zmian. Przypadki płaskowyżu z iteracji 32 zmieniają się świadomie (bez Edge), a zmiana jest opisana.
+2. Testy rdzenia na ręcznych siatkach: z − 1 bez gruntu Edge, Top_k i pas_k według definicji, odrzucenie komponentu < 30, rampa piętra k (P, D, ogon, P poza rzutem piętra k), usunięcie piętra bez rampy razem z wyższymi, roślinność tylko na Top_k. Porównanie z niezależnym przeszukiwaniem na ≥ 50 losowych siatkach dla `plateauLevels` 3. Deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, m06 i m19, opcje jak w iteracji 32 plus `plateauLevels=3`, w `style_render`), dla każdego piętra: płaskowyże, komórki Top, rampy (mediana [min..max]). **Kryteria:** (a) każdy płaskowyż każdego piętra ma ≥ 1 rampę z piętra niżej; (b) 100 % komórek każdego piętra osiągalnych z powierzchni przez rampy (przeszukiwanie po piętrach); (c) 100 % ramp spełnia regułę P / D / ogon; (d) każdy komponent z − 3 ma ≥ 30 komórek; (e) dwa przebiegi bajtowo identyczne.
+4. Sonda G1 `--surface`: przypadek `SURFACE_PLATEAU_E2E_PASS` zaktualizowany (bez gruntu krawędzi), nowy przypadek `SURFACE_PLATEAU_LEVELS_E2E_PASS` (3 piętra). Sprawdzane: grunt i rampy każdego piętra dokładnie według planu, nic poza prostokątem, brak przedmiotu „top”, Commit, Undo wszystkich kroków po kolei, Redo, wymuszony błąd ostatniego kroku cofa poprzednie, odmowa przy niepustym z − 2, odmowa przy z zbyt niskim, przypadek z jaskinią naraz.
+5. Wszystkie testy rdzenia (przebudowane cele) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: wygląd pięter bez ścian, ramp między piętrami i wielkość płaskowyżów.
+
+**Zastrzeżenia z góry.** Bez ścian krawędź piętra jest widoczna tylko jako brzeg gruntu (autoborder trawy). W grze z poziomu niższego piętra nie ma przeszkody przy krawędzi. Działania w grze nie sprawdzam. Płaskowyże z − 1 przy m19 zajmują około 22 % obszaru (iteracja 32); w tej iteracji tego nie zmieniam.
