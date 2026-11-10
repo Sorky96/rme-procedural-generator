@@ -23,6 +23,10 @@ struct CaveBrushes : CaveExitBrush {
 	uint16_t wall = 0;
 };
 
+[[nodiscard]] bool hasPlateau(const GroundProfile& profile) noexcept;
+[[nodiscard]] bool validPlateauProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundProfile& profile, const GenerationConfig& config);
+
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
 [[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
 // Translates a ramp-like doodad (every alternate a composite: a floor-change tile, a tile on the floor

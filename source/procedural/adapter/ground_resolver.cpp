@@ -65,7 +65,28 @@ uint64_t GroundPlan::fingerprint() const {
 		for (const unsigned char c : profile.caveWall) hash = (hash ^ c) * 1099511628211ULL;
 		hash = (hash ^ 0) * 1099511628211ULL;
 	}
-	return hash;
+    if (config.surface.plateauMinTop) {
+        const auto add = [&](uint64_t v) {
+            for (unsigned i = 0; i < 8; ++i) {
+                hash = (hash ^ uint8_t(v)) * 1099511628211ULL;
+                v >>= 8;
+            }
+        };
+        add(config.surface.plateauMinTop);
+        for (const auto* name : {&profile.plateauGround, &profile.plateauEdge, &profile.plateauRamp}) {
+            for (unsigned char c : *name) {
+                add(c);
+            }
+            add(0);
+        }
+        for (auto c : plateauFloor) {
+            add(c);
+        }
+        for (auto id : plateauRamps) {
+            add(id);
+        }
+    }
+    return hash;
 }
 
 bool profileNeedsEdgeClearance(const GroundProfile& profile) {

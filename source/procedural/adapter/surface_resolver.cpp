@@ -39,6 +39,43 @@ bool plainCaveItem(const Item* item, bool allowGround = false) {
 }
 }
 
+bool hasPlateau(const GroundProfile& p) noexcept
+{
+    return !p.plateauGround.empty() || !p.plateauEdge.empty() || !p.plateauRamp.empty();
+}
+bool validPlateauProfile(const GroundProfile& p, const GenerationConfig& c) noexcept
+{
+    return !hasPlateau(p)
+        || (c.algorithm == GenerationAlgorithm::Surface && c.surface.plateauMinTop >= 16 && c.surface.plateauMinTop <= 4096
+            && !p.plateauGround.empty() && p.plateauGround.size() <= 256 && !p.plateauEdge.empty() && p.plateauEdge.size() <= 256
+            && !p.plateauRamp.empty() && p.plateauRamp.size() <= 256);
+}
+std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundProfile& p, const GenerationConfig& c)
+{
+    if (!wxIsMainThread()) {
+        return std::unexpected(ResolveError::WrongThread);
+    }
+    if (!g_version.IsVersionLoaded()) {
+        return std::unexpected(ResolveError::NoClient);
+    }
+    if (!hasPlateau(p) || !validPlateauProfile(p, c)) {
+        return std::unexpected(ResolveError::InvalidProfile);
+    }
+    for (const auto* name : {&p.plateauGround, &p.plateauEdge}) {
+        const auto* b = g_brushes.getBrush(*name);
+        const auto* g = b ? b->as<GroundBrush>() : nullptr;
+        if (!g || g->getTotalChance() <= 0 || !g->getPlacementItemId()) {
+            return std::unexpected(ResolveError::InvalidProfile);
+        }
+    }
+    const auto* b = g_brushes.getBrush(p.plateauRamp);
+    const auto* d = b ? b->as<DoodadBrush>() : nullptr;
+    if (!d) {
+        return std::unexpected(ResolveError::InvalidProfile);
+    }
+    return resolveCaveExitBrush(*d);
+}
+
 bool hasCave(const GroundProfile& profile) noexcept {
 	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }
@@ -161,8 +198,10 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	if (!g_version.IsVersionLoaded() || !g_version.getLoadedVersion()) return std::unexpected(ResolveError::NoClient);
 	if (input.assetRevision != g_version.GetAssetRevision()) return std::unexpected(ResolveError::StaleAssets);
 	if (grid.region != input.config.region || !grid.valid()) return std::unexpected(ResolveError::InvalidInput);
-	if (!validCaveProfile(profile, input.config)) return std::unexpected(ResolveError::InvalidProfile);
-	if (hasCave(profile)) {
+    if (!validPlateauProfile(profile, input.config) || !validCaveProfile(profile, input.config)) {
+        return std::unexpected(ResolveError::InvalidProfile);
+    }
+    if (hasCave(profile)) {
 		const auto cave = resolveCaveBrushes(profile, input.config);
 		if (!cave) return std::unexpected(cave.error());
 	}

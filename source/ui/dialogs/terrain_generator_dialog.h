@@ -118,7 +118,9 @@ private:
 	wxSpinCtrl* ruin_percent_spin_ = nullptr;
 	wxSpinCtrl* camp_count_spin_ = nullptr;
 	wxSpinCtrl* cave_entrances_spin_ = nullptr;
-	wxCheckBox* vegetation_check_ = nullptr;
+    wxSpinCtrl* plateau_min_spin_ = nullptr;
+    wxComboBox *plateau_ground_choice_ = nullptr, *plateau_edge_choice_ = nullptr, *plateau_ramp_choice_ = nullptr;
+    wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;
 	wxArrayString doodad_names_;
 	wxArrayString wall_names_;

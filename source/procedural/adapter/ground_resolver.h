@@ -36,6 +36,7 @@ struct GroundProfile {
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;
+    std::string plateauGround, plateauEdge, plateauRamp;
 };
 
 struct GroundPlan {
@@ -63,6 +64,8 @@ struct GroundPlan {
 	std::vector<uint16_t> exits;
 	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band; authenticates placement and borders.
 	std::vector<uint8_t> caveFloor;
+    std::vector<uint8_t> plateauFloor; // 0 None, 1 Top, 2 Edge, 3 landing
+    std::vector<uint16_t> plateauRamps;
 };
 
 // True when a ground brush of the profile has an outer border to "nothing": the border calculator then draws

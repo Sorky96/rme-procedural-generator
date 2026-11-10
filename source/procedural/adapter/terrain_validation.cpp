@@ -96,7 +96,20 @@ std::expected<void, PreparedValidationError> validatePreparedTerrain(
 		return fail(PreparedValidationError::InvalidPrepared);
 	}
 
-	if (prepared.cave) {
+    if (prepared.plateau) {
+        auto upperConfig = currentConfig;
+        --upperConfig.region.z;
+        if (prepared.plateau->plateau || prepared.plateau->cave || prepared.plateau->plan.plateauFloor.empty()) {
+            return fail(PreparedValidationError::InvalidPrepared);
+        }
+        const auto upper = validatePreparedTerrain(map, *prepared.plateau, upperConfig, currentProfile, currentMask, stop);
+        if (!upper) {
+            return upper;
+        }
+    } else if (!plan.plateauRamps.empty()) {
+        return fail(PreparedValidationError::InvalidPrepared);
+    }
+    if (prepared.cave) {
 		auto lowerConfig = currentConfig;
 		++lowerConfig.region.z;
 		if (prepared.cave->cave || prepared.cave->plan.caveFloor.empty()) return fail(PreparedValidationError::InvalidPrepared);
