@@ -799,6 +799,11 @@ void testPlateaus()
     check(second && second->components && second->inset == 4, "hand upper minimum inset supports ramp and tail");
     auto third = generateNextPlateau(*second, 1730, ramps);
     check(third && third->components && third->inset == 4, "hand third level");
+    PlateauGrid narrow {g.region, std::vector<PlateauKind>(g.cells.size(),PlateauKind::None), std::vector<uint8_t>(g.cells.size())};
+    for(int y=6;y<14;++y) for(int x=6;x<14;++x) narrow.cells[size_t(y)*24+x]=PlateauKind::Top;
+    auto tooSmall=generateNextPlateau(narrow,1729,ramps);
+    check(tooSmall && !tooSmall->components && std::ranges::count(tooSmall->cells,PlateauKind::Top)==0,
+          "hand upper component of four cells is below minimum 30");
     auto without = generateNextPlateau(*first, 1729, {});
     check(without && !without->components, "upper without ramp removed");
     auto above = generateNextPlateau(*without, 1729, ramps);
