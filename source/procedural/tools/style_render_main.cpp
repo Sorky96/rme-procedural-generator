@@ -64,14 +64,22 @@ int main(int argc, char** argv) {
 		else if (name == "repairReach") tuning.repairReach = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
-        else if (name == "plateauMinTop") {
+        else if (name == "plateauLevels") {
+            tuning.plateauLevels = value;
+        } else if (name == "plateauMaxPercent") {
+            tuning.plateauMaxPercent = value;
+        } else if (name == "plateauMinTop") {
             tuning.plateauMinTop = value;
-        } else if (name == "caveEntrances")
+        } else if (name == "caveEntrances") {
             tuning.caveEntrances = value;
-        else if (name == "buildingDensity") tuning.buildingDensity = value;
-		else { std::cerr << "unknown override " << name << '\n'; return 2; }
-	}
-	for (int i = firstSeed; i < argc; ++i) {
+        } else if (name == "buildingDensity") {
+            tuning.buildingDensity = value;
+        } else {
+            std::cerr << "unknown override " << name << '\n';
+            return 2;
+        }
+    }
+    for (int i = firstSeed; i < argc; ++i) {
 		const uint64_t seed = std::strtoull(argv[i], nullptr, 10);
 		const SurfaceConfig config {{100, 100, 7, side, side}, seed, tuning};
 		const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, budget);
@@ -254,64 +262,164 @@ int main(int argc, char** argv) {
                     occupied[size_t(int64_t(e.cell) + dx[d] + int64_t(dy[d]) * side)] = 1;
                 }
             }
-            auto p = generatePlateau(*grid, seed, tuning.plateauMinTop, ramp, occupied);
+            auto p = generatePlateau(*grid, seed, tuning.plateauMinTop, ramp, occupied, {}, tuning.plateauMaxPercent);
             if (!p) {
                 return 8;
             }
-            std::vector<uint8_t> reached(grid->cells.size());
-            std::vector<uint32_t> q, counts(p->components);
-            size_t ruleOk = 0;
-            constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
-            for (const auto& r : p->ramps) {
-                ++counts[r.component];
-                q.push_back(r.destination);
-                reached[r.destination] = 1;
-                auto s = ramp[r.shape];
-                auto d = size_t(s.direction);
-                auto dest = size_t(int64_t(r.cell) + dx[d] + int64_t(dy[d]) * side);
-                auto open = [&](size_t i) {
-                    auto k = grid->cells[i];
-                    if (occupied[i]) return false;
-                    for (const auto* forbidden : {&grid->doors, &grid->gaps, &grid->fires, &grid->entrances})
-                        if (std::ranges::find(*forbidden, i) != forbidden->end()) return false;
-                    return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Path;
-                };
-                for (const auto& other : p->ramps) if (&other != &r)
-                    if (std::max(std::abs(int(other.cell % side) - int(r.cell % side)),
-                                 std::abs(int(other.cell / side) - int(r.cell / side))) < 16) return 9;
-                auto tail = size_t(int64_t(r.cell) + s.tailDx + int64_t(s.tailDy) * side);
-                ruleOk += open(r.cell) && (!s.hasTail || open(tail)) && dest == r.destination
-                    && (p->cells[dest] == PlateauKind::Top || (p->landings[dest] &&
-                        p->cells[size_t(int64_t(dest) + dx[d] + int64_t(dy[d]) * side)] == PlateauKind::Top));
-            }
-            for (size_t i = 0; i < q.size(); ++i) {
-                int x = int(q[i] % side), y = int(q[i] / side);
-                for (size_t d = 0; d < 4; ++d) {
-                    int xx = x + dx[d], yy = y + dy[d];
-                    if (xx < 0 || yy < 0 || xx >= int(side) || yy >= int(side)) {
-                        continue;
+            uint64_t lowerCovered = uint64_t(side) * side;
+            std::vector<PlateauKind> lowerCells;
+            std::vector<uint8_t> lowerLandings, lowerReached(grid->cells.size(), 1), lowerForbidden;
+            for (uint32_t level = 1; level <= tuning.plateauLevels; ++level) {
+                std::vector<uint8_t> reached(grid->cells.size());
+                std::vector<uint32_t> q, counts(p->components);
+                size_t ruleOk = 0;
+                constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+                for (const auto& r : p->ramps) {
+                    ++counts[r.component];
+                    q.push_back(r.destination);
+                    reached[r.destination] = 1;
+                    auto s = ramp[r.shape];
+                    auto d = size_t(s.direction);
+                    auto dest = size_t(int64_t(r.cell) + dx[d] + int64_t(dy[d]) * side);
+                    auto open = [&](size_t i) {
+                        if (level > 1) {
+                            return lowerCells[i] != PlateauKind::None && !lowerLandings[i] && !lowerForbidden[i];
+                        }
+                        auto k = grid->cells[i];
+                        if (occupied[i]) {
+                            return false;
+                        }
+                        for (const auto* forbidden : {&grid->doors, &grid->gaps, &grid->fires, &grid->entrances}) {
+                            if (std::ranges::find(*forbidden, i) != forbidden->end()) {
+                                return false;
+                            }
+                        }
+                        return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Path;
+                    };
+                    for (const auto& other : p->ramps) {
+                        if (&other != &r) {
+                            if (std::max(
+                                    std::abs(int(other.cell % side) - int(r.cell % side)),
+                                    std::abs(int(other.cell / side) - int(r.cell / side))
+                                )
+                                < 16) {
+                                return 9;
+                            }
+                        }
                     }
-                    auto j = size_t(yy) * side + xx;
-                    if (!reached[j] && (p->cells[j] == PlateauKind::Top || p->landings[j])) {
-                        reached[j] = 1;
-                        q.push_back(uint32_t(j));
+                    auto tail = size_t(int64_t(r.cell) + s.tailDx + int64_t(s.tailDy) * side);
+                    bool corridor = false;
+                    for (uint32_t step = 0; step < p->inset; ++step) {
+                        int x = int(dest % side) + int(step) * dx[d], y = int(dest / side) + int(step) * dy[d];
+                        if (x < 0 || y < 0 || x >= int(side) || y >= int(side)) {
+                            break;
+                        }
+                        auto i = size_t(y) * side + x;
+                        const bool base = level == 1 ? grid->cells[i] == SurfaceKind::Rock
+                                                     : lowerCells[i] != PlateauKind::None && !lowerLandings[i] && !lowerForbidden[i];
+                        if (!base) {
+                            break;
+                        }
+                        if (p->cells[i] == PlateauKind::Top) {
+                            corridor = true;
+                            break;
+                        }
+                        if (!p->landings[i]) {
+                            break;
+                        }
+                    }
+                    const bool lowerRule = level == 1
+                        || (lowerCells[r.cell] == PlateauKind::Top && p->cells[r.cell] == PlateauKind::None && lowerReached[r.cell]
+                            && (!s.hasTail || lowerReached[tail]));
+                    ruleOk += corridor && lowerRule && open(r.cell) && (!s.hasTail || open(tail)) && dest == r.destination
+                        && (p->cells[dest] == PlateauKind::Top || p->landings[dest]);
+                }
+                for (size_t i = 0; i < q.size(); ++i) {
+                    int x = int(q[i] % side), y = int(q[i] / side);
+                    for (size_t d = 0; d < 4; ++d) {
+                        int xx = x + dx[d], yy = y + dy[d];
+                        if (xx < 0 || yy < 0 || xx >= int(side) || yy >= int(side)) {
+                            continue;
+                        }
+                        auto j = size_t(yy) * side + xx;
+                        if (!reached[j] && (p->cells[j] != PlateauKind::None)) {
+                            reached[j] = 1;
+                            q.push_back(uint32_t(j));
+                        }
+                    }
+                }
+                size_t top = 0, accessible = 0;
+                for (size_t i = 0; i < reached.size(); ++i) {
+                    if (p->cells[i] == PlateauKind::Top) {
+                        ++top;
+                        accessible += reached[i];
+                    }
+                }
+                if (ruleOk != p->ramps.size() || accessible != top || std::ranges::find(counts, 0) != counts.end()) {
+                    return 9;
+                }
+                std::cout << std::format(
+                    "plateau seed {} level {}: plateaus {} top {} ramps {} reached {} ruleOk {}\n", seed, level, p->components, top,
+                    p->ramps.size(), accessible, ruleOk
+                );
+                const auto covered = std::ranges::count_if(p->cells, [](auto k) { return k != PlateauKind::None; });
+                if (tuning.plateauMaxPercent && uint64_t(covered) * 100 > lowerCovered * tuning.plateauMaxPercent) {
+                    return 9;
+                }
+                size_t reachedAll = 0;
+                std::vector<uint8_t> seen(p->cells.size());
+                for (size_t i = 0; i < p->cells.size(); ++i) {
+                    if (p->cells[i] != PlateauKind::None) {
+                        reachedAll += reached[i];
+                    }
+                    if (p->cells[i] == PlateauKind::Top && !seen[i]) {
+                        std::vector<size_t> component {i};
+                        seen[i] = 1;
+                        for (size_t k = 0; k < component.size(); ++k) {
+                            int x = int(component[k] % side), y = int(component[k] / side);
+                            for (size_t d = 0; d < 4; ++d) {
+                                int xx = x + dx[d], yy = y + dy[d];
+                                if (xx < 0 || yy < 0 || xx >= int(side) || yy >= int(side)) {
+                                    continue;
+                                }
+                                auto j = size_t(yy) * side + xx;
+                                if (!seen[j] && p->cells[j] == PlateauKind::Top) {
+                                    seen[j] = 1;
+                                    component.push_back(j);
+                                }
+                            }
+                        }
+                        if (level > 1 && component.size() < 30) {
+                            return 9;
+                        }
+                    }
+                }
+                if (reachedAll != size_t(covered)) {
+                    return 9;
+                }
+                std::cout << std::format(
+                    "plateau area seed {} level {}: cells {} reachedAll {} inset {}\n", seed, level, covered, reachedAll, p->inset
+                );
+                if (level < tuning.plateauLevels) {
+                    lowerCovered = uint64_t(covered);
+                    lowerCells = p->cells;
+                    lowerLandings = p->landings;
+                    lowerReached = reached;
+                    lowerForbidden.assign(p->cells.size(), 0);
+                    for (const auto& r : p->ramps) {
+                        lowerForbidden[r.destination] = 1;
+                        lowerForbidden[r.cell] = 1;
+                        const auto tail = 2 * int64_t(r.cell) - int64_t(r.destination);
+                        if (tail >= 0 && size_t(tail) < lowerForbidden.size()) {
+                            lowerForbidden[size_t(tail)] = 1;
+                        }
+                    }
+                    p = generateNextPlateau(*p, seed ^ (uint64_t(level + 1) << 48), ramp, {}, tuning.plateauMaxPercent);
+                    if (!p) {
+                        return 8;
                     }
                 }
             }
-            size_t top = 0, accessible = 0;
-            for (size_t i = 0; i < reached.size(); ++i) {
-                if (p->cells[i] == PlateauKind::Top) {
-                    ++top;
-                    accessible += reached[i];
-                }
-            }
-            if (ruleOk != p->ramps.size() || accessible != top || std::ranges::find(counts, 0) != counts.end()) {
-                return 9;
-            }
-            std::cout << std::format(
-                "plateau seed {}: plateaus {} top {} ramps {} reached {} ruleOk {}\n", seed, p->components, top, p->ramps.size(),
-                accessible, ruleOk
-            );
         }
         if (const auto graph = buildRegionGraph(*grid, true)) {
 			// Iteration 24: size of the graph, POIs without a route from the start, travel distances and whether the adjacency graph is connected.

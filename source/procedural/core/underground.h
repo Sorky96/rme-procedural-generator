@@ -83,10 +83,14 @@ struct PlateauGrid {
     std::vector<uint8_t> landings;
     std::vector<PlateauRamp> ramps;
     uint32_t components = 0;
+    uint32_t inset = 2; // accepted global inset, including corridor/area checks
 };
 std::expected<PlateauGrid, SurfaceError> generatePlateau(
     const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied = {},
-    std::stop_token stop = {}
+    std::stop_token stop = {}, uint32_t maxPercent = 0
+);
+std::expected<PlateauGrid, SurfaceError> generateNextPlateau(
+    const PlateauGrid& lower, uint64_t seed, std::span<const ExitShape> shapes, std::stop_token stop = {}, uint32_t maxPercent = 0
 );
 std::expected<DecorGrid, SurfaceError>
 generatePlateauDecoration(const PlateauGrid& plateau, uint64_t seed, const DecorTuning& tuning, std::stop_token stop = {});

@@ -78,9 +78,11 @@ void testSerialization() {
 	check(text.has_value(), "serializes");
 	if (!text) return;
 	const auto back = parseProfile(*text);
-	check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
-	check(back && serializeProfile(*back).value() == *text, "serialization is stable");
-	check(text->starts_with("g4-profile/6\n"), "schema line first");
+    const auto legacy = parseProfile(*text + "plateauEdge\tmountain\n");
+    check(legacy && *legacy == p, "legacy plateauEdge record is ignored and omitted on save");
+    check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
+    check(back && serializeProfile(*back).value() == *text, "serialization is stable");
+    check(text->starts_with("g4-profile/6\n"), "schema line first");
 
 	check(parseProfile("g4-profile/7\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");
