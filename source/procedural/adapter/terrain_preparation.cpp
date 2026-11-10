@@ -458,7 +458,7 @@ TerrainPreparationSteps runPreparation(
                         }
                         auto upperProfile = profile;
                         upperProfile.brushes[0] = profile.plateauGround;
-                        upperProfile.brushes[2] = profile.plateauGround;
+                        upperProfile.brushes[2] = profile.plateauCliff;
                         upperProfile.wall.clear();
                         upperProfile.door.clear();
                         upperProfile.campfire.clear();
@@ -474,10 +474,24 @@ TerrainPreparationSteps runPreparation(
                         upperPlan->doors.clear();
                         upperPlan->fires.clear();
                         for (size_t i = 0; i < cellCount; ++i) {
-                            upperPlan->plateauFloor[i] = generated->landings[i] ? 3
-                                : generated->cells[i] == PlateauKind::Top       ? 1
-                                : generated->cells[i] == PlateauKind::Edge      ? 2
-                                                                                : 0;
+                            upperPlan->plateauFloor[i] = generated->cells[i] == PlateauKind::Top ? 1 : 0;
+                        }
+                        // Resolve cliff variants with the existing ground resolver, then use the normal border/undo path.
+                        auto cliffGrid = upperGrid;
+                        cliffGrid.region = lowerPlan.config.region;
+                        for (auto& k : cliffGrid.cells) if (k == SurfaceKind::Grass) k = SurfaceKind::Rock;
+                        auto cliffProfile = upperProfile;
+                        cliffProfile.brushes[2] = profile.plateauCliff;
+                        auto cliffInput = upperSnapshot->input;
+                        cliffInput.config.region = lowerPlan.config.region;
+                        cliffInput.config.vegetation = false;
+                        cliffProfile.decorCount = 0;
+                        auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, clear);
+                        if (!cliffs) co_return fail(cliffs.error());
+                        for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {
+                            lowerPlan.items[i] = cliffs->items[i];
+                            if (lowerUnit) lowerPlan.plateauFloor[i] = 2;
+                            if (!lowerPlan.decor.empty()) lowerPlan.decor[i] = 0;
                         }
                         lowerPlan.plateauRamps.assign(cellCount, 0);
                         for (const auto& ramp : generated->ramps) {
@@ -486,6 +500,9 @@ TerrainPreparationSteps runPreparation(
                             if (!lowerPlan.items[ramp.cell] || !upperPlan->items[ramp.destination]) {
                                 co_return fail(PreparationInputError::InvalidParameters);
                             }
+                            upperPlan->items[ramp.cell] = ids.opening;
+                            upperPlan->plateauFloor[ramp.cell] = 3;
+                            if (!upperPlan->decor.empty()) upperPlan->decor[ramp.cell] = 0;
                             lowerPlan.plateauRamps[ramp.cell] = ids.ramp;
                             if (shape.hasTail) {
                                 auto t = size_t(int64_t(ramp.cell) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);

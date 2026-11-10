@@ -1129,17 +1129,16 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     history.push_back(8);
     history.push_back(7);
     const auto& upper = *prepared->plateau;
-    size_t top = 0, edge = 0, landing = 0, ramps = 0, decor = 0;
+    size_t top = 0, landing = 0, ramps = 0, decor = 0;
     for (size_t i = 0; i < upper.plan.items.size(); ++i) {
         const Position pos(100 + int(i % side), 100 + int(i / side), 6);
         auto* tile = upper.preview.getBuffer().getTile(pos);
         auto kind = upper.plan.plateauFloor[i];
         check(bool(tile && tile->ground) == bool(kind), "Plateau ground occupancy");
-        if (kind) {
-            check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.plateauGround), "Plateau ground brush");
+        if (kind && kind != 3) {
+            check(brushOf(tile->ground->getID()) == g_brushes.getBrush(kind == 2 ? profile.plateauCliff : profile.plateauGround), "Plateau ground brush");
         }
         top += kind == 1;
-        edge += kind == 2;
         landing += kind == 3;
         if (upper.plan.decor[i]) {
             ++decor;
@@ -1147,7 +1146,7 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
         }
         ramps += prepared->plan.plateauRamps[i] != 0;
     }
-    check(top && edge && landing && ramps, "Plateau requires Top Edge landing and ramps");
+    check(top && landing && ramps, "Plateau requires grass opening and ramps");
     const auto* rampBrush = g_brushes.getBrush(profile.plateauRamp)->as<DoodadBrush>();
     std::vector<uint16_t> forbidden;
     for (int v = 0; v < rampBrush->getTotalVariants(); ++v) {
@@ -1160,17 +1159,19 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
             }
         }
     }
-    for (const auto* unit : allUnits) {
-        for (const auto& pos : unit->preview.getChanges()) {
-            const auto* tile = unit->preview.getBuffer().getTile(pos);
-            if (!tile) {
-                continue;
-            }
-            if (tile->ground) {
-                check(std::ranges::find(forbidden, tile->ground->getID()) == forbidden.end(), "Forbidden ramp top ground");
-            }
-            for (const auto& item : tile->items) {
-                check(std::ranges::find(forbidden, item->getID()) == forbidden.end(), "Forbidden ramp top item");
+    for (const auto* lower : allUnits) {
+        if (!lower->plateau) continue;
+        const auto& cap = *lower->plateau;
+        for (size_t i = 0; i < cap.plan.items.size(); ++i) {
+            const auto kind = cap.plan.plateauFloor[i];
+            Position pos(100 + int(i % side), 100 + int(i / side), cap.plan.config.region.z);
+            const auto* tile = cap.preview.getBuffer().getTile(pos);
+            if (kind == 3) {
+                check(tile && tile->ground && std::ranges::find(forbidden, tile->ground->getID()) != forbidden.end(), "Mountain opening from template");
+            } else if (kind) {
+                auto below = pos; ++below.z;
+                const auto* support = lower->preview.getBuffer().getTile(below);
+                check(support && support->ground && brushOf(support->ground->getID()) == g_brushes.getBrush(profile.plateauCliff), "Same xy cliff under cap");
             }
         }
     }
@@ -1196,8 +1197,8 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
             const auto* tile = unit->preview.getBuffer().getTile(pos);
             if (!unit->plan.plateauFloor.empty()) {
                 check(bool(tile && tile->ground) == bool(unit->plan.plateauFloor[i]), "All levels ground footprint");
-                if (tile && tile->ground) {
-                    check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.plateauGround), "All levels Top ground");
+                if (tile && tile->ground && unit->plan.plateauFloor[i] != 3) {
+                    check(brushOf(tile->ground->getID()) == g_brushes.getBrush(unit->plan.plateauFloor[i] == 2 ? profile.plateauCliff : profile.plateauGround), "All levels ground brush");
                 }
             }
             if (!unit->plan.plateauRamps.empty() && unit->plan.plateauRamps[i]) {
@@ -1274,7 +1275,7 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
             "Insufficient z range accepted"
         );
     }
-    for (int variant = 0; variant < 4; ++variant) {
+    for (int variant = 0; variant < 6; ++variant) {
         auto bad = profile;
         if (variant == 0) {
             bad.plateauGround.clear();
@@ -1288,6 +1289,8 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
         if (variant == 3) {
             bad.plateauRamp = "small rocks";
         }
+        if (variant == 4) bad.plateauCliff.clear();
+        if (variant == 5) bad.plateauCliff = "small rocks";
         check(!prepareTerrain(empty, config, bad, preparation), "Invalid plateau profile accepted");
     }
     auto aloneConfig = config;
@@ -1310,8 +1313,8 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     }
     aloneEditor.map.clearChanges();
     report << std::format(
-        "{}\ttop={}\tedge={}\tlanding={}\trampItems={}\tdecor={}\tsteps={}\n",
-        levels == 1 ? "SURFACE_PLATEAU_E2E_PASS" : "SURFACE_PLATEAU_LEVELS_E2E_PASS", top, edge, landing, ramps, decor, history.size()
+        "{}\tgrass={}\topening={}\trampItems={}\tdecor={}\tsteps={}\n",
+        levels == 1 ? "SURFACE_PLATEAU_E2E_PASS" : "SURFACE_PLATEAU_LEVELS_E2E_PASS", top, landing, ramps, decor, history.size()
     );
 }
 

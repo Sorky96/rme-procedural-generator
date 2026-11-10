@@ -131,7 +131,7 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
         if (!charge(unit.plan.plateauFloor.capacity()) || !charge(unit.plan.plateauRamps.capacity(), sizeof(uint16_t))) {
             return std::unexpected(TerrainCommitFailure::MemoryLimit);
         }
-        for (const auto* name : {&unit.plan.profile.caveWall, &unit.plan.profile.plateauGround, &unit.plan.profile.plateauRamp}) {
+        for (const auto* name : {&unit.plan.profile.caveWall, &unit.plan.profile.plateauCliff, &unit.plan.profile.plateauGround, &unit.plan.profile.plateauRamp}) {
             if (!charge(name->capacity() + 1 + kSnapshotAllocationOverhead)) {
                 return std::unexpected(TerrainCommitFailure::MemoryLimit);
             }

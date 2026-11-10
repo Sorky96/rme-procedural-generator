@@ -620,6 +620,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(label("Plateau ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_ground_choice_ = brushChoice("terrain-plateau-ground", "grass", 0);
     form->Add(plateau_ground_choice_, 1, wxEXPAND);
+    form->Add(label("Plateau cliff brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_cliff_choice_ = brushChoice("terrain-plateau-cliff", "mountain", 0);
+    form->Add(plateau_cliff_choice_, 1, wxEXPAND);
     form->Add(label("Mountain levels:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_levels_spin_ = spin("terrain-plateau-levels", 1, 3, 1);
     form->Add(plateau_levels_spin_, 1, wxEXPAND);
@@ -763,7 +766,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxComboBox* control :
          {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
           floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
-          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_ramp_choice_}) {
+          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
         control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     }
     scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -930,7 +933,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     plateau_min_spin_->Enable(natural);
     plateau_levels_spin_->Enable(natural && plateau_min_spin_->GetValue() > 0);
     plateau_percent_spin_->Enable(natural && plateau_min_spin_->GetValue() > 0);
-    for (auto* c : {plateau_ground_choice_, plateau_ramp_choice_}) {
+    for (auto* c : {plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
         c->Enable(natural && plateau_min_spin_->GetValue() > 0);
     }
     for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
@@ -1057,6 +1060,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
             SetStatus("Mountain tops needs 0 or at least 16 cells.", true);
             return std::nullopt;
         }
+        request.profile.plateauCliff = std::string(plateau_cliff_choice_->GetValue().utf8_str());
         request.profile.plateauGround = std::string(plateau_ground_choice_->GetValue().utf8_str());
         request.profile.plateauRamp = std::string(plateau_ramp_choice_->GetValue().utf8_str());
     }

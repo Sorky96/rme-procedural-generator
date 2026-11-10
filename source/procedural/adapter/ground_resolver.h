@@ -37,6 +37,7 @@ struct GroundProfile {
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;
     std::string plateauGround, plateauRamp;
+    std::string plateauCliff = "mountain";
 };
 
 struct GroundPlan {
@@ -64,7 +65,7 @@ struct GroundPlan {
 	std::vector<uint16_t> exits;
 	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band; authenticates placement and borders.
 	std::vector<uint8_t> caveFloor;
-    std::vector<uint8_t> plateauFloor; // 0 None, 1 Top, 2 Edge, 3 landing
+    std::vector<uint8_t> plateauFloor; // 0 None, 1 grass, 2 cliff supporting the next cap, 3 ramp opening
     std::vector<uint16_t> plateauRamps;
 };
 

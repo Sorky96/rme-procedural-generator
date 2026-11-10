@@ -48,7 +48,8 @@ bool validPlateauProfile(const GroundProfile& p, const GenerationConfig& c) noex
     return !hasPlateau(p)
         || (c.algorithm == GenerationAlgorithm::Surface && c.surface.plateauMinTop >= 16 && c.surface.plateauMinTop <= 4096
             && c.surface.plateauLevels >= 1 && c.surface.plateauLevels <= 3 && c.surface.plateauMaxPercent <= 100
-            && !p.plateauGround.empty() && p.plateauGround.size() <= 256 && !p.plateauRamp.empty() && p.plateauRamp.size() <= 256);
+            && !p.plateauGround.empty() && p.plateauGround.size() <= 256 && !p.plateauRamp.empty() && p.plateauRamp.size() <= 256
+            && !p.plateauCliff.empty() && p.plateauCliff.size() <= 256);
 }
 std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundProfile& p, const GenerationConfig& c)
 {
@@ -61,10 +62,10 @@ std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundPro
     if (!hasPlateau(p) || !validPlateauProfile(p, c)) {
         return std::unexpected(ResolveError::InvalidProfile);
     }
-    for (const auto* name : {&p.plateauGround}) {
+    for (const auto* name : {&p.plateauGround, &p.plateauCliff}) {
         const auto* b = g_brushes.getBrush(*name);
         const auto* g = b ? b->as<GroundBrush>() : nullptr;
-        if (!g || g->getTotalChance() <= 0 || !g->getPlacementItemId()) {
+        if (!g || g->getTotalChance() <= 0 || !g->getPlacementItemId() || (name == &p.plateauCliff && g->getBorders().empty())) {
             return std::unexpected(ResolveError::InvalidProfile);
         }
     }
@@ -165,7 +166,7 @@ std::expected<CaveExitBrush, ResolveError> resolveCaveExitBrush(const DoodadBrus
 		for (const auto& [pos, items] : *variant.composite) {
 			if (items.size() != 1 || !plainCaveItem(items.front().get(), pos.x == 0 && pos.y == 0 && pos.z == -1)) return std::unexpected(ResolveError::InvalidProfile);
 			const auto id = items.front()->getID();
-			if (pos.x == 0 && pos.y == 0 && pos.z == -1 && !hasUpperPart) hasUpperPart = true;
+			if (pos.x == 0 && pos.y == 0 && pos.z == -1 && !hasUpperPart) { hasUpperPart = true; ids.opening = id; }
 			else if (pos.x == 0 && pos.y == 0 && pos.z == 0 && !ids.ramp) {
 				ids.ramp = id;
 				const auto def = g_item_definitions.get(id);

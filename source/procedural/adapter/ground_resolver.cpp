@@ -79,7 +79,7 @@ uint64_t GroundPlan::fingerprint() const {
         if (config.surface.plateauMaxPercent) {
             add(config.surface.plateauMaxPercent);
         }
-        for (const auto* name : {&profile.plateauGround, &profile.plateauRamp}) {
+        for (const auto* name : {&profile.plateauCliff, &profile.plateauGround, &profile.plateauRamp}) {
             for (unsigned char c : *name) {
                 add(c);
             }
