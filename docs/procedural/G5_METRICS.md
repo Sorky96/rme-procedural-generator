@@ -170,3 +170,18 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 **Korekta po implementacji, przed pomiarem (2026-11-10): odchylenie od definicji.** Warunek „ogon różny od L” był błędem specyfikacji: we wszystkich wariantach ramp 10.98 ogon (dolna połowa rampy, przedmiot bez `floorchange`) leży dokładnie na L, więc reguła odrzucała każde wyjście (wykonawca: 0 wyjść, `SUITE_FAIL`). Obowiązuje: ogon może leżeć na L; nadal musi być Floor i niezarezerwowany. W kryterium 2 przypadek „ogon równy L” jest przyjmowany, nie odrzucany. Pozostałe kryteria bez zmian.
 
 **Zastrzeżenia z góry.** Przesunięcie gracza po zejściu na rampę (na L) i po wejściu rampą (na D) opisuję z pamięci zachowania serwerów typu TFS; kodu serwera nie sprawdzam, działania w grze nie da się sprawdzić w edytorze.
+
+### Iteracja 31 — wejście nad każdą rampą w GUI, jaskinia bez budynków (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; uwagi użytkownika po teście GUI iteracji 30: „brak wejscia mimo schodów”, „undeground chyba powinen być dostępny także bez buildings”, zgoda: „Tak, robić”)
+
+**Objawy.** (a) W GUI po Commit na z + 1 stoi rampa, a na powierzchni nad nią jest sama skała bez przedmiotu wejścia (zrzuty użytkownika, okolice x 1018, y 1237, z 7). Sonda `SURFACE_CAVE_E2E_PASS` (obszar 256, jeden seed) tego nie wykrywa. Przyczyna nieznana w chwili zapisu. (b) Okno włącza zakładkę „Underground” i przekazuje `caveEntrances` tylko przy `buildingDensity` > 0 albo `campCount` > 0 (`terrain_generator_dialog.cpp`, `UpdateControlStates` i budowa żądania); rdzeń tego nie wymaga.
+
+**Definicje.**
+- **Diagnoza (a):** odtworzyć błąd w sondzie w ustawieniach jak z GUI (prostokąt nie w początku mapy, bok ≥ 512, roślinność, ścieżki, oba style, budynki 0 i > 0, ≥ 8 seedów), znaleźć przyczynę i opisać ją w raporcie z dowodem. Poprawka w miejscu przyczyny, bez obchodzenia w sondzie.
+- **Okno (b):** „Underground” dostępne dla każdej powierzchni naturalnej; przy `caveEntrances` > 0 profil ma pole podłogi (`surfaceWithFloorCount`), więc pole „Floor brush” jest wtedy aktywne i wymagane; budynki i obozy działają jak dotąd.
+
+**Kryteria.**
+1. `caveEntrances` 0: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i stare przypadki sondy bez zmian.
+2. Nowy przypadek sondy `SURFACE_CAVE_GUI_PASS`: dla każdej kombinacji z definicji po Commit każda rampa na z + 1 ma nad sobą przedmiot wejścia (RockFace) albo grunt dziury (FloorHole), każde wejście ma rampę pod sobą; liczby wejść i wyjść w wierszu. Przed poprawką przypadek musi zawieść (dowód odtworzenia w raporcie); jeśli nie da się odtworzyć, raport to mówi i podaje, co sprawdzono.
+3. Okno: przy `buildingDensity` 0 i `campCount` 0 pole „Cave entrances” i pola jaskini są aktywne, żądanie niesie `caveEntrances`, a sonda z budynkami 0 przechodzi kryterium 2.
+4. Wszystkie testy rdzenia (przebudowane cele `test_procedural_*` i `style_render`, D25) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
+5. Ocena w GUI należy do użytkownika: wejście nad każdą rampą, jaskinia bez budynków.
