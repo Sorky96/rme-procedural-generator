@@ -160,3 +160,14 @@ Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 31”, commit `00ddf55`. C
 **Kryterium 4: spełnione.** 18 z 18 testów rdzenia (cele przebudowane), obie sondy PASS, `SUITE_PASS` w worktree i w głównym checkout. **Odchylenie:** build wykonawcy przerwany przez pełny dysk C:; za zgodą użytkownika usunięto `vcpkguildtreesngle`.
 
 **Nie zweryfikowane:** przyczyna braku wejścia w sesji GUI użytkownika (prostokąt, seed i stan mapy nieznane), maski i ochrona na dużym obszarze, wygląd w GUI.
+
+## Iteracja 32 — płaskowyż z − 1 z roślinnością i rampami (2026-11-10): PASS w pomiarach i sondzie, ocena w GUI czeka
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 32”, commit `246b922`. Commity: `693ca6c` (historia N kroków), `52196f7` (rdzeń), `30b5ce3` (podgląd, commit, zakładka „Levels”).
+
+**Kryterium 1: spełnione.** Odcisk Seed 1729 bez zmian; stare liczby i odciski sondy bez zmian. **Odchylenie:** szacunki pamięci w starych wierszach sondy wzrosły (+296 B, +72768 B w PREPARATION_SIZE_PASS).
+**Kryterium 2: spełnione.** PLATEAU_CROSS_CHECK 60/60.
+**Kryterium 3: spełnione.** m06: płaskowyże 4 [2..10], Top 18837,5, rampy 11 [5..22]; m19: 5,5 [2..10], Top 58767, rampy 17 [5..28]. Rampa w każdym płaskowyżu, każde Top osiągalne, dwa przebiegi identyczne. **Odchylenie:** przy ciasnym miejscu mniej ramp niż wzór (zawsze ≥ 1).
+**Kryterium 4–5: spełnione.** Kolejność historii: płaskowyż, jaskinia, powierzchnia. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
+
+**Nie zweryfikowane:** wygląd w GUI, ruch w grze, wczytanie w oryginalnym RME.

@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-10 — G5: płaskowyż na górach (iteracja 32) — PASS, GUI czeka
+
+Piętro z − 1 nad dużymi polami skały: trawa z roślinnością, krawędź z gruntu górskiego, rampy z powierzchni. Zakładka „Levels”. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 32”.
+
 ## 2026-11-10 — G5: jaskinia bez budynków; brak wejścia nad rampą nieodtworzony (iteracja 31) — PARTIAL
 
 Zakładka „Underground” działa bez budynków i obozów. Brak wejścia nad rampą z testu GUI nie powtórzył się w 64 kombinacjach sondy (4660 par); przyczyna nieznana. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 31”.
