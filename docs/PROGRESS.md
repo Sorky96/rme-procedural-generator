@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-10 — G5: rampa wyjścia pod wejściem, bez czarnej dziury przed wejściem (iteracja 30)
+
+Wyjście z jaskini stoi teraz na dole dokładnie pod wejściem i prowadzi na pole przed nim; na powierzchni nie powstaje grunt „stairs” (czarna dziura). Wszystkie wejścia dostają wyjście (100 % w obu profilach i stylach). 18 testów rdzenia i obie sondy PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 30”.
+
 ## 2026-11-10 — G5: ściany jaskini, wejście w ścianie skały albo dziura, wyjścia poza skałą (iteracja 29) — PARTIAL
 
 Jaskinia na z + 1 dostaje pas gruntu ściany („mountain”) wokół podłogi. Wejście w dwóch stylach do wyboru w oknie: w południowej ścianie skały („cave enter”) albo dziura w trawie lub ziemi („cave hole”). Wyjście rampą nie stoi już na skale. Styl dziury: 16 wejść na 16 zamówionych; styl ściany: mediana 3 (m06) i 6 (m19), poniżej kryterium 8. 18 testów rdzenia i obie sondy PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 29”.

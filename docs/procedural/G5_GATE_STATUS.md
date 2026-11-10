@@ -122,3 +122,30 @@ RockFace daje medianę 3 (m06) i 6 (m19) wejść przy wymaganych ≥ 8: reguła 
 **Kryterium 6: spełnione.** 18 z 18 testów rdzenia, obie sondy PASS, `SUITE_PASS` w dwóch przebiegach (worktree wykonawcy i główny checkout po kanonicznym `build_ninja.bat`), te same wiersze sondy. **Odchylenie:** wykonawca budował w worktree obejściem (brak pamięci i dysku przy kanonicznym buildzie); kanoniczny build przeszedł w głównym checkout.
 
 **Nie zweryfikowane:** wygląd ścian „mountain” w jaskini (lica tylko od wschodu i południa), kierunek wariantów „cave enter”, wygląd „cave hole” na trawie, działanie w grze, inne klienty niż 10.98.
+
+## Iteracja 30 — rampa wyjścia pod wejściem, bez dziury na powierzchni (2026-11-10): kryteria 1–5 spełnione, ocena w GUI (6) czeka na użytkownika
+
+Kryteria zapisane przed implementacją ([G5_METRICS.md](G5_METRICS.md), „Iteracja 30”, commit `2d4064e`; grep potwierdził). Commity: `ce11d56` (rdzeń: wyjście tylko P = E), `63e2c7d` (adapter: bez przedmiotu „top” rampy, warstwa `exitTops` usunięta), `4ec35cb` (korekta: ogon rampy może leżeć na L).
+
+**Odchylenie od definicji (zapisane w G5_METRICS.md jako korekta przed pomiarem).** Warunek „ogon różny od L” był błędem specyfikacji: we wszystkich wariantach ramp 10.98 dolna połowa rampy leży na L. Wykonawca wdrożył regułę bez zmian i dostał 0 wyjść (`SUITE_FAIL`); po korekcie ogon może leżeć na L (nadal Floor i niezarezerwowany).
+
+**Kryterium 1: spełnione.** Odcisk Seed 1729 100×100 = 17159159863505677800 bez zmian; przypadki bez jaskini bez zmian poza szacunkami pamięci (usunięty wektor `exitTops`). Wiersze `SURFACE_CAVE_E2E_PASS` bez zmian liczb (zmienił się układ, nie liczby).
+
+**Kryterium 2: spełnione.** Testy ręczne obu stylów z odrzuceniami (cel na skale, wodzie, dekorze, ognisku; L nie Floor; ogon nie Floor), przypadek ogona na L przyjmowany, prawdziwa geometria ramp 10.98 przyjmowana; 160 porównań z niezależnym przeszukiwaniem (80 siatek na styl); deterministyczność; 18 z 18 testów rdzenia.
+
+**Kryterium 3: spełnione.** Seedy 1001–1032, bok 512, opcje z iteracji 29:
+
+| profil, styl | wejścia | z wyjściem | odsetek | P = E / D otwarte / L Floor |
+|---|---|---|---|---|
+| m06 RockFace | 3 [0..7] | 3 [0..7] | 100 % | 100 / 100 / 100 |
+| m06 FloorHole | 16 [16..16] | 16 [16..16] | 100 % | 512 / 512 / 512 |
+| m19 RockFace | 6 [1..11] | 6 [1..11] | 100 % | 174 / 174 / 174 |
+| m19 FloorHole | 16 [16..16] | 16 [16..16] | 100 % | 512 / 512 / 512 |
+
+Dwa przebiegi bajtowo identyczne (wyjście i obrazy). Mediana wejść RockFace dalej poniżej 8 (kryterium 3a iteracji 29, D24), nieoceniana tu.
+
+**Kryterium 4: spełnione.** `SURFACE_CAVE_E2E_PASS	256	style=rockface entrances=18 exits=18 skipped=0 caveCells=7146 wallCells=3821 exitBrushes=5` oraz `style=floorhole entrances=20 exits=20 skipped=0 caveCells=5935 wallCells=3108 exitBrushes=5`. Sprawdzone: rampa dokładnie pod wejściem, brak przedmiotu „top” rampy na powierzchni, przedmiot wejścia albo grunt dziury na E, grunt D bez zmian, grunt jaskini na L, ściany, prostokąt, Commit, Undo, Redo, wymuszony błąd kroku 2, odmowy.
+
+**Kryterium 5: spełnione.** 18 z 18 testów rdzenia, obie sondy PASS, `SUITE_PASS` w worktree i w głównym checkout po kanonicznym `build_ninja.bat`. **Odchylenie procesu:** pierwszy przebieg w worktree użył nieprzebudowanych testów rdzenia (`build_ninja.bat` nie buduje celów `test_procedural_*` ani `style_render`); testy i pomiar powtórzone po przebudowie tych celów.
+
+**Nie zweryfikowane:** przesunięcie gracza na L po zejściu i na D po wejściu rampą (zachowanie serwera opisane z pamięci), wygląd rampy pod wejściem, działanie w grze, inne klienty niż 10.98.
