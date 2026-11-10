@@ -220,7 +220,7 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 - **Bez ścian na z − 1:** komórki Edge z iteracji 32 dostają grunt Top (`plateauGround`), nie `plateauEdge`. Nadal są bez dekoru (pas przy krawędzi bez drzew). Pole profilu `plateauEdge` usunięte z profilu, okna i walidacji. Jeśli usunięcie zmienia format profilu, wykonawca opisuje zgodność wstecz: stary plik z `plateauEdge` ma się wczytać, a pole jest ignorowane albo daje jasny błąd, decyzja z uzasadnieniem. Odcisk przy `plateauMinTop` 0 bez zmian.
 - **Piętro k (k = 2, 3), nowe pole `SurfaceTuning::plateauLevels`** (1..3, domyślnie 1, haszowane tylko gdy > 1, na końcu struktury):
   - **Podstawa** = komórki pokryte na piętrze k − 1 (Top i dawne Edge, bez lądowisk i bez komórek rampy, ogona i celu).
-  - **Top_k** = komórki podstawy w odległości (Chebyshev) ≥ 2 od komórki spoza podstawy.
+  - **Top_k** = komórki podstawy w odległości (Chebyshev) ≥ 3 od komórki spoza podstawy (poprawka po zgłoszeniu wykonawcy: przy ≥ 2 pas_k pokrywał całą podstawę i nie zostawało miejsca na P; pas w odległości 1 od podstawy zostaje na piętrze k − 1 na rampy i ogony).
   - Komponent Top_k (4-sąsiedztwo) mniejszy niż **30 komórek** odpada w całości.
   - **Pas_k** = komórki podstawy w odległości 1 od Top_k. Leżą na piętrze k, mają grunt Top i nie mają dekoru.
   - Piętro k − 1 pod piętrem k zostaje bez zmian (stropów nie ma w Tibii, piętro k rysuje się nad nim z przesunięciem).
