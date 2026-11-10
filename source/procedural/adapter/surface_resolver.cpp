@@ -41,14 +41,14 @@ bool plainCaveItem(const Item* item, bool allowGround = false) {
 
 bool hasPlateau(const GroundProfile& p) noexcept
 {
-    return !p.plateauGround.empty() || !p.plateauEdge.empty() || !p.plateauRamp.empty();
+    return !p.plateauGround.empty() || !p.plateauRamp.empty();
 }
 bool validPlateauProfile(const GroundProfile& p, const GenerationConfig& c) noexcept
 {
     return !hasPlateau(p)
         || (c.algorithm == GenerationAlgorithm::Surface && c.surface.plateauMinTop >= 16 && c.surface.plateauMinTop <= 4096
-            && !p.plateauGround.empty() && p.plateauGround.size() <= 256 && !p.plateauEdge.empty() && p.plateauEdge.size() <= 256
-            && !p.plateauRamp.empty() && p.plateauRamp.size() <= 256);
+            && c.surface.plateauLevels >= 1 && c.surface.plateauLevels <= 3 && c.surface.plateauMaxPercent <= 100
+            && !p.plateauGround.empty() && p.plateauGround.size() <= 256 && !p.plateauRamp.empty() && p.plateauRamp.size() <= 256);
 }
 std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundProfile& p, const GenerationConfig& c)
 {
@@ -61,7 +61,7 @@ std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundPro
     if (!hasPlateau(p) || !validPlateauProfile(p, c)) {
         return std::unexpected(ResolveError::InvalidProfile);
     }
-    for (const auto* name : {&p.plateauGround, &p.plateauEdge}) {
+    for (const auto* name : {&p.plateauGround}) {
         const auto* b = g_brushes.getBrush(*name);
         const auto* g = b ? b->as<GroundBrush>() : nullptr;
         if (!g || g->getTotalChance() <= 0 || !g->getPlacementItemId()) {

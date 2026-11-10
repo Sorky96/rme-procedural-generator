@@ -124,16 +124,18 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		}
 	}
     if (hasPlateau(profile)) {
-        if (region.z <= 0) {
+        if (region.z < int(config.surface.plateauLevels)) {
             return fail(PreparationInputError::NoUpperFloor);
         }
-        for (uint32_t y = 0; y < region.height; ++y) {
-            if (stop.stop_requested()) {
-                return fail(PreparationInputError::Cancelled);
-            }
-            for (uint32_t x = 0; x < region.width; ++x) {
-                if (!emptyTerrainContent(map.getTile(Position(region.x + int(x), region.y + int(y), region.z - 1)))) {
-                    return fail(PreparationInputError::UpperFloorOccupied);
+        for (uint32_t level = 1; level <= config.surface.plateauLevels; ++level) {
+            for (uint32_t y = 0; y < region.height; ++y) {
+                if (stop.stop_requested()) {
+                    return fail(PreparationInputError::Cancelled);
+                }
+                for (uint32_t x = 0; x < region.width; ++x) {
+                    if (!emptyTerrainContent(map.getTile(Position(region.x + int(x), region.y + int(y), region.z - int(level))))) {
+                        return fail(PreparationInputError::UpperFloorOccupied);
+                    }
                 }
             }
         }
@@ -217,7 +219,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
             if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 192) {
                 return fail(PreparationInputError::MemoryLimit);
             }
-            semanticBytes += cellCount * 192 + 65536;
+            semanticBytes += (cellCount * 192 + 65536) * config.surface.plateauLevels;
         }
         if (vegetation) {
 			if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes) / decorationBytesPerCell) {
@@ -394,108 +396,167 @@ TerrainPreparationSteps runPreparation(
                             }
                         }
                     }
-                    auto generated
-                        = generatePlateau(*grid, input.config.seed, input.config.surface.plateauMinTop, brushes->shapes, occupied, stop);
+                    auto generated = generatePlateau(
+                        *grid, input.config.seed, input.config.surface.plateauMinTop, brushes->shapes, occupied, stop,
+                        input.config.surface.plateauMaxPercent
+                    );
                     if (!generated) {
                         co_return fail(fromSurface(generated.error()));
                     }
-                    auto upperConfig = input.config;
-                    --upperConfig.region.z;
-                    if (!reserve(sizeof(PreparedTerrain) + planBytes)) {
-                        co_return fail(PreparationInputError::MemoryLimit);
-                    }
-                    auto upperSnapshot = captureGenerationSnapshot(
-                        map, upperConfig, {budget.maxCells, semanticBytes}, {budget.maxContextCells, remaining}, mask, stop
-                    );
-                    if (!upperSnapshot) {
-                        co_return fail(upperSnapshot.error());
-                    }
-                    if (!reserve(upperSnapshot->estimatedBytes)) {
-                        co_return fail(PreparationInputError::MemoryLimit);
-                    }
-                    SurfaceGrid upperGrid;
-                    upperGrid.region = upperConfig.region;
-                    upperGrid.cells.resize(cellCount, SurfaceKind::Preserve);
-                    std::vector<uint8_t> clear(cellCount);
-                    for (size_t i = 0; i < cellCount; ++i) {
-                        clear[i] = generated->cells[i] == PlateauKind::None;
-                        if (!clear[i]) {
-                            upperGrid.cells[i] = generated->cells[i] == PlateauKind::Top || generated->landings[i] ? SurfaceKind::Grass
-                                                                                                                   : SurfaceKind::Rock;
+                    std::vector<PlateauGrid> floors;
+                    floors.push_back(std::move(*generated));
+                    for (uint32_t level = 2; level <= input.config.surface.plateauLevels; ++level) {
+                        auto next = generateNextPlateau(
+                            floors.back(), input.config.seed ^ (uint64_t(level) << 48), brushes->shapes, stop,
+                            input.config.surface.plateauMaxPercent
+                        );
+                        if (!next) {
+                            co_return fail(fromSurface(next.error()));
                         }
-                    }
-                    std::optional<DecorGrid> upperDecor;
-                    if (input.config.vegetation) {
-                        auto d = generatePlateauDecoration(*generated, input.config.seed, input.config.decor, stop);
-                        if (!d) {
-                            co_return fail(fromSurface(d.error()));
+                        if (!next->components) {
+                            break;
                         }
-                        upperDecor = std::move(*d);
+                        floors.push_back(std::move(*next));
                     }
-                    auto upperProfile = profile;
-                    upperProfile.brushes[0] = profile.plateauGround;
-                    upperProfile.brushes[2] = profile.plateauEdge;
-                    upperProfile.wall.clear();
-                    upperProfile.door.clear();
-                    upperProfile.campfire.clear();
-                    auto upperPlan = resolveSurfacePlan(
-                        upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
-                    );
-                    if (!upperPlan) {
-                        co_return fail(upperPlan.error());
-                    }
-                    upperPlan->profile = profile;
-                    upperPlan->plateauFloor.resize(cellCount);
-                    upperPlan->walls.clear();
-                    upperPlan->doors.clear();
-                    upperPlan->fires.clear();
-                    for (size_t i = 0; i < cellCount; ++i) {
-                        upperPlan->plateauFloor[i] = generated->landings[i] ? 3
-                            : generated->cells[i] == PlateauKind::Top       ? 1
-                            : generated->cells[i] == PlateauKind::Edge      ? 2
-                                                                            : 0;
-                    }
-                    plan.plateauRamps.assign(cellCount, 0);
-                    for (const auto& ramp : generated->ramps) {
-                        const auto& ids = brushes->items[ramp.shape];
-                        const auto& shape = brushes->shapes[ramp.shape];
-                        if (!plan.items[ramp.cell] || !upperPlan->items[ramp.destination]) {
-                            co_return fail(PreparationInputError::InvalidParameters);
+                    PreparedTerrain* lowerUnit = nullptr;
+                    for (size_t level = 0; level < floors.size(); ++level) {
+                        auto* generated = &floors[level];
+                        auto& lowerPlan = lowerUnit ? lowerUnit->plan : plan;
+                        auto upperConfig = input.config;
+                        upperConfig.region.z -= int(level + 1);
+                        if (!reserve(sizeof(PreparedTerrain) + planBytes)) {
+                            co_return fail(PreparationInputError::MemoryLimit);
                         }
-                        plan.plateauRamps[ramp.cell] = ids.ramp;
-                        if (shape.hasTail) {
-                            auto t = size_t(int64_t(ramp.cell) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
-                            if (!plan.items[t]) {
+                        auto upperSnapshot = captureGenerationSnapshot(
+                            map, upperConfig, {budget.maxCells, semanticBytes}, {budget.maxContextCells, remaining}, mask, stop
+                        );
+                        if (!upperSnapshot) {
+                            co_return fail(upperSnapshot.error());
+                        }
+                        if (!reserve(upperSnapshot->estimatedBytes)) {
+                            co_return fail(PreparationInputError::MemoryLimit);
+                        }
+                        SurfaceGrid upperGrid;
+                        upperGrid.region = upperConfig.region;
+                        upperGrid.cells.resize(cellCount, SurfaceKind::Preserve);
+                        std::vector<uint8_t> clear(cellCount);
+                        for (size_t i = 0; i < cellCount; ++i) {
+                            clear[i] = generated->cells[i] == PlateauKind::None;
+                            if (!clear[i]) {
+                                upperGrid.cells[i] = SurfaceKind::Grass;
+                            }
+                        }
+                        std::optional<DecorGrid> upperDecor;
+                        if (input.config.vegetation) {
+                            auto d = generatePlateauDecoration(
+                                *generated, input.config.seed ^ (uint64_t(level) << 48), input.config.decor, stop
+                            );
+                            if (!d) {
+                                co_return fail(fromSurface(d.error()));
+                            }
+                            upperDecor = std::move(*d);
+                        }
+                        auto upperProfile = profile;
+                        upperProfile.brushes[0] = profile.plateauGround;
+                        upperProfile.brushes[2] = profile.plateauGround;
+                        upperProfile.wall.clear();
+                        upperProfile.door.clear();
+                        upperProfile.campfire.clear();
+                        auto upperPlan = resolveSurfacePlan(
+                            upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
+                        );
+                        if (!upperPlan) {
+                            co_return fail(upperPlan.error());
+                        }
+                        upperPlan->profile = profile;
+                        upperPlan->plateauFloor.resize(cellCount);
+                        upperPlan->walls.clear();
+                        upperPlan->doors.clear();
+                        upperPlan->fires.clear();
+                        for (size_t i = 0; i < cellCount; ++i) {
+                            upperPlan->plateauFloor[i] = generated->landings[i] ? 3
+                                : generated->cells[i] == PlateauKind::Top       ? 1
+                                : generated->cells[i] == PlateauKind::Edge      ? 2
+                                                                                : 0;
+                        }
+                        lowerPlan.plateauRamps.assign(cellCount, 0);
+                        for (const auto& ramp : generated->ramps) {
+                            const auto& ids = brushes->items[ramp.shape];
+                            const auto& shape = brushes->shapes[ramp.shape];
+                            if (!lowerPlan.items[ramp.cell] || !upperPlan->items[ramp.destination]) {
                                 co_return fail(PreparationInputError::InvalidParameters);
                             }
-                            plan.plateauRamps[t] = ids.tail;
+                            lowerPlan.plateauRamps[ramp.cell] = ids.ramp;
+                            if (shape.hasTail) {
+                                auto t = size_t(int64_t(ramp.cell) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
+                                if (!lowerPlan.items[t]) {
+                                    co_return fail(PreparationInputError::InvalidParameters);
+                                }
+                                lowerPlan.plateauRamps[t] = ids.tail;
+                            }
                         }
+                        // Upper transitions clear lower vegetation around P and its tail before rebuilding its preview.
+                        if (level && !lowerPlan.decor.empty()) {
+                            for (const auto& ramp : generated->ramps) {
+                                int x = int(ramp.cell % grid->region.width), y = int(ramp.cell / grid->region.width);
+                                for (int yy = std::max(0, y - 1); yy <= std::min(int(grid->region.height) - 1, y + 1); ++yy) {
+                                    for (int xx = std::max(0, x - 1); xx <= std::min(int(grid->region.width) - 1, x + 1); ++xx) {
+                                        lowerPlan.decor[size_t(yy) * grid->region.width + xx] = 0;
+                                    }
+                                }
+                            }
+                        }
+                        if (lowerUnit) {
+                            auto revised = DrawOperations::prepareTerrainPreviewSteps(
+                                map, lowerUnit->snapshot, lowerPlan, {budget.maxChanges, remaining}, stop
+                            );
+                            auto result = revised.advance();
+                            while (!result) {
+                                co_await std::suspend_always {};
+                                result = revised.advance();
+                            }
+                            if (!*result) {
+                                co_return fail(result->error());
+                            }
+                            if (!reserve((**result).getEstimatedPeakBytes())) {
+                                co_return fail(PreparationInputError::MemoryLimit);
+                            }
+                            lowerUnit->preview = std::move(**result);
+                        }
+                        auto steps = DrawOperations::prepareTerrainPreviewSteps(
+                            map, *upperSnapshot, *upperPlan, {budget.maxChanges, remaining}, stop
+                        );
+                        auto upper = steps.advance();
+                        while (!upper) {
+                            co_await std::suspend_always {};
+                            upper = steps.advance();
+                        }
+                        if (!*upper) {
+                            co_return fail(upper->error());
+                        }
+                        auto bytes = (**upper).getEstimatedPeakBytes();
+                        if (!reserve(bytes)) {
+                            co_return fail(PreparationInputError::MemoryLimit);
+                        }
+                        PreparationMemory memory {
+                            sizeof(PreparedTerrain),
+                            upperSnapshot->estimatedBytes,
+                            0,
+                            planBytes,
+                            bytes,
+                            sizeof(PreparedTerrain) + upperSnapshot->estimatedBytes + planBytes + bytes
+                        };
+                        auto unit = std::make_unique<PreparedTerrain>(
+                            PreparedTerrain {std::move(*upperSnapshot), std::move(*upperPlan), std::move(**upper), memory}
+                        );
+                        auto* ptr = unit.get();
+                        if (lowerUnit) {
+                            lowerUnit->plateau = std::move(unit);
+                        } else {
+                            plateau = std::move(unit);
+                        }
+                        lowerUnit = ptr;
                     }
-                    auto steps
-                        = DrawOperations::prepareTerrainPreviewSteps(map, *upperSnapshot, *upperPlan, {budget.maxChanges, remaining}, stop);
-                    auto upper = steps.advance();
-                    while (!upper) {
-                        co_await std::suspend_always {};
-                        upper = steps.advance();
-                    }
-                    if (!*upper) {
-                        co_return fail(upper->error());
-                    }
-                    auto bytes = (**upper).getEstimatedPeakBytes();
-                    if (!reserve(bytes)) {
-                        co_return fail(PreparationInputError::MemoryLimit);
-                    }
-                    PreparationMemory memory {
-                        sizeof(PreparedTerrain),
-                        upperSnapshot->estimatedBytes,
-                        0,
-                        planBytes,
-                        bytes,
-                        sizeof(PreparedTerrain) + upperSnapshot->estimatedBytes + planBytes + bytes
-                    };
-                    plateau = std::make_unique<PreparedTerrain>(
-                        PreparedTerrain {std::move(*upperSnapshot), std::move(*upperPlan), std::move(**upper), memory}
-                    );
                 }
             } else {
 				auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
@@ -525,12 +586,15 @@ TerrainPreparationSteps runPreparation(
 		if (!reserve(previewBytes)) co_return fail(PreparationInputError::MemoryLimit);
 
 		if (cave && (cave->preview.getChanges().size() > budget.maxChanges - preview->getChanges().size())) co_return fail(PreparationInputError::ChangeLimit);
-        const auto extra = (cave ? cave->preview.getChanges().size() : 0) + (plateau ? plateau->preview.getChanges().size() : 0);
+        auto extra = cave ? cave->preview.getChanges().size() : 0;
+        for (auto* p = plateau.get(); p; p = p->plateau.get()) {
+            extra += p->preview.getChanges().size();
+            if (!snapshotMatchesMap(map, p->snapshot)) {
+                co_return fail(PreviewError::StaleSnapshot);
+            }
+        }
         if (extra > budget.maxChanges - preview->getChanges().size()) {
             co_return fail(PreparationInputError::ChangeLimit);
-        }
-        if (plateau && !snapshotMatchesMap(map, plateau->snapshot)) {
-            co_return fail(PreviewError::StaleSnapshot);
         }
         if (cave && !snapshotMatchesMap(map, cave->snapshot)) co_return fail(PreviewError::StaleSnapshot);
 

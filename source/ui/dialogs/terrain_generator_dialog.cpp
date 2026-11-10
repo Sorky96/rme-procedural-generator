@@ -153,7 +153,7 @@ wxString describe(PreparationInputError error) {
         case PreparationInputError::UpperFloorOccupied:
             return "The floor above the area is not empty: mountain tops need an empty rectangle.";
         case PreparationInputError::NoUpperFloor:
-            return "There is no floor above this one.";
+            return "The requested mountain levels extend above z=0; reduce Mountain levels or choose a lower surface floor.";
         case PreparationInputError::NoLowerFloor:
 			return "There is no floor below this one for a cave.";
 		case PreparationInputError::AllocationFailed:
@@ -620,9 +620,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(label("Plateau ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_ground_choice_ = brushChoice("terrain-plateau-ground", "grass", 0);
     form->Add(plateau_ground_choice_, 1, wxEXPAND);
-    form->Add(label("Plateau edge brush:"), 0, wxALIGN_CENTER_VERTICAL);
-    plateau_edge_choice_ = brushChoice("terrain-plateau-edge", "mountain", 0);
-    form->Add(plateau_edge_choice_, 1, wxEXPAND);
+    form->Add(label("Mountain levels:"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_levels_spin_ = spin("terrain-plateau-levels", 1, 3, 1);
+    form->Add(plateau_levels_spin_, 1, wxEXPAND);
+    form->Add(label("Max plateau area (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
+    form->Add(plateau_percent_spin_, 1, wxEXPAND);
     form->Add(label("Plateau ramp brush:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_ramp_choice_ = brushChoice("terrain-plateau-ramp", "ramp", 3);
     form->Add(plateau_ramp_choice_, 1, wxEXPAND);
@@ -682,7 +685,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_floor_choice_ = newd wxChoice(this, wxID_ANY);
 	preview_floor_choice_->Append("Surface");
 	preview_floor_choice_->Append("Cave below");
-    preview_floor_choice_->Append("Plateau above");
+    preview_floor_choice_->Append("Plateau z-1");
+    preview_floor_choice_->Append("Plateau z-2");
+    preview_floor_choice_->Append("Plateau z-3");
     preview_floor_choice_->SetSelection(0);
 	preview_floor_choice_->SetName("terrain-preview-floor");
 	preview_floor_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
@@ -750,7 +755,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxSpinCtrl* control :
          {x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_,
           path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_,
-          plateau_min_spin_}) {
+          plateau_min_spin_, plateau_levels_spin_, plateau_percent_spin_}) {
         control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
     }
@@ -758,8 +763,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxComboBox* control :
          {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
           floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
-          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_edge_choice_,
-          plateau_ramp_choice_}) {
+          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_ramp_choice_}) {
         control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     }
     scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -909,8 +913,24 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	const bool natural = NaturalSurface();
     preview_floor_choice_->Show(prepared_ && (prepared_->cave || prepared_->plateau));
     preview_floor_label_->Show(prepared_ && (prepared_->cave || prepared_->plateau));
+    const auto selectedFloor = preview_floor_choice_->GetStringSelection();
+    preview_floor_choice_->Clear();
+    preview_floor_choice_->Append("Surface");
+    if (prepared_ && prepared_->cave) {
+        preview_floor_choice_->Append("Cave below");
+    }
+    if (prepared_) {
+        int level = 1;
+        for (auto* p = prepared_->plateau.get(); p; p = p->plateau.get(), ++level) {
+            preview_floor_choice_->Append(wxstr(std::format("Plateau z-{}", level)));
+        }
+    }
+    const int prior = preview_floor_choice_->FindString(selectedFloor);
+    preview_floor_choice_->SetSelection(prior == wxNOT_FOUND ? 0 : prior);
     plateau_min_spin_->Enable(natural);
-    for (auto* c : {plateau_ground_choice_, plateau_edge_choice_, plateau_ramp_choice_}) {
+    plateau_levels_spin_->Enable(natural && plateau_min_spin_->GetValue() > 0);
+    plateau_percent_spin_->Enable(natural && plateau_min_spin_->GetValue() > 0);
+    for (auto* c : {plateau_ground_choice_, plateau_ramp_choice_}) {
         c->Enable(natural && plateau_min_spin_->GetValue() > 0);
     }
     for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
@@ -1029,6 +1049,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
 	config.surface.caveEntrances = natural ? uint32_t(cave_entrances_spin_->GetValue()) : 0;
 	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0 || config.surface.caveEntrances > 0);
+    config.surface.plateauLevels = uint32_t(plateau_levels_spin_->GetValue());
+    config.surface.plateauMaxPercent = natural ? uint32_t(plateau_percent_spin_->GetValue()) : 0;
     config.surface.plateauMinTop = natural ? uint32_t(plateau_min_spin_->GetValue()) : 0;
     if (config.surface.plateauMinTop) {
         if (config.surface.plateauMinTop < 16) {
@@ -1036,7 +1058,6 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
             return std::nullopt;
         }
         request.profile.plateauGround = std::string(plateau_ground_choice_->GetValue().utf8_str());
-        request.profile.plateauEdge = std::string(plateau_edge_choice_->GetValue().utf8_str());
         request.profile.plateauRamp = std::string(plateau_ramp_choice_->GetValue().utf8_str());
     }
     config.surface.caveEntranceStyle = cave_entrance_style_choice_->GetSelection() == 1 ? CaveEntranceStyle::FloorHole : CaveEntranceStyle::RockFace;
@@ -1269,9 +1290,17 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 }
 
 bool TerrainGeneratorDialog::BuildPreviewBitmap() {
-    const auto& unit = prepared_->plateau && preview_floor_choice_->GetSelection() == 2 ? *prepared_->plateau
-        : prepared_->cave && preview_floor_choice_->GetSelection() == 1                 ? *prepared_->cave
-                                                                                        : *prepared_;
+    const auto* selected = &*prepared_;
+    const int floor = preview_floor_choice_->GetSelection();
+    if (floor == 1 && prepared_->cave) {
+        selected = prepared_->cave.get();
+    } else {
+        const int level = floor - (prepared_->cave ? 1 : 0);
+        for (int k = 0; k < level && selected->plateau; ++k) {
+            selected = selected->plateau.get();
+        }
+    }
+    const auto& unit = *selected;
     const auto& snapshot = unit.snapshot;
 	const auto& region = snapshot.input.config.region;
 	const auto& context = snapshot.context;

@@ -1079,7 +1079,7 @@ void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& re
 	report << "SURFACE_NEXT_TO_TERRAIN_PASS\t" << side << '\t' << seed << "\thole=" << withHole << "\tgap=" << gap << "\tplaced=" << placed << '\n';
 }
 
-void plateaus(std::ostream& report)
+void plateaus(std::ostream& report, uint32_t levels = 1)
 {
     UndoLimits limits;
     check(g_gui.NewMap(), "Plateau map creation");
@@ -1089,6 +1089,7 @@ void plateaus(std::ostream& report)
     config.algorithm = GenerationAlgorithm::Surface;
     config.surface.rockPermille = 300;
     config.surface.plateauMinTop = 64;
+    config.surface.plateauLevels = levels;
     config.vegetation = true;
     GroundProfile profile {
         {"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount
@@ -1096,7 +1097,6 @@ void plateaus(std::ostream& report)
     profile.decorCount = 3;
     profile.decor = {"small rocks", "small rocks", "small rocks"};
     profile.plateauGround = "grass";
-    profile.plateauEdge = "mountain";
     profile.plateauRamp = "ramp";
     config.surface.caveEntrances = 20;
     profile.caveEntrance = "cave enter";
@@ -1116,6 +1116,18 @@ void plateaus(std::ostream& report)
     check(prepared->plateau && !prepared->plateau->preview.getChanges().empty(), "Plateau preview empty");
     check(prepared->cave && !prepared->cave->preview.getChanges().empty(), "Combined cave empty");
     check(bool(validateTerrainTarget(*prepared, config, profile)), "Plateau validation");
+    std::vector<const PreparedTerrain*> allUnits {&*prepared};
+    for (auto* p = prepared->plateau.get(); p; p = p->plateau.get()) {
+        allUnits.push_back(p);
+    }
+    check(allUnits.size() == levels + 1, "Requested mountain levels missing");
+    allUnits.push_back(prepared->cave.get());
+    std::vector<int> history;
+    for (auto i = allUnits.rbegin() + 1; i != allUnits.rend() - 1; ++i) {
+        history.push_back((*i)->plan.config.region.z);
+    }
+    history.push_back(8);
+    history.push_back(7);
     const auto& upper = *prepared->plateau;
     size_t top = 0, edge = 0, landing = 0, ramps = 0, decor = 0;
     for (size_t i = 0; i < upper.plan.items.size(); ++i) {
@@ -1124,10 +1136,7 @@ void plateaus(std::ostream& report)
         auto kind = upper.plan.plateauFloor[i];
         check(bool(tile && tile->ground) == bool(kind), "Plateau ground occupancy");
         if (kind) {
-            check(
-                brushOf(tile->ground->getID()) == g_brushes.getBrush(kind == 2 ? profile.plateauEdge : profile.plateauGround),
-                "Plateau ground brush"
-            );
+            check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.plateauGround), "Plateau ground brush");
         }
         top += kind == 1;
         edge += kind == 2;
@@ -1151,7 +1160,7 @@ void plateaus(std::ostream& report)
             }
         }
     }
-    for (const auto* unit : {&*prepared, prepared->plateau.get()}) {
+    for (const auto* unit : allUnits) {
         for (const auto& pos : unit->preview.getChanges()) {
             const auto* tile = unit->preview.getBuffer().getTile(pos);
             if (!tile) {
@@ -1180,42 +1189,72 @@ void plateaus(std::ostream& report)
             pos.x >= 100 && pos.y >= 100 && pos.x < 100 + int(side) && pos.y < 100 + int(side) && pos.z == 6, "Plateau outside rectangle"
         );
     }
-    std::array<std::vector<uint32_t>, 3> before, after;
-    for (int z = 6; z <= 8; ++z) {
-        before[z - 6] = stackImage(editor.map, 97, 97, z, side + 6, side + 6);
+    for (const auto* unit : allUnits) {
+        const auto& region = unit->plan.config.region;
+        for (size_t i = 0; i < unit->plan.items.size(); ++i) {
+            Position pos(region.x + int(i % side), region.y + int(i / side), region.z);
+            const auto* tile = unit->preview.getBuffer().getTile(pos);
+            if (!unit->plan.plateauFloor.empty()) {
+                check(bool(tile && tile->ground) == bool(unit->plan.plateauFloor[i]), "All levels ground footprint");
+                if (tile && tile->ground) {
+                    check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.plateauGround), "All levels Top ground");
+                }
+            }
+            if (!unit->plan.plateauRamps.empty() && unit->plan.plateauRamps[i]) {
+                auto id = unit->plan.plateauRamps[i];
+                check(
+                    tile && std::ranges::count_if(tile->items, [id](const auto& item) { return item->getID() == id; }) == 1,
+                    "All levels ramp/tail"
+                );
+            }
+        }
+        for (const auto& pos : unit->preview.getChanges()) {
+            check(
+                pos.x >= 100 && pos.y >= 100 && pos.x < 100 + int(side) && pos.y < 100 + int(side) && pos.z == region.z,
+                "All levels rectangle"
+            );
+        }
+    }
+    std::array<std::vector<uint32_t>, 5> before, after;
+    for (int z = 4; z <= 8; ++z) {
+        before[z - 4] = stackImage(editor.map, 97, 97, z, side + 6, side + 6);
     }
     auto prior = editor.actionQueue->getCurrentIndex();
-    g_settings.setInteger(Config::UNDO_SIZE, 2);
+    g_settings.setInteger(Config::UNDO_SIZE, int(history.size() - 1));
     auto refused = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
     g_settings.setInteger(Config::UNDO_SIZE, 1000);
     check(!refused, "Plateau last-step failure not triggered");
     check(editor.actionQueue->getCurrentIndex() == prior, "Plateau rollback history");
-    for (int z = 6; z <= 8; ++z) {
-        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 6], "Plateau rollback map");
+    for (int z = 4; z <= 8; ++z) {
+        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 4], "Plateau rollback map");
     }
     check(bool(validateTerrainTarget(*prepared, config, profile)), "Plateau rollback source");
     auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
     check(bool(receipt), "Plateau commit");
-    check(editor.actionQueue->getCurrentIndex() == prior + 3, "Plateau three history steps");
-    for (const auto* unit : {&*prepared, prepared->plateau.get(), prepared->cave.get()}) {
+    check(editor.actionQueue->getCurrentIndex() == prior + history.size(), "Plateau history steps");
+    for (const auto* unit : allUnits) {
         for (const auto& pos : unit->preview.getChanges()) {
             check(
                 snapshotTilesEqual(editor.map.getTile(pos), unit->preview.getBuffer().getTile(pos)), "Plateau committed payload mismatch"
             );
         }
     }
-    for (int z = 6; z <= 8; ++z) {
-        after[z - 6] = stackImage(editor.map, 97, 97, z, side + 6, side + 6);
+    for (int z = 4; z <= 8; ++z) {
+        after[z - 4] = stackImage(editor.map, 97, 97, z, side + 6, side + 6);
     }
-    for (int z : {7, 8, 6}) {
+    for (auto it = history.rbegin(); it != history.rend(); ++it) {
+        const int z = *it;
         check(editor.actionQueue->undo(), "Plateau undo");
-        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 6], "Plateau undo floor");
+        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 4], "Plateau undo floor");
     }
-    for (int z : {6, 8, 7}) {
+    for (int z : history) {
         check(editor.actionQueue->redo(), "Plateau redo");
-        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == after[z - 6], "Plateau redo floor");
+        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == after[z - 4], "Plateau redo floor");
     }
     check(editor.actionQueue->undo() && editor.actionQueue->undo(), "Leave only upper floor for occupied refusal");
+    if (levels > 1) {
+        check(editor.actionQueue->undo(), "Leave z-2 occupied and z-1 empty");
+    }
     auto occupied = prepareTerrain(editor.map, config, profile, preparation);
     check(
         !occupied && std::holds_alternative<PreparationInputError>(occupied.error())
@@ -1225,21 +1264,28 @@ void plateaus(std::ostream& report)
     editor.map.clearChanges();
     check(g_gui.NewMap(), "Plateau refusal map");
     auto& empty = g_gui.GetCurrentEditor()->map;
-    for (int variant = 0; variant < 5; ++variant) {
+    if (levels > 1) {
+        auto low = config;
+        low.region.z = 2;
+        auto refused = prepareTerrain(empty, low, profile, preparation);
+        check(
+            !refused && std::holds_alternative<PreparationInputError>(refused.error())
+                && std::get<PreparationInputError>(refused.error()) == PreparationInputError::NoUpperFloor,
+            "Insufficient z range accepted"
+        );
+    }
+    for (int variant = 0; variant < 4; ++variant) {
         auto bad = profile;
         if (variant == 0) {
             bad.plateauGround.clear();
         }
         if (variant == 1) {
-            bad.plateauEdge.clear();
+            bad.plateauGround = "small rocks";
         }
         if (variant == 2) {
             bad.plateauRamp.clear();
         }
         if (variant == 3) {
-            bad.plateauEdge = "small rocks";
-        }
-        if (variant == 4) {
             bad.plateauRamp = "small rocks";
         }
         check(!prepareTerrain(empty, config, bad, preparation), "Invalid plateau profile accepted");
@@ -1255,12 +1301,17 @@ void plateaus(std::ostream& report)
     auto& aloneEditor = *g_gui.GetCurrentEditor();
     const auto aloneBefore = aloneEditor.actionQueue->getCurrentIndex();
     check(bool(DrawOperations::commitTerrainPreview(*alone, aloneConfig, aloneProfile, commit)), "Standalone plateau commit");
-    check(aloneEditor.actionQueue->getCurrentIndex() == aloneBefore + 2, "Standalone plateau history count");
-    check(aloneEditor.actionQueue->undo() && aloneEditor.actionQueue->undo(), "Standalone plateau undo");
-    check(aloneEditor.actionQueue->redo() && aloneEditor.actionQueue->redo(), "Standalone plateau redo");
+    check(aloneEditor.actionQueue->getCurrentIndex() == aloneBefore + levels + 1, "Standalone plateau history count");
+    for (uint32_t i = 0; i <= levels; ++i) {
+        check(aloneEditor.actionQueue->undo(), "Standalone plateau undo");
+    }
+    for (uint32_t i = 0; i <= levels; ++i) {
+        check(aloneEditor.actionQueue->redo(), "Standalone plateau redo");
+    }
     aloneEditor.map.clearChanges();
     report << std::format(
-        "SURFACE_PLATEAU_E2E_PASS\ttop={}\tedge={}\tlanding={}\trampItems={}\tdecor={}\tsteps=3\n", top, edge, landing, ramps, decor
+        "{}\ttop={}\tedge={}\tlanding={}\trampItems={}\tdecor={}\tsteps={}\n",
+        levels == 1 ? "SURFACE_PLATEAU_E2E_PASS" : "SURFACE_PLATEAU_LEVELS_E2E_PASS", top, edge, landing, ramps, decor, history.size()
     );
 }
 
@@ -1289,6 +1340,7 @@ void run() {
 		campfires(250, report);
 		guiCaves(report);
         plateaus(report);
+        plateaus(report, 3);
         const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report);
 		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report);
 		fords(250, 1729, report);

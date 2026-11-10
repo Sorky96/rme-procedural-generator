@@ -73,7 +73,13 @@ uint64_t GroundPlan::fingerprint() const {
             }
         };
         add(config.surface.plateauMinTop);
-        for (const auto* name : {&profile.plateauGround, &profile.plateauEdge, &profile.plateauRamp}) {
+        if (config.surface.plateauLevels > 1) {
+            add(config.surface.plateauLevels);
+        }
+        if (config.surface.plateauMaxPercent) {
+            add(config.surface.plateauMaxPercent);
+        }
+        for (const auto* name : {&profile.plateauGround, &profile.plateauRamp}) {
             for (unsigned char c : *name) {
                 add(c);
             }

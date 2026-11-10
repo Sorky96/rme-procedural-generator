@@ -35,11 +35,14 @@ DrawOperations::commitSelectedTerrainPreview(const PreparedTerrain& prepared, co
 
 std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError>
 DrawOperations::commitTerrainUnits(Editor& editor, const PreparedTerrain& prepared, TerrainCommitBudget budget, std::stop_token stop) {
-    std::array<const PreparedTerrain*, 3> units {};
+    std::array<const PreparedTerrain*, 5> units {};
     size_t count = 0;
-    if (prepared.plateau && !prepared.plateau->preview.getChanges().empty()) {
-        units[count++] = prepared.plateau.get();
+    for (auto* p = prepared.plateau.get(); p; p = p->plateau.get()) {
+        if (!p->preview.getChanges().empty()) {
+            units[count++] = p;
+        }
     }
+    std::reverse(units.begin(), units.begin() + count);
     if (prepared.cave && !prepared.cave->preview.getChanges().empty()) {
         units[count++] = prepared.cave.get();
     }
@@ -128,9 +131,7 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
         if (!charge(unit.plan.plateauFloor.capacity()) || !charge(unit.plan.plateauRamps.capacity(), sizeof(uint16_t))) {
             return std::unexpected(TerrainCommitFailure::MemoryLimit);
         }
-        for (const auto* name :
-             {&unit.plan.profile.caveWall, &unit.plan.profile.plateauGround, &unit.plan.profile.plateauEdge,
-              &unit.plan.profile.plateauRamp}) {
+        for (const auto* name : {&unit.plan.profile.caveWall, &unit.plan.profile.plateauGround, &unit.plan.profile.plateauRamp}) {
             if (!charge(name->capacity() + 1 + kSnapshotAllocationOverhead)) {
                 return std::unexpected(TerrainCommitFailure::MemoryLimit);
             }

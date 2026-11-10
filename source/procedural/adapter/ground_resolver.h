@@ -36,7 +36,7 @@ struct GroundProfile {
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;
-    std::string plateauGround, plateauEdge, plateauRamp;
+    std::string plateauGround, plateauRamp;
 };
 
 struct GroundPlan {

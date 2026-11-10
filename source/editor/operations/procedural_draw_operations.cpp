@@ -154,8 +154,13 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	}
     if (plan.config.surface.plateauMinTop) {
         hashField(hash, plan.config.surface.plateauMinTop, 4);
+        if (plan.config.surface.plateauLevels > 1) {
+            hashField(hash, plan.config.surface.plateauLevels, 4);
+        }
+        if (plan.config.surface.plateauMaxPercent) {
+            hashField(hash, plan.config.surface.plateauMaxPercent, 4);
+        }
         string(plan.profile.plateauGround);
-        string(plan.profile.plateauEdge);
         string(plan.profile.plateauRamp);
         for (auto c : plan.plateauFloor) {
             hashField(hash, c, 1);
@@ -293,7 +298,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
         const auto* brush = g_brushes.getBrush(
-            upper      ? (i == 1 ? plan.profile.plateauEdge : plan.profile.plateauGround)
+            upper      ? plan.profile.plateauGround
                 : cave ? (i == 1 ? plan.profile.caveWall : plan.profile.caveGround)
                        : plan.profile.brushes[i]
         );
@@ -368,7 +373,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
             }
         }
         decorIds.insert(decorIds.end(), plateauIds.begin(), plateauIds.end());
-        if (!plan.plateauRamps.empty() && (upper || plan.plateauRamps.size() != plan.items.size())) {
+        if (!plan.plateauRamps.empty() && (plan.plateauRamps.size() != plan.items.size())) {
             co_return std::unexpected(PreviewError::InvalidPlan);
         }
     } else if (upper || !plan.plateauRamps.empty()) {
