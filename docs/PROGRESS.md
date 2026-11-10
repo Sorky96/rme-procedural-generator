@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-10 — G5: jaskinia bez budynków; brak wejścia nad rampą nieodtworzony (iteracja 31) — PARTIAL
+
+Zakładka „Underground” działa bez budynków i obozów. Brak wejścia nad rampą z testu GUI nie powtórzył się w 64 kombinacjach sondy (4660 par); przyczyna nieznana. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 31”.
+
 ## 2026-11-10 — G5: rampa wyjścia pod wejściem, bez czarnej dziury przed wejściem (iteracja 30)
 
 Wyjście z jaskini stoi teraz na dole dokładnie pod wejściem i prowadzi na pole przed nim; na powierzchni nie powstaje grunt „stairs” (czarna dziura). Wszystkie wejścia dostają wyjście (100 % w obu profilach i stylach). 18 testów rdzenia i obie sondy PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 30”.

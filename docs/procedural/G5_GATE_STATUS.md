@@ -149,3 +149,14 @@ Dwa przebiegi bajtowo identyczne (wyjście i obrazy). Mediana wejść RockFace d
 **Kryterium 5: spełnione.** 18 z 18 testów rdzenia, obie sondy PASS, `SUITE_PASS` w worktree i w głównym checkout po kanonicznym `build_ninja.bat`. **Odchylenie procesu:** pierwszy przebieg w worktree użył nieprzebudowanych testów rdzenia (`build_ninja.bat` nie buduje celów `test_procedural_*` ani `style_render`); testy i pomiar powtórzone po przebudowie tych celów.
 
 **Nie zweryfikowane:** przesunięcie gracza na L po zejściu i na D po wejściu rampą (zachowanie serwera opisane z pamięci), wygląd rampy pod wejściem, działanie w grze, inne klienty niż 10.98.
+
+## Iteracja 31 — wejście nad każdą rampą w GUI, jaskinia bez budynków (2026-11-10): PARTIAL, błąd (a) nieodtworzony, (b) poprawione, ocena w GUI czeka
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 31”, commit `00ddf55`. Commity: `fb36897` (sonda `guiCaves`), `1008b32` (okno: jaskinia bez budynków).
+
+**Kryterium 1: spełnione.** Odcisk Seed 1729 100×100 bez zmian, stare wiersze sondy bez zmian.
+**Kryterium 2: NIE spełnione (nieodtworzone).** 64 kombinacje (prostokąt 512 w (800,1000,7), 8 seedów, oba style, budynki 0 i 40, skała „rocky ground” i „mountain”, roślinność, ścieżki): 4660 par wejście–rampa, każda rampa ma wejście nad sobą i odwrotnie. Przyczyna objawu z GUI nieznana; brak poprawki produkcyjnej.
+**Kryterium 3: spełnione.** Przy budynkach 0 pola jaskini aktywne, żądanie niesie `caveEntrances`, przypadki z budynkami 0 w sondzie przechodzą.
+**Kryterium 4: spełnione.** 18 z 18 testów rdzenia (cele przebudowane), obie sondy PASS, `SUITE_PASS` w worktree i w głównym checkout. **Odchylenie:** build wykonawcy przerwany przez pełny dysk C:; za zgodą użytkownika usunięto `vcpkguildtreesngle`.
+
+**Nie zweryfikowane:** przyczyna braku wejścia w sesji GUI użytkownika (prostokąt, seed i stan mapy nieznane), maski i ochrona na dużym obszarze, wygląd w GUI.
