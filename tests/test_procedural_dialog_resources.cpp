@@ -24,6 +24,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <format>
+#include "util/common.h"
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -51,6 +53,8 @@ public:
     ResourceObservation():timer(this) {
         check(std::filesystem::is_regular_file(".g1-dialog-resources"),"Private resource marker required");
         cancelDuringPreview=std::filesystem::is_regular_file(".g1-dialog-cancel-preview");
+        std::ifstream("resource-side.txt") >> requestedSide;
+        check(!requestedSide || requestedSide==500 || requestedSide==1000 || requestedSide==2000,"Invalid resource case size");
         report.open("dialog-probe.log");report<<std::unitbuf;
         csv.open("resources.csv");
         csv<<"cycle,side,command,elapsed_ms,max_heartbeat_gap_ms,baseline_ws,peak_ws,end_ws,baseline_private,peak_private,end_private,samples,max_sample_gap_ms\n";
@@ -58,9 +62,14 @@ public:
         check(g_version.LoadVersion("1098-BlackTek",error,warnings),"Private client load failed");
         check(g_gui.NewMap(),"Private synthetic editor creation failed");
         editor=g_gui.GetCurrentEditor();check(editor,"Private editor missing");
+        if(requestedSide) {
+            editor->map.setWidth(requestedSide+1000);
+            editor->map.setHeight(requestedSide+1000);
+        }
         auto* brush=g_brushes.getBrush("grass");check(brush,"Private grass unavailable");
         auto* grass=brush->as<GroundBrush>();check(grass && !grass->getBorderItems().empty(),"Private grass items unavailable");
-        auto* tile=editor->map.createTile(900,900,7);
+        const int sentinelCoordinate=requestedSide?requestedSide+500:900;
+        auto* tile=editor->map.createTile(sentinelCoordinate,sentinelCoordinate,7);
         tile->setGround(Item::Create(grass->getBorderItems().front().id));tile->ground->setUniqueID(32100);
         sentinel=tile->deepCopy();editor->actionQueue->clear();editor->map.clearChanges();
         generation=editor->map.getGeneration();revision=editor->map.getChangeTracker().getGeneration();
@@ -108,14 +117,15 @@ public:
         return Event_Skip;
     }
 private:
-    int side() const {return cancelDuringPreview || cycle>=3?500:100;}
+    int side() const {return requestedSide?requestedSide:(cancelDuringPreview || cycle>=3?500:100);}
     void readyMarker(){report<<"RESOURCE_CASE_READY\t"<<cycle+1<<'\t'<<side()<<'\n';}
     void fail(const char* message){report<<"FAILED\t"<<message<<'\n';report.close();csv.flush();std::_Exit(8);}
     void unchanged() {
         check(g_gui.GetCurrentEditor()==editor && editor->map.getGeneration()==generation,"Source identity changed");
         check(editor->map.getTileCount()==1 && editor->actionQueue->getSize()==0 && !editor->map.hasChanged() &&
             editor->map.getChangeTracker().getGeneration()==revision,"Preview/Validate/Cancel changed source/history");
-        check(snapshotTilesEqual(editor->map.getTile(900,900,7),sentinel.get()),"Protected sentinel changed");
+        const int sentinelCoordinate=requestedSide?requestedSide+500:900;
+        check(snapshotTilesEqual(editor->map.getTile(sentinelCoordinate,sentinelCoordinate,7),sentinel.get()),"Protected sentinel changed");
     }
     void sample() {
         const auto now=Clock::now();const auto current=memory();
@@ -158,7 +168,8 @@ private:
                 finish("interrupt");phase=0;cancelObserved=true;
                 report<<"RESOURCE_IN_FLIGHT_CANCEL_PASS\n";
             } else if(phase==1 && status && status->GetLabel().StartsWith("Preview ready:")) {
-                check(status->GetLabel().Contains(side()==100?"10000 tiles":"250000 tiles"),"Wrong preview size");
+                check(requestedSide?status->GetLabel().Contains(wxstr(std::format("{} x {} area",side(),side())))
+                    :status->GetLabel().Contains(side()==100?"10000 tiles":"250000 tiles"),"Wrong preview size");
                 if(cancelDuringPreview && cycle==0) {
                     check(cancelObserved && status->GetLabel().Contains("(seed 1728)"),"Retry did not publish the new seed");
                     report<<"RESOURCE_CANCEL_RETRY_PASS\n";
@@ -172,7 +183,7 @@ private:
             } else if(phase==6 && now-settleStarted>=std::chrono::seconds(1)) {
                 finish("settled");report<<"RESOURCE_CANCEL_PASS\t"<<cycle+1<<'\n';
                 ++cycle;phase=0;
-                if(cycle<(cancelDuringPreview?3:6)){readyMarker();return;}
+                if(cycle<(requestedSide?1:(cancelDuringPreview?3:6))){readyMarker();return;}
                 done=true;timer.Stop();report<<"RESOURCE_PASS\n";csv.close();report.close();
                 editor->map.clearChanges();editor=nullptr;
                 check(g_gui.CloseAllEditors(),"Private editor close failed");
@@ -186,6 +197,7 @@ private:
     std::unique_ptr<Tile> sentinel;
     uint64_t generation=0,revision=0;
     int cycle=0,phase=0;
+    int requestedSide=0;
     bool done=false;
     bool cancelDuringPreview=false,cancelObserved=false;
     Clock::time_point started=Clock::now(),lastTick,settleStarted;
