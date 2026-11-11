@@ -1176,7 +1176,7 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 				return;
 			}
 			if (captured->region.width > uint32_t(maxSide) || captured->region.height > uint32_t(maxSide)) {
-				SetStatus("The selection is too large. Select an area of at most 500 x 500 tiles.", true);
+				SetStatus(wxstr(std::format("The selection is too large. Select an area of at most {} x {} tiles.", maxSide, maxSide)), true);
 				return;
 			}
 			selection_ = std::move(*captured);
