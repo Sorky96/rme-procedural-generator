@@ -343,7 +343,7 @@ try {
         for (const auto& top : tops) {
             const auto component = labels[top.front()];
             if (lowerOpen.empty() && maxPercent && (accepted + top.size()) * 100 > uint64_t(n) * maxPercent) continue;
-            if (top.size() < minTop || std::ranges::any_of(top, [&](auto i) { return reserved[i] || (!occupied.empty() && occupied[i]); })) {
+            if (top.size() < minTop || (!lowerOpen.empty() && std::ranges::any_of(top, [&](auto i) { return reserved[i]; }))) {
                 continue;
             }
             if (stop.stop_requested()) {

@@ -527,6 +527,11 @@ void testPlateaus()
     std::vector<uint8_t> occupied(g.cells.size(),1);
     auto blocked = generatePlateau(g,1729,64,ramps,occupied);
     check(blocked && !blocked->components, "occupied component refused");
+    occupied.assign(g.cells.size(), 0);
+    occupied[8 * 24 + 8] = 1;
+    auto interiorOccupied = generatePlateau(g,1729,64,ramps,occupied);
+    check(interiorOccupied && std::ranges::count(interiorOccupied->cells, PlateauKind::Top) == 144,
+        "occupied lower interior does not truncate or discard the whole cap");
     std::stop_source stop; stop.request_stop();
     check(!generatePlateau(g,1729,64,ramps,{},stop.get_token()), "cancelled");
     check(!generatePlateau(g,1729,64,ramps,{}, {},101), "invalid percent");
