@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-11 — G5: góry na własnym zboczu (iteracja 34) — PASS, GUI czeka
+
+Czapa z − 1 na całym polu skały, zbocze „mountain” pod każdym wyższym piętrem, trawa do krawędzi, rampy przy zboczu z otwarciem na górze, roślinność jak na powierzchni. Na podstawie analizy 20 map referencyjnych. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 34”.
+
 ## 2026-11-10 — G5: góry do trzech pięter bez ścian, limit w % (iteracja 33) — PASS, GUI czeka
 
 Piętra z − 1..z − 3 z trawą do krawędzi i roślinnością, rampy między piętrami, korytarze lądowisk, limit procentowy obszaru na każdym piętrze. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 33”.

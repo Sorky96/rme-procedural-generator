@@ -189,3 +189,25 @@ Rampa w każdym płaskowyżu, wszystkie piętra osiągalne z powierzchni, limity
 **Kryteria 4–5: spełnione.** Kolejność historii: najwyższe piętro, niższe, jaskinia, powierzchnia. Odmowa przy zajętym piętrze i przy zakresie z ponad 0. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
 
 **Nie zweryfikowane:** wygląd w GUI, ruch w grze, wczytanie w oryginalnym RME.
+
+## Iteracja 34 — czapy gór na własnym zboczu (2026-11-11): PASS w pomiarach i sondzie, ocena w GUI czeka
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 34”, `8b7a14f`. Commity: `2aedc0b`, `74f7614`, `2eed650`, `7d65381`.
+
+**Kryterium 1: spełnione.** Odcisk Seed 1729 i wszystkie przypadki bez gór bez zmian (porównanie z iteracją 33 bez różnic poza czasem i pamięcią). Przypadki gór zmienione świadomie (cała czapa, otwarcia rampy, brak korytarzy).
+**Kryterium 2: spełnione.** PLATEAU_CROSS_CHECK 60/60, PLATEAU_LEVELS_LIMIT_CROSS_CHECK 60/60.
+**Kryterium 3: spełnione** (mediana [min..max]; roślinność: udział na trawie czapy / na trawie powierzchni):
+
+| Profil | Piętro | Czapy | Komórki | Rampy | Roślinność czapa / powierzchnia |
+|---|---|---:|---:|---:|---:|
+| m06 | z − 1 | 4 [2..12] | 20884 | 12 | 11,5 % / 11,7 % |
+| m06 | z − 2 | 1,5 [1..4] | 1907 | 4,5 | 10,8 % / 11,7 % |
+| m06 | z − 3 | 1 [1..2] | 155 | 1 | 10,4 % / 11,7 % |
+| m19 | z − 1 | 5 [1..10] | 18080 | 12,5 | 38,3 % / 37,6 % |
+| m19 | z − 2 | 1,5 [0..5] | 1687 | 4 | 38,1 % / 37,6 % |
+| m19 | z − 3 | 1 [0..2] | 113,5 | 1 | 35,9 % / 37,6 % |
+
+Zbocze pod każdą czapą, wszystko osiągalne, limity, roślinność ≥ 88 % powierzchni, dwa przebiegi identyczne.
+**Kryteria 4–5: spełnione.** Sonda: grunt „mountain” pod każdą czapą po autoborderze, otwarcia rampy tylko przy górach. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
+
+**Nie zweryfikowane:** wygląd w GUI (narożniki zbocza, przesunięcie rysowania), ruch w grze.
