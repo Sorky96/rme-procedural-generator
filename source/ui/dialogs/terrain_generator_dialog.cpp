@@ -613,10 +613,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	if (ground_names_.Index("mountain") == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
 	form->Add(cave_wall_brush_choice_, 1, wxEXPAND);
 
-    form->Add(label("Mountain tops (min cells):"), 0, wxALIGN_CENTER_VERTICAL);
-    plateau_min_spin_ = spin("terrain-plateau-min-top", 0, 4096, 0);
-    plateau_min_spin_->SetToolTip("0 disables mountain tops; otherwise choose 16 to 4096 cells.");
-    form->Add(plateau_min_spin_, 1, wxEXPAND);
+    form->Add(label("Mountain area z-1 (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
+    plateau_percent_spin_->SetToolTip(
+        "Maximum cap area as a percentage of the generated rectangle. 0 disables mountains. "
+        "Whole rock components are selected; components exceeding the remaining limit are skipped. "
+        "Each higher cap uses the same percentage of the cap below it."
+    );
+    form->Add(plateau_percent_spin_, 1, wxEXPAND);
     form->Add(label("Plateau ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_ground_choice_ = brushChoice("terrain-plateau-ground", "grass", 0);
     form->Add(plateau_ground_choice_, 1, wxEXPAND);
@@ -626,9 +630,6 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(label("Mountain levels:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_levels_spin_ = spin("terrain-plateau-levels", 1, 3, 1);
     form->Add(plateau_levels_spin_, 1, wxEXPAND);
-    form->Add(label("Max plateau area (%):"), 0, wxALIGN_CENTER_VERTICAL);
-    plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
-    form->Add(plateau_percent_spin_, 1, wxEXPAND);
     form->Add(label("Plateau ramp brush:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_ramp_choice_ = brushChoice("terrain-plateau-ramp", "ramp", 3);
     form->Add(plateau_ramp_choice_, 1, wxEXPAND);
@@ -758,7 +759,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxSpinCtrl* control :
          {x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_,
           path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_,
-          plateau_min_spin_, plateau_levels_spin_, plateau_percent_spin_}) {
+           plateau_levels_spin_, plateau_percent_spin_}) {
         control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
     }
@@ -930,11 +931,10 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     }
     const int prior = preview_floor_choice_->FindString(selectedFloor);
     preview_floor_choice_->SetSelection(prior == wxNOT_FOUND ? 0 : prior);
-    plateau_min_spin_->Enable(natural);
-    plateau_levels_spin_->Enable(natural && plateau_min_spin_->GetValue() > 0);
-    plateau_percent_spin_->Enable(natural && plateau_min_spin_->GetValue() > 0);
+    plateau_percent_spin_->Enable(natural);
+    plateau_levels_spin_->Enable(natural && plateau_percent_spin_->GetValue() > 0);
     for (auto* c : {plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
-        c->Enable(natural && plateau_min_spin_->GetValue() > 0);
+        c->Enable(natural && plateau_percent_spin_->GetValue() > 0);
     }
     for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
@@ -1054,12 +1054,9 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0 || config.surface.caveEntrances > 0);
     config.surface.plateauLevels = uint32_t(plateau_levels_spin_->GetValue());
     config.surface.plateauMaxPercent = natural ? uint32_t(plateau_percent_spin_->GetValue()) : 0;
-    config.surface.plateauMinTop = natural ? uint32_t(plateau_min_spin_->GetValue()) : 0;
+    // Keep the component-size filter internal; the dialog enables mountains by area percentage.
+    config.surface.plateauMinTop = config.surface.plateauMaxPercent ? 64 : 0;
     if (config.surface.plateauMinTop) {
-        if (config.surface.plateauMinTop < 16) {
-            SetStatus("Mountain tops needs 0 or at least 16 cells.", true);
-            return std::nullopt;
-        }
         request.profile.plateauCliff = std::string(plateau_cliff_choice_->GetValue().utf8_str());
         request.profile.plateauGround = std::string(plateau_ground_choice_->GetValue().utf8_str());
         request.profile.plateauRamp = std::string(plateau_ramp_choice_->GetValue().utf8_str());

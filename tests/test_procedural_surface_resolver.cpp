@@ -24,6 +24,9 @@
 #include "map/map.h"
 #include "ui/gui.h"
 #include "ui/main_frame.h"
+#include "ui/dialogs/terrain_generator_dialog.h"
+#include <wx/choice.h>
+#include <wx/spinctrl.h>
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
@@ -1079,6 +1082,29 @@ void nextToTerrain(uint32_t side, uint64_t seed, bool withHole, std::ostream& re
 	report << "SURFACE_NEXT_TO_TERRAIN_PASS\t" << side << '\t' << seed << "\thole=" << withHole << "\tgap=" << gap << "\tplaced=" << placed << '\n';
 }
 
+void mountainDialogControls(std::ostream& report)
+{
+    check(g_gui.NewMap(), "Mountain dialog source map");
+    auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-style", dialog));
+    auto* percent = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-plateau-percent", dialog));
+    auto* levels = wxWindow::FindWindowByName("terrain-plateau-levels", dialog);
+    check(style && percent && levels, "Mountain dialog controls missing");
+    check(!wxWindow::FindWindowByName("terrain-plateau-min-top", dialog), "Obsolete mountain cell input");
+    style->SetSelection(1);
+    wxCommandEvent changed(wxEVT_CHOICE, style->GetId());
+    changed.SetEventObject(style);
+    style->GetEventHandler()->ProcessEvent(changed);
+    check(percent->GetValue() == 10 && percent->IsEnabled() && levels->IsEnabled(), "Percentage must enable mountains directly");
+    percent->SetValue(0);
+    wxSpinEvent disabled(wxEVT_SPINCTRL, percent->GetId());
+    disabled.SetEventObject(percent);
+    percent->GetEventHandler()->ProcessEvent(disabled);
+    check(percent->IsEnabled() && !levels->IsEnabled(), "Zero percent must disable mountain options");
+    dialog->Destroy();
+    report << "SURFACE_MOUNTAIN_DIALOG_PERCENT_PASS\n";
+}
+
 void plateaus(std::ostream& report, uint32_t levels = 1)
 {
     UndoLimits limits;
@@ -1328,6 +1354,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        mountainDialogControls(report);
         plateaus(report);
         plateaus(report, 3);
 		for (uint64_t seed = 1; seed <= 4; ++seed) oneRun(100, seed, report, seed == 1);
