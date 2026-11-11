@@ -1328,6 +1328,8 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        plateaus(report);
+        plateaus(report, 3);
 		for (uint64_t seed = 1; seed <= 4; ++seed) oneRun(100, seed, report, seed == 1);
 		oneRun(250, 1729, report, true);
 		oneRun(500, 1729, report, false);
@@ -1342,8 +1344,6 @@ void run() {
 		ruinsAndCamps(250, report);
 		campfires(250, report);
 		guiCaves(report);
-        plateaus(report);
-        plateaus(report, 3);
         const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report);
 		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report);
 		fords(250, 1729, report);

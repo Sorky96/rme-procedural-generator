@@ -96,12 +96,15 @@ uint64_t GroundPlan::fingerprint() const {
 }
 
 bool profileNeedsEdgeClearance(const GroundProfile& profile) {
-	for (const std::string& name : profile.active()) {
+    const auto needsClearance = [](const std::string& name) {
 		const auto* brush = name.empty() ? nullptr : g_brushes.getBrush(name);
 		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
-		if (ground && ground->hasOuterZilchBorder()) return true;
-	}
-	return false;
+        return ground && ground->hasOuterZilchBorder();
+    };
+    if (std::ranges::any_of(profile.active(), needsClearance)) return true;
+    // Whole caps can reach the surface rock boundary. Reserve space for their
+    // actual cliff and grass autoborders before generating that surface.
+    return hasPlateau(profile) && (needsClearance(profile.plateauCliff) || needsClearance(profile.plateauGround));
 }
 
 std::expected<GroundPlan, ResolveError> resolveGroundPlan(
