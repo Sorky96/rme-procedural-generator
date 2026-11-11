@@ -1090,6 +1090,9 @@ void mountainDialogControls(std::ostream& report)
     auto* percent = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-plateau-percent", dialog));
     auto* levels = wxWindow::FindWindowByName("terrain-plateau-levels", dialog);
     check(style && percent && levels, "Mountain dialog controls missing");
+    auto* width = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-width", dialog));
+    auto* height = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-height", dialog));
+    check(width && height && width->GetMax() == 2000 && height->GetMax() == 2000, "Generation dialog must allow 2000 x 2000");
     check(!wxWindow::FindWindowByName("terrain-plateau-min-top", dialog), "Obsolete mountain cell input");
     style->SetSelection(1);
     wxCommandEvent changed(wxEVT_CHOICE, style->GetId());

@@ -4,6 +4,7 @@
 
 #include "app/main.h"
 #include "ui/dialogs/terrain_generator_dialog.h"
+#include "ui/dialogs/terrain_generator_limits.h"
 
 #include "app/managers/version_manager.h"
 #include "app/settings.h"
@@ -56,17 +57,16 @@ namespace {
 
 using namespace rme::procedural;
 
-constexpr uint64_t MiB = 1024ULL * 1024ULL;
-constexpr int maxSide = 500;
-constexpr PreparationBudget preparationBudget { 250000, 254016, 250000, 512 * MiB };
-constexpr SelectionMaskBudget selectionBudget { 250000, 1 * MiB };
-constexpr TerrainCommitBudget commitBudget { 250000, 768 * MiB };
+using namespace rme::ui::terrain_generator;
 // Native bitmap conversion allowance on top of the RGB image (32-bit DIB plus headers). Policy estimate.
 constexpr uint64_t bitmapOverheadBytes = 64 * 1024;
 
 const wxString staleMessage = "Map, selection or client data changed. Generate a new preview.";
 const wxString memoryMessage = "Not enough memory for this preview. Nothing was changed; try a smaller area.";
-const wxString tooLargeMessage = "This area is too large. Use at most 500 x 500 tiles with up to 250,000 changes.";
+const wxString tooLargeMessage = wxstr(std::format(
+    "This area is too large. Use at most {} x {} tiles with up to {} changed tiles across all generated floors.",
+    maxSide, maxSide, maxChanges
+));
 const wxString cancelledMessage = "The operation was cancelled. Nothing was changed.";
 const wxString noClientMessage = "No client is loaded. Load the client for this map first.";
 const wxString busyMessage = "Finish the current selection or edit first, then try again.";
@@ -1276,9 +1276,19 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 
 		const auto& region = prepared_->snapshot.input.config.region;
 		const uint64_t imageBytes = uint64_t(region.width) * region.height * 7 + bitmapOverheadBytes;
-		SetStatus(wxstr(std::format("Preview ready: {} tiles will change in a {} x {} area at floor {} (seed {}). "
-			"Estimated memory: {} for the preview and image; placing may use up to {}.",
-			prepared_->preview.getChanges().size(), region.width, region.height, region.z,
+        uint64_t changedTiles = prepared_->preview.getChanges().size();
+        uint64_t floors = 1;
+        if (prepared_->cave) {
+            changedTiles += prepared_->cave->preview.getChanges().size();
+            ++floors;
+        }
+        for (auto* upper = prepared_->plateau.get(); upper; upper = upper->plateau.get()) {
+            changedTiles += upper->preview.getChanges().size();
+            ++floors;
+        }
+		SetStatus(wxstr(std::format("Preview ready: {} tiles across {} floors will change in a {} x {} area (seed {}). "
+			"Estimated preparation memory: {}. Commit memory limit: {}.",
+			changedTiles, floors, region.width, region.height,
 			prepared_->snapshot.input.config.seed,
 			formatMiB(prepared_->memory.totalBytes + imageBytes + (selection_ ? selection_->estimatedBytes : 0)),
 			formatMiB(commitBudget.maxBytes))), false);
