@@ -33,6 +33,26 @@ struct SurfaceStage {
 
 using SurfaceResult = std::expected<SurfaceStage, SurfaceError>;
 
+struct MountainStage {
+	SurfaceGrid surface;
+	std::vector<PlateauGrid> floors;
+};
+
+std::expected<MountainStage, SurfaceError> buildMountains(SurfaceGrid surface, const GenerationConfig& config,
+	std::span<const ExitShape> shapes, std::span<const uint8_t> occupied, std::stop_token stop) {
+	auto first = generatePlateau(surface, config.seed, config.surface.plateauMinTop, shapes, occupied, stop, config.surface.plateauMaxPercent);
+	if (!first) return std::unexpected(first.error());
+	std::vector<PlateauGrid> floors;
+	floors.push_back(std::move(*first));
+	for (uint32_t level = 2; level <= config.surface.plateauLevels; ++level) {
+		auto next = generateNextPlateau(floors.back(), config.seed ^ (uint64_t(level) << 48), shapes, stop, config.surface.plateauMaxPercent);
+		if (!next) return std::unexpected(next.error());
+		if (!next->components) break;
+		floors.push_back(std::move(*next));
+	}
+	return MountainStage{std::move(surface), std::move(floors)};
+}
+
 SurfaceResult buildSurface(const GenerationConfig& config, MapExtent extent, SurfaceBudget budget,
 	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
 	auto grid = generateSurface({config.region, config.seed, config.surface}, extent, budget, mask, protection, stop);
@@ -48,28 +68,28 @@ SurfaceResult buildSurface(const GenerationConfig& config, MapExtent extent, Sur
 
 // Only owned, plain generation data crosses the thread boundary. Destruction requests stop
 // and joins before releasing the result; no callback can outlive the continuation.
-class SurfaceTask {
+template<typename Result>
+class CoreTask {
 public:
-	SurfaceTask(GenerationConfig config, MapExtent extent, SurfaceBudget budget,
-		std::vector<uint8_t> mask, std::vector<uint8_t> protection) :
-		worker([this, config, extent, budget, mask = std::move(mask), protection = std::move(protection)](std::stop_token stop) {
+	template<typename Work>
+	explicit CoreTask(Work work) : worker([this, work = std::move(work)](std::stop_token stop) mutable {
 			try {
-				result.emplace(buildSurface(config, extent, budget, mask, protection, stop));
+				result.emplace(work(stop));
 			} catch (...) {
 				exception = std::current_exception();
 			}
 			ready.store(true, std::memory_order_release);
 		}) {}
 
-	~SurfaceTask() { worker.request_stop(); }
+	~CoreTask() { worker.request_stop(); }
 	bool done() const noexcept { return ready.load(std::memory_order_acquire); }
-	SurfaceResult take() {
+	Result take() {
 		if (exception) std::rethrow_exception(exception);
 		return std::move(*result);
 	}
 
 private:
-	std::optional<SurfaceResult> result;
+	std::optional<Result> result;
 	std::exception_ptr exception;
 	std::atomic<bool> ready = false;
 	std::jthread worker; // Destroy first: join before touching the other members.
@@ -345,7 +365,10 @@ TerrainPreparationSteps runPreparation(
 				const SurfaceBudget surfaceBudget{budget.maxCells, semanticBytes, semanticBytes};
 				SurfaceResult generated = std::unexpected(SurfaceError::Cancelled);
 				if (background) {
-					SurfaceTask task(input.config, input.extent, surfaceBudget, input.mask, std::move(protection));
+					CoreTask<SurfaceResult> task([config = input.config, extent = input.extent, surfaceBudget,
+						mask = input.mask, protection = std::move(protection)](std::stop_token token) {
+						return buildSurface(config, extent, surfaceBudget, mask, protection, token);
+					});
 					while (!task.done()) {
 						if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
 						co_await std::suspend_always{};
@@ -462,28 +485,26 @@ TerrainPreparationSteps runPreparation(
                             }
                         }
                     }
-                    auto generated = generatePlateau(
-                        *grid, input.config.seed, input.config.surface.plateauMinTop, brushes->shapes, occupied, stop,
-                        input.config.surface.plateauMaxPercent
-                    );
-                    if (!generated) {
-                        co_return fail(fromSurface(generated.error()));
-                    }
-                    std::vector<PlateauGrid> floors;
-                    floors.push_back(std::move(*generated));
-                    for (uint32_t level = 2; level <= input.config.surface.plateauLevels; ++level) {
-                        auto next = generateNextPlateau(
-                            floors.back(), input.config.seed ^ (uint64_t(level) << 48), brushes->shapes, stop,
-                            input.config.surface.plateauMaxPercent
-                        );
-                        if (!next) {
-                            co_return fail(fromSurface(next.error()));
+                    auto work = [surface = std::move(*grid), config = input.config, shapes = brushes->shapes,
+                                 occupied = std::move(occupied)](std::stop_token token) mutable {
+                        return buildMountains(std::move(surface), config, shapes, occupied, token);
+                    };
+                    std::expected<MountainStage, SurfaceError> geometry = std::unexpected(SurfaceError::Cancelled);
+                    if (background) {
+                        CoreTask<decltype(geometry)> task(std::move(work));
+                        while (!task.done()) {
+                            if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                            co_await std::suspend_always{};
                         }
-                        if (!next->components) {
-                            break;
-                        }
-                        floors.push_back(std::move(*next));
+                        geometry = task.take();
+                    } else {
+                        geometry = work(stop);
                     }
+                    if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                    if (g_version.GetAssetRevision() != input.assetRevision) co_return fail(PreviewError::StaleSnapshot);
+                    if (!geometry) co_return fail(fromSurface(geometry.error()));
+                    *grid = std::move(geometry->surface);
+                    auto& floors = geometry->floors;
                     PreparedTerrain* lowerUnit = nullptr;
                     for (size_t level = 0; level < floors.size(); ++level) {
                         auto* generated = &floors[level];

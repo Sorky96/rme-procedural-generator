@@ -1179,6 +1179,30 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     );
     check(prepared->plateau && !prepared->plateau->preview.getChanges().empty(), "Plateau preview empty");
     check(prepared->cave && !prepared->cave->preview.getChanges().empty(), "Combined cave empty");
+    if (levels == 3) {
+        auto steps = prepareTerrainSteps(editor.map, config, profile, preparation, {});
+        check(bool(steps), "Staged mountain preflight");
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+        std::optional<std::expected<PreparedTerrain, PreparationError>> result;
+        while (!(result = steps->advance())) {
+            check(std::chrono::steady_clock::now() < deadline, "Staged mountain timeout");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        check(bool(*result), "Staged mountain preparation");
+        check((**result).cave && (**result).plateau, "Staged mountain/cave floors missing");
+        const auto same = [](const PreparedTerrain& a, const PreparedTerrain& b) {
+            check(a.plan.fingerprint() == b.plan.fingerprint() && a.preview.getFingerprint() == b.preview.getFingerprint(),
+                "Worker changed a floor's full plan or preview payload");
+        };
+        same(*prepared, **result);
+        same(*prepared->cave, *(**result).cave);
+        auto* a = prepared->plateau.get();
+        auto* b = (**result).plateau.get();
+        for (; a && b; a = a->plateau.get(), b = b->plateau.get()) same(*a, *b);
+        check(!a && !b && editor.map.getTileCount() == 0 && editor.actionQueue->getSize() == 0,
+            "Worker changed mountain count, source or history");
+        report << "SURFACE_MOUNTAIN_WORKER_PAYLOAD_PASS\n";
+    }
     check(bool(validateTerrainTarget(*prepared, config, profile)), "Plateau validation");
     std::vector<const PreparedTerrain*> allUnits {&*prepared};
     for (auto* p = prepared->plateau.get(); p; p = p->plateau.get()) {

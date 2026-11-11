@@ -88,7 +88,7 @@ std::expected<PreparedTerrain, PreparationError> prepareTerrain(
 
 // GUI-only staged variant. Keep map, request and mask alive while advancing; discard the
 // continuation if the target disappears. No event dispatch occurs inside advance().
-// Surface semantics and decoration run on one worker owning copied plain inputs; all map/brush
+// Surface semantics/decoration and mountain geometry run on owned workers with plain inputs; all map/brush
 // access remains on the GUI thread. Destroying the continuation requests stop and joins the worker.
 // The additional owned mask is charged to the preparation budget. The synchronous API uses no worker.
 using TerrainPreparationSteps = PreparationSteps<std::expected<PreparedTerrain, PreparationError>>;
