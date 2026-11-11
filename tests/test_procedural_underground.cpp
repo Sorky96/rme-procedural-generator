@@ -4,11 +4,13 @@
 #include "procedural/core/underground.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <format>
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace rme::procedural;
@@ -522,6 +524,11 @@ void testPlateaus()
     check(limited && !limited->components, "oversized whole component skipped");
     auto noRamp = generatePlateau(g,1729,64,{});
     check(noRamp && !noRamp->components, "inaccessible component removed");
+    const ExitShape invalidDirection[] = {{static_cast<ExitDirection>(4)}};
+    auto invalidRamp = generatePlateau(g,1729,64,invalidDirection);
+    check(!invalidRamp && invalidRamp.error() == SurfaceError::InvalidParameters, "invalid ramp direction retains error path");
+    auto noRock = grid(24,24,SurfaceKind::Grass);
+    check(bool(generatePlateau(noRock,1729,64,invalidDirection)), "unused invalid direction retains empty result");
     auto off = generatePlateau(g,1729,0,ramps);
     check(off && !off->components, "mountains disabled");
     std::vector<uint8_t> occupied(g.cells.size(),1);
@@ -575,6 +582,13 @@ void testPlateaus()
         }
     }
     std::cout << "PLATEAU_LEVELS_LIMIT_CROSS_CHECK 60/60\nPLATEAU_CROSS_CHECK 60/60\n";
+    PlateauGrid large {{0,0,6,1000,1000},std::vector<PlateauKind>(1000000,PlateauKind::Top),std::vector<uint8_t>(1000000)};
+    std::stop_source during;
+    std::jthread canceller([&] {std::this_thread::sleep_for(std::chrono::milliseconds(10));during.request_stop();});
+    auto cancelled = generateNextPlateau(large,1729,ramps,during.get_token(),1);
+    canceller.join();
+    check(!cancelled && cancelled.error() == SurfaceError::Cancelled, "cancel while searching a strict higher-cap inset");
+    std::cout << "PLATEAU_COOPERATIVE_CANCEL_PASS\n";
 }
 
 int main() {

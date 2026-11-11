@@ -262,6 +262,7 @@ try {
     // Chebyshev distance from non-base, including cells outside the rectangle.
     std::vector<uint32_t> distance(n);
     for (int y = 0; y < h; ++y) {
+        if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
         for (int x = 0; x < w; ++x) {
             auto i = index(x, y);
             distance[i] = surface.cells[i] == SurfaceKind::Rock ? uint32_t(std::min({x + 1, y + 1, w - x, h - y})) : 0;
@@ -274,6 +275,7 @@ try {
         }
     }
     for (int y = h - 1; y >= 0; --y) {
+        if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
         for (int x = w - 1; x >= 0; --x) {
             auto i = index(x, y);
             if (x + 1 < w) {
@@ -291,6 +293,7 @@ try {
         }
     }
     for (uint32_t inset = lowerOpen.empty() ? 1 : 3;; ++inset) {
+        if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
         out.inset = inset;
         out.cells.assign(n, PlateauKind::None);
         out.landings.assign(n, 0);
@@ -321,6 +324,7 @@ try {
                 queue.push_back(uint32_t(start));
                 labels[start] = uint32_t(tops.size() + 1);
                 for (size_t q = 0; q < queue.size(); ++q) {
+                    if (q % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
                     int x = int(queue[q] % w), y = int(queue[q] / w);
                     for (size_t d = 0; d < 4; ++d) {
                         if (inside(x + dx[d], y + dy[d])) {
@@ -340,6 +344,7 @@ try {
         for (size_t i = tops.size(); i > 1; --i)
             std::swap(tops[i - 1], tops[size_t(random.bounded(i))]);
         uint64_t accepted = 0;
+        const bool validDirections = std::ranges::all_of(shapes, [](const auto& shape) { return shape.direction <= ExitDirection::West; });
         for (const auto& top : tops) {
             const auto component = labels[top.front()];
             if (lowerOpen.empty() && maxPercent && (accepted + top.size()) * 100 > uint64_t(n) * maxPercent) continue;
@@ -351,20 +356,38 @@ try {
             }
             std::vector<uint32_t> order;
             for (size_t i = 0; i < n; ++i) {
+                if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
                 if (lowerOpen.empty() ? surface.cells[i] != SurfaceKind::Rock : lowerOpen[i] != 0) {
                     order.push_back(uint32_t(i));
                 }
             }
             // Stable Fisher-Yates, independent from all existing generator streams.
             for (size_t i = order.size(); i > 1; --i) {
+                if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
                 std::swap(order[i - 1], order[size_t(random.bounded(i))]);
             }
             const auto first = out.ramps.size();
             const auto wanted = std::min<size_t>(4, 1 + top.size() / 400);
+            size_t tried = 0;
             for (auto p : order) {
+                if (tried++ % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
                 int x = int(p % w), y = int(p / w);
                 if (!open(x, y)) {
                     continue;
+                }
+                // A ramp must reach this component in one step. Reject other cells before
+                // comparing them with every earlier ramp. Keep the shuffled order and RNG
+                // draws unchanged; invalid directions retain their existing error path below.
+                if (validDirections) {
+                    bool beside = false;
+                    for (size_t d = 0; d < 4; ++d) {
+                        const int tx = x + dx[d], ty = y + dy[d];
+                        if (inside(tx, ty) && surface.cells[index(tx, ty)] == SurfaceKind::Rock && labels[index(tx, ty)] == component) {
+                            beside = true;
+                            break;
+                        }
+                    }
+                    if (!beside) continue;
                 }
                 bool spaced = true;
                 for (const auto& ramp : out.ramps) {
