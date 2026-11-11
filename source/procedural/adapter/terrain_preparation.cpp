@@ -12,15 +12,68 @@
 #include "procedural/core/decoration.h"
 
 #include <algorithm>
+#include <atomic>
+#include <exception>
 #include <limits>
 #include <new>
 #include <optional>
+#include <system_error>
+#include <thread>
 #include <wx/thread.h>
 
 namespace rme::procedural {
 namespace {
 
 constexpr uint64_t maxNameBytes = 256;
+
+struct SurfaceStage {
+	SurfaceGrid grid;
+	std::optional<DecorGrid> decor;
+};
+
+using SurfaceResult = std::expected<SurfaceStage, SurfaceError>;
+
+SurfaceResult buildSurface(const GenerationConfig& config, MapExtent extent, SurfaceBudget budget,
+	std::span<const uint8_t> mask, std::span<const uint8_t> protection, std::stop_token stop) {
+	auto grid = generateSurface({config.region, config.seed, config.surface}, extent, budget, mask, protection, stop);
+	if (!grid) return std::unexpected(grid.error());
+	std::optional<DecorGrid> decor;
+	if (config.vegetation) {
+		auto generated = generateDecoration(*grid, config.seed, config.decor, stop);
+		if (!generated) return std::unexpected(generated.error());
+		decor = std::move(*generated);
+	}
+	return SurfaceStage{std::move(*grid), std::move(decor)};
+}
+
+// Only owned, plain generation data crosses the thread boundary. Destruction requests stop
+// and joins before releasing the result; no callback can outlive the continuation.
+class SurfaceTask {
+public:
+	SurfaceTask(GenerationConfig config, MapExtent extent, SurfaceBudget budget,
+		std::vector<uint8_t> mask, std::vector<uint8_t> protection) :
+		worker([this, config, extent, budget, mask = std::move(mask), protection = std::move(protection)](std::stop_token stop) {
+			try {
+				result.emplace(buildSurface(config, extent, budget, mask, protection, stop));
+			} catch (...) {
+				exception = std::current_exception();
+			}
+			ready.store(true, std::memory_order_release);
+		}) {}
+
+	~SurfaceTask() { worker.request_stop(); }
+	bool done() const noexcept { return ready.load(std::memory_order_acquire); }
+	SurfaceResult take() {
+		if (exception) std::rethrow_exception(exception);
+		return std::move(*result);
+	}
+
+private:
+	std::optional<SurfaceResult> result;
+	std::exception_ptr exception;
+	std::atomic<bool> ready = false;
+	std::jthread worker; // Destroy first: join before touching the other members.
+};
 
 std::unexpected<PreparationError> fail(PreparationError error) {
 	return std::unexpected<PreparationError>(std::move(error));
@@ -63,7 +116,7 @@ constexpr uint64_t infrastructureBytes = sizeof(PreparedTerrain) + preparationSc
 
 std::expected<PreparationPreflight, PreparationError> preflight(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
-	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop) {
+	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop, bool background) {
 	if (!wxIsMainThread()) return fail(PreparationInputError::WrongThread);
 	if (stop.stop_requested()) return fail(PreparationInputError::Cancelled);
 	if (!g_version.IsVersionLoaded() || !g_version.getLoadedVersion()) return fail(PreparationInputError::NoClient);
@@ -209,6 +262,11 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			return fail(PreparationInputError::MemoryLimit);
 		}
 		semanticBytes += 2 * cellCount + 2 * kSnapshotAllocationOverhead;
+		if (background) {
+			// The worker owns a mask copy; combined protection is moved into it.
+			if (cellCount > UINT64_MAX - semanticBytes - kSnapshotAllocationOverhead) return fail(PreparationInputError::MemoryLimit);
+			semanticBytes += cellCount + kSnapshotAllocationOverhead;
+		}
 		if (hasCave(profile)) {
 			// Cave cells, exit search occupancy, landings, queues, brush geometry and retained sparse plan.
 			// Conservative bound; charged before generating and never refunded.
@@ -237,7 +295,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 
 TerrainPreparationSteps runPreparation(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
-	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop, PreparationPreflight limits) {
+	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop, PreparationPreflight limits, bool background) {
 	if (!wxIsMainThread()) co_return fail(PreparationInputError::WrongThread);
 	if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
 	if (g_version.GetAssetRevision() != limits.assetRevision) co_return fail(PreviewError::StaleSnapshot);
@@ -284,15 +342,23 @@ TerrainPreparationSteps runPreparation(
 				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
 				std::vector<uint8_t> protection = input.protection;
 				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
-				auto grid = generateSurface({ input.config.region, input.config.seed, input.config.surface }, input.extent,
-					{ budget.maxCells, semanticBytes, semanticBytes }, input.mask, protection, stop);
-				if (!grid) co_return fail(fromSurface(grid.error()));
-				std::optional<DecorGrid> decor;
-				if (input.config.vegetation) {
-					auto generated = generateDecoration(*grid, input.config.seed, input.config.decor, stop);
-					if (!generated) co_return fail(fromSurface(generated.error()));
-					decor = std::move(*generated);
+				const SurfaceBudget surfaceBudget{budget.maxCells, semanticBytes, semanticBytes};
+				SurfaceResult generated = std::unexpected(SurfaceError::Cancelled);
+				if (background) {
+					SurfaceTask task(input.config, input.extent, surfaceBudget, input.mask, std::move(protection));
+					while (!task.done()) {
+						if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+						co_await std::suspend_always{};
+					}
+					generated = task.take();
+				} else {
+					generated = buildSurface(input.config, input.extent, surfaceBudget, input.mask, protection, stop);
 				}
+				if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+				if (g_version.GetAssetRevision() != input.assetRevision) co_return fail(PreviewError::StaleSnapshot);
+				if (!generated) co_return fail(fromSurface(generated.error()));
+				auto* grid = &generated->grid;
+				auto& decor = generated->decor;
 				const auto resolve = [&]() { return resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear); };
 				if (hasCave(profile)) {
 					auto brushes = resolveCaveBrushes(profile, input.config);
@@ -626,6 +692,8 @@ TerrainPreparationSteps runPreparation(
         co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau)};
     } catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
+	} catch (const std::system_error&) {
+		co_return fail(PreparationInputError::AllocationFailed);
 	}
 }
 
@@ -635,9 +703,9 @@ std::expected<TerrainPreparationSteps, PreparationError> prepareTerrainSteps(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
 	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop) {
 	try {
-		const auto limits = preflight(map, config, profile, budget, mask, stop);
+		const auto limits = preflight(map, config, profile, budget, mask, stop, true);
 		if (!limits) return fail(limits.error());
-		return runPreparation(map, config, profile, budget, mask, stop, *limits);
+		return runPreparation(map, config, profile, budget, mask, stop, *limits, true);
 	} catch (const std::bad_alloc&) {
 		return fail(PreparationInputError::AllocationFailed);
 	}
@@ -646,9 +714,14 @@ std::expected<TerrainPreparationSteps, PreparationError> prepareTerrainSteps(
 std::expected<PreparedTerrain, PreparationError> prepareTerrain(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
 	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop) {
-	auto steps = prepareTerrainSteps(map, config, profile, budget, mask, stop);
-	if (!steps) return fail(steps.error());
-	return steps->finish();
+	try {
+		const auto limits = preflight(map, config, profile, budget, mask, stop, false);
+		if (!limits) return fail(limits.error());
+		auto steps = runPreparation(map, config, profile, budget, mask, stop, *limits, false);
+		return steps.finish();
+	} catch (const std::bad_alloc&) {
+		return fail(PreparationInputError::AllocationFailed);
+	}
 }
 
 } // namespace rme::procedural

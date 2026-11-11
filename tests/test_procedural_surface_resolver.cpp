@@ -35,6 +35,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -222,6 +223,40 @@ void endToEnd(uint32_t side, std::ostream& report, bool vegetation = false) {
 	const auto prior = editor.actionQueue->getCurrentIndex();
 	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
 	check(bool(prepared), "Surface preparation failed, error index " + std::to_string(prepared ? 0 : prepared.error().index()));
+	if (side == 100) {
+		const auto staged = [&]() {
+			auto steps = prepareTerrainSteps(editor.map, config, profile, preparation, {});
+			check(bool(steps), "Staged surface preflight failed");
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+			for (;;) {
+				if (auto result = steps->advance()) return std::move(*result);
+				check(std::chrono::steady_clock::now() < deadline, "Staged surface timed out");
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
+		};
+		auto async = staged();
+		check(async && async->plan.items == prepared->plan.items && async->plan.decor == prepared->plan.decor &&
+			async->preview.getFingerprint() == prepared->preview.getFingerprint(), "Worker changed deterministic surface/decor payload");
+		{
+			std::stop_source stop;
+			auto steps = prepareTerrainSteps(editor.map, config, profile, preparation, {}, stop.get_token());
+			check(steps && !steps->advance() && !steps->advance(), "Staged worker did not suspend");
+			stop.request_stop();
+			auto cancelled = steps->advance();
+			check(cancelled && !*cancelled && std::holds_alternative<PreparationInputError>(cancelled->error()) &&
+				std::get<PreparationInputError>(cancelled->error()) == PreparationInputError::Cancelled,
+				"Staged worker published output after cancellation");
+		}
+		{
+			auto dropped = prepareTerrainSteps(editor.map, config, profile, preparation, {});
+			check(dropped && !dropped->advance() && !dropped->advance(), "Dropped worker did not suspend");
+		} // The dialog's Cancel/close path destroys the continuation without advancing it.
+		auto retry = staged();
+		check(retry && retry->preview.getFingerprint() == prepared->preview.getFingerprint() &&
+			editor.map.getTileCount() == baselineTiles && editor.actionQueue->getCurrentIndex() == prior,
+			"Cancellation/destruction changed source, history or deterministic retry");
+		report << "SURFACE_WORKER_CANCEL_RETRY_PASS\tvegetation=" << vegetation << '\n';
+	}
 	check(bool(validatePreparedTerrain(editor.map, *prepared, config, profile)), "Surface validation failed");
 	auto tuned = config;
 	tuned.surface.riverCount += 1;
