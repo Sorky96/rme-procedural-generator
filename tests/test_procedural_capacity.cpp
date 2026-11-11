@@ -80,9 +80,18 @@ void capacity(std::ostream& report) {
     g_settings.setInteger(Config::UNDO_SIZE, 400);
     const auto commitStarted = std::chrono::steady_clock::now();
     auto committed = DrawOperations::commitTerrainPreview(*prepared, config, profile, limits::commitBudget);
+    if (!committed && std::holds_alternative<TerrainCommitFailure>(committed.error())
+        && std::get<TerrainCommitFailure>(committed.error()) == TerrainCommitFailure::HistoryRefused) {
+        check(editor.map.getTileCount() == 0 && editor.actionQueue->getCurrentIndex() == 0, "History refusal left a partial capacity map");
+        check(bool(validateTerrainTarget(*prepared, config, profile)), "History refusal invalidated the capacity preview");
+        report << "CAPACITY_HISTORY_REFUSAL_PASS\tundoMiB=4096\n";
+        g_settings.setInteger(Config::UNDO_MEM_SIZE, 8192);
+        committed = DrawOperations::commitTerrainPreview(*prepared, config, profile, limits::commitBudget);
+    }
     check(bool(committed), committed ? "" : std::format("Capacity commit domain {} error {}", committed.error().index(),
         std::holds_alternative<TerrainCommitFailure>(committed.error()) ? int(std::get<TerrainCommitFailure>(committed.error())) : -1));
-    report << std::format("CAPACITY_COMMITTED\testimate={}\ttransition={}\tms={}\n", committed->totalBytes, committed->transitionBytes,
+    report << std::format("CAPACITY_COMMITTED\testimate={}\ttransition={}\tundoMiB={}\tms={}\n", committed->totalBytes, committed->transitionBytes,
+        g_settings.getInteger(Config::UNDO_MEM_SIZE),
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - commitStarted).count());
     const auto checkPayload = [&] {
         for (const auto* unit : units) for (const auto& pos : unit->preview.getChanges())

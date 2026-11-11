@@ -96,7 +96,7 @@ GeneralPage::GeneralPage(wxWindow* parent) : ScrollablePreferencesPage(parent) {
 		"Maximum number of editor actions kept in history. Larger values improve safety but use more memory.",
 		undo_size_spin
 	);
-	undo_mem_size_spin = new wxSpinCtrl(performance_section, wxID_ANY, i2ws(g_settings.getInteger(Config::UNDO_MEM_SIZE)), wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, 0, 4096);
+	undo_mem_size_spin = new wxSpinCtrl(performance_section, wxID_ANY, i2ws(g_settings.getInteger(Config::UNDO_MEM_SIZE)), wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, 0, 8192);
 	PreferencesLayout::AddControlRow(
 		performance_section,
 		"Undo memory limit (MB)",
