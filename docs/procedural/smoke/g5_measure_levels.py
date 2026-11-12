@@ -1,4 +1,5 @@
-"""Iteration 40 gate: level repair, entrances, cap vegetation and pure sand islands."""
+"""Iteration 40 gate, or --i41: far cave exits and door corridors as well."""
+import argparse
 import json
 import re
 import statistics
@@ -8,7 +9,10 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[3]
 profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10')
-output = root / 'local-data/i40-measurement'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--i41', action='store_true')
+args = parser.parse_args()
+output = root / ('local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length = spec
@@ -23,6 +27,7 @@ def measure(spec):
                        f'pathLength={length}', 'ruinPercent=20', 'campCount=4', 'fordLength=48',
                        'repairReach=1', 'caveEntrances=16', 'caveExitShapes=ramp',
                        'plateauMinTop=64', 'plateauMaxPercent=10', 'plateauLevels=3']
+            command += ['caveFarExits=1', 'caveDoorCorridors=1'] if args.i41 else ['caveFarExits=0']
             command += [str(seed) for seed in range(1001, 1033)]
             result = subprocess.run(command, capture_output=True)
             (output / f'{profile}-retry{retries}-run{run}.log').write_bytes(result.stdout)
@@ -71,6 +76,19 @@ def measure(spec):
         assert len(pruned) == 32
         islands = [tuple(map(int, row)) for row in re.findall(r'level islands total (\d+) nonShoreIslands (\d+) nonShoreCells (\d+)', text)]
         assert len(islands) == 32
+        caves = [tuple(map(int, row)) for row in re.findall(
+            r'level cave i41 components (\d+) far (\d+) exits (\d+) distanceSum (\d+) minDistance (\d+) corridors (\d+) invalidDoors (\d+)', text)]
+        cave_metrics = {}
+        if args.i41:
+            assert len(caves) == 32
+            cave_metrics = {
+                'componentExitShareMedian': statistics.median(f / c if c else 1 for c, f, *_ in caves),
+                'components': sum(c[0] for c in caves), 'componentsWithFarExit': sum(c[1] for c in caves),
+                'distanceMean': sum(c[3] for c in caves) / max(1, sum(c[2] for c in caves)),
+                'distanceMinimum': min(c[4] for c in caves if c[2]),
+                'seedsWithDoors': sum(c[5] > 0 for c in caves),
+                'corridors': sum(c[5] for c in caves), 'invalidDoors': sum(c[6] for c in caves),
+            }
         rows.append({'profile': profile, 'retries': retries, 'identical': True,
                         'allSeeds': sum(s[3] == 'true' for s in seeds),
                         'edges': [sum(int(s[i]) for s in seeds) for i in [4, 5]],
@@ -82,15 +100,21 @@ def measure(spec):
                         'islandNonShoreCells': sum(c for _, _, c in islands),
                         'unrepairedSeeds': sum(line[5] == 'true' for line in repair_lines),
                         'removedPoiFraction': removed_pois / max(1, retained_pois + removed_pois)})
+        rows[-1]['caveI41'] = cave_metrics
         print(rows[-1], flush=True)
     return rows
 
 with ThreadPoolExecutor(max_workers=2) as executor:
     summary = [row for rows in executor.map(measure, [('m06', 30, 40), ('m19', 40, 80)]) for row in rows]
 (output / 'summary.json').write_text(json.dumps(summary, indent=2))
-passed = all(row['allSeeds'] >= (32 if row['retries'] else 30)
+passed = all(row['allSeeds'] >= (32 if row['retries'] or args.i41 else 30)
              and row['edges'][0] == row['edges'][1]
              and row['removedPoiFraction'] <= .02 and row['entranceMedian'] >= 8
              and row['islandNonShoreCells'] == 0
              and row['vegetation'] and all(v['ratioMedian'] >= .7 for v in row['vegetation'].values()) for row in summary)
+if args.i41:
+    passed &= all(row['caveI41']['componentExitShareMedian'] >= .8
+                  and row['caveI41']['distanceMean'] >= 24 and row['caveI41']['distanceMinimum'] >= 24
+                  and row['caveI41']['seedsWithDoors'] >= 26 and row['caveI41']['invalidDoors'] == 0 for row in summary)
 print('G5_GATE_PASS' if passed else 'G5_GATE_FAIL', flush=True)
+raise SystemExit(0 if passed else 1)

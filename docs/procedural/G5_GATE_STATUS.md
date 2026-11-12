@@ -298,3 +298,30 @@ Pomiar jak w iteracji 39, seedy 1001–1032, bok 512, reguła ostrożna dekoru. 
 **G5_GATE_PASS**, kryteria (a)–(g) bez regresji. Kanoniczny build Windows x64, przebudowane cele rdzenia, 18/18 testów, obie sondy PASS, **SUITE_PASS**. Niezależny DFS: 120/120 planów; ręczne przypadki: dirt, bród/most/ścieżka, POI, Preserve, granica, największa składowa, inne piętro i metadane mostu. Stare asercje szerokości plaży i różnic po dodaniu brodu uwzględniają normalizację wysp; sonda brodu nadal sprawdza chodliwość, połączenia i Undo/Redo (443 komórki brodu, 7 połączonych składowych, zero blokad). Szacunek pamięci roboczej uwzględnia klasyfikację wysp. Pełne wyniki testów i sond oraz ograniczenia: niecommitowany `local-data/I40_IMPLEMENTATION_REPORT.md`.
 
 **Nie zweryfikowane:** dokładny przypadek użytkownika (brak ustawień), wygląd w GUI, ruch w grze, inne klienty niż 10.98, wczytanie w oryginalnym RME, profilowanie dużych obszarów.
+
+## Iteracja 41 — dalekie wyjścia jaskiń i korytarze z drzwiami (2026-11-12): PASS w pomiarach i sondach
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 41”, bez zmian. Rdzeń `561cf88`, dopasowanie ciasnych korytarzy `071b4ad`, zachowanie odległości po połączeniu składowych `c7cb069`, adapter/GUI `0540d28`. `CaveExit::distant` oznacza rampę bez wejścia/dziury na powierzchni. Wieloźródłowy BFS od wszystkich wejść, odległość ≥24, remisy (y,x); krótka jaskinia dostaje przedłużenie tunelu szerokości 3 o 24..48 kroków Manhattan. Przedłużenie łączące składowe sprawdza wszystkie ich wejścia i zachowanie odległości także wcześniej umieszczonych dalekich ramp. Korytarze długości 3, szerokości 1, drzwi pośrodku i Solid prostopadle; zwężenie nie rozcina pozostałego Floor. Niemożliwy układ z ≥2 salami jest odrzucany, zamiast zwrócenia planu bez wymaganego korytarza. `GroundProfile::caveDoor` = `stone wall`, zwykłe zamknięte drzwi bez klucza z danych 10.98, oba kierunki, bez ID w kodzie. Opcja drzwi domyślnie wyłączona; brak odpowiedniego pędzla wyłącza ją z komunikatem. Dalekie wyjścia domyślnie włączone przy jaskini. Maska adaptera traktuje wyznaczone drzwi jaskini jako otwieralne; pozostałe blokery i dotychczasowe drzwi budynków zachowują poprzednie zachowanie.
+
+Pomiar `g5_measure_levels.py --i41`: seedy 1001–1032, bok 512, ustawienia iteracji 39, oba nowe mechanizmy włączone. Osobno bez ponawiania i z limitem 8 prób; wyniki jednakowe. Każdy wariant dwa razy: stdout/stderr bajtowo identyczne, stdout zawiera odcisk całego LevelPlan (piętra, chodliwość, dekor, krawędzie Z i POI).
+
+| Profil | Pełne seedy | Składowe z dalekim wyjściem | Mediana udziału | BFS średnia / minimum | Seedy z drzwiami | Drzwi z błędnym sąsiedztwem | Chodliwe krawędzie Z |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| m06 | 32/32 | 32/32 | 100 % | 174,9375 / 35 | 32/32 | 0/32 | 1840/1840 |
+| m19 | 32/32 | 32/32 | 100 % | 179,125 / 91 | 32/32 | 0/32 | 2769/2769 |
+
+Bez nieosiągalnych POI i `unrepaired`; kieszenie jaskini/czap = 0. Naprawy: m06 2 [0..5], m19 14,5 [6..22]; usunięte czapy 0, usunięte POI odpowiednio 0,04014 % i 0,04444 %. Mediana wejść 18,5 / 33. Roślinność czap względem powierzchni z−1/z−2/z−3: m06 97,5/93,2/86,2 %, m19 94,7/91,5/79,2 %. Wyspy: 15 / 8; wyspy nie tylko Shore i komórki inne niż Shore = 0. **G5_GATE_PASS**.
+
+Status kryteriów:
+
+1. **PASS:** testy ręczne rozdzielnych składowych i krótkiej jaskini, odmowa pod czapami, rezerwacje, wyjście bez nowej dziury; 120 niezależnych BFS i determinizm.
+2. **PASS:** mediana udziału 100 % w obu profilach, każda odległość ≥24.
+3. **PASS:** opcja domyślnie wyłączona, pędzel zapisany w `GroundProfile::caveDoor`; sonda sprawdza oba stany dostępności kontrolki i zamknięte zwykłe drzwi bez klucza. Test rdzenia sprawdza odmowę niemożliwego układu.
+4. **PASS:** 32/32 seedów w każdym profilu, każde drzwi z dwoma przeciwnymi sąsiadami. `CAVE_FAR_EXIT_DOOR_GUI_PASS farExits=1 doors=1 maskDoors=1 undoRedo=4 brush=stone wall`: przedmiot na mapie, sąsiedztwo i chodliwość w rzeczywistej masce adaptera.
+5. **PASS:** 32/32 w obu profilach bez ponawiania i z ≤8 próbami, wszystkie cele osiągalne, 100 % krawędzi Z. Stara sonda pięciu pięter: `LEVEL_REACHABILITY_E2E_PASS`, 0 rozbieżności modelu z mapą, floorchange 112/112.
+6. **PASS:** rzeczywisty dialog Preview/Validate/Place, cztery Undo do pustej mapy, cztery Redo z identycznymi stosami w zakresie z=4..8; nowy znacznik sondy powyżej.
+7. **PASS:** odcisk Seed 1729 100×100 = 17159159863505677800 bez zmian, kanoniczny build Windows x64, osobno przebudowane cele testów i style_render (D25), 18/18 testów, obie sondy PASS, `SUITE_PASS`. Dwa przebiegi pomiaru identyczne. Końcowe sondy: `suite-commit-20261112-220835` i `suite-surface-20261112-220835`; dane klienta niezmienione, tylko 99 znanych ostrzeżeń SetFocus w sondzie powierzchni, bez innych wpisów stderr.
+
+**Decyzje i odchylenia.** Bez zmiany kryteriów ani progów. Korytarz ma stałą dozwoloną długość 3; długość celu przedłużenia tunelu liczona w metryce Manhattan, potem obowiązkowo ponowny BFS od wejść. Obie komórki powierzchni (głowa i przybycie) są dodatkowo wymagane jako otwarty grunt. Historyczne sondy relacji rampa=wejście jawnie wyłączają nowe opcje; szacunki pamięci uwzględniają nowe pola i warstwy. Regresję zbyt szerokiego wyjątku chodliwości drzwi budynków wykryła stara sonda i poprawiono ją przed końcową serią.
+
+**Nie zweryfikowane:** wizualna ocena użytkownika, ruch i otwieranie drzwi na serwerze gry, inne klienty niż 10.98, oryginalny RME, obszar 2000×2000 z nowymi opcjami, wszystkie awarie alokacji (D3). Pełny raport i surowe wyniki w niecommitowanym `local-data/I41_IMPLEMENTATION_REPORT.md` i `local-data/i41-measurement/`.

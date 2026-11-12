@@ -28,6 +28,69 @@
 using namespace rme::procedural;
 namespace fs = std::filesystem;
 
+uint64_t levelFingerprint(const LevelPlan& plan) {
+    uint64_t hash = 14695981039346656037ULL;
+    const auto word = [&](uint64_t v) {
+        for (int k = 0; k < 8; ++k) { hash = (hash ^ uint8_t(v)) * 1099511628211ULL; v >>= 8; }
+    };
+    word(plan.region.x); word(plan.region.y); word(plan.region.z); word(plan.region.width); word(plan.region.height);
+    word(plan.floors.size());
+    for (const auto& f : plan.floors) {
+        word(f.z); word(f.walkable.size()); for (auto v : f.walkable) word(v);
+        word(f.decor.size()); for (auto v : f.decor) word(uint8_t(v));
+    }
+    word(plan.edges.size());
+    for (const auto& e : plan.edges) { word(e.a.floor); word(e.a.cell); word(e.b.floor); word(e.b.cell); }
+    word(plan.pois.size());
+    for (const auto& p : plan.pois) { word(uint8_t(p.kind)); word(p.at.floor); word(p.at.cell); }
+    return hash;
+}
+
+// Independent measurement of final Floor components, multi-source BFS distances
+// and door neighbourhoods (after narrowing and reachability repair).
+std::string caveMeasurements(const LevelWorld& world) {
+    if (!world.cave) return {};
+    const auto& c = *world.cave;
+    const auto n = c.cells.size(); const auto w = c.region.width;
+    std::vector<uint32_t> labels(n), queue;
+    uint32_t components = 0;
+    const auto around = [&](uint32_t i, auto visit) {
+        if (i >= w) visit(i - w);
+        if (i % w) visit(i - 1);
+        if (i % w + 1 < w) visit(i + 1);
+        if (i + w < n) visit(i + w);
+    };
+    for (uint32_t i = 0; i < n; ++i) if (!labels[i] && c.cells[i] == CaveKind::Floor) {
+        ++components; queue.assign(1, i); labels[i] = components;
+        for (size_t head = 0; head < queue.size(); ++head) around(queue[head], [&](auto j) {
+            if (!labels[j] && c.cells[j] == CaveKind::Floor) { labels[j] = components; queue.push_back(j); }
+        });
+    }
+    std::vector<uint8_t> entered(components + 1), exited(components + 1);
+    std::vector<int32_t> distance(n, -1); queue.clear();
+    for (const auto& e : world.exits.exits) if (!e.distant && labels[e.cell]) {
+        entered[labels[e.cell]] = 1; distance[e.cell] = 0; queue.push_back(e.cell);
+    }
+    for (size_t head = 0; head < queue.size(); ++head) around(queue[head], [&](auto j) {
+        if (distance[j] < 0 && c.cells[j] == CaveKind::Floor) { distance[j] = distance[queue[head]] + 1; queue.push_back(j); }
+    });
+    uint64_t sum = 0; uint32_t count = 0, minimum = UINT32_MAX, invalid = 0;
+    for (const auto& e : world.exits.exits) if (e.distant) {
+        exited[labels[e.cell]] = 1; ++count;
+        if (distance[e.cell] < 0) minimum = 0;
+        else { sum += distance[e.cell]; minimum = std::min(minimum, uint32_t(distance[e.cell])); }
+    }
+    for (const auto& door : c.corridors) {
+        uint32_t neighbours = 0; around(door.door, [&](auto j) { neighbours += c.cells[j] == CaveKind::Floor; });
+        const auto step = door.horizontal ? 1u : w;
+        invalid += neighbours != 2 || c.cells[door.door - step] != CaveKind::Floor || c.cells[door.door + step] != CaveKind::Floor;
+    }
+    uint32_t withExit = 0;
+    for (size_t k = 1; k < entered.size(); ++k) withExit += entered[k] && exited[k];
+    return std::format("level cave i41 components {} far {} exits {} distanceSum {} minDistance {} corridors {} invalidDoors {}\n",
+        std::ranges::count(entered, uint8_t(1)), withExit, count, sum, count ? minimum : 0, c.corridors.size(), invalid);
+}
+
 // Offline 10.98 model: rocky ground is open; trees, bushes and small rocks
 // each have at least one Unpassable variant. No client IDs are embedded here.
 std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& config,
@@ -46,6 +109,7 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         auto repaired = repairLevelReach(*world, true, false, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
+        vegetation += caveMeasurements(*world);
         const auto islands = sandIslandsOf(world->surface);
         if (!islands) return std::unexpected(ReachabilityError::InvalidGrid);
         vegetation += std::format("level islands total {} nonShoreIslands {} nonShoreCells {}\n",
@@ -78,14 +142,20 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         auto placed = placeCaveExits(*surface, *cave, shapes, occupied);
         if (!placed) return std::unexpected(ReachabilityError::InvalidGrid);
         exits = std::move(*placed);
+        if (config.tuning.caveFarExits && !placeFarCaveExits(*surface, *cave, exits, shapes, config.seed, occupied))
+            return std::unexpected(ReachabilityError::InvalidGrid);
+        if (config.tuning.caveDoorCorridors && !placeCaveDoorCorridors(*cave, exits, shapes))
+            return std::unexpected(ReachabilityError::InvalidGrid);
         decoration.push_back({});
     }
     constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
     for (size_t i = 0; i < n; ++i) occupied[i] = decor->cells[i] != DecorKind::None;
     for (const auto& e : exits.exits) {
-        const auto entry = surface->entrances[e.entrance];
-        decoration[0].cells[entry] = DecorKind::None;
-        occupied[entry] = 1;
+        if (!e.distant) {
+            const auto entry = surface->entrances[e.entrance];
+            decoration[0].cells[entry] = DecorKind::None;
+            occupied[entry] = 1;
+        }
         const auto d = size_t(shapes[e.shape].direction);
         occupied[size_t(int64_t(e.cell) + dx[d] + int64_t(dy[d]) * config.region.width)] = 1;
     }
@@ -156,6 +226,8 @@ int main(int argc, char** argv) {
 		else if (name == "shoreSmoothing") tuning.shoreSmoothing = value;
 		else if (name == "shoreRadius") tuning.shoreRadius = value;
 		else if (name == "repairReach") tuning.repairReach = value;
+        else if (name == "caveFarExits") tuning.caveFarExits = value != 0;
+        else if (name == "caveDoorCorridors") tuning.caveDoorCorridors = value != 0;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
         else if (name == "plateauLevels") {
@@ -219,6 +291,8 @@ int main(int argc, char** argv) {
             if (tuning.repairReach) std::cout << std::format("level cave pruning seed {} removedComponents {}\n", seed, chosenRepair.removedCaveComponents) << chosenVegetation;
             std::cout << std::format("level seed {} used {} attempts {} all {} edges {}/{} model conservative\n",
                 seed, used, attempts, chosen->allReached(), chosen->walkableEdges, chosen->edges);
+            if (tuning.caveFarExits || tuning.caveDoorCorridors)
+                std::cout << std::format("level fingerprint seed {} value {}\n", seed, levelFingerprint(*chosenPlan));
             constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells"};
             for (size_t c = 0; c < levelPoiKindCount; ++c)
                 std::cout << std::format("level category seed {} {} {}/{}\n", seed, names[c], chosen->categories[c].reached, chosen->categories[c].total);
