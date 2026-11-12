@@ -16,7 +16,8 @@ namespace rme::procedural {
 // v1 types and fingerprints are untouched; v2 has its own kinds and fingerprint domain.
 inline constexpr uint32_t surfaceAlgorithmVersion = 2;
 
-enum class SurfaceKind : uint8_t { Preserve = 0, Grass, Dirt, Rock, Shore, Lake, River, Path, Floor };
+enum class SurfaceKind : uint8_t { Preserve = 0, Grass, Dirt, Rock, Shore, Lake, River, Path, Floor, Bridge };
+enum class BridgeAxis : uint8_t { None, Horizontal, Vertical };
 
 // All fields below are pure functions of (seed, absolute coordinates) and of
 // whole-region thresholds. A mask or protection therefore never changes the
@@ -50,6 +51,7 @@ struct SurfaceGrid {
 	std::vector<uint32_t> fires;
 	// Z entrances: RockFace on Rock or FloorHole on Grass/Dirt; same x/y one floor below.
 	std::vector<uint32_t> entrances;
+    std::vector<BridgeAxis> bridgeAxes; // empty without repair bridges; one axis per cell otherwise
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };

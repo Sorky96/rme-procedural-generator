@@ -17,7 +17,7 @@ constexpr uint8_t flagBuildingSeen = 2;
 
 bool naturallyWalkable(SurfaceKind kind) noexcept {
 	return kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Rock || kind == SurfaceKind::Shore ||
-		kind == SurfaceKind::Path;
+		kind == SurfaceKind::Path || kind == SurfaceKind::Bridge;
 }
 
 } // namespace

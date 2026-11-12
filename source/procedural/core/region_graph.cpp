@@ -15,7 +15,7 @@ namespace {
 // 0 = Land, 1 = Rock, 2 = Water, 255 = no class (Preserve)
 uint8_t classOf(SurfaceKind kind) noexcept {
 	switch (kind) {
-		case SurfaceKind::Grass: case SurfaceKind::Dirt: case SurfaceKind::Shore: case SurfaceKind::Path: case SurfaceKind::Floor: return 0;
+		case SurfaceKind::Grass: case SurfaceKind::Dirt: case SurfaceKind::Shore: case SurfaceKind::Path: case SurfaceKind::Floor: case SurfaceKind::Bridge: return 0;
 		case SurfaceKind::Rock: return 1;
 		case SurfaceKind::Lake: case SurfaceKind::River: return 2;
 		default: return 255;

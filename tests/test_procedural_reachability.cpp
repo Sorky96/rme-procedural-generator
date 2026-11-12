@@ -2,6 +2,7 @@
 // Reachability of a generated surface (G4 iteration 13). Hand-counted layouts plus a cross-check against an
 // independent union-find implementation on random grids.
 #include "procedural/core/reachability.h"
+#include "procedural/core/level_repair.h"
 
 #include <algorithm>
 #include <iostream>
@@ -672,7 +673,129 @@ void testLevelCrossCheck() {
 }
 } // namespace
 
+void testRepairPaths() {
+    uint64_t random = 37;
+    const auto next = [&]() { random = random * 6364136223846793005ULL + 1; return uint32_t(random >> 32); };
+    for (uint32_t round = 0; round < 120; ++round) {
+        constexpr uint32_t w = 8, h = 7, n = w * h;
+        const uint32_t limit = round % 5;
+        std::vector<uint8_t> costs(n), sources(n), goals(n);
+        for (auto& c : costs) { constexpr uint8_t kinds[] = {0, 1, 1, 3, 6}; c = kinds[next() % 5]; }
+        sources[next() % n] = 1; goals[next() % n] = 1;
+        // Independent expanded graph with a linear minimum scan. No production
+        // heap, compact state encoding, neighbour builder or predecessor code.
+        const auto stride = limit + 1;
+        std::vector<uint64_t> d(n * stride, UINT64_MAX);
+        std::vector<bool> used(d.size());
+        for (uint32_t i = 0; i < n; ++i) if (sources[i] && costs[i] && (costs[i] != 6 || limit))
+            d[i * stride + (costs[i] == 6)] = costs[i] == 1 ? 0 : costs[i];
+        uint64_t best = UINT64_MAX;
+        for (size_t step = 0; step < d.size(); ++step) {
+            size_t at = SIZE_MAX;
+            for (size_t j = 0; j < d.size(); ++j) if (!used[j] && d[j] != UINT64_MAX && (at == SIZE_MAX || d[j] < d[at])) at = j;
+            if (at == SIZE_MAX) break;
+            used[at] = true;
+            const auto i = uint32_t(at / stride), run = uint32_t(at % stride);
+            if (goals[i]) best = std::min(best, d[at]);
+            for (uint32_t j = 0; j < n; ++j) {
+                if (!costs[j] || std::abs(int(i % w) - int(j % w)) + std::abs(int(i / w) - int(j / w)) != 1) continue;
+                const auto r = costs[j] == 6 ? run + 1 : 0;
+                if (r <= limit) d[j * stride + r] = std::min(d[j * stride + r], d[at] + costs[j]);
+            }
+        }
+        const auto path = cheapestLevelPath(costs, w, h, sources, goals, limit);
+        const auto again = cheapestLevelPath(costs, w, h, sources, goals, limit);
+        check(path && (path->cells.empty() ? UINT64_MAX : path->cost) == best, std::format("independent Dijkstra {}", round));
+        check(path && again && path->cells == again->cells, "repair path deterministic");
+        if (path && !path->cells.empty()) {
+            check(sources[path->cells.front()] && goals[path->cells.back()], "path endpoints");
+            uint32_t run = 0;
+            for (size_t j = 0; j < path->cells.size(); ++j) {
+                const auto i = path->cells[j];
+                run = costs[i] == 6 ? run + 1 : 0;
+                check(costs[i] && run <= limit, "path respects forbidden cells and water limit");
+                if (j) { const auto previous = path->cells[j - 1]; check(std::abs(int(i % w) - int(previous % w)) + std::abs(int(i / w) - int(previous / w)) == 1, "path 4-neighbours"); }
+            }
+        }
+    }
+    std::cout << "LEVEL_REPAIR_DIJKSTRA_PASS randomPlans=120\n";
+}
+
+void testLevelRepair() {
+    const auto make = [] {
+        LevelWorld world;
+        world.surface = grid(9, 7, SurfaceKind::Grass);
+        world.decor.push_back({world.surface.region, std::vector<DecorKind>(63)});
+        return world;
+    };
+    auto world = make();
+    // Center start on the left bank, target is the interior of a camp on the right.
+    for (uint32_t y = 0; y < 7; ++y) world.surface.cells[y * 9 + 5] = SurfaceKind::River;
+    world.surface.cells[35] = SurfaceKind::Floor; world.surface.sites = {35};
+    auto repaired = repairLevelReach(world, false, false, {}, {}, 1, true);
+    check(repaired && repaired->bridges == 2 && !repaired->unrepaired, "bridge across river with clipped water-border shoulder");
+    auto ford = make();
+    for (uint32_t y = 0; y < 7; ++y) ford.surface.cells[y * 9 + 5] = SurfaceKind::River;
+    ford.surface.cells[35] = SurfaceKind::Floor; ford.surface.sites = {35};
+    repaired = repairLevelReach(ford, false, false, {}, {}, 1, false);
+    check(repaired && repaired->bridges == 0 && std::ranges::find(ford.surface.cells, SurfaceKind::Bridge) == ford.surface.cells.end(), "sand fallback");
+    world = make();
+    for (uint32_t y = 0; y < 7; ++y) world.decor[0].cells[y * 9 + 5] = DecorKind::Tree;
+    world.surface.cells[35] = SurfaceKind::Floor; world.surface.sites = {35};
+    repaired = repairLevelReach(world, false, false, {}, {true, false, false}, 0, true);
+    check(repaired && repaired->removedDecor == 1 && !repaired->unrepaired, "clear one blocking tree");
+    world = make();
+    // A cap without a ramp is removed. Its surface support must become open rock.
+    PlateauGrid cap; cap.region = world.surface.region; --cap.region.z;
+    cap.cells.resize(63); cap.landings.resize(63); cap.cells[35] = PlateauKind::Top; cap.components = 1;
+    world.surface.cells[35] = SurfaceKind::Rock; world.caps.push_back(cap);
+    world.decor.push_back({cap.region, std::vector<DecorKind>(63)});
+    repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
+    const auto p = levelPlanOf(world.surface, false, false, nullptr, {}, {}, world.caps, world.decor);
+    check(repaired && repaired->removedCaps == 1 && p && p->floors[0].walkable[35], "remove cap and restore rock");
+    world = make();
+    cap.cells.assign(63, PlateauKind::None); cap.cells[30] = cap.cells[31] = PlateauKind::Top;
+    world.surface.cells[30] = world.surface.cells[31] = SurfaceKind::Rock;
+    world.caps.push_back(cap); world.decor.push_back({cap.region, std::vector<DecorKind>(63)});
+    --cap.region.z; cap.cells[30] = PlateauKind::None;
+    world.caps.push_back(cap); world.decor.push_back({cap.region, std::vector<DecorKind>(63)});
+    repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
+    check(repaired && repaired->removedCaps == 2 && world.caps[0].cells[30] == PlateauKind::None &&
+        world.caps[1].cells[31] == PlateauKind::None, "remove unsupported higher cap with its lower cap");
+    world = make();
+    for (uint32_t y = 0; y < 7; ++y) world.surface.cells[y * 9 + 5] = SurfaceKind::Preserve;
+    world.surface.cells[35] = SurfaceKind::Floor; world.surface.sites = {35};
+    repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
+    check(repaired && repaired->removedPois == 1 && world.surface.sites.empty(), "remove impossible POI");
+    // Forbidden wall costs are never traversed, even when cheaper than water.
+    std::vector<uint8_t> costs {1, 0, 1}, source {1, 0, 0}, goal {0, 0, 1};
+    check(cheapestLevelPath(costs, 3, 1, source, goal, 256)->cells.empty(), "wall and slope forbidden");
+    world = {};
+    world.surface = grid(205, 5, SurfaceKind::Preserve);
+    world.decor.push_back({world.surface.region, std::vector<DecorKind>(1025)});
+    for (uint32_t x = 1; x < 205; x += 2) {
+        world.surface.cells[410 + x] = SurfaceKind::Floor; world.surface.sites.push_back(410 + x);
+    }
+    repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
+    check(repaired && repaired->repairs == 64 && repaired->removedPois == 64 && repaired->unrepaired, "64 repair limit");
+    // Mountain generation precedes the entrance filter; every retained entrance
+    // and ramp arrival must have an open supporting surface cell.
+    auto entranceSurface = grid(25, 25, SurfaceKind::Grass);
+    for (uint32_t y = 4; y <= 20; ++y) for (uint32_t x = 4; x <= 20; ++x) entranceSurface.cells[y * 25 + x] = SurfaceKind::Rock;
+    const uint32_t entry = 20 * 25 + 12;
+    entranceSurface.entrances = {entry};
+    check(caveEntranceAllowed(entranceSurface.cells, 25, 25, entry, CaveEntranceStyle::RockFace), "manual entrance initially legal");
+    SurfaceTuning tuning; tuning.caveEntrances = 1; tuning.plateauMinTop = 64;
+    constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}};
+    auto built = buildLevelWorld(entranceSurface, {}, 1729, tuning, {}, shapes, shapes, false);
+    check(built && !built->caps.empty() && built->caps[0].cells[entry] == PlateauKind::Top &&
+        built->surface.entrances.empty(), "manual entrance under generated cap is filtered");
+    std::cout << "LEVEL_REPAIR_HAND_PASS\n";
+}
+
 int main() {
+    testRepairPaths();
+    testLevelRepair();
 	testLevels();
 	testLevelCrossCheck();
 	testLakeSplit();

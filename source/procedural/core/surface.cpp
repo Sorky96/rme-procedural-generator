@@ -917,7 +917,12 @@ bool SurfaceGrid::valid() const noexcept {
 	if (!std::ranges::all_of(sites, [&](uint32_t site) { return site < cells.size() && cells[site] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(fires, [&](uint32_t fire) { return fire < cells.size() && cells[fire] == SurfaceKind::Path; })) return false;
 	if (!std::ranges::all_of(entrances, [&](uint32_t entrance) { return entrance < cells.size() && (cells[entrance] == SurfaceKind::Rock || cells[entrance] == SurfaceKind::Grass || cells[entrance] == SurfaceKind::Dirt); })) return false;
-	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Floor; });
+    if (!bridgeAxes.empty()) {
+        if (bridgeAxes.size() != cells.size()) return false;
+        for (size_t i = 0; i < cells.size(); ++i) if (bridgeAxes[i] > BridgeAxis::Vertical ||
+            ((bridgeAxes[i] != BridgeAxis::None) != (cells[i] == SurfaceKind::Bridge))) return false;
+    }
+	return std::ranges::all_of(cells, [](SurfaceKind kind) { return kind <= SurfaceKind::Bridge; });
 }
 
 uint64_t SurfaceGrid::fingerprint() const {
@@ -932,6 +937,7 @@ uint64_t SurfaceGrid::fingerprint() const {
 	word(uint32_t(region.x)); word(uint32_t(region.y)); word(uint32_t(region.z));
 	word(region.width); word(region.height);
 	for (const auto kind : cells) byte(static_cast<uint8_t>(kind));
+    if (!bridgeAxes.empty()) { byte('B'); for (const auto axis : bridgeAxes) byte(uint8_t(axis)); }
 	if (!doors.empty()) {
 		byte('D');
 		word(static_cast<uint32_t>(doors.size()));
