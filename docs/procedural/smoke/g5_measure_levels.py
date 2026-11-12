@@ -1,4 +1,4 @@
-"""Iteration 37 gate: two byte-identical conservative level repair measurements per profile/retry setting."""
+"""Iteration 38 gate: identical level repair runs, entrances and cap vegetation."""
 import json
 import re
 import statistics
@@ -8,7 +8,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[3]
 profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10')
-output = root / 'local-data/i37-measurement'
+output = root / 'local-data/i38-measurement'
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length = spec
@@ -56,10 +56,25 @@ def measure(spec):
             repairs[name] = {'sum': sum(values), 'median': statistics.median(values), 'range': [min(values), max(values)]}
         retained_pois = sum(categories[c]['sum'][1] for c in ['doors', 'sites', 'caveEntrances'])
         removed_pois = repairs['removedPois']['sum']
+        entrance_counts = [int(b) for _, b in re.findall(r'level category seed \d+ caveEntrances (\d+)/(\d+)', text)]
+        vegetation = {}
+        for level in range(1, 4):
+            counts = [tuple(map(int, row)) for row in re.findall(
+                rf'level flora level {level} grass (\d+) flora (\d+) surfaceGrass (\d+) surfaceFlora (\d+)', text)]
+            cap = [f / g for g, f, sg, sf in counts if g and sg and sf]
+            surface = [sf / sg for g, f, sg, sf in counts if g and sg and sf]
+            ratios = [f / g / (sf / sg) for g, f, sg, sf in counts if g and sg and sf]
+            if ratios:
+                vegetation[level] = {'seeds': len(ratios), 'capMedian': statistics.median(cap),
+                    'surfaceMedian': statistics.median(surface), 'ratioMedian': statistics.median(ratios)}
+        pruned = list(map(int, re.findall(r'level cave pruning seed \d+ removedComponents (\d+)', text)))
+        assert len(pruned) == 32
         rows.append({'profile': profile, 'retries': retries, 'identical': True,
                         'allSeeds': sum(s[3] == 'true' for s in seeds),
                         'edges': [sum(int(s[i]) for s in seeds) for i in [4, 5]],
                         'categories': categories, 'pockets': pockets, 'repairs': repairs,
+                        'entrancesPerSeed': entrance_counts, 'entranceMedian': statistics.median(entrance_counts),
+                        'vegetation': vegetation, 'removedCaveComponents': sum(pruned),
                         'unrepairedSeeds': sum(line[5] == 'true' for line in repair_lines),
                         'removedPoiFraction': removed_pois / max(1, retained_pois + removed_pois)})
         print(rows[-1], flush=True)
@@ -70,5 +85,6 @@ with ThreadPoolExecutor(max_workers=2) as executor:
 (output / 'summary.json').write_text(json.dumps(summary, indent=2))
 passed = all(row['allSeeds'] >= (32 if row['retries'] else 30)
              and row['edges'][0] == row['edges'][1]
-             and row['removedPoiFraction'] <= .02 for row in summary)
+             and row['removedPoiFraction'] <= .02 and row['entranceMedian'] >= 8
+             and row['vegetation'] and all(v['ratioMedian'] >= .7 for v in row['vegetation'].values()) for row in summary)
 print('G5_GATE_PASS' if passed else 'G5_GATE_FAIL', flush=True)

@@ -31,7 +31,7 @@ namespace fs = std::filesystem;
 // Offline 10.98 model: rocky ground is open; trees, bushes and small rocks
 // each have at least one Unpassable variant. No client IDs are embedded here.
 std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& config,
-    const SurfaceBudget& budget, const DecorTuning& decorTuning, LevelRepairReport& repair) {
+    const SurfaceBudget& budget, const DecorTuning& decorTuning, LevelRepairReport& repair, std::string& vegetation) {
     auto surface = generateSurface(config, {65001, 65001, 16}, budget);
     if (!surface) return std::unexpected(ReachabilityError::InvalidGrid);
     const auto n = surface->cells.size();
@@ -46,6 +46,19 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         auto repaired = repairLevelReach(*world, true, false, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
+        uint64_t surfaceGrass = 0, surfaceFlora = 0;
+        for (size_t i = 0; i < n; ++i) if (world->surface.cells[i] == SurfaceKind::Grass) {
+            ++surfaceGrass; surfaceFlora += world->decor[0].cells[i] != DecorKind::None;
+        }
+        for (size_t k = 0; k < world->caps.size(); ++k) {
+            uint64_t grass = 0, flora = 0;
+            for (size_t i = 0; i < n; ++i) if (world->caps[k].cells[i] == PlateauKind::Top &&
+                (k + 1 == world->caps.size() || world->caps[k + 1].cells[i] == PlateauKind::None)) {
+                ++grass; flora += world->decor[(world->cave ? 2 : 1) + k].cells[i] != DecorKind::None;
+            }
+            vegetation += std::format("level flora level {} grass {} flora {} surfaceGrass {} surfaceFlora {}\n",
+                k + 1, grass, flora, surfaceGrass, surfaceFlora);
+        }
         return levelPlanOf(world->surface, true, false, world->cave ? &*world->cave : nullptr,
             world->exits, shapes, world->caps, world->decor);
     }
@@ -164,6 +177,7 @@ int main(int argc, char** argv) {
         LevelPlan plan;
         LevelReachabilityReport reach;
         LevelRepairReport repair;
+        std::string vegetation;
     };
     std::array<std::optional<CachedAttempt>, 16> retryCache;
     for (int i = firstSeed; i < argc; ++i) {
@@ -174,28 +188,31 @@ int main(int argc, char** argv) {
             uint64_t used = seed;
             uint32_t attempts = 0;
             LevelRepairReport firstRepair, chosenRepair;
+            std::string firstVegetation, chosenVegetation;
             for (uint32_t a = 0; a < std::max(1u, retrySeeds); ++a) {
                 LevelRepairReport repair;
+                std::string vegetation;
                 const auto candidate = seed + a;
                 auto& cached = retryCache[candidate % retryCache.size()];
                 std::expected<LevelPlan, ReachabilityError> plan = std::unexpected(ReachabilityError::InvalidGrid);
                 std::expected<LevelReachabilityReport, ReachabilityError> reach = std::unexpected(ReachabilityError::InvalidGrid);
                 if (retrySeeds > 1 && cached && cached->seed == candidate) {
-                    plan = cached->plan; reach = cached->reach; repair = cached->repair;
+                    plan = cached->plan; reach = cached->reach; repair = cached->repair; vegetation = cached->vegetation;
                 } else {
                     plan = offlineLevels({{100, 100, 7, side, side}, candidate, tuning}, budget,
-                        profile->decorTuning.value_or(DecorTuning{}), repair);
+                        profile->decorTuning.value_or(DecorTuning{}), repair, vegetation);
                     if (plan) reach = levelReachabilityOf(*plan, {true, true, true});
-                    if (retrySeeds > 1 && reach) cached = CachedAttempt{candidate, *plan, *reach, repair};
+                    if (retrySeeds > 1 && reach) cached = CachedAttempt{candidate, *plan, *reach, repair, vegetation};
                 }
                 if (!reach) { std::cerr << "level generation failed\n"; return 10; }
                 ++attempts;
-                if (reach->allReached()) { used = seed + a; chosen = std::move(*reach); chosenPlan = std::move(*plan); chosenRepair = repair; break; }
-                if (!first) { first = std::move(*reach); firstPlan = std::move(*plan); firstRepair = repair; }
+                if (reach->allReached()) { used = seed + a; chosen = std::move(*reach); chosenPlan = std::move(*plan); chosenRepair = repair; chosenVegetation = std::move(vegetation); break; }
+                if (!first) { first = std::move(*reach); firstPlan = std::move(*plan); firstRepair = repair; firstVegetation = std::move(vegetation); }
             }
-            if (!chosen) { chosen = std::move(first); chosenPlan = std::move(firstPlan); chosenRepair = firstRepair; }
+            if (!chosen) { chosen = std::move(first); chosenPlan = std::move(firstPlan); chosenRepair = firstRepair; chosenVegetation = std::move(firstVegetation); }
             if (tuning.repairReach) std::cout << std::format("level repair seed {} repairs {} bridges {} removedCaps {} removedPois {} removedDecor {} unrepaired {}\n",
                 seed, chosenRepair.repairs, chosenRepair.bridges, chosenRepair.removedCaps, chosenRepair.removedPois, chosenRepair.removedDecor, chosenRepair.unrepaired);
+            if (tuning.repairReach) std::cout << std::format("level cave pruning seed {} removedComponents {}\n", seed, chosenRepair.removedCaveComponents) << chosenVegetation;
             std::cout << std::format("level seed {} used {} attempts {} all {} edges {}/{} model conservative\n",
                 seed, used, attempts, chosen->allReached(), chosen->walkableEdges, chosen->edges);
             constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells"};

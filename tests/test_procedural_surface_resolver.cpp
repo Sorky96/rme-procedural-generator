@@ -1061,8 +1061,10 @@ void guiCaves(std::ostream& report) {
 			entrances += entranceCount;
 			exits += rampCount;
 		}
-		check((entrances > 0 && exits > 0) || (prepared->levels && prepared->levels->repair.removedPois > 0 &&
-            prepared->levels->repair.unrepaired), std::format("GUI cave case lost entrances without a reported repair removal {}", combination));
+        const bool noCaveFloor = std::ranges::none_of(prepared->cave->plan.caveFloor, [](auto kind) { return kind == 1; });
+		check((entrances > 0 && exits > 0) || (prepared->levels && noCaveFloor &&
+            (prepared->levels->repair.removedPois > 0 || prepared->levels->repair.removedCaveComponents > 0)),
+            std::format("GUI cave case lost entrances without a reported removal and empty cave {}", combination));
 		editor.map.clearChanges();
 		report << std::format("SURFACE_CAVE_GUI_PASS\t512\t{} entrances={} exits={} fingerprint={} caveFingerprint={} preview={} cavePreview={}\n",
 			combination, entrances, exits, prepared->plan.fingerprint(), prepared->cave->plan.fingerprint(),
@@ -1820,7 +1822,7 @@ void levelRepairProbe(std::ostream& report) {
     config.surface.rockPermille = 300; config.surface.buildingDensity = 30;
     config.surface.campCount = 4; config.surface.ruinPercent = 20;
     config.surface.caveEntrances = 20; config.surface.plateauMinTop = 64;
-    config.surface.plateauLevels = 3; config.surface.plateauMaxPercent = 10;
+    config.surface.plateauLevels = 3; config.surface.plateauMaxPercent = 0;
     config.surface.repairReach = 1; config.surface.fordLength = 48;
     GroundProfile p {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
     p.wall = "stone wall"; p.door = "Normal door";
@@ -1830,6 +1832,21 @@ void levelRepairProbe(std::ostream& report) {
     p.bridgeBrush = "bridge";
     auto prepared = prepareTerrain(editor.map, config, p, {250000, 254016, 750000, 768ULL << 20});
     check(prepared && prepared->levels && prepared->plateau && prepared->cave, "Integrated multi-floor repair preparation");
+    size_t notches = 0;
+    for (size_t i = 0; i < prepared->plan.entrances.size(); ++i) if (prepared->plan.entrances[i]) {
+        const int x = int(i % 128), y = int(i / 128);
+        bool besideCap = false;
+        for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) {
+            if (x + dx < 0 || y + dy < 0 || x + dx >= 128 || y + dy >= 128) continue;
+            const auto j = size_t(y + dy) * 128 + x + dx;
+            if (std::abs(dx) <= 1 && std::abs(dy) <= 1) {
+                check(prepared->plateau->plan.plateauFloor[j] == 0, "Entrance notch must exclude cap and landing");
+                check(brushOf(prepared->plan.items[j]) != g_brushes.getBrush(p.plateauCliff), "Cliff under entrance notch");
+            } else besideCap |= prepared->plateau->plan.plateauFloor[j] == 1;
+        }
+        notches += besideCap;
+    }
+    check(notches > 0, "Integrated plan needs entrance beside a notched cap");
     check(bool(DrawOperations::commitTerrainPreview(*prepared, config, p, {750000, 1536ULL << 20})), "Integrated repair commit");
     const auto& levels = *prepared->levels;
     for (size_t f = 0; f < levels.plan.floors.size(); ++f) for (size_t i = 0; i < 128 * 128; ++i) {
@@ -1840,6 +1857,27 @@ void levelRepairProbe(std::ostream& report) {
         if (levels.report.walkable[f * 128 * 128 + i]) check(tile && tile->ground && !blocks, "Integrated repaired walkability mismatch");
     }
     const auto& r = levels.repair;
+    size_t entranceEdges = 0;
+    for (const auto& poi : levels.plan.pois) if (poi.kind == LevelPoiKind::CaveEntrance) {
+        const auto i = poi.at.cell;
+        const auto* tile = editor.map.getTile(Position(100 + int(i % 128), 100 + int(i / 128), 7));
+        check(tile && std::ranges::any_of(tile->items, [&](const auto& item) { return item->getID() == prepared->plan.entrances[i]; }),
+            "Committed notch entrance item");
+        for (const auto& edge : levels.plan.edges) if (edge.a == poi.at) {
+            check(levels.report.walkable[edge.a.floor * 128 * 128 + edge.a.cell] &&
+                levels.report.walkable[edge.b.floor * 128 * 128 + edge.b.cell], "Notch entrance Z edge blocked");
+            ++entranceEdges;
+        }
+    }
+    check(entranceEdges > 0, "Notch entrance transition missing");
+    const auto floorImage = [&](int z) { return stackImage(editor.map, 98, 98, z, 132, 132); };
+    std::vector<decltype(floorImage(7))> after;
+    for (const auto& floor : levels.plan.floors) after.push_back(floorImage(floor.z));
+    for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(editor.actionQueue->undo(), "Notch Undo");
+    check(editor.map.getTileCount() == 0, "Notch Undo must restore empty map");
+    for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(editor.actionQueue->redo(), "Notch Redo");
+    for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(floorImage(levels.plan.floors[f].z) == after[f], "Notch Redo payload");
+    report << std::format("LEVEL_ENTRANCE_NOTCH_E2E_PASS notches={} entrances={} undoRedo={}\n", notches, entranceEdges, after.size());
     check(bankBorders > 0, "Water coastline borders disappeared beside the crossings");
     report << std::format("LEVEL_REPAIR_E2E_PASS bridges={} removedDecor={} axes=2 waterBorderItems={} bankBorderItems={} undoRedo=4 sandFords=2 integratedFloors={} repairs={} removedCaps={} removedPois={} unrepaired={}\n",
         bridges, removed, waterBorders, bankBorders, levels.plan.floors.size(), r.repairs, r.removedCaps, r.removedPois, r.unrepaired);
