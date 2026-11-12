@@ -381,7 +381,9 @@ std::expected<void, UndergroundError> placeCaveDoorCorridors(
                 bool fits = true;
                 for (int k = -2; k <= 2; ++k) {
                     const auto i = uint32_t(int(p) + k * step);
-                    fits &= cave.cells[i] == CaveKind::Floor && !protectedCells[i];
+                    // The two approach cells are unchanged; only the three
+                    // corridor cells and their sides need to be unreserved.
+                    fits &= cave.cells[i] == CaveKind::Floor && (std::abs(k) > 1 || !protectedCells[i]);
                     if (std::abs(k) <= 1) fits &= !protectedCells[i - side] && !protectedCells[i + side];
                 }
                 if (!fits) continue;
@@ -400,6 +402,9 @@ std::expected<void, UndergroundError> placeCaveDoorCorridors(
                 for (auto i : removed) cave.cells[i] = CaveKind::Floor;
             }
         }
+        // An enabled option must never silently produce a multi-room component
+        // without its required door corridor. Reject an impossible geometry.
+        if (!placed) return std::unexpected(UndergroundError::InvalidGrid);
     }
     return {};
 } catch (const std::bad_alloc&) { return std::unexpected(UndergroundError::AllocationFailed); }

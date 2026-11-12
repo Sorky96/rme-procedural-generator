@@ -673,6 +673,17 @@ void testFarExitsAndDoors() {
     check(std::ranges::count_if(separateExits->exits,[](const auto& e){return e.distant;}) == 2,
         "one distant exit per entered component; none in unentered component");
     check(std::ranges::all_of(separateSurface.cells,[](auto k){return k==SurfaceKind::Grass;}), "no surface hole created by distant ramps");
+    auto compact = grid(32,32,SurfaceKind::Grass);
+    compact.entrances = {3*32+3,3*32+28,28*32+28};
+    auto compactCave = generateCave(compact, 1);
+    auto compactExits = placeCaveExits(compact,*compactCave,shapes);
+    check(compactCave->rooms.size() >= 2 && bool(placeCaveDoorCorridors(*compactCave,*compactExits,shapes)) &&
+        !compactCave->corridors.empty(), "unchanged approach may meet room or transition reservation");
+    auto impossible = grid(6,6,SurfaceKind::Grass);
+    auto impossibleCave = emptyCave(impossible);
+    impossibleCave.cells.assign(36,CaveKind::Floor); impossibleCave.rooms = {14,21};
+    auto refusal = placeCaveDoorCorridors(impossibleCave,{},{});
+    check(!refusal && refusal.error() == UndergroundError::InvalidGrid, "never accept two rooms silently without a corridor");
     std::cout << "CAVE_FAR_EXIT_DOOR_CROSS_CHECK 120/120\n";
 }
 
