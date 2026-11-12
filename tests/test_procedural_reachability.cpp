@@ -784,6 +784,19 @@ void testLevelRepair() {
     const uint32_t entry = 20 * 25 + 12;
     entranceSurface.entrances = {entry};
     check(caveEntranceAllowed(entranceSurface.cells, 25, 25, entry, CaveEntranceStyle::RockFace), "manual entrance initially legal");
+    {
+        SurfaceTuning t; t.caveEntrances = 1;
+        constexpr ExitShape south[] = {{ExitDirection::South, 0, -1, true}};
+        DecorGrid d{entranceSurface.region, std::vector<DecorKind>(625)};
+        d.cells[entry + 25] = DecorKind::Tree;
+        const auto cave = generateCave(entranceSurface, 1729);
+        std::vector<uint8_t> occupied(625); occupied[entry + 25] = 1;
+        auto legacy = placeCaveExits(entranceSurface, *cave, south, occupied);
+        check(legacy && legacy->exits.empty(), "legacy exit still respects occupied destination");
+        auto repaired = buildLevelWorld(entranceSurface, d, 1729, t, {}, south, {}, true);
+        check(repaired && repaired->exits.exits.size() == 1 && repaired->decor[0].cells[entry + 25] == DecorKind::None,
+            "repair exit clears destination vegetation instead of rejecting entrance");
+    }
     SurfaceTuning tuning; tuning.caveEntrances = 1; tuning.plateauMinTop = 64;
     constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}};
     auto built = buildLevelWorld(entranceSurface, {}, 1729, tuning, {}, shapes, shapes, false);
@@ -829,7 +842,70 @@ void testLevelRepair() {
     std::cout << "LEVEL_REPAIR_HAND_PASS\n";
 }
 
+void testFinalMaskRepair() {
+    LevelPlan plan{{100, 100, 7, 9, 7}};
+    plan.floors.push_back({7, std::vector<uint8_t>(63, 1)});
+    plan.pois.push_back({LevelPoiKind::Site, {0, 35}});
+    std::vector<uint8_t> mask(63);
+    for (size_t y = 0; y < 7; ++y) mask[y * 9 + 5] = 1;
+    auto original = mask;
+    auto result = repairLevelReach(plan, mask, 0);
+    check(result && result->unrepaired && !result->repairs && mask == original, "final mask shares exhausted budget");
+    result = repairLevelReach(plan, mask, 1);
+    check(result && !result->unrepaired && result->repairs == 1 && result->removedDecor == 1,
+        "final mask clears blocker without semantic decor");
+    check(levelReachabilityOf(plan, {}, mask)->allReached(), "final mask target reached");
+    mask = original;
+    for (auto& value : mask) if (value) value = 2;
+    original = mask;
+    result = repairLevelReach(plan, mask, 64);
+    check(result && result->unrepaired && !result->repairs && mask == original, "permanent ground never cleared");
+    mask.assign(63, 0);
+    for (size_t y = 0; y < 7; ++y) { plan.floors[0].walkable[y * 9 + 5] = 0; mask[y * 9 + 5] = 1; }
+    original = mask;
+    result = repairLevelReach(plan, mask, 64);
+    check(result && result->unrepaired && mask == original && plan.pois.size() == 1, "final repair cannot cross slope or delete POI");
+    // Independent flood, and repeated inputs, across all five floors. Endpoints
+    // may themselves be blocked; the search must clear those to open Z links.
+    for (uint64_t seed = 1; seed <= 100; ++seed) {
+        plan = {{0, 0, 7, 9, 7}};
+        StableRandom random(seed, 39);
+        mask.assign(315, 0);
+        for (uint32_t f = 0; f < 5; ++f) {
+            plan.floors.push_back({f == 1 ? 8 : f ? 8 - int(f) : 7, std::vector<uint8_t>(63, 1)});
+            plan.pois.push_back({f == 1 ? LevelPoiKind::CaveCell : LevelPoiKind::Site, {f, 35}});
+            if (f) plan.edges.push_back({{f == 2 ? 0u : f - 1, 35}, {f, 35}});
+            for (size_t i = 0; i < 63; ++i) mask[f * 63 + i] = random.bounded(4) == 0;
+        }
+        auto repeated = mask;
+        auto a = repairLevelReach(plan, mask, 64), b = repairLevelReach(plan, repeated, 64);
+        check(a && b && !a->unrepaired && a->repairs == b->repairs && mask == repeated, "final mask deterministic five-floor repair");
+        auto reach = levelReachabilityOf(plan, {}, mask);
+        std::vector<uint8_t> seen(315);
+        std::vector<size_t> queue{*reach->start}; seen[queue[0]] = 1;
+        const auto visit = [&](size_t j) { if (!mask[j] && !seen[j]) { seen[j] = 1; queue.push_back(j); } };
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const auto i = queue[head], cell = i % 63, f = i / 63;
+            if (cell % 9) visit(i - 1);
+            if (cell % 9 < 8) visit(i + 1);
+            if (cell / 9) visit(i - 9);
+            if (cell / 9 < 6) visit(i + 9);
+            for (const auto& e : plan.edges) {
+                if (e.a == LevelCell{uint32_t(f), uint32_t(cell)}) visit(e.b.floor * 63 + e.b.cell);
+                if (e.b == LevelCell{uint32_t(f), uint32_t(cell)}) visit(e.a.floor * 63 + e.a.cell);
+            }
+        }
+        check(seen == reach->reached, "independent final-mask flood");
+        for (const auto& poi : plan.pois) check(seen[poi.at.floor * 63 + poi.at.cell], "independent final-mask POI reached");
+    }
+    std::stop_source cancelled; cancelled.request_stop();
+    check(!repairLevelReach(plan, mask, 64, cancelled.get_token()), "final repair cancellation");
+    check(!repairLevelReach(plan, mask, 65), "final repair invalid budget");
+    std::cout << "FINAL_MASK_REPAIR_CROSS_CHECK randomPlans=100\n";
+}
+
 int main() {
+    testFinalMaskRepair();
     testRepairPaths();
     testLevelRepair();
 	testLevels();

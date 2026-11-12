@@ -89,6 +89,57 @@ std::expected<LevelRepairPath, ReachabilityError> cheapestLevelPath(
     return LevelRepairPath {};
 } catch (const std::bad_alloc&) { return std::unexpected(ReachabilityError::AllocationFailed); }
 
+std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
+    const LevelPlan& plan, std::span<uint8_t> mask,
+    uint32_t remainingRepairs, std::stop_token stop) try {
+    const auto w = plan.region.width, h = plan.region.height;
+    const size_t n = size_t(w) * h;
+    if (remainingRepairs > 64 || mask.empty() ||
+        std::ranges::any_of(mask, [](uint8_t value) { return value > 2; }))
+        return std::unexpected(ReachabilityError::InvalidGrid);
+    LevelRepairReport result;
+    for (;;) {
+        auto reach = levelReachabilityOf(plan, {}, mask, stop);
+        if (!reach) return std::unexpected(reach.error());
+        if (reach->allReached() && reach->walkableEdges == reach->edges) return result;
+        if (!reach->start || result.repairs == remainingRepairs) {
+            result.unrepaired = true;
+            return result;
+        }
+        std::optional<LevelCell> target;
+        const auto consider = [&](LevelCell c) {
+            if (!reach->reached[c.floor * n + c.cell] &&
+                (!target || std::pair{c.floor, c.cell} < std::pair{target->floor, target->cell})) target = c;
+        };
+        for (const auto& edge : plan.edges) { consider(edge.a); consider(edge.b); }
+        for (const auto& poi : plan.pois)
+            if (poi.kind != LevelPoiKind::Cap || reach->walkable[poi.at.floor * n + poi.at.cell]) consider(poi.at);
+        if (!target) { result.unrepaired = true; return result; }
+        const auto [f, cell] = *target;
+        auto sources = component(std::span(reach->walkable).subspan(f * n, n), cell, w, h);
+        std::vector<uint8_t> costs(n), destinations(n);
+        for (size_t i = 0; i < n; ++i) {
+            destinations[i] = reach->reached[f * n + i];
+            if (plan.floors[f].walkable[i])
+                costs[i] = !mask[f * n + i] ? 1 : mask[f * n + i] == 1 ? 3 : 0;
+        }
+        for (const auto& edge : plan.edges)
+            for (const auto pair : {std::pair{edge.a, edge.b}, std::pair{edge.b, edge.a}})
+                if (pair.first.floor == f && reach->reached[pair.second.floor * n + pair.second.cell])
+                    destinations[pair.first.cell] = 1;
+        auto path = cheapestLevelPath(costs, w, h, sources, destinations, 0, stop);
+        if (!path) return std::unexpected(path.error());
+        uint32_t cleared = 0;
+        for (const auto i : path->cells) if (mask[f * n + i] == 1) {
+            mask[f * n + i] = 0;
+            ++cleared;
+        }
+        if (!cleared) { result.unrepaired = true; return result; }
+        ++result.repairs;
+        result.removedDecor += cleared;
+    }
+} catch (const std::bad_alloc&) { return std::unexpected(ReachabilityError::AllocationFailed); }
+
 std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,
@@ -114,10 +165,13 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
         }
     }
     if (tuning.caveEntrances) {
-        if (!world.caps.empty()) for (size_t i = 0; i < n; ++i)
-            occupied[i] |= world.caps[0].cells[i] == PlateauKind::Top;
         auto cave = generateCave(world.surface, seed, stop);
         if (!cave) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        // Vegetation at a ramp's surface destination is removable. Keep the
+        // geometric cap reservation, and clear selected endpoints below.
+        std::fill(occupied.begin(), occupied.end(), 0);
+        if (!world.caps.empty()) for (size_t i = 0; i < n; ++i)
+            occupied[i] = world.caps[0].cells[i] == PlateauKind::Top;
         auto exits = placeCaveExits(world.surface, *cave, caveShapes, occupied, stop);
         if (!exits) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
         auto removed = removeUnenteredCaveComponents(*cave, *exits, stop);

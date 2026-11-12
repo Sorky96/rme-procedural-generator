@@ -42,4 +42,13 @@ struct LevelRepairPath { std::vector<uint32_t> cells; uint64_t cost = 0; };
     // Optional resolved mask: 1 removable decor, 2 permanent item/ground blocker.
     std::span<const uint8_t> blockingMask = {}, std::stop_token stop = {});
 
+// Final resolved/autobordered floors: 1 is a removable item, 2 is permanent
+// (blocking ground, wall or transition). Clears mask entries along cut paths;
+// the adapter applies those removals through DrawOperations and rebuilds the
+// actual mask before accepting the result. Never changes geometry or drops POI.
+// remainingRepairs shares the plan's original 64-repair budget.
+[[nodiscard]] std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
+    const LevelPlan& plan, std::span<uint8_t> blockingMask,
+    uint32_t remainingRepairs, std::stop_token stop = {});
+
 } // namespace rme::procedural

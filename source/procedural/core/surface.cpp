@@ -495,10 +495,11 @@ bool placeEntrances(const std::vector<SurfaceKind>& kinds, uint32_t width, uint3
 	const uint64_t wanted = uint64_t(config.tuning.caveEntrances) * kinds.size() / 65536;
 	if (!wanted || width < 8 || height < 8) return true;
 	StableRandom random(config.seed, entranceStream);
-	for (uint64_t attempt = 0; attempt < wanted * 400 + 400 && entrances.size() < wanted; ++attempt) {
+	const uint64_t attemptsPerEntrance = config.tuning.repairReach && config.tuning.caveEntranceStyle == CaveEntranceStyle::RockFace ? 4000 : 400;
+	for (uint64_t attempt = 0; attempt < (wanted + 1) * attemptsPerEntrance && entrances.size() < wanted; ++attempt) {
 		if (attempt % 256 == 0 && stop.stop_requested()) return false;
 		const size_t cell = size_t(random.bounded(kinds.size()));
-		if (!caveEntranceAllowed(kinds, width, height, uint32_t(cell), config.tuning.caveEntranceStyle)) continue;
+		if (!caveEntranceAllowed(kinds, width, height, uint32_t(cell), config.tuning.caveEntranceStyle, config.tuning.repairReach != 0)) continue;
 		const int32_t x = int32_t(cell % width), y = int32_t(cell / width);
 		bool free = true;
 		for (const uint32_t other : entrances) {
@@ -889,15 +890,14 @@ uint16_t surfaceLattice(uint64_t seed, uint64_t stream, uint32_t x, uint32_t y) 
 	return lattice(seed, stream, x, y);
 }
 
-bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t e, CaveEntranceStyle style) noexcept {
+bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t e, CaveEntranceStyle style, bool relaxedRockFace) noexcept {
 	if (!width || uint64_t(width) * height != cells.size() || e >= cells.size() || style > CaveEntranceStyle::FloorHole) return false;
 	const auto x = e % width, y = e / width;
 	if (x < 3 || y < 3 || uint64_t(x) + 3 >= width || uint64_t(y) + 3 >= height) return false;
 	const auto open = [](SurfaceKind k) { return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore || k == SurfaceKind::Path; };
 	if (style == CaveEntranceStyle::RockFace) {
-		if (cells[e] != SurfaceKind::Rock || !open(cells[e + width]) || cells[e - width] != SurfaceKind::Rock ||
-			cells[e - 1] != SurfaceKind::Rock || cells[e + 1] != SurfaceKind::Rock) return false;
-		return true;
+		const auto rockSides = int(cells[e - width] == SurfaceKind::Rock) + int(cells[e - 1] == SurfaceKind::Rock) + int(cells[e + 1] == SurfaceKind::Rock);
+		return cells[e] == SurfaceKind::Rock && open(cells[e + width]) && rockSides >= (relaxedRockFace ? 2 : 3);
 	} else {
 		if ((cells[e] != SurfaceKind::Grass && cells[e] != SurfaceKind::Dirt) || !open(cells[e - 1]) ||
 			!open(cells[e + 1]) || !open(cells[e - width]) || !open(cells[e + width])) return false;
@@ -1319,7 +1319,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::erase_if(gaps, [&](uint32_t gap) { return kinds[gap] != SurfaceKind::Floor; });
 		std::erase_if(sites, [&](uint32_t site) { return kinds[site] != SurfaceKind::Floor; });
 		std::erase_if(fires, [&](uint32_t fire) { return kinds[fire] != SurfaceKind::Path; });
-		std::erase_if(entrances, [&](uint32_t entrance) { return !caveEntranceAllowed(kinds, width, height, entrance, config.tuning.caveEntranceStyle); });
+		std::erase_if(entrances, [&](uint32_t entrance) { return !caveEntranceAllowed(kinds, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
 		return SurfaceGrid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires), std::move(entrances) };
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);

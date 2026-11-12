@@ -100,7 +100,14 @@ void testEntranceStyles() {
 			check(!caveEntranceAllowed(bad.cells, 11, 11, e, style), "bad entrance cell rejected");
 		}
 		auto corner = g; corner.cells[e - 1] = SurfaceKind::Grass;
-		if (style == CaveEntranceStyle::RockFace) check(!caveEntranceAllowed(corner.cells, 11, 11, e, style), "rock corner rejected");
+		if (style == CaveEntranceStyle::RockFace) {
+            check(!caveEntranceAllowed(corner.cells, 11, 11, e, style), "legacy rock corner rejected");
+            check(caveEntranceAllowed(corner.cells, 11, 11, e, style, true), "repair selector accepts two rock sides");
+            corner.cells[e + 1] = SurfaceKind::Grass;
+            check(!caveEntranceAllowed(corner.cells, 11, 11, e, style, true), "repair selector still requires two rock sides");
+            corner = g; corner.cells[e + 11] = SurfaceKind::Rock;
+            check(!caveEntranceAllowed(corner.cells, 11, 11, e, style, true), "repair selector keeps open south exit");
+        }
 		uint64_t state = 1729;
 		for (int round = 0; round < 80; ++round) {
 			for (auto& k : g.cells) { state = state * 6364136223846793005ULL + 1; k = static_cast<SurfaceKind>((state >> 32) % 9); }
