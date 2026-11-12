@@ -356,3 +356,15 @@ Wiążące przed implementacją. Decyzja użytkownika: kolejność prac „wyjś
 5. **Osiągalność.** Wyjścia dalekie i drzwi wchodzą do `levelReachabilityOf` i naprawy; bramka G5 z iteracji 39–40 bez regresji (32/32 seedów, zero nieosiągalnych celów) z włączonymi oboma funkcjami.
 6. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; nowy znacznik sondy `CAVE_FAR_EXIT_DOOR_GUI_PASS`.
 7. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonych nowych opcjach (wyjście dalekie: domyślnie włączone tylko gdy włączona jaskinia; jeśli zmienia odcisk, raport to uzasadnia), testy rdzenia (nowe testy dopisane), `SUITE_PASS`.
+
+## Iteracja 42: przełęcze w górach (2026-11-12)
+
+Wiążące przed implementacją. Decyzja użytkownika: kolejność prac, punkt 3 „przełęcze (passes) w górach”.
+
+1. **Definicja.** Przełęcz to dolina przez masyw górski na piętrze powierzchni: pas szerokości 3 (dopuszczalnie 2–4 na zakrętach) z gruntu chodliwego (Path, a przy braku pędzla Dirt) przecinający skałę i zbocza, z czapami z − 1..z − 3 wyciętymi nad pasem i na jedną komórkę obok (ściany doliny = zbocze „mountain” wyższego piętra). Czapa rozcięta na dwie części zostaje, jeśli każda część spełnia dotychczasowe minimum pola; w przeciwnym razie mniejsza część jest usuwana (skała powierzchni). Rampy i wejścia jaskini rozcięte przez pas są usuwane i umieszczane ponownie istniejącym selektorem.
+2. **Gdzie.** Rdzeń wyznacza masyw (składowa skały/zboczy na powierzchni o polu ≥ 400 komórek) i dwie komórki lądu chodliwego po jego przeciwnych stronach, dla których droga obchodząca masyw jest ≥ 2× dłuższa od drogi przez masyw (BFS). Przebieg przełęczy: najtańsza ścieżka (Dijkstra, remisy (y, x)) z kosztem rosnącym z liczbą pięter nad komórką, z łagodnym zakrętem (bez schodków 1×1). Maksymalnie `passes` przełęczy na plan (nowe pole, domyślnie 0 = wyłączone; w zakładce „Levels”: liczba 0..8). Przy 0 wynik bajtowo jak dotąd.
+3. **Pomiar (a).** Seedy 1001–1032, bok 512, ustawienia iteracji 41 plus `passes=4`: mediana umieszczonych przełęczy ≥ 2 w m06 i m19; dla każdej przełęczy droga przez nią ≤ 0,6 drogi obejścia (BFS na modelu `levelReachabilityOf`).
+4. **Pomiar (b).** Zero komórek przełęczy pod czapą, zero komórek blokujących na pasie (maska reguły ostrożnej i maska z adaptera w sondzie), zero czap poniżej minimum pola po rozcięciu.
+5. **Osiągalność.** Bramka G5 bez regresji (32/32 seedów, zero nieosiągalnych celów) z `passes=4` i z `passes=0`.
+6. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `MOUNTAIN_PASS_GUI_PASS`; sonda sprawdza, że nad komórką przełęczy na z − 1 nic nie ma.
+7. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy `passes=0`, nowe testy rdzenia (ręczny masyw z przełęczą, rozcięta czapa, rampa na pasie), `SUITE_PASS`.
