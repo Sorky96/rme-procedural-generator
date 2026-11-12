@@ -1,5 +1,13 @@
 # Procedural World Generator — postęp
 
+## 2026-11-12 — G5: przełęcze w górach (iteracja 42) — PASS, GUI czeka
+
+Doliny szerokości 3 przez masywy, czapy wycięte nad pasem, pole „passes” (0–8) w zakładce „Levels”. Mediana 4 przełęczy w m06 i m19, G5 32/32 przy `passes` 0 i 4. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 42”.
+
+## 2026-11-12 — G5: wyjścia jaskini na drugim końcu, korytarze z drzwiami (iteracja 41) — PASS, GUI czeka
+
+Wyjście dalekie w 100 % jaskiń z wejściem (≥ 24 pola od wejścia); opcjonalne korytarze z drzwiami (`stone wall`). G5 bez regresji, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 41”.
+
 ## 2026-11-12 — G5: stan FAZY 5 po iteracjach 37–40
 
 | Kryterium FAZY 5 | Stan | Dowód |
@@ -7,16 +15,16 @@
 | Bramka G5: z ustalonego startu osiągalne POI, wejścia/wyjścia Z, brak krytycznych odcięć | **PASS** (m06 i m19, 32/32 seedów, iteracje 39–40) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) |
 | Walidator, naprawa, odrzucanie seedów, mosty | zrobione (iteracje 36–39), D22 zamknięty w zakresie pomiaru | iteracje 36–39 |
 | Graf regionów, brody, mosty | zrobione | iteracje 14b, 24, 37 |
-| Przełęcze w górach | **brak** | — |
+| Przełęcze w górach | zrobione 2026-11-12, GUI niesprawdzone | iteracja 42 |
 | Góry wielopiętrowe (z − 1..z − 3), rampy | zrobione, wygląd w GUI niesprawdzony | iteracje 32–34, 38 |
 | Jaskinia z + 1 z wejściami i wyjściem rampą pod wejściem | zrobione (mediana wejść 18,5 / 33) | iteracje 27–31, 38–39 |
-| Wyjścia jaskini na drugim końcu, korytarze z drzwiami | **brak** | — |
-| Lochy / struktury podziemne, schody w budynkach | **brak** | — |
+| Wyjścia jaskini na drugim końcu, korytarze z drzwiami | zrobione 2026-11-12, GUI niesprawdzone | iteracja 41 |
+| Lochy / struktury podziemne, schody w budynkach | dług D27 | [TECH_DEBT.md](procedural/TECH_DEBT.md) |
 | Osady, ruiny, obozowiska z kontrolą kolizji | zrobione; ruiny i obozy bez oceny w GUI | iteracje 12, 25–26 |
 | Niedostępne wyspy tylko z piasku | zrobione | iteracja 40 |
 | Ruch w grze, oryginalny RME, inne klienty niż 10.98 | niesprawdzone | D23 |
 
-Do pełnego zamknięcia FAZY 5 brakuje: przełęczy, wyjść jaskini na drugim końcu z korytarzami i drzwiami, struktur podziemnych i schodów w budynkach (albo decyzji o długu) oraz przeglądu GUI gór, jaskiń, ruin i obozów.
+Do pełnego zamknięcia FAZY 5 brakuje (stan po iteracji 42): przeglądu GUI gór, przełęczy, jaskiń, ruin i obozów przez użytkownika; lochy i schody w budynkach odłożone jako D27.
 
 ## 2026-11-12 — G5: niedostępne wyspy tylko z piasku (iteracja 40) — PASS
 
