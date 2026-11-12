@@ -467,8 +467,8 @@ void doors(uint32_t side, std::ostream& report) {
 	report << "SURFACE_DOORS_E2E_PASS" << '\t' << side << '\t' << "doors=" << plannedDoors << '\t' << "changes=" << receipt->changes << '\n';
 }
 
-// Fords (G4 iteration 14): a surface with fordLength differs from one without only where water became Shore (sand); the preview,
-// Commit, Undo and Redo work with it and the plan fingerprint changes.
+// Fords change water to Shore; I40 also preserves original terrain on islands
+// they connect. Preview, Commit, Undo and Redo work with the resulting plan.
 void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 	UndoLimits undoLimits;
 	check(g_gui.NewMap(), "Editor creation failed");
@@ -492,10 +492,19 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 		auto b = generateSurface({plain.region, plain.seed, plain.surface}, MapExtent {65001, 65001, 16}, surfaceBudget);
 		check(bool(a) && bool(b), "Ford surface generation failed");
 		if (!a || !b) return;
+		const auto aIslands = sandIslandsOf(*a), bIslands = sandIslandsOf(*b);
+		check(bool(aIslands) && bool(bIslands), "Ford island classification failed");
+		if (!aIslands || !bIslands) return;
+		std::vector<uint8_t> aIsland(a->cells.size()), bIsland(b->cells.size());
+		for (const auto i : aIslands->cells) aIsland[i] = 1;
+		for (const auto i : bIslands->cells) bIsland[i] = 1;
 		for (size_t i = 0; i < a->cells.size(); ++i) {
 			if (a->cells[i] == b->cells[i]) continue;
-			++changed;
-			check(a->cells[i] == SurfaceKind::Shore && (b->cells[i] == SurfaceKind::River || b->cells[i] == SurfaceKind::Lake), "A ford changed something other than water into Path");
+			const bool crossing = a->cells[i] == SurfaceKind::Shore && (b->cells[i] == SurfaceKind::River || b->cells[i] == SurfaceKind::Lake);
+			changed += crossing;
+			const auto naturalLand = [](SurfaceKind k) { return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Rock; };
+			check(crossing || (bIsland[i] && b->cells[i] == SurfaceKind::Shore && naturalLand(a->cells[i])) ||
+				(aIsland[i] && a->cells[i] == SurfaceKind::Shore && naturalLand(b->cells[i])), "A ford changed terrain outside a crossing or normalized island");
 		}
 		withFords = std::move(*a);
 		without = std::move(*b);
@@ -531,7 +540,8 @@ void fords(uint32_t side, uint64_t seed, std::ostream& report) {
 			return text;
 		};
 		for (size_t i = 0; i < count; ++i) {
-			if (withFords->cells[i] == without->cells[i]) continue;
+			if (without->cells[i] != SurfaceKind::Lake && without->cells[i] != SurfaceKind::River) continue;
+			if (withFords->cells[i] != SurfaceKind::Shore) continue;
 			++fordCells;
 			if (!walkableAt(i)) { ++blockedFord; if (firstBlocked.empty()) firstBlocked = describe(i); }
 			for (const int step : {-1, 1, -int(side), int(side)}) {
