@@ -56,6 +56,21 @@ struct SurfaceGrid {
 	uint64_t fingerprint() const;
 };
 
+struct SandIslandReport {
+	uint32_t islands = 0;
+	uint32_t nonShoreIslands = 0;
+	uint64_t nonShoreCells = 0;
+	std::vector<uint32_t> cells;
+};
+
+// Four-connected land includes rock, paths, fords and bridges. The largest
+// component (first in row order on ties), POI components, rectangle edges and
+// components touching Preserve are excluded. Only surface z=7 is classified.
+[[nodiscard]] std::expected<SandIslandReport, SurfaceError> sandIslandsOf(
+	const SurfaceGrid& grid, std::stop_token stop = {});
+[[nodiscard]] std::expected<void, SurfaceError> normalizeSandIslands(
+	SurfaceGrid& grid, std::stop_token stop = {});
+
 // Local entrance geometry including margin and water/building clearance.
 [[nodiscard]] bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t cell, CaveEntranceStyle style, bool relaxedRockFace = false) noexcept;
 

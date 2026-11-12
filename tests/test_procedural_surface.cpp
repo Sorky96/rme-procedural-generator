@@ -244,7 +244,11 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 			(y + 1 < h && grid.cells[cell + w] == SurfaceKind::Rock);
 		require(wide || nextToLake || nextToRock, "One-cell-wide river stretch");
 	}
-	// Shore never reaches farther from a lake than shoreWidth steps.
+	// Mainland shores obey shoreWidth; isolated islands are entirely sand (I40).
+	const auto islands = sandIslandsOf(grid);
+	require(bool(islands), "Island classification failed");
+	std::vector<uint8_t> island(grid.cells.size());
+	for (const auto i : islands->cells) island[i] = 1;
 	std::vector<uint32_t> distance(grid.cells.size(), UINT32_MAX);
 	std::vector<size_t> queue;
 	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
@@ -262,7 +266,7 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 		if (y + 1 < h) visit(cell + w);
 	}
 	for (size_t cell = 0; cell < grid.cells.size(); ++cell) {
-		require(grid.cells[cell] != SurfaceKind::Shore || distance[cell] <= config.tuning.shoreWidth,
+		require(grid.cells[cell] != SurfaceKind::Shore || island[cell] || distance[cell] <= config.tuning.shoreWidth,
 			"Shore farther from a lake than shoreWidth");
 		if (grid.cells[cell] == SurfaceKind::Shore && distance[cell] < tally.shoreAt.size()) ++tally.shoreAt[distance[cell]];
 	}
@@ -704,9 +708,107 @@ void ruinsAndCamps() {
 	require(!validateSurface(camps, extent, budget).has_value(), "camps above 50 accepted");
 }
 
+void sandIslands() {
+	SurfaceGrid grid {{0, 0, 7, 16, 12}, std::vector<SurfaceKind>(192, SurfaceKind::Lake)};
+	for (uint32_t y = 0; y < 12; ++y) for (uint32_t x = 0; x < 4; ++x) grid.cells[y * 16 + x] = SurfaceKind::Grass;
+	for (uint32_t y = 4; y < 7; ++y) for (uint32_t x = 9; x < 12; ++x) grid.cells[y * 16 + x] = SurfaceKind::Dirt;
+	grid.cells[5 * 16 + 9] = SurfaceKind::Rock;
+	grid.cells[5 * 16 + 10] = SurfaceKind::Path;
+	const auto original = grid;
+	const auto islands = sandIslandsOf(grid);
+	require(islands && islands->islands == 1 && islands->nonShoreCells == 9, "island: hand-counted classification");
+	require(bool(normalizeSandIslands(grid)), "island: normalize");
+	for (const auto i : islands->cells) require(grid.cells[i] == SurfaceKind::Shore, "island: not pure sand");
+	const auto decor = generateDecoration(grid, 1729);
+	require(bool(decor), "island: decoration");
+	for (const auto i : islands->cells) require(decor->cells[i] == DecorKind::None, "island: decoration on sand");
+	for (const auto connector : {SurfaceKind::Shore, SurfaceKind::Bridge, SurfaceKind::Path}) {
+		auto connected = original;
+		for (uint32_t x = 4; x < 9; ++x) connected.cells[5 * 16 + x] = connector;
+		const auto before = connected.cells;
+		require(bool(normalizeSandIslands(connected)) && before == connected.cells, "island: connected land changed");
+	}
+	for (int poi = 0; poi < 4; ++poi) {
+		auto protectedIsland = original;
+		auto* points = poi == 0 ? &protectedIsland.doors : poi == 1 ? &protectedIsland.sites : poi == 2 ? &protectedIsland.fires : &protectedIsland.entrances;
+		points->push_back(5 * 16 + 10);
+		protectedIsland.cells[5 * 16 + 10] = poi < 2 ? SurfaceKind::Floor : poi == 2 ? SurfaceKind::Path : SurfaceKind::Rock;
+		const auto before = protectedIsland.cells;
+		require(bool(normalizeSandIslands(protectedIsland)) && protectedIsland.cells == before, "island: POI changed");
+	}
+	auto preserved = original;
+	preserved.cells[5 * 16 + 8] = SurfaceKind::Preserve;
+	const auto beforePreserve = preserved.cells;
+	require(bool(normalizeSandIslands(preserved)) && preserved.cells == beforePreserve, "island: Preserve boundary changed");
+	auto otherFloor = original; otherFloor.region.z = 8;
+	require(bool(normalizeSandIslands(otherFloor)) && otherFloor.cells == original.cells, "island: other floor changed");
+	SurfaceGrid enclosedMain {{0, 0, 7, 10, 5}, std::vector<SurfaceKind>(50, SurfaceKind::River)};
+	enclosedMain.cells[11] = SurfaceKind::Dirt;
+	enclosedMain.cells[16] = enclosedMain.cells[17] = SurfaceKind::Grass;
+	require(bool(normalizeSandIslands(enclosedMain)) && enclosedMain.cells[11] == SurfaceKind::Shore &&
+		enclosedMain.cells[16] == SurfaceKind::Grass, "island: largest enclosed component changed");
+	auto edge = original;
+	for (uint32_t y = 0; y < 4; ++y) edge.cells[y * 16 + 9] = SurfaceKind::Dirt;
+	const auto beforeEdge = edge.cells;
+	require(bool(normalizeSandIslands(edge)) && edge.cells == beforeEdge, "island: rectangle boundary changed");
+	auto orphanBridge = original;
+	orphanBridge.cells[5 * 16 + 10] = SurfaceKind::Bridge;
+	orphanBridge.bridgeAxes.resize(192);
+	orphanBridge.bridgeAxes[5 * 16 + 10] = BridgeAxis::Horizontal;
+	require(bool(normalizeSandIslands(orphanBridge)) && orphanBridge.valid() &&
+		orphanBridge.bridgeAxes[5 * 16 + 10] == BridgeAxis::None, "island: orphan bridge axis survived");
+	std::stop_source stopped; stopped.request_stop();
+	const auto cancelled = normalizeSandIslands(grid, stopped.get_token());
+	require(!cancelled && cancelled.error() == SurfaceError::Cancelled, "island: ignored cancellation");
+
+	// Independent DFS labels and boundary checks on 120 generated plans. It does
+	// not use the production classifier to select the cells under assertion.
+	size_t checkedIslands = 0;
+	for (uint64_t seed = 1; seed <= 120; ++seed) {
+		auto config = makeConfig(100, seed);
+		config.tuning.pathLength = 40; config.tuning.fordLength = 12;
+		config.tuning.buildingDensity = 30; config.tuning.campCount = 4; config.tuning.caveEntrances = 16;
+		const auto generated = generateSurface(config, extent, budget);
+		require(bool(generated), "island: random generation");
+		std::vector<int> labels(10000, -1);
+		std::vector<std::vector<size_t>> bodies;
+		std::vector<bool> enclosed, hasPoi;
+		for (size_t first = 0; first < labels.size(); ++first) {
+			if (labels[first] != -1 || generated->cells[first] == SurfaceKind::Lake || generated->cells[first] == SurfaceKind::River) continue;
+			const int label = int(bodies.size());
+			std::vector<size_t> pending {first}, body;
+			labels[first] = label;
+			bool inside = true;
+			while (!pending.empty()) {
+				const auto i = pending.back(); pending.pop_back(); body.push_back(i);
+				const int x = int(i % 100), y = int(i / 100);
+				inside &= x > 0 && y > 0 && x < 99 && y < 99;
+				for (const auto [dx, dy] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+					if (x + dx < 0 || y + dy < 0 || x + dx >= 100 || y + dy >= 100) continue;
+					const auto n = size_t(y + dy) * 100 + size_t(x + dx);
+					if (labels[n] != -1 || generated->cells[n] == SurfaceKind::Lake || generated->cells[n] == SurfaceKind::River) continue;
+					labels[n] = label; pending.push_back(n);
+				}
+			}
+			bodies.push_back(std::move(body)); enclosed.push_back(inside); hasPoi.push_back(false);
+		}
+		for (const auto* points : {&generated->doors, &generated->sites, &generated->fires, &generated->entrances})
+			for (const auto i : *points) hasPoi[size_t(labels[i])] = true;
+		size_t main = 0;
+		for (size_t b = 1; b < bodies.size(); ++b) if (bodies[b].size() > bodies[main].size()) main = b;
+		for (size_t b = 0; b < bodies.size(); ++b) if (b != main && enclosed[b] && !hasPoi[b]) {
+			++checkedIslands;
+			for (const auto i : bodies[b]) require(generated->cells[i] == SurfaceKind::Shore, "island: random non-sand cell");
+		}
+		require(generateSurface(config, extent, budget)->cells == generated->cells, "island: determinism");
+	}
+	require(checkedIslands > 0, "island: randomized check was vacuous");
+	std::cout << "SAND_ISLAND_CROSS_CHECK 120/120 islands=" << checkedIslands << '\n';
+}
+
 int main() {
 	try {
-		parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
+		sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface(); ruinsAndCamps();

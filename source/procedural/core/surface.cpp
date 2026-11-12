@@ -39,7 +39,7 @@ constexpr uint32_t waterCrossCost = 25;                     // extra A* cost of 
 constexpr uint32_t passCrossCost = 40;                      // extra A* cost of a rock cell when trails may cross rock (iteration 15)
 constexpr int32_t fordMouthRadius = 3;                      // water within this Chebyshev distance of a ford end becomes sand too (iteration 14c)
 constexpr uint64_t fordBytesPerCell = 28;                   // estimate for the ford pass: labels, order, seen, parent, depth, queue, offsets
-constexpr uint64_t workingBytesPerCell = 40;               // estimate: fields, flood heap, queues
+constexpr uint64_t workingBytesPerCell = 60;               // estimate: fields, flood heap, queues, island classification
 constexpr uint32_t noiseBins = 65536;
 constexpr int64_t fixedOne = 4096;
 constexpr uint32_t islandCells = 24;     // land patches fully inside a lake and smaller than this become lake
@@ -1308,22 +1308,93 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, openings, stop, FordShape {config.seed, config.region.x, config.region.y}); !fords) return std::unexpected(fords.error());
 		}
 		// repairReach is applied to the complete multi-floor plan, after decoration and caps.
+		// Classify the complete semantic surface before applying the write mask,
+		// preserving the rule that masking never changes another cell's kind.
+		SurfaceGrid grid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires), std::move(entrances) };
+		const auto islands = normalizeSandIslands(grid, stop);
+		if (!islands) return std::unexpected(islands.error());
 
 		for (size_t i = 0; i < count; ++i) {
 			if ((!mask.empty() && mask[i] == 0) || (!protection.empty() && protection[i] != 0)) {
-				kinds[i] = SurfaceKind::Preserve;
+				grid.cells[i] = SurfaceKind::Preserve;
 			}
 		}
 		if (stop.stop_requested()) return cancelled();
-		std::erase_if(doors, [&](uint32_t door) { return kinds[door] != SurfaceKind::Floor; });
-		std::erase_if(gaps, [&](uint32_t gap) { return kinds[gap] != SurfaceKind::Floor; });
-		std::erase_if(sites, [&](uint32_t site) { return kinds[site] != SurfaceKind::Floor; });
-		std::erase_if(fires, [&](uint32_t fire) { return kinds[fire] != SurfaceKind::Path; });
-		std::erase_if(entrances, [&](uint32_t entrance) { return !caveEntranceAllowed(kinds, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
-		return SurfaceGrid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires), std::move(entrances) };
+		std::erase_if(grid.doors, [&](uint32_t door) { return grid.cells[door] != SurfaceKind::Floor; });
+		std::erase_if(grid.gaps, [&](uint32_t gap) { return grid.cells[gap] != SurfaceKind::Floor; });
+		std::erase_if(grid.sites, [&](uint32_t site) { return grid.cells[site] != SurfaceKind::Floor; });
+		std::erase_if(grid.fires, [&](uint32_t fire) { return grid.cells[fire] != SurfaceKind::Path; });
+		std::erase_if(grid.entrances, [&](uint32_t entrance) { return !caveEntranceAllowed(grid.cells, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
+		return grid;
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}
+}
+
+std::expected<SandIslandReport, SurfaceError> sandIslandsOf(const SurfaceGrid& grid, std::stop_token stop) try {
+	if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+	if (!grid.valid()) return std::unexpected(SurfaceError::InvalidRegion);
+	SandIslandReport result;
+	if (grid.region.z != 7) return result;
+	const auto width = grid.region.width, height = grid.region.height;
+	const auto land = [&](size_t i) {
+		return grid.cells[i] != SurfaceKind::Lake && grid.cells[i] != SurfaceKind::River && grid.cells[i] != SurfaceKind::Preserve;
+	};
+	std::vector<uint8_t> seen(grid.cells.size()), poi(grid.cells.size());
+	for (const auto* points : {&grid.doors, &grid.sites, &grid.fires, &grid.entrances})
+		for (const auto i : *points) if (i < poi.size()) poi[i] = 1;
+	std::vector<uint32_t> component;
+	size_t largest = 0, mainBegin = 0, mainEnd = 0;
+	bool mainIncluded = false, mainNonShore = false;
+	for (size_t first = 0; first < grid.cells.size(); ++first) {
+		if (seen[first] || !land(first)) continue;
+		component.assign(1, uint32_t(first));
+		seen[first] = 1;
+		bool enclosed = true, hasPoi = false, nonShore = false;
+		for (size_t head = 0; head < component.size(); ++head) {
+			if (head % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+			const auto i = component[head], x = i % width, y = i / width;
+			enclosed &= x > 0 && y > 0 && x + 1 < width && y + 1 < height;
+			hasPoi |= poi[i] != 0;
+			nonShore |= grid.cells[i] != SurfaceKind::Shore;
+			forNeighbours(i, width, height, [&](size_t next) {
+				if (grid.cells[next] == SurfaceKind::Preserve) enclosed = false;
+				if (seen[next] || !land(next)) return;
+				seen[next] = 1;
+				component.push_back(uint32_t(next));
+			});
+		}
+		const bool newMain = component.size() > largest;
+		if (newMain) {
+			largest = component.size();
+			mainBegin = result.cells.size();
+			mainIncluded = enclosed && !hasPoi;
+			mainNonShore = nonShore;
+		}
+		if (enclosed && !hasPoi) {
+			++result.islands;
+			result.nonShoreIslands += nonShore;
+			result.cells.insert(result.cells.end(), component.begin(), component.end());
+		}
+		if (newMain) mainEnd = result.cells.size();
+	}
+	if (mainIncluded) {
+		--result.islands;
+		result.nonShoreIslands -= mainNonShore;
+		result.cells.erase(result.cells.begin() + mainBegin, result.cells.begin() + mainEnd);
+	}
+	for (const auto i : result.cells) result.nonShoreCells += grid.cells[i] != SurfaceKind::Shore;
+	return result;
+} catch (const std::bad_alloc&) { return std::unexpected(SurfaceError::AllocationFailed); }
+
+std::expected<void, SurfaceError> normalizeSandIslands(SurfaceGrid& grid, std::stop_token stop) {
+	const auto islands = sandIslandsOf(grid, stop);
+	if (!islands) return std::unexpected(islands.error());
+	for (const auto i : islands->cells) {
+		grid.cells[i] = SurfaceKind::Shore;
+		if (!grid.bridgeAxes.empty()) grid.bridgeAxes[i] = BridgeAxis::None;
+	}
+	return {};
 }
 
 std::expected<ReachableSurface, SurfaceError> generateReachableSurface(
