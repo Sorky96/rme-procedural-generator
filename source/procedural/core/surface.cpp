@@ -1307,9 +1307,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		if (config.tuning.fordLength) {
 			if (const auto fords = placeFords(kinds, width, height, config.tuning.fordLength, openings, stop, FordShape {config.seed, config.region.x, config.region.y}); !fords) return std::unexpected(fords.error());
 		}
-		if (config.tuning.repairReach) {
-			if (const auto repaired = placeFords(kinds, width, height, 256, openings, stop, FordShape {config.seed, config.region.x, config.region.y, true, sites}); !repaired) return std::unexpected(repaired.error());
-		}
+		// repairReach is applied to the complete multi-floor plan, after decoration and caps.
 
 		for (size_t i = 0; i < count; ++i) {
 			if ((!mask.empty() && mask[i] == 0) || (!protection.empty() && protection[i] != 0)) {

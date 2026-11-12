@@ -287,6 +287,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	const bool cave = !plan.caveFloor.empty();
+    const auto bridge = resolveBridgeBrush(plan.profile.bridgeBrush);
+    if (!bridge) co_return std::unexpected(PreviewError::InvalidItem);
     const bool upper = !plan.plateauFloor.empty();
     if (!validPlateauProfile(plan.profile, plan.config)
         || (upper && (cave || !hasPlateau(plan.profile) || plan.plateauFloor.size() != plan.items.size()))) {
@@ -489,6 +491,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			(baseId > 0 && baseId <= UINT16_MAX ? g_item_definitions.get(uint16_t(baseId)) : ItemDefinitionView{});
 		if (!ground || !ground.isGroundTile() || !ground.clientId() || ground.isMetaItem()) co_return std::unexpected(PreviewError::InvalidItem);
 		bool found = false;
+        if (!cave && !upper && bridge->horizontal &&
+            (plan.items[i] == bridge->horizontal || plan.items[i] == bridge->vertical)) found = true;
 		for (const auto* brush : std::span(brushes).first(plan.profile.count)) {
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;

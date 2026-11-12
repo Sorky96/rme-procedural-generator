@@ -191,6 +191,29 @@ std::expected<CaveExitBrush, ResolveError> resolveCaveExitBrush(const DoodadBrus
 	return std::unexpected(ResolveError::AllocationFailed);
 }
 
+std::expected<BridgeBrush, ResolveError> resolveBridgeBrush(std::string_view name) {
+    if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
+    if (!g_version.IsVersionLoaded()) return std::unexpected(ResolveError::NoClient);
+    if (name.empty()) return BridgeBrush{};
+    if (name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
+    const auto* brush = g_brushes.getBrush(std::string(name));
+    const auto* wall = brush ? brush->as<WallBrush>() : nullptr;
+    if (!wall || wall->is<WallDecorationBrush>()) return std::unexpected(ResolveError::InvalidProfile);
+    BridgeBrush result;
+    for (const auto [alignment, output] : {std::pair{WALL_HORIZONTAL, &result.horizontal}, std::pair{WALL_VERTICAL, &result.vertical}}) {
+        // First positive-chance variant, in XML order. No global editor RNG.
+        for (const auto& item : wall->items.getWallNode(alignment).items) {
+            if (item.chance <= 0) continue;
+            const auto def = g_item_definitions.get(item.id);
+            if (!def || !def.clientId() || !def.isGroundTile() || def.isMetaItem() || def.hasFlag(ItemFlag::Unpassable))
+                return std::unexpected(ResolveError::InvalidItem);
+            if (!*output) *output = item.id;
+        }
+        if (!*output) return std::unexpected(ResolveError::InvalidProfile);
+    }
+    return result;
+}
+
 std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	const GenerationInput& input, const SurfaceGrid& grid, const GroundProfile& profile,
 	uint64_t maxPlanBytes, std::stop_token stop, const DecorGrid* decor, std::span<const uint8_t> keepClear) {
@@ -244,6 +267,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		payloadBytes += name->size() + 1;
 	}
 	try {
+		const auto bridge = resolveBridgeBrush(profile.bridgeBrush);
+		if (!bridge) return std::unexpected(bridge.error());
 		const auto client = g_version.GetCurrentVersionID();
 		if (client.size() > maxPlanBytes - payloadBytes || maxPlanBytes - payloadBytes - client.size() < 1) {
 			return std::unexpected(ResolveError::PlanLimit);
@@ -352,11 +377,24 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
-			const auto kind = size_t(grid.cells[i]) - 1;
+			const bool isBridge = grid.cells[i] == SurfaceKind::Bridge;
+			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 : size_t(grid.cells[i]) - 1;
 			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush
 			const auto id = brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;
+            if (isBridge && bridge->horizontal) {
+                const auto w = grid.region.width;
+                const auto x = i % w, y = i / w;
+                const auto connects = [&](size_t j) { return grid.cells[j] == SurfaceKind::Bridge; };
+                const bool horizontal = (x && connects(i - 1)) || (x + 1 < w && connects(i + 1));
+                const bool vertical = (y && connects(i - w)) || (y + 1 < grid.region.height && connects(i + w));
+                const auto land = [&](size_t j) { const auto k = grid.cells[j]; return k != SurfaceKind::Lake && k != SurfaceKind::River && k != SurfaceKind::Preserve; };
+                const bool horizontalBanks = x && x + 1 < w && land(i - 1) && land(i + 1);
+                const bool useHorizontal = grid.bridgeAxes.empty() ? horizontal || (!vertical && horizontalBanks) :
+                    grid.bridgeAxes[i] == BridgeAxis::Horizontal;
+                result.items[i] = useHorizontal ? bridge->horizontal : bridge->vertical;
+            }
 			if (walled && grid.cells[i] == SurfaceKind::Floor) {
 				// Outline of a foundation: a Floor cell with a 4-neighbour of another kind (or outside the area).
 				const size_t width = grid.region.width, height = grid.region.height, x = i % width, y = i / width;

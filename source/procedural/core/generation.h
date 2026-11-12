@@ -50,7 +50,7 @@ struct SurfaceTuning {
 	uint32_t rockPasses = 0;          // 1 = trails may cross bands of rock (iteration 15); 0 = they go around (not part of a style profile)
 	uint32_t shoreSmoothing = 0;      // majority-filter passes that round the sand / grass edge near lakes, 0..4; 0 = as generated (not part of a style profile)
 	uint32_t shoreRadius = 0;         // window radius of the shore smoothing, 0..8; 0 = 3 (not part of a style profile)
-	uint32_t repairReach = 0;        // 1 = join every component that holds a door or an exit to the start with a ford up to 256 cells long (iteration 23); not part of a style profile
+	uint32_t repairReach = 0;        // 1 = repair the complete decorated multi-floor plan (repairLevelReach, iteration 37); not part of a style profile
 	uint32_t ruinPercent = 0;        // share of the buildings (percent, 0..100) that become ruins: no door, gaps in the wall (iteration 25); not part of a style profile
 	uint32_t campCount = 0;           // clearings with an open tent floor per 65536 cells, 0..50 (iteration 25); not part of a style profile
 	uint32_t caveEntrances = 0;      // Z entrances on the edge of rock bands per 65536 cells, 0..20 (iteration 27); not part of a style profile

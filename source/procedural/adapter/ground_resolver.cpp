@@ -92,7 +92,8 @@ uint64_t GroundPlan::fingerprint() const {
             add(id);
         }
     }
-    return hash;
+    if (!profile.bridgeBrush.empty()) { for (const unsigned char c : profile.bridgeBrush) hash = (hash ^ c) * 1099511628211ULL; }
+	return hash;
 }
 
 bool profileNeedsEdgeClearance(const GroundProfile& profile) {

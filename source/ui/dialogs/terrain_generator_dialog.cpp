@@ -372,6 +372,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			control->Freeze();
 			control->Clear();
 			control->Append(activeNames);
+            if (control == bridge_brush_choice_) control->Insert(wxEmptyString, 0);
 			control->SetStringSelection(current);
 			control->Thaw();
 		});
@@ -512,8 +513,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	repair_check_->SetName("terrain-repair");
 	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	repair_check_->SetValue(true);
-	repair_check_->SetToolTip("Joins every building door and every map edge exit that cannot be walked to from the middle of the area with a sand crossing over the water, however wide it is.");
+	repair_check_->SetToolTip("Repairs access across all floors, clearing blocking vegetation and bridging water up to Ford length. Reports unreachable places after at most 64 repairs.");
 	form->Add(repair_check_, 1, wxEXPAND);
+
+    form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    bridge_brush_choice_ = brushChoice("terrain-bridge-brush", "bridge", 2);
+    if (wall_names_.Index("bridge") == wxNOT_FOUND) { bridge_brush_choice_->Clear(); bridge_brush_choice_->Append(wxEmptyString); bridge_brush_choice_->SetSelection(0); }
+    bridge_brush_choice_->SetToolTip("Walkable bridge ground from a wall brush. Empty uses sand fords. Used by reachability repair.");
+    form->Add(bridge_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Rock &passes:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_passes_check_ = newd wxCheckBox(host, wxID_ANY, "Paths may cross bands of rock");
@@ -774,7 +781,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxComboBox* control :
          {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
           floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
-          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
+          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_}) {
         control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     }
     scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -958,6 +965,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
 	repair_check_->Enable(natural);
+    bridge_brush_choice_->Enable(natural && repair_check_->GetValue());
     retry_spin_->Enable(natural);
 	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
@@ -1043,6 +1051,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		config.surface.rockPasses = rock_passes_check_->GetValue() && config.surface.pathLength > 0 ? 1 : 0;
 		config.surface.shoreSmoothing = smooth_beaches_check_->GetValue() ? 2 : 0;
 		config.surface.repairReach = repair_check_->GetValue() ? 1 : 0;
+        if (config.surface.repairReach) request.profile.bridgeBrush = std::string(bridge_brush_choice_->GetValue().utf8_str());
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
@@ -1331,6 +1340,11 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             for (const auto& c : report.categories) { reached += c.reached; total += c.total; }
             auto text = std::format("Reachable: {}/{} places on {} floors. Seed {}, {} attempts.",
                 reached, total, report.pockets.size(), prepared_->plan.config.seed, preview_attempt_);
+            if (prepared_->plan.config.surface.repairReach) {
+                const auto& repair = prepared_->levels->repair;
+                text += std::format(" Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.{}",
+                    repair.repairs, repair.bridges, repair.removedCaps, repair.removedPois, repair.unrepaired ? " Unrepaired." : "");
+            }
             if (!report.firstUnreachable.empty()) {
                 const auto& p = report.firstUnreachable.front();
                 text += std::format(" Unreachable: {} places (first: {}, {}, {}).", total - reached, p.x, p.y, p.z);

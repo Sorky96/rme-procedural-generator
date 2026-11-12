@@ -6,6 +6,7 @@
 #include "procedural/adapter/ground_resolver.h"
 #include "procedural/adapter/terrain_preview.h"
 #include "procedural/core/reachability.h"
+#include "procedural/core/level_repair.h"
 
 #include <cstdint>
 #include <expected>
@@ -71,6 +72,7 @@ struct PreparedTerrain {
 		LevelPlan plan;
 		std::vector<uint8_t> blockingMask;
 		LevelReachabilityReport report;
+        LevelRepairReport repair;
 	};
 	std::unique_ptr<Levels> levels;
 };

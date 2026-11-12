@@ -1061,7 +1061,8 @@ void guiCaves(std::ostream& report) {
 			entrances += entranceCount;
 			exits += rampCount;
 		}
-		check(entrances > 0 && exits > 0, std::format("GUI cave case has no entrances {}", combination));
+		check((entrances > 0 && exits > 0) || (prepared->levels && prepared->levels->repair.removedPois > 0 &&
+            prepared->levels->repair.unrepaired), std::format("GUI cave case lost entrances without a reported repair removal {}", combination));
 		editor.map.clearChanges();
 		report << std::format("SURFACE_CAVE_GUI_PASS\t512\t{} entrances={} exits={} fingerprint={} caveFingerprint={} preview={} cavePreview={}\n",
 			combination, entrances, exits, prepared->plan.fingerprint(), prepared->cave->plan.fingerprint(),
@@ -1741,6 +1742,110 @@ void levelReachabilityProbe(std::ostream& report) {
     editor.map.clearChanges();
 }
 
+void levelRepairProbe(std::ostream& report) {
+    UndoLimits limits;
+    uint32_t bridges = 0, removed = 0, waterBorders = 0, bankBorders = 0;
+    for (const bool vertical : {false, true})
+    for (const bool bridgeGround : {true, false}) {
+        check(g_gui.NewMap(), "Repair probe map");
+        auto& editor = *g_gui.GetCurrentEditor();
+        constexpr uint32_t side = 24, n = side * side;
+        GenerationConfig config {{100, 100, 7, side, side}, 37};
+        config.algorithm = GenerationAlgorithm::Surface; config.vegetation = true;
+        config.surface.repairReach = 1; config.surface.fordLength = 1;
+        GroundProfile p {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+        p.bridgeBrush = bridgeGround ? "bridge" : ""; p.decorCount = 3; p.decor = {"trees", "bushes", "small rocks"};
+        auto snapshot = captureGenerationSnapshot(editor.map, config, {n, 64ULL << 20}, {10000, 64ULL << 20});
+        check(bool(snapshot), "Repair snapshot");
+        const auto clear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(p));
+        LevelWorld world;
+        world.surface.region = config.region; world.surface.cells.resize(n, SurfaceKind::Grass);
+        world.decor.push_back({config.region, std::vector<DecorKind>(n)});
+        const auto at = [&](uint32_t x, uint32_t y) { return vertical ? x * side + y : y * side + x; };
+        for (uint32_t y = 0; y < side; ++y) {
+            world.surface.cells[at(13, y)] = SurfaceKind::River;
+            world.decor[0].cells[at(16, y)] = DecorKind::Tree;
+        }
+        for (size_t i = 0; i < n; ++i) if (clear[i]) { world.surface.cells[i] = SurfaceKind::Preserve; world.decor[0].cells[i] = DecorKind::None; }
+        world.surface.cells[at(18, 11)] = SurfaceKind::Floor; world.surface.sites = {at(18, 11)};
+        const auto repaired = repairLevelReach(world, false, false, {}, {true, true, true}, 1, bridgeGround);
+        check(repaired && !repaired->unrepaired && repaired->bridges == (bridgeGround ? 2u : 0u) && repaired->removedDecor == 1, "Repair fixture path with clipped water-border shoulder");
+        auto plan = resolveSurfacePlan(snapshot->input, world.surface, p, 64ULL << 20, {}, &world.decor[0], clear);
+        check(bool(plan), "Repair resolution");
+        auto preview = DrawOperations::prepareTerrainPreview(editor.map, *snapshot, *plan, {10000, 128ULL << 20});
+        check(bool(preview), "Repair preview");
+        PreparedTerrain prepared {std::move(*snapshot), std::move(*plan), std::move(*preview), {}};
+        const auto before = stackImage(editor.map, 98, 98, 7, side + 4, side + 4);
+        check(bool(DrawOperations::commitTerrainPreview(prepared, config, p, {10000, 512ULL << 20})), "Repair commit");
+        const auto brush = resolveBridgeBrush("bridge");
+        check(bool(brush), "Bridge brush");
+        for (size_t i = 0; i < n; ++i) {
+            const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
+            if (world.surface.cells[i] == SurfaceKind::Bridge) {
+                check(tile && tile->ground && !tile->isBlocking() && tile->ground->getID() == (vertical ? brush->vertical : brush->horizontal), "Bridge ground/axis/walkability");
+                ++bridges;
+            }
+            if (world.surface.cells[i] == SurfaceKind::Shore) check(tile && tile->ground && !tile->isBlocking(), "Fallback sand ford blocked after bordering");
+            if (world.surface.cells[i] == SurfaceKind::River && tile) for (const auto& item : tile->items) waterBorders += item->isBorder();
+            if (world.surface.cells[i] == SurfaceKind::Grass && tile) {
+                const int x = int(i % side), y = int(i / side);
+                bool besideWater = false;
+                for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
+                    if (x + dx >= 0 && y + dy >= 0 && x + dx < int(side) && y + dy < int(side))
+                        besideWater |= world.surface.cells[size_t(y + dy) * side + x + dx] == SurfaceKind::River;
+                if (besideWater) for (const auto& item : tile->items) bankBorders += item->isBorder();
+            }
+            if ((vertical ? i / side : i % side) == 16 && !clear[i] && world.decor[0].cells[i] == DecorKind::None)
+                check(!tile || std::ranges::none_of(tile->items, [](const auto& item) { return item->isBlocking(); }), "Removed tree still blocks path");
+        }
+        auto semantic = levelPlanOf(world.surface, false, false, nullptr, {}, {}, {}, world.decor);
+        check(bool(semantic), "Repair semantic model");
+        std::vector<uint8_t> mask(n);
+        for (size_t i = 0; i < n; ++i) {
+            const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
+            mask[i] = tile && ((tile->ground && tile->ground->isBlocking()) || std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); }));
+        }
+        const auto reach = levelReachabilityOf(*semantic, {}, mask);
+        check(reach && reach->allReached(), "Repaired committed model must reach POI");
+        const auto after = stackImage(editor.map, 98, 98, 7, side + 4, side + 4);
+        check(editor.actionQueue->undo() && stackImage(editor.map, 98, 98, 7, side + 4, side + 4) == before, "Repair Undo");
+        check(editor.actionQueue->redo() && stackImage(editor.map, 98, 98, 7, side + 4, side + 4) == after, "Repair Redo");
+        removed += repaired->removedDecor;
+        editor.map.clearChanges();
+    }
+    check(g_gui.NewMap(), "Integrated repair map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    GenerationConfig config {{100, 100, 7, 128, 128}, 1729};
+    config.algorithm = GenerationAlgorithm::Surface; config.vegetation = true;
+    config.surface.rockPermille = 300; config.surface.buildingDensity = 30;
+    config.surface.campCount = 4; config.surface.ruinPercent = 20;
+    config.surface.caveEntrances = 20; config.surface.plateauMinTop = 64;
+    config.surface.plateauLevels = 3; config.surface.plateauMaxPercent = 10;
+    config.surface.repairReach = 1; config.surface.fordLength = 48;
+    GroundProfile p {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+    p.wall = "stone wall"; p.door = "Normal door";
+    p.decorCount = 3; p.decor = {"trees", "bushes", "small rocks"};
+    p.plateauGround = "grass"; p.plateauRamp = "ramp";
+    p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
+    p.bridgeBrush = "bridge";
+    auto prepared = prepareTerrain(editor.map, config, p, {250000, 254016, 750000, 768ULL << 20});
+    check(prepared && prepared->levels && prepared->plateau && prepared->cave, "Integrated multi-floor repair preparation");
+    check(bool(DrawOperations::commitTerrainPreview(*prepared, config, p, {750000, 1536ULL << 20})), "Integrated repair commit");
+    const auto& levels = *prepared->levels;
+    for (size_t f = 0; f < levels.plan.floors.size(); ++f) for (size_t i = 0; i < 128 * 128; ++i) {
+        const auto* tile = editor.map.getTile(Position(100 + int(i % 128), 100 + int(i / 128), levels.plan.floors[f].z));
+        const bool blocks = tile && ((tile->ground && tile->ground->isBlocking()) ||
+            std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); }));
+        check(bool(levels.blockingMask[f * 128 * 128 + i]) == blocks, "Integrated repair mask/map mismatch");
+        if (levels.report.walkable[f * 128 * 128 + i]) check(tile && tile->ground && !blocks, "Integrated repaired walkability mismatch");
+    }
+    const auto& r = levels.repair;
+    check(bankBorders > 0, "Water coastline borders disappeared beside the crossings");
+    report << std::format("LEVEL_REPAIR_E2E_PASS bridges={} removedDecor={} axes=2 waterBorderItems={} bankBorderItems={} undoRedo=4 sandFords=2 integratedFloors={} repairs={} removedCaps={} removedPois={} unrepaired={}\n",
+        bridges, removed, waterBorders, bankBorders, levels.plan.floors.size(), r.repairs, r.removedCaps, r.removedPois, r.unrepaired);
+    editor.map.clearChanges();
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -1756,6 +1861,7 @@ void run() {
         plateaus(report);
         plateaus(report, 3);
         levelReachabilityProbe(report);
+        levelRepairProbe(report);
         levelRetryProbe(report);
 		for (uint64_t seed = 1; seed <= 4; ++seed) oneRun(100, seed, report, seed == 1);
 		oneRun(250, 1729, report, true);

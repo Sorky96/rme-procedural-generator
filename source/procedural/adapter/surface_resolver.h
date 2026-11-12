@@ -11,6 +11,9 @@ class DoodadBrush;
 
 namespace rme::procedural {
 
+struct BridgeBrush { uint16_t horizontal = 0, vertical = 0; };
+std::expected<BridgeBrush, ResolveError> resolveBridgeBrush(std::string_view name);
+
 struct CaveExitBrush {
 	struct Items { uint16_t ramp = 0, tail = 0, opening = 0; };
 	std::vector<ExitShape> shapes;

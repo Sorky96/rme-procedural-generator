@@ -38,6 +38,7 @@ struct GroundProfile {
 	std::string caveWall;
     std::string plateauGround, plateauRamp;
     std::string plateauCliff = "mountain";
+    std::string bridgeBrush; // empty: sand fords; otherwise walkable wall-brush ground variants
 };
 
 struct GroundPlan {

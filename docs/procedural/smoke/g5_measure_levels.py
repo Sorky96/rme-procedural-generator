@@ -1,4 +1,4 @@
-"""Iteration 36 gate: two byte-identical conservative level measurements per profile/retry setting."""
+"""Iteration 37 gate: two byte-identical conservative level repair measurements per profile/retry setting."""
 import json
 import re
 import statistics
@@ -8,7 +8,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[3]
 profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10')
-output = root / 'local-data/i36-measurement'
+output = root / 'local-data/i37-measurement'
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length = spec
@@ -48,13 +48,27 @@ def measure(spec):
             values = [int(x) for x in re.findall(rf'level pockets seed \d+ floor {floor} count (\d+)', text)]
             if values:
                 pockets[floor] = {'sum': sum(values), 'median': statistics.median(values), 'range': [min(values), max(values)]}
+        repairs = {}
+        repair_lines = re.findall(r'level repair seed \d+ repairs (\d+) bridges (\d+) removedCaps (\d+) removedPois (\d+) removedDecor (\d+) unrepaired (true|false)', text)
+        assert len(repair_lines) == 32
+        for i, name in enumerate(['repairs', 'bridges', 'removedCaps', 'removedPois', 'removedDecor']):
+            values = [int(line[i]) for line in repair_lines]
+            repairs[name] = {'sum': sum(values), 'median': statistics.median(values), 'range': [min(values), max(values)]}
+        retained_pois = sum(categories[c]['sum'][1] for c in ['doors', 'sites', 'caveEntrances'])
+        removed_pois = repairs['removedPois']['sum']
         rows.append({'profile': profile, 'retries': retries, 'identical': True,
                         'allSeeds': sum(s[3] == 'true' for s in seeds),
                         'edges': [sum(int(s[i]) for s in seeds) for i in [4, 5]],
-                        'categories': categories, 'pockets': pockets})
+                        'categories': categories, 'pockets': pockets, 'repairs': repairs,
+                        'unrepairedSeeds': sum(line[5] == 'true' for line in repair_lines),
+                        'removedPoiFraction': removed_pois / max(1, retained_pois + removed_pois)})
         print(rows[-1], flush=True)
     return rows
 
 with ThreadPoolExecutor(max_workers=2) as executor:
     summary = [row for rows in executor.map(measure, [('m06', 30, 40), ('m19', 40, 80)]) for row in rows]
 (output / 'summary.json').write_text(json.dumps(summary, indent=2))
+passed = all(row['allSeeds'] >= (32 if row['retries'] else 30)
+             and row['edges'][0] == row['edges'][1]
+             and row['removedPoiFraction'] <= .02 for row in summary)
+print('G5_GATE_PASS' if passed else 'G5_GATE_FAIL', flush=True)
