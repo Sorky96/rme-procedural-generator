@@ -230,3 +230,30 @@ Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 36” (`4b56caf`, uzupełn
 **Przyczyny (diagnostyka na seedzie 1001, bez zmian generatora):** (1) naprawa osiągalności z iteracji 23 używa starego modelu (skała przechodnia, dekor ignorowany), więc roślinność blokująca dzieli ląd — w m19 główna przyczyna; (2) zbocza pod czapami (od iteracji 34) przecinają drogi, które wcześniej szły po skale — w m06 główna przyczyna; (3) wejścia jaskini leżą na brzegu skały, który od iteracji 34 jest zboczem. Wyłączenie blokowania dekoru i zboczy w modelu przywraca pełną osiągalność w obu profilach.
 
 **Nie zweryfikowane:** ruch w grze, kroki ukośne, wygląd linii stanu i ostrzeżenia w GUI, obszar 2000×2000 z walidatorem.
+
+## Iteracja 37 — naprawa wielopiętrowa i mosty (2026-11-12): implementacja i sondy PASS, **bramka G5 FAIL; D22 pozostaje otwarty**
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 37”. Commity implementacji: `567269f` (rdzeń), `fc1f91b` (adapter, okno, sonda i pomiar). Użytkownik zatwierdził zastępowanie wody gruntem mostu z pędzla wall „bridge”; kryteriów nie zmieniano w tej gałęzi.
+
+**Implementacja.** `repairLevelReach` ocenia kompletny plan po każdej naprawie. Dijkstra: chodliwe 1, blokujący dekor 3, woda 6; stan zawiera długość kolejnego odcinka wody, ograniczoną przez `fordLength`. Remisy według indeksu komórki (y, x). Zbocza, mury, Preserve i Solid jaskini są zabronione. Bez ścieżki: usunięcie czapy i wspartych na niej wyższych czap albo powierzchniowego POI; limit 64, potem `unrepaired`. Czapy powstają przed filtrem wejść, jaskinia po nim. Adapter używa rozwiązanych wariantów dekoru i gruntu, pomiar reguły ostrożnej.
+
+**Most.** Kierunek jest zapisany przez rdzeń z osi ścieżki, w zakręcie pierwszeństwo ma poziomy. Adapter wybiera pierwszy wariant o dodatniej szansie z odpowiedniego węzła horizontal/vertical załadowanego pędzla. Bez pędzla zostaje piasek. **Odchylenie geometryczne:** przejście poszerza wodę o jedną komórkę po obu stronach osi (tylko woda, z przycięciem do prostokąta). Jednokomórkowy most miał chodliwy grunt, ale ukośne obramowania morza blokowały oba przyczółki. Poszerzenie pozwala zachować zwykły autoborder, bez usuwania przedmiotów obramowania. Liczba mostów poniżej oznacza komórki gruntu mostu wraz z tym poszerzeniem.
+
+**Testy i sondy.** 18/18 celów rdzenia i obie sondy PASS, `SUITE_PASS`, po kanonicznym buildzie Windows x64 i osobnej przebudowie testów/style_render (dwa zadania). Odcisk Seed 1729 100×100 = 17159159863505677800. Niezależny Dijkstra: 120 losowych siatek; niezależne przejście pięciu pięter: 100 planów. Siatki ręczne: dekor, most, bród, zakaz murów/zboczy, usunięcie czapy z wyższą i powrót skały, usunięcie POI, filtr wejścia pod czapą, limit 64. Sonda sprawdza oba kierunki mostu i brodu, usunięty dekor, Commit/Undo/Redo oraz zgodność maski z mapą w planie z jaskinią i czapą.
+
+**Bramka G5.** Seedy 1001–1032, bok 512, ustawienia iteracji 36 plus `repairReach=1`. Każdy wariant uruchomiony dwa razy; stdout i stderr bajtowo identyczne. Mediana [min..max]:
+
+| Profil | Próby | Pełne seedy | Chodliwe krawędzie Z | Naprawy | Komórki mostu | Usunięte czapy | Usunięte POI | Udział usuniętych POI |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| m06 | 1 | 32/32 | 610/610 | 19 [9..26] | 4 [0..107] | 0 [0..0] | 0 [0..1] | 0,04595 % |
+| m06 | ≤8 | 32/32 | 610/610 | 19 [9..26] | 4 [0..107] | 0 [0..0] | 0 [0..1] | 0,04595 % |
+| m19 | 1 | 1/32 | 668/668 | 64 [13..64] | 0 [0..18] | 0 [0..0] | 0 [0..2] | 0,07035 % |
+| m19 | ≤8 | 7/32 | 589/589 | 64 [13..64] | 0 [0..18] | 0 [0..0] | 0 [0..1] | 0,03511 % |
+
+Kryterium 4(a) i 4(b) **nie spełnione dla m19**; 4(c), 4(d), 4(e) spełnione dla obu profili. Naprawa nie zalicza bramki kasowaniem: usunięte POI łącznie odpowiednio 2, 2, 4 i 2.
+
+**Przyczyny i przykłady.** m19, seed 1001: po 64 naprawach (76 usuniętych dekorów) osiągalne czapy 4351/9677; na z−1, z−2 i z−3 pozostaje 395, 52 i 15 kieszeni. Pierwszy zgłoszony cel czapy: (196,523,4). Reguła ostrożna roślinności daje wiele małych składowych i wyczerpuje limit. m19, seed 1003: 19 napraw, jaskinia 0/334, brak umieszczonych wejść/wyjść; nie ma drogi po Floor do składowej startu. Naprawa zgłasza `unrepaired`, nie kopie przez zabroniony Solid ani nie usuwa całej jaskini. Bez ponawiania `unrepaired` w 31/32 planów m19, z ponawianiem w 25/32.
+
+**Pozostałe odchylenia i granice.** Dla zgodności starych wyników filtr wejść jest włączony razem z nową naprawą; `repairReach=0` zachowuje historyczne wejścia pod czapą. W starej macierzy sondy `SURFACE_CAVE_GUI_PASS` opcja repairReach była 1, więc jej wyniki zmieniają się świadomie; przy blokującym gruncie „mountain” naprawa może usunąć wszystkie wejścia i zgłosić `unrepaired`. Stare przypadki bez naprawy zachowują odciski i liczby poza szacunkami pamięci (nowe pola struktur). Adapter naprawia przed autoborderem, potem sprawdza pełną maskę rozwiązanych kafli i raportuje pozostałe blokady; nie ponawia wyszukiwania na końcowej masce obramowań. W złożonym przypadku sondy końcowy stan jest `unrepaired=true`, przy zgodnym z mapą modelu.
+
+**Nie zweryfikowane:** wygląd mostów, przesiek i gór w GUI, ruch w grze, oryginalny RME, inne klienty, naprawa 2000×2000. Pełny raport, surowe wiersze sond i pomiary są w niecommitowanym `local-data/I37_IMPLEMENTATION_REPORT.md`.
