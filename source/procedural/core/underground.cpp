@@ -304,7 +304,9 @@ std::expected<void, UndergroundError> placeFarCaveExits(
         const uint32_t source = entry.cell;
         auto component = caveDistances(cave, std::span(&source, 1));
         std::vector<uint32_t> sources;
-        for (const auto& e : original) if (!e.distant && component[e.cell] >= 0) sources.push_back(e.cell);
+        // Keep every entrance as a BFS source: an extension may join another
+        // component, whose entrances must also remain at distance >= 24.
+        for (const auto& e : original) if (!e.distant) sources.push_back(e.cell);
         auto distance = caveDistances(cave, sources);
         std::vector<uint32_t> order;
         for (uint32_t i = 0; i < n; ++i) if (component[i] >= 0) order.push_back(i);
@@ -331,7 +333,9 @@ std::expected<void, UndergroundError> placeFarCaveExits(
                     Carver carver {cave.cells, int32_t(w), int32_t(h), seed, surface.region.x, surface.region.y, &cave.rooms};
                     carver.tunnel(int32_t(from % w), int32_t(from / w), int32_t(p % w), int32_t(p / w));
                     auto extended = caveDistances(cave, sources);
-                    if (extended[p] >= 24 && fit(p, s, true)) {
+                    const bool previousExitsStillFar = std::ranges::all_of(exits.exits,
+                        [&](const auto& e) { return !e.distant || extended[e.cell] >= 24; });
+                    if (extended[p] >= 24 && previousExitsStillFar && fit(p, s, true)) {
                         exits.exits.push_back({entry.entrance, p, uint8_t(s), true}); reserve(exits.exits.back()); placed = true; break;
                     }
                     cave.cells = std::move(before);

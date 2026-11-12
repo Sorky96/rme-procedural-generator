@@ -684,6 +684,19 @@ void testFarExitsAndDoors() {
     impossibleCave.cells.assign(36,CaveKind::Floor); impossibleCave.rooms = {14,21};
     auto refusal = placeCaveDoorCorridors(impossibleCave,{},{});
     check(!refusal && refusal.error() == UndergroundError::InvalidGrid, "never accept two rooms silently without a corridor");
+    auto mergingSurface = grid(96,96,SurfaceKind::Grass);
+    mergingSurface.entrances = {40*96+40,26*96+38};
+    auto merging = emptyCave(mergingSurface);
+    for (auto entry : mergingSurface.entrances) {
+        const auto x=entry%96, y=entry/96;
+        for (auto yy=y-2; yy<=y+2; ++yy) for (auto xx=x-2; xx<=x+2; ++xx) merging.cells[yy*96+xx]=CaveKind::Floor;
+    }
+    auto mergingExits = placeCaveExits(mergingSurface,merging,shapes);
+    check(bool(placeFarCaveExits(mergingSurface,merging,*mergingExits,shapes,1)), "extensions beside another entered component");
+    check(std::ranges::any_of(mergingExits->exits,[](const auto& exit){return exit.distant;}), "nearby components still get a distant exit");
+    const auto mergingDistances = distances(merging,mergingSurface.entrances);
+    for (const auto& exit : mergingExits->exits) if (exit.distant)
+        check(mergingDistances[exit.cell]>=24, "extension must respect entrances in newly joined components");
     std::cout << "CAVE_FAR_EXIT_DOOR_CROSS_CHECK 120/120\n";
 }
 
