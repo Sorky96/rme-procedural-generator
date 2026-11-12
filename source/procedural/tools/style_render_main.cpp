@@ -27,6 +27,68 @@
 using namespace rme::procedural;
 namespace fs = std::filesystem;
 
+// Offline 10.98 model: rocky ground is open; trees, bushes and small rocks
+// each have at least one Unpassable variant. No client IDs are embedded here.
+std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& config,
+    const SurfaceBudget& budget, const DecorTuning& decorTuning) {
+    auto surface = generateSurface(config, {65001, 65001, 16}, budget);
+    if (!surface) return std::unexpected(ReachabilityError::InvalidGrid);
+    const auto n = surface->cells.size();
+    auto decor = generateDecoration(*surface, config.seed, decorTuning);
+    if (!decor) return std::unexpected(ReachabilityError::InvalidGrid);
+    constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}, {ExitDirection::West, 1, 0, true},
+        {ExitDirection::South, 0, -1, true}, {ExitDirection::East, -1, 0, true}};
+    std::optional<CaveGrid> cave;
+    CaveExitPlan exits;
+    std::vector<uint8_t> occupied(n);
+    std::vector<DecorGrid> decoration {*decor};
+    if (config.tuning.caveEntrances) {
+        auto generated = generateCave(*surface, config.seed);
+        if (!generated) return std::unexpected(ReachabilityError::InvalidGrid);
+        cave = std::move(*generated);
+        for (size_t i = 0; i < n; ++i) occupied[i] = decor->cells[i] != DecorKind::None;
+        auto placed = placeCaveExits(*surface, *cave, shapes, occupied);
+        if (!placed) return std::unexpected(ReachabilityError::InvalidGrid);
+        exits = std::move(*placed);
+        decoration.push_back({});
+    }
+    constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+    for (size_t i = 0; i < n; ++i) occupied[i] = decor->cells[i] != DecorKind::None;
+    for (const auto& e : exits.exits) {
+        const auto entry = surface->entrances[e.entrance];
+        decoration[0].cells[entry] = DecorKind::None;
+        occupied[entry] = 1;
+        const auto d = size_t(shapes[e.shape].direction);
+        occupied[size_t(int64_t(e.cell) + dx[d] + int64_t(dy[d]) * config.region.width)] = 1;
+    }
+    std::vector<PlateauGrid> caps;
+    if (config.tuning.plateauMinTop) {
+        auto first = generatePlateau(*surface, config.seed, config.tuning.plateauMinTop, shapes,
+            occupied, {}, config.tuning.plateauMaxPercent);
+        if (!first) return std::unexpected(ReachabilityError::InvalidGrid);
+        caps.push_back(std::move(*first));
+        for (uint32_t k = 2; k <= config.tuning.plateauLevels; ++k) {
+            auto next = generateNextPlateau(caps.back(), config.seed ^ (uint64_t(k) << 48), shapes, {}, config.tuning.plateauMaxPercent);
+            if (!next) return std::unexpected(ReachabilityError::InvalidGrid);
+            if (!next->components) break;
+            caps.push_back(std::move(*next));
+        }
+        for (size_t k = 0; k < caps.size(); ++k) {
+            auto d = generatePlateauDecoration(caps[k], config.seed ^ (uint64_t(k) << 48), decorTuning);
+            if (!d) return std::unexpected(ReachabilityError::InvalidGrid);
+            for (const auto& r : caps[k].ramps) d->cells[r.cell] = DecorKind::None;
+            if (k + 1 < caps.size()) for (const auto& r : caps[k + 1].ramps) {
+                const auto x = int(r.cell % config.region.width), y = int(r.cell / config.region.width);
+                for (int yy = std::max(0, y - 1); yy <= std::min(int(config.region.height) - 1, y + 1); ++yy)
+                    for (int xx = std::max(0, x - 1); xx <= std::min(int(config.region.width) - 1, x + 1); ++xx)
+                        d->cells[size_t(yy) * config.region.width + xx] = DecorKind::None;
+            }
+            decoration.push_back(std::move(*d));
+        }
+    }
+    return levelPlanOf(*surface, true, false, cave ? &*cave : nullptr, exits, shapes, caps, decoration);
+}
+
 int main(int argc, char** argv) {
 	if (argc < 5) { std::cerr << "usage: style_render PROFILE OUT_DIR SIDE SEED...\n"; return 2; }
 	std::ifstream in(argv[1], std::ios::binary);
@@ -41,13 +103,17 @@ int main(int argc, char** argv) {
 	const SurfaceBudget budget {cells, cells * 8, cells * 96 + (1u << 20)};
 	SurfaceTuning tuning = *profile->tuning;
 	bool caveExitShapes = false;
+    bool levelReach = false;
+    uint32_t retrySeeds = 0;
 	int firstSeed = 4;
 	// Sweep helper: leading name=value arguments override featureSize, transitionWidth or shoreWidth.
 	for (; firstSeed < argc && std::string_view(argv[firstSeed]).find('=') != std::string_view::npos; ++firstSeed) {
 		const std::string_view arg = argv[firstSeed];
 		const std::string_view name = arg.substr(0, arg.find('='));
 		const uint32_t value = static_cast<uint32_t>(std::strtoul(argv[firstSeed] + name.size() + 1, nullptr, 10));
-		if (name == "caveExitShapes") caveExitShapes = arg.substr(name.size() + 1) == "ramp";
+		if (name == "levelReach") levelReach = value != 0;
+        else if (name == "retrySeeds") { if (value > 16) return 2; retrySeeds = value; }
+        else if (name == "caveExitShapes") caveExitShapes = arg.substr(name.size() + 1) == "ramp";
 		else if (name == "caveEntranceStyle") {
 			const auto style = arg.substr(name.size() + 1);
 			if (style != "rockface" && style != "floorhole") return 2;
@@ -81,6 +147,44 @@ int main(int argc, char** argv) {
     }
     for (int i = firstSeed; i < argc; ++i) {
 		const uint64_t seed = std::strtoull(argv[i], nullptr, 10);
+        if (levelReach) {
+            std::optional<LevelReachabilityReport> first, chosen;
+            std::optional<LevelPlan> firstPlan, chosenPlan;
+            uint64_t used = seed;
+            uint32_t attempts = 0;
+            for (uint32_t a = 0; a < std::max(1u, retrySeeds); ++a) {
+                auto plan = offlineLevels({{100, 100, 7, side, side}, seed + a, tuning}, budget,
+                    profile->decorTuning.value_or(DecorTuning{}));
+                auto reach = plan ? levelReachabilityOf(*plan, {true, true, true}) : std::unexpected(ReachabilityError::InvalidGrid);
+                if (!reach) { std::cerr << "level generation failed\n"; return 10; }
+                ++attempts;
+                if (reach->allReached()) { used = seed + a; chosen = std::move(*reach); chosenPlan = std::move(*plan); break; }
+                if (!first) { first = std::move(*reach); firstPlan = std::move(*plan); }
+            }
+            if (!chosen) { chosen = std::move(first); chosenPlan = std::move(firstPlan); }
+            std::cout << std::format("level seed {} used {} attempts {} all {} edges {}/{} model conservative\n",
+                seed, used, attempts, chosen->allReached(), chosen->walkableEdges, chosen->edges);
+            constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells"};
+            for (size_t c = 0; c < levelPoiKindCount; ++c)
+                std::cout << std::format("level category seed {} {} {}/{}\n", seed, names[c], chosen->categories[c].reached, chosen->categories[c].total);
+            for (size_t f = 0; f < chosen->pockets.size(); ++f)
+                std::cout << std::format("level pockets seed {} floor {} count {}\n", seed, f, chosen->pockets[f]);
+            for (const auto& p : chosen->firstUnreachable)
+                std::cout << std::format("level first seed {} kind {} at {},{},{}\n", seed, names[size_t(p.kind)], p.x, p.y, p.z);
+            for (size_t c = 0; c < levelPoiKindCount; ++c) {
+                for (const auto& poi : chosenPlan->pois) {
+                    const auto i = size_t(poi.at.floor) * cells + poi.at.cell;
+                    if (size_t(poi.kind) != c || chosen->reached[i] ||
+                        (poi.kind == LevelPoiKind::Cap && !chosen->walkable[i])) continue;
+                    std::cout << std::format("level cause seed {} kind {} at {},{},{} reason {}\n", seed, names[c],
+                        chosenPlan->region.x + int(poi.at.cell % side), chosenPlan->region.y + int(poi.at.cell / side),
+                        chosenPlan->floors[poi.at.floor].z, chosen->walkable[i] ? "disconnected" : "blocked-cell");
+                    break;
+                }
+            }
+            // Measurement-only mode: leave the historical renderer and its output unchanged.
+            continue;
+        }
 		const SurfaceConfig config {{100, 100, 7, side, side}, seed, tuning};
 		const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, budget);
 		if (!grid) { std::cerr << "generation failed for seed " << seed << '\n'; return 4; }
