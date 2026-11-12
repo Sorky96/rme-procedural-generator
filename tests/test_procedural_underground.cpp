@@ -598,7 +598,86 @@ void testPlateaus()
     std::cout << "PLATEAU_COOPERATIVE_CANCEL_PASS\n";
 }
 
+void testFarExitsAndDoors() {
+    constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}, {ExitDirection::South, 0, -1, true},
+        {ExitDirection::East, -1, 0, true}, {ExitDirection::West, 1, 0, true}};
+    const auto distances = [](const CaveGrid& c, std::span<const uint32_t> sources) {
+        const auto w = c.region.width;
+        std::vector<int> d(c.cells.size(), -1);
+        std::vector<uint32_t> q;
+        for (auto i : sources) { d[i] = 0; q.push_back(i); }
+        for (size_t head = 0; head < q.size(); ++head) {
+            const auto i = q[head];
+            for (auto j : {i - w, i - 1, i + 1, i + w})
+                if (j < d.size() && (j / w == i / w || j % w == i % w) && d[j] < 0 && c.cells[j] == CaveKind::Floor) {
+                    d[j] = d[i] + 1; q.push_back(j);
+                }
+        }
+        return d;
+    };
+    for (uint64_t seed = 1; seed <= 120; ++seed) {
+        auto s = grid(96, 96, SurfaceKind::Grass);
+        s.entrances = {uint32_t(20 * 96 + 20), uint32_t(70 * 96 + 70)};
+        auto cave = generateCave(s, seed);
+        auto exits = placeCaveExits(s, *cave, shapes);
+        auto original = *cave;
+        auto originalExits = *exits;
+        check(bool(placeFarCaveExits(s, *cave, *exits, shapes, seed)), "distant exits generated");
+        auto again = original; auto repeated = originalExits;
+        check(bool(placeFarCaveExits(s, again, repeated, shapes, seed)) && again.cells == cave->cells &&
+            repeated.exits.size() == exits->exits.size(), "distant determinism");
+        check(std::ranges::count_if(exits->exits, [](const auto& e) { return e.distant; }) == 1, "one distant exit per entered component");
+        auto d = distances(*cave, s.entrances);
+        for (const auto& e : exits->exits) if (e.distant) check(d[e.cell] >= 24, "independent BFS distant distance");
+        check(bool(placeCaveDoorCorridors(*cave, *exits, shapes)), "corridors generated");
+        check(!cave->corridors.empty(), "connection between rooms gets door corridor");
+        check(bool(placeCaveDoorCorridors(again, repeated, shapes)) && cave->corridors == again.corridors && cave->cells == again.cells,
+            "door determinism");
+        auto after = distances(*cave, s.entrances);
+        for (size_t i = 0; i < d.size(); ++i) if (cave->cells[i] == CaveKind::Floor && d[i] >= 0) check(after[i] >= 0, "narrowing preserves connectivity");
+        for (const auto& c : cave->corridors) {
+            check(c.length >= 3 && c.length <= 8, "corridor length");
+            const auto step = c.horizontal ? 1u : 96u, side = c.horizontal ? 96u : 1u;
+            check(cave->cells[c.door - step] == CaveKind::Floor && cave->cells[c.door + step] == CaveKind::Floor &&
+                cave->cells[c.door - side] == CaveKind::Solid && cave->cells[c.door + side] == CaveKind::Solid,
+                "exactly two opposite door neighbours");
+        }
+        auto plan = levelPlanOf(s, true, false, &*cave, *exits, shapes, {});
+        check(plan && plan->edges.size() == originalExits.exits.size() * 2 + 1, "distant exit has only one Z edge");
+        auto reach = levelReachabilityOf(*plan, {});
+        check(reach && reach->allReached() && reach->edges == reach->walkableEdges, "distant exits and doors reachable");
+    }
+    // A compact cave cannot satisfy distance 24 without extending its tunnel.
+    auto s = grid(96, 96, SurfaceKind::Grass); s.entrances = {40 * 96 + 40};
+    auto c = emptyCave(s);
+    for (uint32_t y = 38; y <= 42; ++y) for (uint32_t x = 38; x <= 42; ++x) c.cells[y * 96 + x] = CaveKind::Floor;
+    auto e = placeCaveExits(s, c, shapes);
+    const auto before = std::ranges::count(c.cells, CaveKind::Floor);
+    check(bool(placeFarCaveExits(s, c, *e, shapes, 1)), "short cave extension");
+    check(e->exits.size() == 2 && std::ranges::count(c.cells, CaveKind::Floor) > before, "extension adds distant ramp and floor");
+    auto d = distances(c, s.entrances);
+    check(d[e->exits.back().cell] >= 24, "extended ramp BFS distance");
+    std::vector<uint8_t> occupied(c.cells.size(), 1);
+    auto blocked = placeCaveExits(s, c, shapes);
+    check(bool(placeFarCaveExits(s, c, *blocked, shapes, 1, occupied)) && blocked->exits.size() == 1, "caps forbid all distant exits");
+    std::stop_source cancel; cancel.request_stop();
+    auto stopped = placeFarCaveExits(s, c, *e, shapes, 1, {}, cancel.get_token());
+    check(!stopped && stopped.error() == UndergroundError::Cancelled, "distant exits cancellation");
+    auto separateSurface = grid(96,96,SurfaceKind::Grass);
+    separateSurface.entrances = {20*96+20,70*96+20};
+    auto separate = emptyCave(separateSurface);
+    for (uint32_t y : {20u,45u,70u}) for (uint32_t yy=y-1; yy<=y+1; ++yy)
+        for (uint32_t x=18; x<=75; ++x) separate.cells[yy*96+x] = CaveKind::Floor;
+    auto separateExits = placeCaveExits(separateSurface,separate,shapes);
+    check(bool(placeFarCaveExits(separateSurface,separate,*separateExits,shapes,1)), "separate components placement");
+    check(std::ranges::count_if(separateExits->exits,[](const auto& e){return e.distant;}) == 2,
+        "one distant exit per entered component; none in unentered component");
+    check(std::ranges::all_of(separateSurface.cells,[](auto k){return k==SurfaceKind::Grass;}), "no surface hole created by distant ramps");
+    std::cout << "CAVE_FAR_EXIT_DOOR_CROSS_CHECK 120/120\n";
+}
+
 int main() {
+    testFarExitsAndDoors();
     {
         CaveGrid cave {{0, 0, 8, 7, 3}, std::vector<CaveKind>(21, CaveKind::Solid)};
         cave.cells[8] = cave.cells[9] = cave.cells[11] = cave.cells[12] = CaveKind::Floor;

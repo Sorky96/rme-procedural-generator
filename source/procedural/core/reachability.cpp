@@ -245,17 +245,23 @@ std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 			p.pois.push_back({LevelPoiKind::CaveCell, {1, i}});
 		}
 		for (const auto& e : exits.exits) {
-			if (e.entrance >= surface.entrances.size() || e.cell >= n || e.shape >= caveShapes.size()) return std::unexpected(ReachabilityError::InvalidGrid);
+			if ((!e.distant && e.entrance >= surface.entrances.size()) || e.cell >= n || e.shape >= caveShapes.size()) return std::unexpected(ReachabilityError::InvalidGrid);
 			const auto d = size_t(caveShapes[e.shape].direction);
 			if (d >= 4) return std::unexpected(ReachabilityError::InvalidGrid);
 			const auto arrival = shifted(e.cell, dx[d], dy[d]);
 			if (!arrival) return std::unexpected(ReachabilityError::InvalidGrid);
-			const auto entry = surface.entrances[e.entrance];
-			p.edges.push_back({{0, entry}, {1, entry}});
+            if (!e.distant) {
+                const auto entry = surface.entrances[e.entrance];
+                p.edges.push_back({{0, entry}, {1, entry}});
+                p.pois.push_back({LevelPoiKind::CaveEntrance, {0, entry}});
+            }
 			p.edges.push_back({{1, e.cell}, {0, *arrival}});
-			p.pois.push_back({LevelPoiKind::CaveEntrance, {0, entry}});
 			p.pois.push_back({LevelPoiKind::CaveExit, {1, e.cell}});
 		}
+        for (const auto& c : cave->corridors) {
+            if (c.door >= n || cave->cells[c.door] != CaveKind::Floor) return std::unexpected(ReachabilityError::InvalidGrid);
+            p.pois.push_back({LevelPoiKind::Door, {1, c.door}});
+        }
 	} else if (!exits.exits.empty()) return std::unexpected(ReachabilityError::InvalidGrid);
 	for (size_t k = 0; k < caps.size(); ++k) {
 		const auto& cap = caps[k];

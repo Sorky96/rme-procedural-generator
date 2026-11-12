@@ -22,6 +22,7 @@ struct Carver {
 	int32_t width, height;
 	uint64_t seed;
 	int32_t x0, y0;   // absolute origin of the area, for the noise
+    std::vector<uint32_t>* rooms = nullptr;
 
 	void put(int32_t x, int32_t y) {
 		if (x < 2 || y < 2 || x > width - 3 || y > height - 3) return;
@@ -61,6 +62,8 @@ struct Carver {
 				const int32_t cx = alongX ? baseMajor : minor, cy = alongX ? minor : baseMajor;
 				const int32_t radius = 3 + int32_t(noise(roomStream, cx, cy, 6) % 3);
 				disc(cx, cy, radius * radius);
+                if (rooms && cx >= 2 && cy >= 2 && cx < width - 2 && cy < height - 2)
+                    rooms->push_back(uint32_t(cy * width + cx));
 			}
 		}
 	}
@@ -82,6 +85,10 @@ uint64_t CaveGrid::fingerprint() const {
 	word(uint32_t(region.x)); word(uint32_t(region.y)); word(uint32_t(region.z));
 	word(region.width); word(region.height);
 	for (const auto kind : cells) byte(static_cast<uint8_t>(kind));
+    if (!corridors.empty()) {
+        byte('D');
+        for (const auto& c : corridors) { word(c.start); word(c.door); byte(c.length); byte(c.horizontal); }
+    }
 	return hash;
 }
 
@@ -93,7 +100,7 @@ std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, u
 	try {
 		cave.cells.assign(surface.cells.size(), CaveKind::Solid);
 		const int32_t width = int32_t(surface.region.width), height = int32_t(surface.region.height);
-		Carver carver {cave.cells, width, height, seed, surface.region.x, surface.region.y};
+		Carver carver {cave.cells, width, height, seed, surface.region.x, surface.region.y, &cave.rooms};
 		std::vector<uint32_t> entrances = surface.entrances;
 		std::ranges::sort(entrances);
 		for (const uint32_t entrance : entrances) carver.disc(int32_t(entrance % uint32_t(width)), int32_t(entrance / uint32_t(width)), 5);
@@ -122,7 +129,7 @@ std::expected<uint32_t, UndergroundError> removeUnenteredCaveComponents(
     for (const auto& exit : exits.exits) {
         if (exit.cell >= cave.cells.size() || cave.cells[exit.cell] != CaveKind::Floor)
             return std::unexpected(UndergroundError::InvalidGrid);
-        entered[exit.cell] = 1;
+        if (!exit.distant) entered[exit.cell] = 1;
     }
     std::vector<uint32_t> queue;
     uint32_t removed = 0;
@@ -215,6 +222,187 @@ std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 		return std::unexpected(UndergroundError::AllocationFailed);
 	}
 }
+
+namespace {
+template<class Visit> void caveNeighbours(uint32_t i, uint32_t w, uint32_t h, Visit visit) {
+    if (i >= w) visit(i - w);
+    if (i % w) visit(i - 1);
+    if (i % w + 1 < w) visit(i + 1);
+    if (i / w + 1 < h) visit(i + w);
+}
+
+std::vector<int32_t> caveDistances(const CaveGrid& cave, std::span<const uint32_t> sources) {
+    std::vector<int32_t> distance(cave.cells.size(), -1);
+    std::vector<uint32_t> queue;
+    for (auto i : sources) if (cave.cells[i] == CaveKind::Floor && distance[i] < 0) {
+        distance[i] = 0; queue.push_back(i);
+    }
+    for (size_t head = 0; head < queue.size(); ++head)
+        caveNeighbours(queue[head], cave.region.width, cave.region.height, [&](uint32_t j) {
+            if (cave.cells[j] == CaveKind::Floor && distance[j] < 0) {
+                distance[j] = distance[queue[head]] + 1; queue.push_back(j);
+            }
+        });
+    return distance;
+}
+}
+
+std::expected<void, UndergroundError> placeFarCaveExits(
+    const SurfaceGrid& surface, CaveGrid& cave, CaveExitPlan& exits,
+    std::span<const ExitShape> shapes, uint64_t seed,
+    std::span<const uint8_t> occupied, std::stop_token stop) try {
+    // Reuse the complete legacy geometry/input validation before indexing shapes.
+    auto validated = placeCaveExits(surface, cave, shapes, occupied, stop);
+    if (!validated) return std::unexpected(validated.error());
+    const auto w = cave.region.width, h = cave.region.height;
+    const auto n = cave.cells.size();
+    constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+    const auto shift = [&](uint32_t i, int x, int y) -> std::optional<uint32_t> {
+        const auto xx = int64_t(i % w) + x, yy = int64_t(i / w) + y;
+        if (xx < 2 || yy < 2 || xx >= int64_t(w) - 2 || yy >= int64_t(h) - 2) return {};
+        return uint32_t(yy * w + xx);
+    };
+    std::vector<uint8_t> reserved(n), poi(n), processed(n);
+    for (const auto* cells : {&surface.doors, &surface.gaps, &surface.sites, &surface.fires})
+        for (auto i : *cells) poi[i] = 1;
+    const auto reserve = [&](const CaveExit& e) {
+        if (e.cell >= n || e.shape >= shapes.size() || e.entrance >= surface.entrances.size()) return false;
+        reserved[e.cell] = 1;
+        const auto& s = shapes[e.shape]; const auto d = size_t(s.direction);
+        if (auto i = shift(e.cell, -dx[d], -dy[d])) reserved[*i] = 1;
+        if (s.hasTail) if (auto i = shift(e.cell, s.tailDx, s.tailDy)) reserved[*i] = 1;
+        return true;
+    };
+    for (const auto& e : exits.exits) if (!reserve(e)) return std::unexpected(UndergroundError::InvalidGrid);
+    const auto open = [&](uint32_t i) {
+        const auto k = surface.cells[i];
+        return !poi[i] && (occupied.empty() || !occupied[i]) &&
+            (k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Path || k == SurfaceKind::Shore);
+    };
+    const auto spaced = [&](uint32_t p) {
+        const auto distant = [&](uint32_t q) {
+            return std::max(std::abs(int(p % w) - int(q % w)), std::abs(int(p / w) - int(q / w))) >= 12;
+        };
+        return std::ranges::all_of(surface.entrances, distant) &&
+            std::ranges::all_of(exits.exits, [&](const auto& e) { return distant(e.cell); });
+    };
+    const auto fit = [&](uint32_t p, size_t s, bool floor) {
+        const auto& shape = shapes[s]; const auto d = size_t(shape.direction);
+        auto arrival = shift(p, dx[d], dy[d]), landing = shift(p, -dx[d], -dy[d]);
+        if (!arrival || !landing || !open(p) || !open(*arrival) || !spaced(p) || !spaced(*arrival) || reserved[p] || reserved[*landing]) return false;
+        if (floor && (cave.cells[p] != CaveKind::Floor || cave.cells[*landing] != CaveKind::Floor)) return false;
+        if (shape.hasTail) {
+            const auto tail = shift(p, shape.tailDx, shape.tailDy);
+            if (!tail || reserved[*tail] || (floor && cave.cells[*tail] != CaveKind::Floor)) return false;
+        }
+        return true;
+    };
+    const auto original = exits.exits;
+    for (const auto& entry : original) {
+        if (stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+        if (entry.distant || processed[entry.cell]) continue;
+        const uint32_t source = entry.cell;
+        auto component = caveDistances(cave, std::span(&source, 1));
+        std::vector<uint32_t> sources;
+        for (const auto& e : original) if (!e.distant && component[e.cell] >= 0) sources.push_back(e.cell);
+        auto distance = caveDistances(cave, sources);
+        std::vector<uint32_t> order;
+        for (uint32_t i = 0; i < n; ++i) if (component[i] >= 0) order.push_back(i);
+        std::ranges::sort(order, [&](auto a, auto b) { return distance[a] != distance[b] ? distance[a] > distance[b] : a < b; });
+        bool placed = false;
+        for (auto p : order) {
+            if (distance[p] < 24) break;
+            for (size_t s = 0; s < shapes.size(); ++s) if (fit(p, s, true)) {
+                exits.exits.push_back({entry.entrance, p, uint8_t(s), true}); reserve(exits.exits.back()); placed = true; break;
+            }
+            if (placed) break;
+        }
+        // A short component needs an extension. Try targets in row-major order,
+        // always from its farthest cell; rejected attempts leave no carved cells.
+        if (!placed && !order.empty() && distance[order.front()] < 24) {
+            const auto from = order.front();
+            for (uint32_t p = 0; p < n && !placed; ++p) {
+                if (p % 4096 == 0 && stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+                const auto length = std::abs(int(p % w) - int(from % w)) + std::abs(int(p / w) - int(from / w));
+                if (length < 24 || length > 48) continue;
+                for (size_t s = 0; s < shapes.size(); ++s) if (fit(p, s, false)) {
+                    auto before = cave.cells;
+                    const auto roomCount = cave.rooms.size();
+                    Carver carver {cave.cells, int32_t(w), int32_t(h), seed, surface.region.x, surface.region.y, &cave.rooms};
+                    carver.tunnel(int32_t(from % w), int32_t(from / w), int32_t(p % w), int32_t(p / w));
+                    auto extended = caveDistances(cave, sources);
+                    if (extended[p] >= 24 && fit(p, s, true)) {
+                        exits.exits.push_back({entry.entrance, p, uint8_t(s), true}); reserve(exits.exits.back()); placed = true; break;
+                    }
+                    cave.cells = std::move(before);
+                    cave.rooms.resize(roomCount);
+                }
+            }
+        }
+        component = caveDistances(cave, std::span(&source, 1));
+        for (size_t i = 0; i < n; ++i) if (component[i] >= 0) processed[i] = 1;
+    }
+    return {};
+} catch (const std::bad_alloc&) { return std::unexpected(UndergroundError::AllocationFailed); }
+
+std::expected<void, UndergroundError> placeCaveDoorCorridors(
+    CaveGrid& cave, const CaveExitPlan& exits, std::span<const ExitShape> shapes, std::stop_token stop) try {
+    if (!cave.valid()) return std::unexpected(UndergroundError::InvalidGrid);
+    const auto w = cave.region.width, h = cave.region.height;
+    std::vector<uint8_t> protectedCells(cave.cells.size()), processed(cave.cells.size());
+    for (const auto& e : exits.exits) {
+        if (e.cell >= cave.cells.size() || e.shape >= shapes.size()) return std::unexpected(UndergroundError::InvalidGrid);
+        const int x = int(e.cell % w), y = int(e.cell / w);
+        for (int yy = std::max(0, y - 3); yy <= std::min(int(h) - 1, y + 3); ++yy)
+            for (int xx = std::max(0, x - 3); xx <= std::min(int(w) - 1, x + 3); ++xx) protectedCells[size_t(yy) * w + xx] = 1;
+    }
+    for (auto room : cave.rooms) {
+        if (room >= cave.cells.size()) return std::unexpected(UndergroundError::InvalidGrid);
+        const int x = int(room % w), y = int(room / w);
+        for (int yy = std::max(0, y - 5); yy <= std::min(int(h) - 1, y + 5); ++yy)
+            for (int xx = std::max(0, x - 5); xx <= std::min(int(w) - 1, x + 5); ++xx) protectedCells[size_t(yy) * w + xx] = 1;
+    }
+    for (uint32_t first = 0; first < cave.cells.size(); ++first) {
+        if (stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+        if (processed[first] || cave.cells[first] != CaveKind::Floor) continue;
+        auto component = caveDistances(cave, std::span(&first, 1));
+        size_t rooms = 0;
+        for (auto r : cave.rooms) rooms += component[r] >= 0;
+        for (size_t i = 0; i < component.size(); ++i) if (component[i] >= 0) processed[i] = 1;
+        if (rooms < 2) continue;
+        bool placed = false;
+        for (uint32_t p = 0; p < cave.cells.size() && !placed; ++p) {
+            if (p % 4096 == 0 && stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+            if (component[p] < 0) continue;
+            const int x = int(p % w), y = int(p / w);
+            if (x < 4 || y < 4 || x + 4 >= int(w) || y + 4 >= int(h)) continue;
+            for (bool horizontal : {true, false}) {
+                const int step = horizontal ? 1 : int(w), side = horizontal ? int(w) : 1;
+                bool fits = true;
+                for (int k = -2; k <= 2; ++k) {
+                    const auto i = uint32_t(int(p) + k * step);
+                    fits &= cave.cells[i] == CaveKind::Floor && !protectedCells[i];
+                    if (std::abs(k) <= 1) fits &= !protectedCells[i - side] && !protectedCells[i + side];
+                }
+                if (!fits) continue;
+                std::vector<uint32_t> removed;
+                for (int k = -1; k <= 1; ++k) for (int sign : {-1, 1}) {
+                    const auto i = uint32_t(int(p) + k * step + sign * side);
+                    if (cave.cells[i] == CaveKind::Floor) { removed.push_back(i); cave.cells[i] = CaveKind::Solid; }
+                }
+                auto after = caveDistances(cave, std::span(&p, 1));
+                bool connected = true;
+                for (size_t i = 0; i < component.size(); ++i)
+                    if (component[i] >= 0 && cave.cells[i] == CaveKind::Floor && after[i] < 0) { connected = false; break; }
+                if (connected) {
+                    cave.corridors.push_back({uint32_t(int(p) - step), p, 3, horizontal}); placed = true; break;
+                }
+                for (auto i : removed) cave.cells[i] = CaveKind::Floor;
+            }
+        }
+    }
+    return {};
+} catch (const std::bad_alloc&) { return std::unexpected(UndergroundError::AllocationFailed); }
 
 std::expected<UndergroundReport, UndergroundError> undergroundReachabilityOf(
 	const SurfaceGrid& surface, const CaveGrid& cave, bool walls, std::stop_token stop) {

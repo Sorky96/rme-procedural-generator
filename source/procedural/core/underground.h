@@ -16,9 +16,18 @@ namespace rme::procedural {
 // Definitions and criteria: docs/procedural/G5_METRICS.md.
 enum class CaveKind : uint8_t { Solid = 0, Floor };
 
+struct CaveCorridor {
+    uint32_t start = 0, door = 0;
+    uint8_t length = 3;
+    bool horizontal = true;
+    bool operator==(const CaveCorridor&) const = default;
+};
+
 struct CaveGrid {
 	GenerationRegion region;   // same x, y, width and height as the surface, z = surface z + 1
 	std::vector<CaveKind> cells;
+    std::vector<uint32_t> rooms;
+    std::vector<CaveCorridor> corridors;
 	[[nodiscard]] bool valid() const noexcept;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
@@ -51,6 +60,7 @@ struct CaveExit {
 	uint32_t entrance = 0; // index into SurfaceGrid::entrances
 	uint32_t cell = 0;     // row-major P
 	uint8_t shape = 0;     // index into shapes
+    bool distant = false;     // exit only: no surface entrance/hole at cell
 };
 struct CaveExitPlan {
 	std::vector<CaveExit> exits;
@@ -68,6 +78,19 @@ struct CaveExitPlan {
 [[nodiscard]] std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 	const SurfaceGrid& surface, const CaveGrid& cave, std::span<const ExitShape> shapes,
 	std::span<const uint8_t> occupied = {}, std::stop_token stop = {});
+
+// One distant ramp per entered Floor component; extends a short cave by a 3-wide
+// tunnel when needed. Occupied marks caps and other protected surface cells.
+[[nodiscard]] std::expected<void, UndergroundError> placeFarCaveExits(
+    const SurfaceGrid& surface, CaveGrid& cave, CaveExitPlan& exits,
+    std::span<const ExitShape> shapes, uint64_t seed,
+    std::span<const uint8_t> occupied = {}, std::stop_token stop = {});
+
+// Narrow existing connections between rooms, retaining connectivity and all
+// transition footprints. Door cells stay Floor (openable, unlocked doors).
+[[nodiscard]] std::expected<void, UndergroundError> placeCaveDoorCorridors(
+    CaveGrid& cave, const CaveExitPlan& exits, std::span<const ExitShape> shapes,
+    std::stop_token stop = {});
 
 // An entrance is reached when its surface cell lies in the start's component (poiReachabilityOf); cave cells are reached when they lie in a
 // 4-connected component of Floor cells that holds the landing of a reached entrance.

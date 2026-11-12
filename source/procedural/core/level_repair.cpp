@@ -177,6 +177,14 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
         auto removed = removeUnenteredCaveComponents(*cave, *exits, stop);
         if (!removed) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
         world.repair.removedCaveComponents = *removed;
+        if (tuning.caveFarExits) {
+            auto distant = placeFarCaveExits(world.surface, *cave, *exits, caveShapes, seed, occupied, stop);
+            if (!distant) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        }
+        if (tuning.caveDoorCorridors) {
+            auto doors = placeCaveDoorCorridors(*cave, *exits, caveShapes, stop);
+            if (!doors) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        }
         world.cave = std::move(*cave); world.exits = std::move(*exits);
         world.decor.push_back({});
     }
@@ -347,13 +355,15 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
             } else if (const auto entry = std::ranges::find(world.surface.entrances, cell); entry != world.surface.entrances.end()) {
                 const auto index = uint32_t(entry - world.surface.entrances.begin());
                 world.surface.entrances.erase(entry);
-                std::erase_if(world.exits.exits, [&](const auto& e) { return e.entrance == index; });
+                std::erase_if(world.exits.exits, [&](const auto& e) { return e.entrance == index && !e.distant; });
                 for (auto& e : world.exits.exits) if (e.entrance > index) --e.entrance;
                 world.exits.skipped.clear();
                 if (world.cave) {
                     auto removed = removeUnenteredCaveComponents(*world.cave, world.exits, stop);
                     if (!removed) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
                     result.removedCaveComponents += *removed;
+                    std::erase_if(world.exits.exits, [&](const auto& e) { return world.cave->cells[e.cell] != CaveKind::Floor; });
+                    std::erase_if(world.cave->corridors, [&](const auto& c) { return world.cave->cells[c.door] != CaveKind::Floor; });
                 }
                 ++result.removedPois;
             } else { result.unrepaired = true; break; }
