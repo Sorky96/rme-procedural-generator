@@ -14,6 +14,8 @@
 #include "editor/operations/draw_operations.h"
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/adapter/terrain_validation.h"
+#include "procedural/adapter/style_profile_store.h"
+#include "procedural/core/style_profile.h"
 #include "procedural/adapter/snapshot_equal.h"
 #include <format>
 #include "brushes/doodad/doodad_brush.h"
@@ -1159,7 +1161,7 @@ void mountainDialogControls(std::ostream& report)
 // Direct prepareTerrain probes alone cannot catch a GUI-only mountain enable/threshold bug.
 class MountainDialogRun final : public wxEvtHandler {
 public:
-    MountainDialogRun(TerrainGeneratorDialog& dialog, Editor& editor, size_t floors) : dialog_(dialog), editor_(editor), floors_(floors),
+    MountainDialogRun(TerrainGeneratorDialog& dialog, Editor& editor, size_t floors, bool requireReachable = false) : dialog_(dialog), editor_(editor), floors_(floors), requireReachable_(requireReachable),
         sourceChanged_(editor.map.hasChanged()), sourceGeneration_(editor.map.getGeneration()), sourceRevision_(editor.map.getChangeTracker().getGeneration()) {
         unchanged();
         Bind(wxEVT_TIMER, &MountainDialogRun::tick, this);
@@ -1169,6 +1171,8 @@ public:
     void stop() {timer_.Stop();}
     bool placed() const {return phase_ == Phase::Placed && failure_.empty();}
     const std::string& failure() const {return failure_;}
+    size_t floors() const {return floors_;}
+    const std::string& status() const {return status_;}
 private:
     enum class Phase {Start, Preparing, Placing, Placed};
     void command(const char* name) {
@@ -1189,9 +1193,13 @@ private:
                 check(status, "GUI mountain status missing");
                 const auto message = status->GetLabel();
                 if (message.StartsWith("Preparing preview")) return;
+                status_ = message.ToStdString();
+                if (requireReachable_) check(message.StartsWith("Reachable:") && !message.Contains("Unrepaired") && !message.Contains("Unreachable"),
+                    "Final-mask repair status: " + status_);
                 check(message.StartsWith("Preview ready:") || message.StartsWith("Reachable:"), "GUI mountain preview refused: " + message.ToStdString());
                 unchanged();
                 auto* floors = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-preview-floor", &dialog_));
+                if (floors && !floors_) floors_ = floors->GetCount();
                 check(floors && floors->GetCount() == floors_, std::format(
                     "GUI mountain floor count: expected {}, got {} (percentage did not enable caps)", floors_, floors ? floors->GetCount() : 0));
                 command("terrain-validate");
@@ -1219,6 +1227,8 @@ private:
     TerrainGeneratorDialog& dialog_;
     Editor& editor_;
     size_t floors_;
+    bool requireReachable_;
+    std::string status_;
     bool sourceChanged_;
     uint64_t sourceGeneration_, sourceRevision_;
     Phase phase_ = Phase::Start;
@@ -1884,6 +1894,120 @@ void levelRepairProbe(std::ostream& report) {
     editor.map.clearChanges();
 }
 
+void finalMaskRepairProbe(std::ostream& report) {
+    UndoLimits undoLimits;
+    // A private, generated m19 tuning fixture: no dependency on a user's saved
+    // profiles or any item IDs. The second run exercises the unmodified defaults.
+    const auto ids = loadedClientAssetIds();
+    check(bool(ids), "Final-mask fixture client assets");
+    StyleProfile fixture;
+    fixture.client = ids->client; fixture.otbSha256 = ids->otbSha256; fixture.datSha256 = ids->datSha256;
+    fixture.tuning = SurfaceTuning{192, 300, 12, 8, 20, 8, 240, 8, 300, 6000, 8};
+    fixture.decorTuning = DecorTuning{565, 17, 369, 239, 23, 29};
+    fixture.palette = {"grass", "dirt", "mountain", "sand", "sea"};
+    fixture.decorPalette = {"trees", "grass tufts", "small rocks"};
+    const auto encoded = serializeProfile(fixture);
+    check(bool(encoded), "Final-mask fixture serialization");
+    const auto directory = styleProfileDirectory();
+    const auto relative = std::filesystem::weakly_canonical(directory).lexically_relative(std::filesystem::current_path().parent_path());
+    check(!relative.empty() && *relative.begin() != "..", "Final-mask profile must stay in private probe directory");
+    std::filesystem::create_directories(directory);
+    const auto file = directory / "i39-m19-fixture.profile";
+    check(!std::filesystem::exists(file), "Final-mask fixture must not overwrite a profile");
+    {std::ofstream out(file); out << *encoded; check(bool(out), "Final-mask profile write");}
+    for (const bool regression : {true, false}) {
+        check(g_gui.NewMap(), "Final-mask GUI map");
+        auto& editor = *g_gui.GetCurrentEditor();
+        size_t expectedActions = 0;
+        if (regression) {
+            GenerationConfig config{{1000, 1000, 7, 300, 300}, 1212};
+            config.algorithm = GenerationAlgorithm::Surface; config.vegetation = true;
+            config.surface = *fixture.tuning; config.decor = *fixture.decorTuning;
+            config.surface.shoreSmoothing = 2; config.surface.repairReach = 1;
+            config.surface.fordLength = 48; config.surface.caveEntrances = 10;
+            config.surface.plateauMinTop = 64; config.surface.plateauMaxPercent = 10; config.surface.plateauLevels = 3;
+            GroundProfile p{{"grass", "dirt", "mountain", "sand", "sea", "sea", "cobblestone", "stone floor"}, 8};
+            p.decorCount = 3; p.decor = fixture.decorPalette;
+            p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
+            p.plateauGround = "grass"; p.plateauRamp = "ramp"; p.bridgeBrush = "bridge";
+            auto prepared = prepareTerrain(editor.map, config, p, {1000000, 1100000, 2000000, 8ULL << 30});
+            check(prepared && prepared->levels && !prepared->levels->repair.unrepaired, "Final-mask repaired fixture");
+            std::vector<const PreparedTerrain*> units{&*prepared};
+            if (prepared->cave) units.push_back(prepared->cave.get());
+            for (auto* cap = prepared->plateau.get(); cap; cap = cap->plateau.get()) units.push_back(cap);
+            for (const auto* unit : units) expectedActions += !unit->preview.getChanges().empty();
+            std::vector<uint8_t> rawMask(units.size() * 90000);
+            size_t clearedBorders = 0;
+            for (size_t f = 0; f < units.size(); ++f) {
+                const auto* unit = units[f];
+                auto raw = DrawOperations::prepareTerrainPreview(editor.map, unit->snapshot, unit->plan, {2000000, 2ULL << 30});
+                check(bool(raw), "Final-mask raw bordered fixture");
+                for (size_t i = 0; i < 90000; ++i) {
+                    const Position pos(1000 + int(i % 300), 1000 + int(i / 300), unit->plan.config.region.z);
+                    const auto* before = raw->getBuffer().getTile(pos);
+                    const auto* after = unit->preview.getBuffer().getTile(pos);
+                    if (!before) continue;
+                    rawMask[f * 90000 + i] = (before->ground && before->ground->isBlocking()) ||
+                        std::ranges::any_of(before->items, [](const auto& item) { return item->isBlocking(); });
+                    for (const auto& item : before->items) if (item->isBlocking() && item->isBorder() && after &&
+                        std::ranges::none_of(after->items, [&](const auto& other) { return other->getID() == item->getID(); })) {
+                        ++clearedBorders;
+                        if (clearedBorders == 1) report << std::format("FINAL_MASK_BLOCKER_DIAG position={},{},{} id={} name={} border=true resolvedGround={} resolvedDecor={}\n",
+                            pos.x, pos.y, pos.z, item->getID(), item->getName(), unit->plan.items[i], unit->plan.decor.empty() ? 0 : unit->plan.decor[i]);
+                    }
+                }
+            }
+            const auto rawReach = levelReachabilityOf(prepared->levels->plan, {}, rawMask);
+            check(rawReach && !rawReach->allReached() && prepared->levels->report.allReached() && clearedBorders,
+                "Fixture must require actual post-autoborder repair");
+            check(prepared->levels->repair.repairs <= 64, "Final-mask total repair budget");
+            report << std::format("FINAL_MASK_RAW_REGRESSION_PASS blockingBordersCleared={} repairs={}\n", clearedBorders, prepared->levels->repair.repairs);
+        }
+        auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+        const auto spin = [&](const char* name, int value) {
+            auto* control = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+            check(control, std::format("Final-mask GUI field: {}", name)); control->SetValue(value);
+        };
+        const auto choose = [&](const char* name, int value) {
+            auto* control = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName(name, dialog));
+            check(control, std::format("Final-mask GUI choice: {}", name)); control->SetSelection(value);
+            wxCommandEvent event(wxEVT_CHOICE, control->GetId()); event.SetEventObject(control);
+            control->GetEventHandler()->ProcessEvent(event);
+        };
+        choose("terrain-style", 1);
+        if (regression) {
+            auto* profiles = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-profile", dialog));
+            const int selected = profiles ? profiles->FindString("i39-m19-fixture") : wxNOT_FOUND;
+            check(selected != wxNOT_FOUND, "Final-mask GUI profile offered");
+            choose("terrain-profile", selected);
+            spin("terrain-x", 1000); spin("terrain-y", 1000);
+            spin("terrain-width", 300); spin("terrain-height", 300);
+            spin("terrain-ford-length", 48);
+            auto* vegetation = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-vegetation", dialog));
+            check(vegetation, "Final-mask vegetation control"); vegetation->SetValue(true);
+        }
+        spin("terrain-cave-entrances", 10);
+        spin("terrain-plateau-percent", 10); spin("terrain-plateau-levels", 3);
+        auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+        check(seed, "Final-mask seed field"); seed->SetValue("1212");
+        MountainDialogRun run(*dialog, editor, 0, true);
+        const int modal = dialog->ShowModal(); run.stop();
+        check(modal == wxID_OK && run.placed(), "Final-mask GUI flow: " + run.failure());
+        const auto x = regression ? 998 : 98, side = regression ? 304 : 104;
+        std::vector<std::vector<uint32_t>> after;
+        for (int z = 4; z <= 8; ++z) after.push_back(stackImage(editor.map, x, x, z, side, side));
+        const auto actions = editor.actionQueue->getSize();
+        check(expectedActions ? actions == expectedActions : actions > 0 && actions <= run.floors(), "Final repair must not add Undo actions");
+        for (size_t f = 0; f < actions; ++f) check(editor.actionQueue->undo(), "Final-mask Undo");
+        check(editor.map.getTileCount() == 0, "Final-mask Undo restores empty map");
+        for (size_t f = 0; f < actions; ++f) check(editor.actionQueue->redo(), "Final-mask Redo");
+        for (int z = 4; z <= 8; ++z) check(stackImage(editor.map, x, x, z, side, side) == after[size_t(z - 4)], "Final-mask identical Redo");
+        report << std::format("FINAL_MASK_REPAIR_E2E_PASS seed=1212 regression={} undoRedo={} status={}\n", regression, actions, run.status());
+        dialog->Destroy(); editor.map.clearChanges();
+    }
+    std::filesystem::remove(file);
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -1894,6 +2018,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        finalMaskRepairProbe(report);
         mountainDialogControls(report);
         guiMountainPercentage(report);
         plateaus(report);

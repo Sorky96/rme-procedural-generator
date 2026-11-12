@@ -245,6 +245,28 @@ std::optional<uint64_t> TerrainPreview::currentFingerprint() const noexcept {
 }
 } // namespace rme::procedural
 
+std::expected<void, rme::procedural::PreviewError> DrawOperations::clearTerrainPreviewBlockers(
+    TerrainPreview& preview, std::span<const uint8_t> clear, std::stop_token stop) {
+    if (!wxIsMainThread()) return std::unexpected(PreviewError::WrongThread);
+    const auto& r = preview.config_.region;
+    if (clear.size() != uint64_t(r.width) * r.height || !preview.currentFingerprint())
+        return std::unexpected(PreviewError::InvalidPlan);
+    for (size_t i = 0; i < clear.size(); ++i) {
+        if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(PreviewError::Cancelled);
+        if (!clear[i]) continue;
+        auto* tile = preview.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+        if (!tile || !tile->ground || tile->ground->isBlocking()) return std::unexpected(PreviewError::InvalidPlan);
+        std::erase_if(tile->items, [&](const auto& item) {
+            return item->isBlocking() && (item->isBorder() || std::ranges::binary_search(preview.decorIds_, item->getID()));
+        });
+        TileOperations::update(tile);
+    }
+    const auto fingerprint = preview.currentFingerprint();
+    if (!fingerprint) return std::unexpected(PreviewError::InvalidItem);
+    preview.fingerprint_ = *fingerprint;
+    return {};
+}
+
 std::expected<rme::procedural::TerrainPreview, rme::procedural::PreviewError> DrawOperations::prepareTerrainPreview(
 	const Map& map, const GenerationSnapshot& snapshot, const GroundPlan& plan, PreviewBudget budget, std::stop_token stop) {
 	try {

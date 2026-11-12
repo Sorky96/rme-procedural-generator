@@ -513,7 +513,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	repair_check_->SetName("terrain-repair");
 	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	repair_check_->SetValue(true);
-	repair_check_->SetToolTip("Repairs access across all floors, clearing blocking vegetation and bridging water up to Ford length. Reports unreachable places after at most 64 repairs.");
+	repair_check_->SetToolTip("Repairs access across all floors, including blockers found after autobordering. Clears blocking vegetation and borders on open ground, and bridges water up to Ford length. Shares a total limit of 64 repairs.");
 	form->Add(repair_check_, 1, wxEXPAND);
 
     form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);

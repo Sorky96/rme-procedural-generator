@@ -784,29 +784,55 @@ TerrainPreparationSteps runPreparation(
 		const uint64_t previewBytes = preview->getEstimatedPeakBytes();
 		if (!reserve(previewBytes)) co_return fail(PreparationInputError::MemoryLimit);
 		if (levels) {
-			// Autobordering can add blocking items beside a cliff. Include those
-			// actual resolved items as well as decor; never predict client flags
-			// from a semantic terrain kind or alter the generated payload.
-			std::vector<const TerrainPreview*> previews {&*preview};
-			if (cave) previews.push_back(&cave->preview);
-			for (auto* cap = plateau.get(); cap; cap = cap->plateau.get()) previews.push_back(&cap->preview);
-			for (size_t f = 0; f < previews.size(); ++f) for (size_t i = 0; i < cellCount; ++i) {
-				if (i % 4096 == 0 && stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
-				const Position position(input.config.region.x + int(i % input.config.region.width),
-					input.config.region.y + int(i / input.config.region.width), levels->plan.floors[f].z);
-				const auto* tile = previews[f]->getBuffer().getTile(position);
-				levels->plan.floors[f].walkable[i] &= tile && tile->ground;
-				if (!tile) continue;
-				bool blocks = tile->ground && tile->ground->isBlocking();
-				for (const auto& item : tile->items) blocks |= item->isBlocking();
-				levels->blockingMask[f * cellCount + i] = blocks;
-			}
-			auto reach = levelReachabilityOf(levels->plan, {}, levels->blockingMask, stop);
-			if (!reach) co_return fail(reach.error() == ReachabilityError::Cancelled ?
-				PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
-			levels->report = std::move(*reach);
-            if (input.config.surface.repairReach) levels->repair.unrepaired |=
-                !levels->report.allReached() || levels->report.walkableEdges != levels->report.edges;
+            // Rebuild from the concrete client items after all brush/border passes.
+            // Only vegetation and borders on semantically open cells are removable;
+            // ground, walls, transition items and absent ground stay forbidden.
+            std::vector<TerrainPreview*> previews {&*preview};
+            std::vector<const GroundPlan*> plans {&plan};
+            if (cave) { previews.push_back(&cave->preview); plans.push_back(&cave->plan); }
+            for (auto* cap = plateau.get(); cap; cap = cap->plateau.get()) {
+                previews.push_back(&cap->preview); plans.push_back(&cap->plan);
+            }
+            for (;;) {
+                std::vector<uint8_t> repairMask(levels->blockingMask.size());
+                for (size_t f = 0; f < previews.size(); ++f) for (size_t i = 0; i < cellCount; ++i) {
+                    if (i % 4096 == 0 && stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                    const Position position(input.config.region.x + int(i % input.config.region.width),
+                        input.config.region.y + int(i / input.config.region.width), levels->plan.floors[f].z);
+                    const auto* tile = previews[f]->getBuffer().getTile(position);
+                    levels->plan.floors[f].walkable[i] &= tile && tile->ground;
+                    uint8_t blocks = tile && tile->ground && tile->ground->isBlocking() ? 2 : 0;
+                    if (tile) for (const auto& item : tile->items) if (item->isBlocking()) {
+                        const bool decor = !plans[f]->decor.empty() && plans[f]->decor[i] == item->getID();
+                        blocks = std::max<uint8_t>(blocks, item->isBorder() || decor ? 1 : 2);
+                    }
+                    levels->blockingMask[f * cellCount + i] = blocks != 0;
+                    repairMask[f * cellCount + i] = blocks;
+                }
+                auto reach = levelReachabilityOf(levels->plan, {}, levels->blockingMask, stop);
+                if (!reach) co_return fail(reach.error() == ReachabilityError::Cancelled ?
+                    PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
+                levels->report = std::move(*reach);
+                const bool complete = levels->report.allReached() && levels->report.walkableEdges == levels->report.edges;
+                if (!input.config.surface.repairReach) break;
+                levels->repair.unrepaired = !complete;
+                if (complete || levels->repair.repairs == 64) break;
+                co_await std::suspend_always{};
+                auto repaired = repairLevelReach(levels->plan, repairMask, 64 - levels->repair.repairs, stop);
+                if (!repaired) co_return fail(repaired.error() == ReachabilityError::Cancelled ?
+                    PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
+                if (!repaired->repairs) break; // stable: no legal clearance remains
+                levels->repair.repairs += repaired->repairs;
+                levels->repair.removedDecor += repaired->removedDecor;
+                for (size_t f = 0; f < previews.size(); ++f) {
+                    auto clear = std::span(repairMask).subspan(f * cellCount, cellCount);
+                    for (size_t i = 0; i < cellCount; ++i)
+                        clear[i] = levels->blockingMask[f * cellCount + i] && !clear[i];
+                    auto cleared = DrawOperations::clearTerrainPreviewBlockers(*previews[f], clear, stop);
+                    if (!cleared) co_return fail(cleared.error());
+                }
+                // Re-evaluate the actual payload, never accept a predicted mask.
+            }
 		}
 
 		if (cave && (cave->preview.getChanges().size() > budget.maxChanges - preview->getChanges().size())) co_return fail(PreparationInputError::ChangeLimit);

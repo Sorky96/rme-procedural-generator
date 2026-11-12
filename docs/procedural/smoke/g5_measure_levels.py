@@ -1,4 +1,4 @@
-"""Iteration 38 gate: identical level repair runs, entrances and cap vegetation."""
+"""Iteration 39 gate: identical level repair runs, entrances and cap vegetation."""
 import json
 import re
 import statistics
@@ -8,7 +8,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[3]
 profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10')
-output = root / 'local-data/i38-measurement'
+output = root / 'local-data/i39-measurement'
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length = spec
@@ -21,7 +21,7 @@ def measure(spec):
                        str(profiles / f'{profile}.profile'), str(output), '512',
                        'levelReach=1', f'retrySeeds={retries}', f'buildingDensity={density}',
                        f'pathLength={length}', 'ruinPercent=20', 'campCount=4', 'fordLength=48',
-                       'repairReach=1', 'caveEntrances=4', 'caveExitShapes=ramp',
+                       'repairReach=1', 'caveEntrances=16', 'caveExitShapes=ramp',
                        'plateauMinTop=64', 'plateauMaxPercent=10', 'plateauLevels=3']
             command += [str(seed) for seed in range(1001, 1033)]
             result = subprocess.run(command, capture_output=True)
