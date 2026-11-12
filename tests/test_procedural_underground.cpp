@@ -592,6 +592,17 @@ void testPlateaus()
 }
 
 int main() {
+    {
+        CaveGrid cave {{0, 0, 8, 7, 3}, std::vector<CaveKind>(21, CaveKind::Solid)};
+        cave.cells[8] = cave.cells[9] = cave.cells[11] = cave.cells[12] = CaveKind::Floor;
+        CaveExitPlan exits; exits.exits.push_back({0, 8, 0});
+        auto removed = removeUnenteredCaveComponents(cave, exits);
+        check(removed && *removed == 1 && cave.cells[8] == CaveKind::Floor && cave.cells[9] == CaveKind::Floor &&
+            cave.cells[11] == CaveKind::Solid && cave.cells[12] == CaveKind::Solid, "only entered cave component retained");
+        check(removeUnenteredCaveComponents(cave, {}) == 1 && std::ranges::count(cave.cells, CaveKind::Floor) == 0,
+            "no entrance means no generated cave floor");
+        std::cout << "CAVE_WITH_ENTRANCE_ONLY_PASS\n";
+    }
     testPlateaus();
     testExits();
 	testExitCrossCheck();

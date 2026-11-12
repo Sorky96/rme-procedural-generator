@@ -7,6 +7,7 @@ namespace rme::procedural {
 struct LevelRepairReport {
     uint32_t repairs = 0, bridges = 0, removedCaps = 0, removedPois = 0;
     uint32_t removedDecor = 0;
+    uint32_t removedCaveComponents = 0;
     bool unrepaired = false;
 };
 
@@ -19,8 +20,8 @@ struct LevelWorld {
     LevelRepairReport repair;
 };
 
-// Complete geometry before repair. Filter entrances after caps, then regenerate
-// the cave and its exits. The historical repairReach=0 producer stays separate.
+// Complete geometry before repair. Entrances reserve notches in the first cap.
+// The historical repairReach=0 producer stays separate.
 [[nodiscard]] std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,

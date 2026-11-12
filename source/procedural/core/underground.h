@@ -57,6 +57,10 @@ struct CaveExitPlan {
 	std::vector<uint32_t> skipped; // entrance indices without an exit
 };
 
+// Discard Floor components without a placed entrance/exit, retaining Solid elsewhere.
+[[nodiscard]] std::expected<uint32_t, UndergroundError> removeUnenteredCaveComponents(
+    CaveGrid& cave, const CaveExitPlan& exits, std::stop_token stop = {});
+
 // P = entrance only, first fitting shape in list order. Reserve lower P, landing P - direction
 // and optional tail (the ramp's lower half, usually on the landing), and open surface destination P + direction.
 // Entrances without a fit are skipped; never search adjacent ramp cells.
@@ -87,7 +91,7 @@ struct PlateauGrid {
 };
 std::expected<PlateauGrid, SurfaceError> generatePlateau(
     const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied = {},
-    std::stop_token stop = {}, uint32_t maxPercent = 0
+    std::stop_token stop = {}, uint32_t maxPercent = 0, bool entranceNotches = false
 );
 std::expected<PlateauGrid, SurfaceError> generateNextPlateau(
     const PlateauGrid& lower, uint64_t seed, std::span<const ExitShape> shapes, std::stop_token stop = {}, uint32_t maxPercent = 0

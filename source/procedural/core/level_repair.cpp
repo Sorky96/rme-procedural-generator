@@ -103,7 +103,7 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     std::vector<uint8_t> occupied(n);
     for (size_t i = 0; i < n; ++i) occupied[i] = world.decor[0].cells[i] != DecorKind::None;
     if (tuning.plateauMinTop) {
-        auto cap = generatePlateau(world.surface, seed, tuning.plateauMinTop, capShapes, occupied, stop, tuning.plateauMaxPercent);
+        auto cap = generatePlateau(world.surface, seed, tuning.plateauMinTop, capShapes, occupied, stop, tuning.plateauMaxPercent, true);
         if (!cap) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
         world.caps.push_back(std::move(*cap));
         for (uint32_t k = 2; k <= tuning.plateauLevels; ++k) {
@@ -113,9 +113,6 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
             world.caps.push_back(std::move(*next));
         }
     }
-    if (!world.caps.empty()) std::erase_if(world.surface.entrances, [&](uint32_t i) {
-        return world.caps[0].cells[i] == PlateauKind::Top;
-    });
     if (tuning.caveEntrances) {
         if (!world.caps.empty()) for (size_t i = 0; i < n; ++i)
             occupied[i] |= world.caps[0].cells[i] == PlateauKind::Top;
@@ -123,6 +120,9 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
         if (!cave) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
         auto exits = placeCaveExits(world.surface, *cave, caveShapes, occupied, stop);
         if (!exits) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        auto removed = removeUnenteredCaveComponents(*cave, *exits, stop);
+        if (!removed) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        world.repair.removedCaveComponents = *removed;
         world.cave = std::move(*cave); world.exits = std::move(*exits);
         world.decor.push_back({});
     }
@@ -153,8 +153,25 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
         return std::unexpected(ReachabilityError::InvalidGrid);
     const auto n = world.surface.cells.size();
     const auto w = world.surface.region.width, h = world.surface.region.height;
+    if (!blockingMask.empty() && blockingMask.size() != n * world.decor.size())
+        return std::unexpected(ReachabilityError::InvalidGrid);
     std::vector<uint8_t> mask(blockingMask.begin(), blockingMask.end());
     LevelRepairReport result;
+    result.removedCaveComponents = world.repair.removedCaveComponents;
+    // Start with the undecorated semantic floor (higher caps close their support).
+    // Accept blockers in row-major order only when removal cannot split it.
+    auto undecorated = levelPlanOf(world.surface, walls, rockBlocks, world.cave ? &*world.cave : nullptr,
+        world.exits, shapes, world.caps, world.decor, stop);
+    if (!undecorated) return std::unexpected(undecorated.error());
+    const size_t capBase = world.cave ? 2 : 1;
+    for (size_t f = capBase; f < world.decor.size(); ++f) {
+        auto floorMask = mask.empty() ? std::span<uint8_t>{} : std::span(mask).subspan(f * n, n);
+        auto filtered = preserveDecorationConnectivity(world.decor[f], undecorated->floors[f].walkable,
+            blockingClasses, floorMask, stop);
+        if (!filtered) return std::unexpected(filtered.error() == SurfaceError::Cancelled ? ReachabilityError::Cancelled :
+            filtered.error() == SurfaceError::AllocationFailed ? ReachabilityError::AllocationFailed : ReachabilityError::InvalidGrid);
+        result.removedDecor += *filtered;
+    }
     const auto clearDecor = [&](size_t f, uint32_t i) {
         if (!world.decor[f].cells.empty() && world.decor[f].cells[i] != DecorKind::None) {
             world.decor[f].cells[i] = DecorKind::None; ++result.removedDecor;
@@ -279,6 +296,11 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                 std::erase_if(world.exits.exits, [&](const auto& e) { return e.entrance == index; });
                 for (auto& e : world.exits.exits) if (e.entrance > index) --e.entrance;
                 world.exits.skipped.clear();
+                if (world.cave) {
+                    auto removed = removeUnenteredCaveComponents(*world.cave, world.exits, stop);
+                    if (!removed) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+                    result.removedCaveComponents += *removed;
+                }
                 ++result.removedPois;
             } else { result.unrepaired = true; break; }
             ++result.repairs;

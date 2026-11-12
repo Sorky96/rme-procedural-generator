@@ -114,6 +114,43 @@ std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, u
 	return cave;
 }
 
+std::expected<uint32_t, UndergroundError> removeUnenteredCaveComponents(
+    CaveGrid& cave, const CaveExitPlan& exits, std::stop_token stop) try {
+    if (!cave.valid()) return std::unexpected(UndergroundError::InvalidGrid);
+    const auto w = cave.region.width, h = cave.region.height;
+    std::vector<uint8_t> seen(cave.cells.size()), entered(cave.cells.size());
+    for (const auto& exit : exits.exits) {
+        if (exit.cell >= cave.cells.size() || cave.cells[exit.cell] != CaveKind::Floor)
+            return std::unexpected(UndergroundError::InvalidGrid);
+        entered[exit.cell] = 1;
+    }
+    std::vector<uint32_t> queue;
+    uint32_t removed = 0;
+    for (uint32_t start = 0; start < cave.cells.size(); ++start) {
+        if (stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+        if (seen[start] || cave.cells[start] != CaveKind::Floor) continue;
+        queue.clear(); queue.push_back(start); seen[start] = 1;
+        bool hasEntrance = false;
+        for (size_t head = 0; head < queue.size(); ++head) {
+            if (head % 4096 == 0 && stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+            const auto i = queue[head];
+            hasEntrance |= entered[i] != 0;
+            const auto visit = [&](uint32_t j) {
+                if (!seen[j] && cave.cells[j] == CaveKind::Floor) { seen[j] = 1; queue.push_back(j); }
+            };
+            if (i >= w) visit(i - w);
+            if (i % w) visit(i - 1);
+            if (i % w + 1 < w) visit(i + 1);
+            if (i / w + 1 < h) visit(i + w);
+        }
+        if (!hasEntrance) {
+            ++removed;
+            for (const auto i : queue) cave.cells[i] = CaveKind::Solid;
+        }
+    }
+    return removed;
+} catch (const std::bad_alloc&) { return std::unexpected(UndergroundError::AllocationFailed); }
+
 std::expected<CaveExitPlan, UndergroundError> placeCaveExits(
 	const SurfaceGrid& surface, const CaveGrid& cave, std::span<const ExitShape> shapes,
 	std::span<const uint8_t> occupied, std::stop_token stop) {
@@ -237,7 +274,7 @@ std::expected<UndergroundReport, UndergroundError> undergroundReachabilityOf(
 static std::expected<PlateauGrid, SurfaceError> buildPlateau(
     const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied,
     std::stop_token stop, uint32_t maxPercent, std::span<const uint8_t> lowerOpen = {}, std::span<const uint8_t> lowerTail = {},
-    uint64_t limitCells = 0
+    uint64_t limitCells = 0, bool entranceNotches = false
 )
 try {
     if (stop.stop_requested()) {
@@ -303,6 +340,14 @@ try {
         for (const auto* cells : {&surface.doors, &surface.gaps, &surface.fires, &surface.entrances})
             for (auto i : *cells) reserved[i] = 1;
         for (size_t i = 0; i < n; ++i) candidate[i] = distance[i] >= inset;
+        if (entranceNotches) for (const auto entry : surface.entrances) {
+            const int x = int(entry % w), y = int(entry / w);
+            for (int yy = std::max(0, y - 1); yy <= std::min(h - 1, y + 1); ++yy)
+                for (int xx = std::max(0, x - 1); xx <= std::min(w - 1, x + 1); ++xx) {
+                    candidate[index(xx, yy)] = 0;
+                    reserved[index(xx, yy)] = 1;
+                }
+        }
         const auto covered = std::ranges::count(candidate, uint8_t(1));
         if (!lowerOpen.empty() && maxPercent && uint64_t(covered) * 100 > limitCells * maxPercent) continue;
         const auto open = [&](int x, int y) {
@@ -451,10 +496,10 @@ try {
 
 std::expected<PlateauGrid, SurfaceError> generatePlateau(
     const SurfaceGrid& surface, uint64_t seed, uint32_t minTop, std::span<const ExitShape> shapes, std::span<const uint8_t> occupied,
-    std::stop_token stop, uint32_t maxPercent
+    std::stop_token stop, uint32_t maxPercent, bool entranceNotches
 )
 {
-    return buildPlateau(surface, seed, minTop, shapes, occupied, stop, maxPercent);
+    return buildPlateau(surface, seed, minTop, shapes, occupied, stop, maxPercent, {}, {}, 0, entranceNotches);
 }
 
 std::expected<PlateauGrid, SurfaceError>

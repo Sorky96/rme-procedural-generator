@@ -778,8 +778,7 @@ void testLevelRepair() {
     }
     repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
     check(repaired && repaired->repairs == 64 && repaired->removedPois == 64 && repaired->unrepaired, "64 repair limit");
-    // Mountain generation precedes the entrance filter; every retained entrance
-    // and ramp arrival must have an open supporting surface cell.
+    // Entrances survive mountain generation in a reserved 3x3 notch.
     auto entranceSurface = grid(25, 25, SurfaceKind::Grass);
     for (uint32_t y = 4; y <= 20; ++y) for (uint32_t x = 4; x <= 20; ++x) entranceSurface.cells[y * 25 + x] = SurfaceKind::Rock;
     const uint32_t entry = 20 * 25 + 12;
@@ -788,8 +787,45 @@ void testLevelRepair() {
     SurfaceTuning tuning; tuning.caveEntrances = 1; tuning.plateauMinTop = 64;
     constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}};
     auto built = buildLevelWorld(entranceSurface, {}, 1729, tuning, {}, shapes, shapes, false);
-    check(built && !built->caps.empty() && built->caps[0].cells[entry] == PlateauKind::Top &&
-        built->surface.entrances.empty(), "manual entrance under generated cap is filtered");
+    check(built && !built->caps.empty() && built->surface.entrances == entranceSurface.entrances, "entrance retained before caps");
+    for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+        const auto i = uint32_t(int(entry) + dy * 25 + dx);
+        check(built->caps[0].cells[i] == PlateauKind::None && built->surface.cells[i] == entranceSurface.cells[i],
+            "notch retains original surface rock, without cap support");
+    }
+    for (uint64_t seed = 1; seed <= 120; ++seed) {
+        auto surface = grid(36, 36, SurfaceKind::Grass);
+        StableRandom random(seed, 383);
+        for (uint32_t y = 4; y < 31; ++y) for (uint32_t x = 4; x < 31; ++x)
+            if (random.bounded(20)) surface.cells[y * 36 + x] = SurfaceKind::Rock;
+        const auto entrance = 30 * 36 + 8 + uint32_t(random.bounded(18));
+        surface.cells[entrance] = SurfaceKind::Rock; surface.entrances = {entrance};
+        auto a = buildLevelWorld(surface, {}, seed, tuning, {}, shapes, shapes, true);
+        auto b = buildLevelWorld(surface, {}, seed, tuning, {}, shapes, shapes, true);
+        check(a && b && a->surface.fingerprint() == b->surface.fingerprint() && a->cave->cells == b->cave->cells &&
+            a->exits.exits.size() == b->exits.exits.size() && a->repair.removedCaveComponents == b->repair.removedCaveComponents,
+            "notch/cave generation deterministic");
+        for (size_t k = 0; k < a->caps.size(); ++k)
+            check(a->caps[k].cells == b->caps[k].cells && a->caps[k].ramps == b->caps[k].ramps &&
+                a->decor[k + 2].cells == b->decor[k + 2].cells, "all cap floors deterministic");
+        if (!a->caps.empty()) for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
+            check(a->caps[0].cells[size_t(int(entrance) + 36 * dy + dx)] == PlateauKind::None, "random entrance notch");
+        // Independent flood from every actual ramp: no retained Floor may be orphaned.
+        std::vector<uint8_t> seen(36 * 36);
+        std::vector<uint32_t> queue;
+        for (const auto& exit : a->exits.exits) { seen[exit.cell] = 1; queue.push_back(exit.cell); }
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const int x = int(queue[head] % 36), y = int(queue[head] / 36);
+            for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+                const int xx = x + dx, yy = y + dy;
+                if (xx < 0 || yy < 0 || xx >= 36 || yy >= 36) continue;
+                const auto j = uint32_t(yy * 36 + xx);
+                if (!seen[j] && a->cave->cells[j] == CaveKind::Floor) { seen[j] = 1; queue.push_back(j); }
+            }
+        }
+        for (size_t i = 0; i < seen.size(); ++i) check(bool(seen[i]) == (a->cave->cells[i] == CaveKind::Floor), "independent entered cave flood");
+    }
+    std::cout << "LEVEL_NOTCH_CAVE_CROSS_CHECK randomPlans=120\n";
     std::cout << "LEVEL_REPAIR_HAND_PASS\n";
 }
 

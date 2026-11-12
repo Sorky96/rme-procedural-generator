@@ -2,6 +2,8 @@
 #pragma once
 
 #include "procedural/core/surface.h"
+#include <array>
+#include <span>
 
 namespace rme::procedural {
 
@@ -28,5 +30,12 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(
 // A chance above 1000 (treeScalePermille above maxTreeScalePermille) is SurfaceError::InvalidParameters.
 std::expected<DecorGrid, SurfaceError> generateDecoration(
 	const SurfaceGrid& grid, uint64_t seed, const DecorTuning& tuning, std::stop_token stop = {});
+
+// Exact row-major blocker placement on a semantic floor. Resolved mask values:
+// 1 = removable decor, 2 = permanent blocker; empty uses conservative classes.
+// Rejected blockers are removed from both decoration and the supplied mask.
+std::expected<uint32_t, SurfaceError> preserveDecorationConnectivity(
+    DecorGrid& decor, std::span<const uint8_t> open, std::array<bool, decorKindCount> blockingClasses,
+    std::span<uint8_t> blockingMask = {}, std::stop_token stop = {});
 
 } // namespace rme::procedural
