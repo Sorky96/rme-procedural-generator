@@ -257,3 +257,16 @@ Kryterium 4(a) i 4(b) **nie spełnione dla m19**; 4(c), 4(d), 4(e) spełnione dl
 **Pozostałe odchylenia i granice.** Dla zgodności starych wyników filtr wejść jest włączony razem z nową naprawą; `repairReach=0` zachowuje historyczne wejścia pod czapą. W starej macierzy sondy `SURFACE_CAVE_GUI_PASS` opcja repairReach była 1, więc jej wyniki zmieniają się świadomie; przy blokującym gruncie „mountain” naprawa może usunąć wszystkie wejścia i zgłosić `unrepaired`. Stare przypadki bez naprawy zachowują odciski i liczby poza szacunkami pamięci (nowe pola struktur). Adapter naprawia przed autoborderem, potem sprawdza pełną maskę rozwiązanych kafli i raportuje pozostałe blokady; nie ponawia wyszukiwania na końcowej masce obramowań. W złożonym przypadku sondy końcowy stan jest `unrepaired=true`, przy zgodnym z mapą modelu.
 
 **Nie zweryfikowane:** wygląd mostów, przesiek i gór w GUI, ruch w grze, oryginalny RME, inne klienty, naprawa 2000×2000. Pełny raport, surowe wiersze sond i pomiary są w niecommitowanym `local-data/I37_IMPLEMENTATION_REPORT.md`.
+
+## Iteracja 38 (2026-11-12)
+
+Commity `504236b`, `bd6b921`. Roślinność czap jest dopuszczana tylko wtedy, gdy nie rozcina składowej (dokładny test punktu artykulacji, poza limitem 64 napraw). Wejścia do jaskiń wybierane przed czapami, z wcięciem 3×3 w C_1. Składowe jaskiń bez umieszczonego wejścia są zamieniane na Solid. Build, 18/18 testów, obie sondy PASS, `SUITE_PASS` w głównym checkoucie. Odcisk Seed 1729 100×100 = 17159159863505677800 bez zmian.
+
+| Profil | Pełne seedy (1 próba) | Krawędzie Z | Naprawy | Usunięte POI | Mediana wejść | Flora czap z−1/z−2/z−3 | Usunięte jaskinie |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| m06 | 32/32 | 774/774 | 3 [0..7] | 0,04510 % | 2 | 97,4 / 93,0 / 89,0 % | 0 |
+| m19 | 32/32 | 750/750 | 15 [6..23] | 0,06986 % | 3 | 94,7 / 92,0 / 80,1 % | 2 |
+
+Kryteria (a), (b), (c), (d), (e), (g) spełnione; dwa przebiegi bajtowo identyczne. **(f) nie spełnione:** mediana wejść 2 i 3 (wymagane ≥8). Przyczyna leży przed czapami: selektor RockFace z iteracji 29 (Rock z trzech stron, otwarte południe, budżet 6800 prób, odstęp 24) znajduje mało kandydatów, a dopasowanie wyjścia odrzuca wejścia z roślinnością w miejscu docelowym. Seed m06 1013 nie ma wejść już przy `repairReach=0`. Bramka G5: **FAIL tylko na (f)**.
+
+**Nie zweryfikowane:** wygląd w GUI, ruch w grze. Raport: niecommitowany `local-data/I38_IMPLEMENTATION_REPORT.md` w worktree.
