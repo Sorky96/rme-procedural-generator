@@ -286,3 +286,23 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 6. Ocena w GUI należy do użytkownika: linia stanu po Preview, ostrzeżenie przy Place, odrzucanie seedów.
 
 **Zastrzeżenia z góry.** Model nie sprawdza ruchu na serwerze gry (floorchange, kolizje potworów, przedmioty ruchome). Ukośne kroki pomijane (4-sąsiedztwo), więc model jest ostrożniejszy niż gra. Szczytów bez rampy generator nie tworzy od iteracji 32, więc kategoria „czapy” powinna wyjść 100 %, jeśli rampy są poprawne.
+
+### Iteracja 37 — naprawa osiągalności na modelu wielopiętrowym, mosty, domknięcie D22 (FAZA 5; zapisana 2026-11-12 przed implementacją i przed pomiarem; decyzja użytkownika: „D22 — weź to teraz”)
+
+**Powód.** Iteracja 36: bramka G5 FAIL (0 z 32 seedów w m06 i m19). Przyczyny: naprawa z iteracji 23 używa starego modelu (roślinność ignorowana, skała przechodnia), zbocza czap przecinają ląd, wejścia jaskini na zboczu. Z D22 zostały: mosty z osobnym przedmiotem i rzeczywista naprawa (walidator w oknie, odrzucanie seedów i sprawdzenie przechodności na kliencie zrobione w iteracji 36).
+
+**Definicje.**
+- **Wejścia jaskini:** nie na komórce zbocza ani pod czapą: wejście tylko na skale powierzchni, nad którą (te same x, y) nie ma czapy, z lądowiskiem jak dotąd. Kolejność generowania: czapy przed wejściami albo filtr po czapach (decyzja wykonawcy, opisana).
+- **Naprawa (nowa, `repairLevelReach`, rdzeń):** po wygenerowaniu całego planu (z czapami i jaskinią), dopóki istnieje nieosiągalny POI: najtańsza ścieżka (Dijkstra, 4-sąsiedztwo, deterministyczne remisy wg (y, x)) na piętrze POI od dowolnej komórki składowej POI do dowolnej komórki składowej startu po koszcie: chodliwe 1, dekor blokujący 3 (usuwany), woda 6 (staje się mostem, gdy ścieżka przecina wodę na ≤ `fordLength` kolejnych komórkach), skała bez czapy 1, **zbocze i mur zabronione**. Po naprawie ponowna ocena `levelReachabilityOf`. Na piętrach czap ścieżka po komórkach czapy tego piętra (dekor 3, zbocze wyższego piętra zabronione). Gdy dla czapy nie ma ścieżki: **czapa i wyższe nad nią są usuwane**, a jej zbocze wraca do skały powierzchni (przechodniej). Gdy POI na powierzchni nie ma ścieżki: POI usuwany (budynek, obóz, wejście jaskini), z liczbą usuniętych w raporcie. Limit 64 napraw na plan; po przekroczeniu raport „unrepaired”.
+- **Mosty:** komórki wody na ścieżce naprawy dostają nowy rodzaj `Bridge`: grunt wody zostaje, na nim przedmiot mostu z pędzla profilu `bridgeBrush` (w 10.98 pędzel „bridge”, typ wall; wykonawca sprawdza, czy rysuje się poprawnie przez DrawOperations i czy jest chodliwy — flagi klienta; jeśli nie, zgłasza i zostaje bród z piasku jak w iteracji 14b, bez zmiany kryteriów). Most chodliwy w modelu. Bez pędzla mostu: bród (stare zachowanie).
+- **Pole `repairReach`** (istniejące) przełącza nową naprawę zamiast starej; stare zachowanie przy `repairReach` 0 bez zmian. Okno: istniejące „Repair unreachable places” + nowe „Bridge brush” (lista pędzli, domyślnie „bridge”, puste = brody).
+
+**Kryteria.**
+1. `repairReach` 0: odcisk Seed 1729 100×100 = 17159159863505677800, stare testy, odciski i wiersze sond bez zmian (poza świadomie zmienionymi przypadkami z naprawą, opisanymi).
+2. Testy rdzenia: ręczne siatki — przejście przez dekor, most przez rzekę, zakaz zbocza, usunięcie czapy bez ścieżki i powrót skały, usunięcie POI bez ścieżki, wejście jaskini nie pod czapą, limit napraw; porównanie z niezależnym Dijkstrą na ≥ 100 losowych planach; deterministyczność.
+3. Sonda G1 `--surface` (10.98): plan z mostem — przedmiot mostu na wodzie po Commit, komórka mostu bez flagi blokowania, model zgodny z mapą (jak iteracja 36), Undo/Redo; plan z usuniętym dekorem — brak przedmiotu blokującego na ścieżce; nowy wiersz `LEVEL_REPAIR_E2E_PASS`.
+4. **Bramka G5** (ustawienia z iteracji 36 plus `repairReach` 1, reguła ostrożna dekoru w `style_render`): (a) bez ponawiania pełna osiągalność w ≥ 30 z 32 seedów każdego profilu; (b) z ≤ 8 próbami 32 z 32; (c) 100 % krawędzi Z chodliwych; (d) dwa przebiegi identyczne. Dodatkowo podawane: liczba napraw, mostów, usuniętych czap, usuniętych POI (mediana [min..max]). **(e)** usunięte POI ≤ 2 % wszystkich POI każdego profilu (naprawa nie może „zaliczyć” bramki kasowaniem).
+5. Wszystkie testy rdzenia i obie sondy PASS po przebudowie, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: mosty, ścieżki przez las, góry bez szczytu po naprawie.
+
+**Zastrzeżenia z góry.** Most typu wall w 10.98 może mieć kierunki (poziomy, pionowy); wykonawca opisuje, jak dobiera wariant. Wycięty dekor może wyglądać jak przesieka. Ruch w grze nie sprawdzany.
