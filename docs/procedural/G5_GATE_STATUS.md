@@ -270,3 +270,16 @@ Commity `504236b`, `bd6b921`. Roślinność czap jest dopuszczana tylko wtedy, g
 Kryteria (a), (b), (c), (d), (e), (g) spełnione; dwa przebiegi bajtowo identyczne. **(f) nie spełnione:** mediana wejść 2 i 3 (wymagane ≥8). Przyczyna leży przed czapami: selektor RockFace z iteracji 29 (Rock z trzech stron, otwarte południe, budżet 6800 prób, odstęp 24) znajduje mało kandydatów, a dopasowanie wyjścia odrzuca wejścia z roślinnością w miejscu docelowym. Seed m06 1013 nie ma wejść już przy `repairReach=0`. Bramka G5: **FAIL tylko na (f)**.
 
 **Nie zweryfikowane:** wygląd w GUI, ruch w grze. Raport: niecommitowany `local-data/I38_IMPLEMENTATION_REPORT.md` w worktree.
+
+## Iteracja 39 (2026-11-12)
+
+Commity `bee437a`, `4b4c75a`. Po autoborderze adapter buduje maskę blokad z faktycznych przedmiotów i naprawia ponownie (łączny limit 64, przez DrawOperations, w istniejących krokach Undo). Selektor wejść do jaskiń znajduje więcej kandydatów. Build, 18/18 testów, obie sondy PASS, `SUITE_PASS` w głównym checkoucie; `FINAL_MASK_REPAIR_E2E_PASS` (seed 1212, Undo/Redo).
+
+| Profil | Pełne seedy (1 próba) | Krawędzie Z | Naprawy | Usunięte POI | Mediana wejść | Flora czap z−1/z−2/z−3 |
+|---|---:|---:|---:|---:|---:|---:|
+| m06 | 32/32 | 1808/1808 | 2 [0..5] | 0,04040 % | 18,5 | 97,5 / 93,2 / 86,2 % |
+| m19 | 32/32 | 2737/2737 | 14,5 [6..22] | 0,04465 % | 33 | 94,7 / 91,5 / 79,2 % |
+
+Kryteria (a)–(g) spełnione, dwa przebiegi bajtowo identyczne: **G5_GATE_PASS** dla osiągalności i poziomów. Zdiagnozowany bloker zastępczego przypadku: krawędź „shallow water” (border morza, przedmiot blokujący) na trawie, niewidoczna dla naprawy sprzed autoborderu; jest teraz usuwana.
+
+**Nie zweryfikowane:** dokładny przypadek ze zrzutu (91 miejsc, (1149,1026,7)) nie został odtworzony, bo nieznane były pozostałe ustawienia; wygląd w GUI po usunięciu krawędzi wody; ruch w grze.
