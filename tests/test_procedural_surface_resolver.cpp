@@ -31,6 +31,11 @@
 #include <wx/checkbox.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/button.h>
+#include <wx/choice.h>
+#include <wx/combobox.h>
+#include <wx/spinctrl.h>
+#include <wx/timer.h>
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
@@ -1147,6 +1152,205 @@ void mountainDialogControls(std::ostream& report)
     report << "SURFACE_MOUNTAIN_DIALOG_PERCENT_PASS\n";
 }
 
+// Exercise the actual dialog request, timer preparation, validation and Place handlers.
+// Direct prepareTerrain probes alone cannot catch a GUI-only mountain enable/threshold bug.
+class MountainDialogRun final : public wxEvtHandler {
+public:
+    MountainDialogRun(TerrainGeneratorDialog& dialog, Editor& editor, size_t floors) : dialog_(dialog), editor_(editor), floors_(floors),
+        sourceChanged_(editor.map.hasChanged()), sourceGeneration_(editor.map.getGeneration()), sourceRevision_(editor.map.getChangeTracker().getGeneration()) {
+        unchanged();
+        Bind(wxEVT_TIMER, &MountainDialogRun::tick, this);
+        timer_.Start(20);
+    }
+    ~MountainDialogRun() override {timer_.Stop();}
+    void stop() {timer_.Stop();}
+    bool placed() const {return phase_ == Phase::Placed && failure_.empty();}
+    const std::string& failure() const {return failure_;}
+private:
+    enum class Phase {Start, Preparing, Placing, Placed};
+    void command(const char* name) {
+        auto* button = dynamic_cast<wxButton*>(wxWindow::FindWindowByName(name, &dialog_));
+        check(button && button->IsEnabled(), std::format("GUI mountain command unavailable: {}", name));
+        wxCommandEvent event(wxEVT_BUTTON, button->GetId());
+        event.SetEventObject(button);
+        button->GetEventHandler()->ProcessEvent(event);
+    }
+    void tick(wxTimerEvent&) {
+        try {
+            check(std::chrono::steady_clock::now() - started_ < std::chrono::seconds(120), "GUI mountain dialog timeout");
+            if (phase_ == Phase::Start) {
+                phase_ = Phase::Preparing;
+                command("terrain-preview");
+            } else if (phase_ == Phase::Preparing) {
+                auto* status = wxWindow::FindWindowByName("terrain-status", &dialog_);
+                check(status, "GUI mountain status missing");
+                const auto message = status->GetLabel();
+                if (message.StartsWith("Preparing preview")) return;
+                check(message.StartsWith("Preview ready:") || message.StartsWith("Reachable:"), "GUI mountain preview refused: " + message.ToStdString());
+                unchanged();
+                auto* floors = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-preview-floor", &dialog_));
+                check(floors && floors->GetCount() == floors_, std::format(
+                    "GUI mountain floor count: expected {}, got {} (percentage did not enable caps)", floors_, floors ? floors->GetCount() : 0));
+                command("terrain-validate");
+                check(status->GetLabel().StartsWith("Preview validated."), "GUI mountain validation refused");
+                unchanged();
+                phase_ = Phase::Placing;
+            } else if (phase_ == Phase::Placing) {
+                phase_ = Phase::Placed;
+                command("terrain-place");
+                check(!dialog_.IsShown(), "GUI mountain Place refused");
+                timer_.Stop();
+            }
+        } catch (const std::exception& error) {
+            failure_ = error.what();
+            timer_.Stop();
+            dialog_.EndModal(wxID_CANCEL);
+        }
+    }
+    void unchanged() const {
+        check(g_gui.GetCurrentEditor() == &editor_ && editor_.map.getTileCount() == 0 &&
+            editor_.actionQueue->getSize() == 0 && editor_.map.hasChanged() == sourceChanged_ &&
+            editor_.map.getGeneration() == sourceGeneration_ && editor_.map.getChangeTracker().getGeneration() == sourceRevision_,
+            "GUI Preview/Validate changed source or history");
+    }
+    TerrainGeneratorDialog& dialog_;
+    Editor& editor_;
+    size_t floors_;
+    bool sourceChanged_;
+    uint64_t sourceGeneration_, sourceRevision_;
+    Phase phase_ = Phase::Start;
+    std::string failure_;
+    std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
+    wxTimer timer_{this};
+};
+
+void guiMountainPercentage(std::ostream& report) {
+    UndoLimits undoLimits;
+    constexpr uint32_t side = 300;
+    for (const uint32_t percent : {10u, 0u}) {
+        check(g_gui.NewMap(), "GUI mountain editor creation");
+        auto& editor = *g_gui.GetCurrentEditor();
+        auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+        const auto spin = [&](const char* name, int value) {
+            auto* control = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+            check(control, std::format("GUI mountain field missing: {}", name));
+            control->SetValue(value);
+        };
+        auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-style", dialog));
+        check(style, "GUI mountain terrain style missing");
+        style->SetSelection(1);
+        wxCommandEvent changed(wxEVT_CHOICE, style->GetId());
+        changed.SetEventObject(style);
+        style->GetEventHandler()->ProcessEvent(changed);
+        spin("terrain-width", side); spin("terrain-height", side);
+        spin("terrain-plateau-percent", percent); spin("terrain-plateau-levels", 3);
+        auto* area = wxWindow::FindWindowByName("terrain-plateau-percent", dialog);
+        wxSpinEvent areaChanged(wxEVT_SPINCTRL, area->GetId());
+        areaChanged.SetEventObject(area);
+        area->GetEventHandler()->ProcessEvent(areaChanged);
+        auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+        check(seed && seed->GetValue() == "1729", "GUI mountain seed fixture");
+        GenerationConfig config{{100,100,7,side,side},1729};
+        config.algorithm = GenerationAlgorithm::Surface;
+        config.surface.shoreSmoothing = 2;
+        config.surface.repairReach = 1;
+        config.surface.plateauMinTop = percent ? 64 : 0;
+        config.surface.plateauMaxPercent = percent;
+        config.surface.plateauLevels = 3;
+        GroundProfile model = profile;
+        const auto brush = [&](const char* name) {
+            auto* choice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName(name, dialog));
+            check(choice, std::format("GUI mountain brush field missing: {}", name));
+            return std::string(choice->GetValue().utf8_str());
+        };
+        model.plateauGround = brush("terrain-plateau-ground");
+        model.plateauCliff = brush("terrain-plateau-cliff");
+        model.plateauRamp = brush("terrain-plateau-ramp");
+        const auto snapshot = captureGenerationSnapshot(editor.map,config,coreBudget,{254016,64ULL*1024*1024});
+        check(bool(snapshot), "GUI mountain reference snapshot");
+        const auto keepClear = surfaceKeepClear(*snapshot,profileNeedsEdgeClearance(model));
+        auto protection = snapshot->input.protection;
+        for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
+        const auto surface = generateSurface({config.region,config.seed,config.surface},snapshot->input.extent,surfaceBudget,
+            snapshot->input.mask,protection);
+        check(bool(surface), "GUI mountain reference surface");
+        auto shapeConfig = config;
+        shapeConfig.surface.plateauMinTop = 64; // Resolve fixture geometry even in the GUI-disabled case.
+        const auto shapes = resolvePlateauBrushes(model,shapeConfig);
+        check(bool(shapes), "GUI mountain reference ramp shapes");
+        std::vector<PlateauGrid> caps;
+        if (percent) {
+            auto first = generatePlateau(*surface,config.seed,64,shapes->shapes,{}, {},percent);
+            check(first && first->components, "GUI mountain reference has no first cap");
+            caps.push_back(std::move(*first));
+            for (uint32_t level = 2; level <= 3; ++level) {
+                auto next = generateNextPlateau(caps.back(),config.seed ^ (uint64_t(level)<<48),shapes->shapes,{},percent);
+                check(bool(next), "GUI mountain reference upper cap");
+                if (!next->components) break;
+                caps.push_back(std::move(*next));
+            }
+            check(caps.size() >= 2, "GUI mountain fixture needs cliff ground on an upper floor");
+        }
+        MountainDialogRun run(*dialog,editor,caps.size()+1);
+        const int modal = dialog->ShowModal();
+        run.stop();
+        check(modal == wxID_OK && run.placed(), "GUI mountain flow failed: " + run.failure());
+        check(!wxWindow::FindWindowByName("terrain-plateau-min-top", dialog), "Obsolete mountain cell-count input remains");
+        auto* levels = wxWindow::FindWindowByName("terrain-plateau-levels", dialog);
+        check(area->IsEnabled() && levels && levels->IsEnabled() == (percent > 0), "GUI mountain percentage control state");
+        check(editor.actionQueue->getSize() == caps.size()+1, "GUI mountain history floor count");
+        const auto* grass = g_brushes.getBrush(model.plateauGround)->as<GroundBrush>();
+        const auto* cliff = g_brushes.getBrush(model.plateauCliff)->as<GroundBrush>();
+        const auto hasItem = [](const Tile* tile, uint16_t id) {
+            return tile && ((tile->ground && tile->ground->getID() == id) ||
+                std::ranges::any_of(tile->items,[&](const auto& item){return item->getID() == id;}));
+        };
+        uint64_t previousArea = uint64_t(side)*side;
+        for (size_t level = 0; level < caps.size(); ++level) {
+            uint64_t actualArea = 0, upperCliffs = 0;
+            const auto& cap = caps[level];
+            for (size_t i = 0; i < cap.cells.size(); ++i) {
+                const Position position(100+int(i%side),100+int(i/side),6-int(level));
+                const auto* tile = editor.map.getTile(position);
+                const auto* actual = tile && tile->ground ? brushOf(tile->ground->getID()) : nullptr;
+                const bool top = cap.cells[i] == PlateauKind::Top;
+                check((actual == grass || actual == cliff) == top, "GUI mountain cap footprint differs from reference");
+                if (!top) continue;
+                ++actualArea; upperCliffs += actual == cliff;
+                const auto* support = editor.map.getTile(Position(position.x,position.y,position.z+1));
+                check(support && support->ground && brushOf(support->ground->getID()) == cliff,
+                    "GUI mountain cap has no cliff ground below it");
+            }
+            check(actualArea*100 <= previousArea*percent, "GUI mountain percentage denominator");
+            if (!level) check(actualArea*100 > uint64_t(std::ranges::count(surface->cells,SurfaceKind::Rock))*percent,
+                "GUI mountain percentage was incorrectly limited to rock area");
+            if (level+1 < caps.size()) check(upperCliffs > 0, "GUI mountain cliff ground missing on upper floor");
+            for (const auto& ramp : cap.ramps) {
+                const Position head(100+int(ramp.cell%side),100+int(ramp.cell/side),7-int(level));
+                const auto& ids = shapes->items[ramp.shape];
+                const auto* opening = editor.map.getTile(Position(head.x,head.y,head.z-1));
+                check(hasItem(editor.map.getTile(head),ids.ramp) && opening && opening->ground && opening->ground->getID() == ids.opening,
+                    "GUI mountain ramp or upper opening missing");
+            }
+            report << std::format("SURFACE_MOUNTAIN_GUI_FLOOR_PASS\tpercent={}\tz={}\tcap={}\tcliff={}\tramps={}\n",
+                percent,6-int(level),actualArea,upperCliffs,cap.ramps.size());
+            previousArea = actualArea;
+        }
+        if (!percent) for (int z = 4; z < 7; ++z) for (uint32_t y = 100; y < 400; ++y) for (uint32_t x = 100; x < 400; ++x)
+            check(!editor.map.getTile(x,y,z), "Zero GUI percentage generated an upper floor");
+        std::vector<std::vector<uint32_t>> payloads;
+        for (int z = 4; z <= 7; ++z) payloads.push_back(stackImage(editor.map,100,100,z,side,side));
+        for (size_t i = 0; i <= caps.size(); ++i) check(editor.actionQueue->undo(), "GUI mountain Undo");
+        check(editor.map.getTileCount() == 0, "GUI mountain Undo left tiles");
+        for (size_t i = 0; i <= caps.size(); ++i) check(editor.actionQueue->redo(), "GUI mountain Redo");
+        for (int z = 4; z <= 7; ++z) check(stackImage(editor.map,100,100,z,side,side) == payloads[size_t(z-4)], "GUI mountain Redo payload changed");
+        editor.map.clearChanges();
+        dialog->Destroy();
+        g_gui.CloseCurrentEditor();
+        report << std::format("SURFACE_MOUNTAIN_GUI_PERCENT_PASS\tseed=1729\tside=300\tpercent={}\tfloors={}\n",percent,caps.size()+1);
+    }
+}
+
 void plateaus(std::ostream& report, uint32_t levels = 1)
 {
     UndoLimits limits;
@@ -1548,6 +1752,7 @@ void run() {
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
         mountainDialogControls(report);
+        guiMountainPercentage(report);
         plateaus(report);
         plateaus(report, 3);
         levelReachabilityProbe(report);

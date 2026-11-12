@@ -58,6 +58,7 @@ namespace {
 using namespace rme::procedural;
 
 using namespace rme::ui::terrain_generator;
+constexpr uint32_t mountainMinTopCells = 64;
 // Native bitmap conversion allowance on top of the RGB image (32-bit DIB plus headers). Policy estimate.
 constexpr uint64_t bitmapOverheadBytes = 64 * 1024;
 
@@ -622,7 +623,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(label("Mountain area z-1 (%):"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
     plateau_percent_spin_->SetToolTip(
-        "Maximum cap area as a percentage of the generated rectangle. 0 disables mountains. "
+        "Maximum cap area as a percentage of the whole generated rectangle. 0 disables mountains. "
         "Whole rock components are selected; components exceeding the remaining limit are skipped. "
         "Each higher cap uses the same percentage of the cap below it."
     );
@@ -1062,7 +1063,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
     config.surface.plateauLevels = uint32_t(plateau_levels_spin_->GetValue());
     config.surface.plateauMaxPercent = natural ? uint32_t(plateau_percent_spin_->GetValue()) : 0;
     // Keep the component-size filter internal; the dialog enables mountains by area percentage.
-    config.surface.plateauMinTop = config.surface.plateauMaxPercent ? 64 : 0;
+    config.surface.plateauMinTop = config.surface.plateauMaxPercent ? mountainMinTopCells : 0;
     if (config.surface.plateauMinTop) {
         request.profile.plateauCliff = std::string(plateau_cliff_choice_->GetValue().utf8_str());
         request.profile.plateauGround = std::string(plateau_ground_choice_->GetValue().utf8_str());
