@@ -11,6 +11,12 @@ struct LevelRepairReport {
     bool unrepaired = false;
 };
 
+struct MountainPass {
+    uint32_t from = 0, to = 0;
+    std::vector<uint32_t> cells; // complete three-wide surface footprint
+    std::vector<uint8_t> before; // counterfactual walkability before this cut
+};
+
 struct LevelWorld {
     SurfaceGrid surface;
     std::optional<CaveGrid> cave;
@@ -18,7 +24,13 @@ struct LevelWorld {
     std::vector<PlateauGrid> caps;
     std::vector<DecorGrid> decor; // surface, optional cave, then caps
     LevelRepairReport repair;
+    std::vector<MountainPass> passes;
 };
+
+// Carve valleys, rebuild caps/ramp selections and reselect affected entrances.
+[[nodiscard]] std::expected<void, ReachabilityError> placeMountainPasses(
+    LevelWorld& world, uint64_t seed, const SurfaceTuning& tuning,
+    std::span<const ExitShape> shapes, std::stop_token stop = {});
 
 // Complete geometry before repair. Entrances reserve notches in the first cap.
 // The historical repairReach=0 producer stays separate.

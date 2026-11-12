@@ -2,6 +2,7 @@
 // Z entrances, the cave below and the reachability through Z (G5 iteration 27). Hand counted layouts plus a cross-check.
 #include "procedural/core/reachability.h"
 #include "procedural/core/underground.h"
+#include "procedural/core/level_repair.h"
 
 #include <algorithm>
 #include <chrono>
@@ -700,7 +701,62 @@ void testFarExitsAndDoors() {
     std::cout << "CAVE_FAR_EXIT_DOOR_CROSS_CHECK 120/120\n";
 }
 
+void testMountainPasses() {
+    auto surface=grid(80,80,SurfaceKind::Grass);
+    for (uint32_t y=8;y<72;++y) for (uint32_t x=30;x<50;++x) surface.cells[y*80+x]=SurfaceKind::Rock;
+    constexpr ExitShape shapes[]={{ExitDirection::North,0,1,true},{ExitDirection::South,0,-1,true},
+        {ExitDirection::East,-1,0,true},{ExitDirection::West,1,0,true}};
+    SurfaceTuning tuning; tuning.plateauMinTop=64; tuning.plateauLevels=3;
+    auto old=buildLevelWorld(surface,{},1729,tuning,{}, {},shapes,false);
+    check(bool(old),"mountain pass baseline");
+    if (!old) return;
+    const auto oldRamps=old->caps.front().ramps;
+    auto disabled=*old;
+    check(bool(placeMountainPasses(disabled,1729,tuning,shapes)) && disabled.surface.fingerprint()==old->surface.fingerprint()
+        && disabled.caps.front().cells==old->caps.front().cells && disabled.caps.front().ramps==oldRamps,"passes=0 untouched");
+    tuning.passes=4;
+    auto result=buildLevelWorld(surface,{},1729,tuning,{}, {},shapes,false);
+    auto again=buildLevelWorld(surface,{},1729,tuning,{}, {},shapes,false);
+    check(result && again && !result->passes.empty(),"manual massif gets a pass");
+    if (!result || !again || result->passes.empty()) return;
+    check(result->caps.front().components >= 2, "split cap retains both large sides");
+    check(result->surface.fingerprint()==again->surface.fingerprint() && result->passes.size()==again->passes.size(),"mountain pass determinism");
+    std::vector<uint8_t> band(surface.cells.size());
+    for (const auto& pass:result->passes) for (auto i:pass.cells) {
+        band[i]=1;
+        check(result->surface.cells[i]==SurfaceKind::Path,"pass walkable ground");
+        for (const auto& cap:result->caps) check(cap.cells[i]==PlateauKind::None,"pass has no cap");
+    }
+    for (const auto& cap:result->caps) {
+        for (const auto& r:cap.ramps) check(!band[r.cell] && !band[r.destination],"reselected ramp outside pass");
+        std::vector<uint8_t> seen(band.size());
+        for (uint32_t i=0;i<band.size();++i) if (!seen[i] && cap.cells[i]==PlateauKind::Top) {
+            std::vector<uint32_t> q{i};seen[i]=1;
+            for (size_t j=0;j<q.size();++j) {
+                const auto p=q[j];
+                for (auto k:{p%80?p-1:6400u,p%80<79?p+1:6400u,p>=80?p-80:6400u,p+80<6400?p+80:6400u})
+                    if (k<6400 && !seen[k] && cap.cells[k]==PlateauKind::Top) {seen[k]=1;q.push_back(k);}
+            }
+            check(q.size()>=(cap.region.z==6?64u:30u),"split cap minimum");
+        }
+    }
+    // Force an old ramp into the selected valley, then run the same selector.
+    auto onRamp=*old; const auto& p=result->passes.front();
+    onRamp.caps.front().ramps={{p.cells[p.cells.size()/2],p.cells[p.cells.size()/2]+1,0,0}};
+    check(bool(placeMountainPasses(onRamp,1729,tuning,shapes)),"ramp on pass reselected");
+    for (const auto& cap:onRamp.caps) for (const auto& r:cap.ramps)
+        check(onRamp.surface.cells[r.cell]!=SurfaceKind::Path,"old ramp on pass removed");
+    tuning.passes=9;
+    check(!placeMountainPasses(onRamp,1729,tuning,shapes),"invalid pass count");
+    tuning.passes=4;
+    std::stop_source stop; stop.request_stop();
+    auto cancelled=placeMountainPasses(onRamp,1729,tuning,shapes,stop.get_token());
+    check(!cancelled && cancelled.error()==ReachabilityError::Cancelled,"mountain pass cancellation");
+    std::cout << "MOUNTAIN_PASS_CORE_PASS count=" << result->passes.size() << '\n';
+}
+
 int main() {
+    testMountainPasses();
     testFarExitsAndDoors();
     {
         CaveGrid cave {{0, 0, 8, 7, 3}, std::vector<CaveKind>(21, CaveKind::Solid)};

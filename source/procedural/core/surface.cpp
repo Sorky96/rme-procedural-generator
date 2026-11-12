@@ -909,6 +909,14 @@ bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uin
 	return true;
 }
 
+std::expected<void, SurfaceError> reselectCaveEntrances(SurfaceGrid& grid, const SurfaceConfig& config, std::stop_token stop) try {
+    if (!grid.valid()) return std::unexpected(SurfaceError::InvalidRegion);
+    grid.entrances.clear();
+    if (!placeEntrances(grid.cells, grid.region.width, grid.region.height, config, grid.entrances, stop))
+        return std::unexpected(SurfaceError::Cancelled);
+    return {};
+} catch (const std::bad_alloc&) { return std::unexpected(SurfaceError::AllocationFailed); }
+
 bool SurfaceGrid::valid() const noexcept {
 	if (region.x < 0 || region.y < 0 || region.z < 0 || region.width == 0 || region.height == 0 ||
 		uint64_t(region.width) * region.height != cells.size()) return false;
@@ -975,7 +983,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
         || config.tuning.rockPasses > 1 || config.tuning.shoreSmoothing > 4 || config.tuning.shoreRadius > 8
         || config.tuning.repairReach > 1 || config.tuning.ruinPercent > 100 || config.tuning.campCount > 50
         || config.tuning.caveEntrances > 20 || config.tuning.plateauLevels < 1 || config.tuning.plateauLevels > 3
-        || config.tuning.plateauMaxPercent > 100
+        || config.tuning.plateauMaxPercent > 100 || config.tuning.passes > 8
         || (config.tuning.plateauMinTop && (config.tuning.plateauMinTop < 16 || config.tuning.plateauMinTop > 4096))
         || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole || config.tuning.dirtPermille > 1000
         || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {

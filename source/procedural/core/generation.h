@@ -60,6 +60,7 @@ struct SurfaceTuning {
     uint32_t plateauMaxPercent = 0; // 0 unlimited, otherwise 1..100
     bool caveFarExits = true; // only used when caves are enabled
     bool caveDoorCorridors = false;
+    uint32_t passes = 0; // mountain valleys, 0..8; zero preserves historical output
     bool operator==(const SurfaceTuning&) const = default;
 };
 

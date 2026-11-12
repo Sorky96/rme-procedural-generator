@@ -164,6 +164,10 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
             world.caps.push_back(std::move(*next));
         }
     }
+    if (tuning.passes) {
+        auto passes = placeMountainPasses(world, seed, tuning, capShapes, stop);
+        if (!passes) return std::unexpected(passes.error());
+    }
     if (tuning.caveEntrances) {
         auto cave = generateCave(world.surface, seed, stop);
         if (!cave) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
