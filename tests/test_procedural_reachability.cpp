@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <iostream>
+#include <format>
+#include <limits>
 #include <iterator>
 #include <numeric>
 #include <stop_token>
@@ -563,9 +565,116 @@ void testCrossCheck() {
 	}
 	check(compared == 160, "all 160 comparisons matched");
 }
+void testLevels() {
+	LevelPlan p {{10, 20, 7, 5, 5}};
+	for (int z : {7, 8, 6, 5, 4}) p.floors.push_back({z, std::vector<uint8_t>(25, 1)});
+	p.edges = {{{0, 12}, {1, 12}}, {{1, 13}, {0, 14}}, {{0, 1}, {2, 2}}, {{2, 3}, {3, 4}}, {{3, 5}, {4, 6}}};
+	for (uint32_t f = 0; f < 5; ++f) for (uint32_t i = 0; i < 25; ++i)
+		p.pois.push_back({f == 1 ? LevelPoiKind::CaveCell : LevelPoiKind::Cap, {f, i}});
+	auto r = levelReachabilityOf(p, {});
+	check(r && r->allReached() && r->walkableEdges == 5, "all five floors and all Z transition kinds");
+	p.floors[3].walkable.assign(25, 0); p.floors[3].walkable[24] = 1;
+	r = levelReachabilityOf(p, {});
+	check(r && !r->allReached() && r->pockets[3] == 1 && r->pockets[4] == 1, "isolated z-2 pocket and disconnected z-3");
+	check(r && r->categories[size_t(LevelPoiKind::Cap)].reached == 50 &&
+		r->categories[size_t(LevelPoiKind::Cap)].total == 76 && r->firstUnreachable.size() == 16 &&
+		r->firstUnreachable.front().z == 4 && r->firstUnreachable.front().x == 10 &&
+		r->firstUnreachable.front().y == 20, "hand-counted cap category and bounded category/z/y/x report order");
+	LevelPlan d {{0, 0, 7, 3, 1}, {{7, {1, 1, 1}, {DecorKind::None, DecorKind::Stone, DecorKind::None}}}};
+	d.pois.push_back({LevelPoiKind::Door, {0, 2}});
+	r = levelReachabilityOf(d, {true, true, true});
+	check(r && !r->allReached() && !r->walkable[1], "conservative mixed decoration blocks");
+	r = levelReachabilityOf(d, {true, true, true}, std::vector<uint8_t>(3));
+	check(r && r->allReached(), "actual nonblocking variant overrides class");
+	d.floors[0].walkable[1] = 0;
+	r = levelReachabilityOf(d, {}, std::vector<uint8_t>(3));
+	check(r && !r->walkable[1], "mask cannot open slope or wall");
+	d.pois.push_back({LevelPoiKind::Site, {99, 0}});
+	check(!levelReachabilityOf(d, {}), "invalid POI rejected before sorting");
+	std::stop_source cancel; cancel.request_stop();
+	check(!levelReachabilityOf(p, {}, {}, cancel.get_token()), "level cancellation");
+	auto s = grid(7, 7, SurfaceKind::Grass);
+	fillRect(s, 1, 1, 5, 5, SurfaceKind::Floor);
+	s.doors = {3}; // invalid door outside Floor
+	check(!levelPlanOf(s, true, false, nullptr, {}, {}, {}), "semantic invalid surface");
+	s.doors = {10};
+	auto plan = levelPlanOf(s, true, false, nullptr, {}, {}, {});
+	check(plan && plan->floors[0].walkable[10] && !plan->floors[0].walkable[8] && plan->floors[0].walkable[24], "door, wall and interior semantics");
+	s = grid(7, 7, SurfaceKind::Rock);
+	plan = levelPlanOf(s, false, true, nullptr, {}, {}, {});
+	check(plan && std::ranges::count(plan->floors[0].walkable, 1) == 0, "blocking client rock");
+	plan = levelPlanOf(s, false, false, nullptr, {}, {}, {});
+	check(plan && std::ranges::count(plan->floors[0].walkable, 1) == 49, "open rocky ground");
+	s.entrances = {24};
+	CaveGrid cave;
+	cave.region = s.region; ++cave.region.z;
+	cave.cells.assign(49, CaveKind::Floor);
+	constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}};
+	CaveExitPlan exits; exits.exits.push_back({0, 24, 0});
+	std::vector<PlateauGrid> caps;
+	for (int z : {6, 5, 4}) {
+		PlateauGrid cap;
+		cap.region = s.region; cap.region.z = z;
+		cap.cells.assign(49, PlateauKind::None); cap.landings.assign(49, 0);
+		cap.cells[25] = PlateauKind::Top;
+		cap.ramps.push_back({24, 25, 0, 0});
+		caps.push_back(std::move(cap));
+	}
+	plan = levelPlanOf(s, false, false, &cave, exits, shapes, caps);
+	check(plan && plan->edges.size() == 5 && plan->floors.size() == 5, "semantic cave entrance, exit and three cap edges");
+	check(plan && !plan->floors[0].walkable[25] && !plan->floors[2].walkable[25] &&
+		plan->floors[2].walkable[24] && plan->floors[4].walkable[25], "same-xy supporting slopes and upper openings");
+}
+
+// Independent graph traversal: deliberately scans pairs and Z edges instead of
+// sharing the production neighbour builder, CSR storage or start selection.
+void testLevelCrossCheck() {
+	uint64_t random = 1729;
+	const auto next = [&]() { random = random * 6364136223846793005ULL + 1; return random >> 32; };
+	for (int round = 0; round < 100; ++round) {
+		LevelPlan p {{100, 200, 7, 7, 6}};
+		for (int z : {7, 8, 6, 5, 4}) {
+			LevelFloor f {z, std::vector<uint8_t>(42)};
+			for (auto& cell : f.walkable) cell = next() % 3 != 0;
+			p.floors.push_back(std::move(f));
+		}
+		for (uint32_t f : {1, 2, 3, 4}) for (int e = 0; e < 4; ++e)
+			p.edges.push_back({{f < 3 ? 0u : f - 1, uint32_t(next() % 42)}, {f, uint32_t(next() % 42)}});
+		std::vector<uint8_t> mask(210), open(210), seen(210);
+		for (size_t i = 0; i < 210; ++i) {
+			mask[i] = next() % 7 == 0;
+			open[i] = p.floors[i / 42].walkable[i % 42] && !mask[i];
+			p.pois.push_back({LevelPoiKind(i % levelPoiKindCount), {uint32_t(i / 42), uint32_t(i % 42)}});
+		}
+		std::optional<uint32_t> start;
+		int best = std::numeric_limits<int>::max();
+		for (uint32_t i = 0; i < 42; ++i) if (open[i]) {
+			const int x = 2 * int(i % 7) - 6, y = 2 * int(i / 7) - 5;
+			if (x*x + y*y < best) { best = x*x + y*y; start = i; }
+		}
+		std::vector<uint32_t> queue;
+		if (start) { queue.push_back(*start); seen[*start] = 1; }
+		for (size_t h = 0; h < queue.size(); ++h) for (uint32_t j = 0; j < 210; ++j) {
+			if (!open[j] || seen[j]) continue;
+			const auto i = queue[h];
+			bool edge = i / 42 == j / 42 && std::abs(int(i % 7) - int(j % 7)) + std::abs(int((i % 42) / 7) - int((j % 42) / 7)) == 1;
+			for (const auto& e : p.edges) {
+				const auto a = e.a.floor * 42 + e.a.cell, b = e.b.floor * 42 + e.b.cell;
+				edge |= (i == a && j == b) || (i == b && j == a);
+			}
+			if (edge) { seen[j] = 1; queue.push_back(j); }
+		}
+		const auto got = levelReachabilityOf(p, {}, mask), again = levelReachabilityOf(p, {}, mask);
+		check(got && got->start == start && got->walkable == open && got->reached == seen, std::format("3D independent cross-check {}", round));
+		check(got && again && got->reached == again->reached && got->pockets == again->pockets, "3D deterministic");
+	}
+	std::cout << "LEVEL_REACHABILITY_PASS randomPlans=100\n";
+}
 } // namespace
 
 int main() {
+	testLevels();
+	testLevelCrossCheck();
 	testLakeSplit();
 	testBuilding();
 	testDoorIntoWater();

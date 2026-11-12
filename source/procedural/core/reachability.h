@@ -2,6 +2,9 @@
 #pragma once
 
 #include "procedural/core/surface.h"
+#include "procedural/core/decoration.h"
+#include "procedural/core/underground.h"
+#include <array>
 
 #include <cstdint>
 #include <expected>
@@ -72,5 +75,51 @@ struct PoiReport {
 
 [[nodiscard]] std::expected<PoiReport, ReachabilityError> poiReachabilityOf(
 	const SurfaceGrid& grid, bool walls, std::stop_token stop = {});
+
+// Iteration 36. Floors share the region's x/y rectangle; index 0 is the surface.
+// Producers translate plan semantics (including cliffs and ramp openings) to walkable.
+// No item IDs or client/editor objects cross this boundary.
+enum class LevelPoiKind : uint8_t { Door, Site, CaveEntrance, CaveExit, Cap, CaveCell, Count };
+inline constexpr size_t levelPoiKindCount = size_t(LevelPoiKind::Count);
+struct LevelFloor {
+	int32_t z = 0;
+	std::vector<uint8_t> walkable;
+	std::vector<DecorKind> decor; // empty means no decoration
+};
+struct LevelCell {
+	uint32_t floor = 0, cell = 0;
+	bool operator==(const LevelCell&) const = default;
+};
+struct LevelEdge { LevelCell a, b; };
+struct LevelPoi { LevelPoiKind kind; LevelCell at; };
+struct LevelPlan {
+	GenerationRegion region;
+	std::vector<LevelFloor> floors;
+	std::vector<LevelEdge> edges; // undirected Z transitions only
+	std::vector<LevelPoi> pois;
+};
+// Semantics only: cap Top closes the supporting lower cell; landings and ramp
+// openings are open. Only entrances with an actually placed exit produce Z edges.
+[[nodiscard]] std::expected<LevelPlan, ReachabilityError> levelPlanOf(
+	const SurfaceGrid& surface, bool walls, bool rockBlocks, const CaveGrid* cave,
+	const CaveExitPlan& exits, std::span<const ExitShape> caveShapes,
+	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor = {}, std::stop_token stop = {});
+struct LevelCount { uint64_t reached = 0, total = 0; };
+struct UnreachablePlace { LevelPoiKind kind; int32_t x = 0, y = 0, z = 0; };
+struct LevelReachabilityReport {
+	std::optional<uint32_t> start;
+	std::array<LevelCount, levelPoiKindCount> categories {};
+	std::vector<uint32_t> pockets; // every unreachable same-floor component, including small ones
+	std::vector<UnreachablePlace> firstUnreachable; // category, z, y, x; at most 16
+	std::vector<uint8_t> walkable, reached; // floor-major, then row-major; also used by the map probe
+	uint64_t edges = 0, walkableEdges = 0;
+	[[nodiscard]] bool allReached() const noexcept;
+};
+// A supplied mask replaces class blocking, one byte per cell in floor-major order.
+// Without it, any blocking variant makes the entire class blocking (conservative).
+// Mask never makes a semantically closed cell walkable. Checks cancellation during traversal.
+[[nodiscard]] std::expected<LevelReachabilityReport, ReachabilityError> levelReachabilityOf(
+	const LevelPlan& plan, std::array<bool, decorKindCount> blockingClasses,
+	std::span<const uint8_t> blockingMask = {}, std::stop_token stop = {});
 
 } // namespace rme::procedural

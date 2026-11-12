@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <new>
+#include <numeric>
+#include <tuple>
 #include <vector>
 
 namespace rme::procedural {
@@ -207,5 +209,162 @@ std::expected<ReachabilityReport, ReachabilityError> reachabilityOf(const Surfac
 	}
 	return report;
 }
+
+bool LevelReachabilityReport::allReached() const noexcept {
+	return start && std::ranges::all_of(categories, [](const auto& c) { return c.reached == c.total; });
+}
+
+std::expected<LevelPlan, ReachabilityError> levelPlanOf(
+	const SurfaceGrid& surface, bool walls, bool rockBlocks, const CaveGrid* cave,
+	const CaveExitPlan& exits, std::span<const ExitShape> caveShapes,
+	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor, std::stop_token stop) try {
+	if (!surface.valid() || caps.size() > 3) return std::unexpected(ReachabilityError::InvalidGrid);
+	const auto n = surface.cells.size();
+	const auto w = surface.region.width;
+	auto labels = walkableLabelsOf(surface.cells, w, surface.region.height, openingsOf(surface), walls, stop);
+	if (!labels) return std::unexpected(labels.error());
+	LevelPlan p {surface.region};
+	p.floors.push_back({surface.region.z, std::vector<uint8_t>(n)});
+	for (size_t i = 0; i < n; ++i) p.floors[0].walkable[i] = labels->label[i] && !(rockBlocks && surface.cells[i] == SurfaceKind::Rock);
+	for (const auto i : surface.doors) p.pois.push_back({LevelPoiKind::Door, {0, i}});
+	for (const auto i : surface.sites) p.pois.push_back({LevelPoiKind::Site, {0, i}});
+	const auto matches = [&](const GenerationRegion& r, int z) {
+		auto expected = surface.region; expected.z = z; return expected == r;
+	};
+	const auto shifted = [&](uint32_t cell, int dx, int dy) -> std::optional<uint32_t> {
+		const int64_t x = int64_t(cell % w) + dx, y = int64_t(cell / w) + dy;
+		if (cell >= n || x < 0 || y < 0 || x >= w || y >= surface.region.height) return {};
+		return uint32_t(y * w + x);
+	};
+	constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+	if (cave) {
+		if (!cave->valid() || !matches(cave->region, surface.region.z + 1)) return std::unexpected(ReachabilityError::InvalidGrid);
+		p.floors.push_back({cave->region.z, std::vector<uint8_t>(n)});
+		for (uint32_t i = 0; i < n; ++i) if (cave->cells[i] == CaveKind::Floor) {
+			p.floors[1].walkable[i] = 1;
+			p.pois.push_back({LevelPoiKind::CaveCell, {1, i}});
+		}
+		for (const auto& e : exits.exits) {
+			if (e.entrance >= surface.entrances.size() || e.cell >= n || e.shape >= caveShapes.size()) return std::unexpected(ReachabilityError::InvalidGrid);
+			const auto d = size_t(caveShapes[e.shape].direction);
+			if (d >= 4) return std::unexpected(ReachabilityError::InvalidGrid);
+			const auto arrival = shifted(e.cell, dx[d], dy[d]);
+			if (!arrival) return std::unexpected(ReachabilityError::InvalidGrid);
+			const auto entry = surface.entrances[e.entrance];
+			p.edges.push_back({{0, entry}, {1, entry}});
+			p.edges.push_back({{1, e.cell}, {0, *arrival}});
+			p.pois.push_back({LevelPoiKind::CaveEntrance, {0, entry}});
+			p.pois.push_back({LevelPoiKind::CaveExit, {1, e.cell}});
+		}
+	} else if (!exits.exits.empty()) return std::unexpected(ReachabilityError::InvalidGrid);
+	for (size_t k = 0; k < caps.size(); ++k) {
+		const auto& cap = caps[k];
+		if (!matches(cap.region, surface.region.z - int(k + 1)) || cap.cells.size() != n || cap.landings.size() != n)
+			return std::unexpected(ReachabilityError::InvalidGrid);
+		const uint32_t upper = uint32_t(p.floors.size()), lower = k ? upper - 1 : 0;
+		p.floors.push_back({cap.region.z, std::vector<uint8_t>(n)});
+		for (uint32_t i = 0; i < n; ++i) {
+			p.floors[upper].walkable[i] = cap.cells[i] == PlateauKind::Top || cap.landings[i];
+			if (cap.cells[i] == PlateauKind::Top) p.floors[lower].walkable[i] = 0;
+		}
+		for (const auto& r : cap.ramps) {
+			if (r.cell >= n || r.destination >= n) return std::unexpected(ReachabilityError::InvalidGrid);
+			p.floors[upper].walkable[r.cell] = 1; // floorchange-down opening
+			p.edges.push_back({{lower, r.cell}, {upper, r.destination}});
+		}
+	}
+	for (size_t f = cave ? 2 : 1; f < p.floors.size(); ++f)
+		for (uint32_t i = 0; i < n; ++i) if (p.floors[f].walkable[i]) p.pois.push_back({LevelPoiKind::Cap, {uint32_t(f), i}});
+	if (!decor.empty()) {
+		if (decor.size() != p.floors.size()) return std::unexpected(ReachabilityError::InvalidGrid);
+		for (size_t f = 0; f < decor.size(); ++f) {
+			if (decor[f].cells.empty()) continue;
+			if (decor[f].cells.size() != n || !matches(decor[f].region, p.floors[f].z)) return std::unexpected(ReachabilityError::InvalidGrid);
+			p.floors[f].decor = decor[f].cells;
+		}
+	}
+	return p;
+} catch (const std::bad_alloc&) { return std::unexpected(ReachabilityError::AllocationFailed); }
+
+std::expected<LevelReachabilityReport, ReachabilityError> levelReachabilityOf(
+	const LevelPlan& p, std::array<bool, decorKindCount> blockingClasses,
+	std::span<const uint8_t> mask, std::stop_token stop) try {
+	const size_t n = size_t(p.region.width) * p.region.height, floors = p.floors.size();
+	if (!n || !floors || floors > 5 || n > UINT32_MAX / floors || p.floors[0].z != p.region.z ||
+		(!mask.empty() && mask.size() != n * floors)) return std::unexpected(ReachabilityError::InvalidGrid);
+	LevelReachabilityReport r;
+	r.walkable.resize(n * floors); r.reached.resize(n * floors); r.pockets.resize(floors);
+	for (size_t f = 0; f < floors; ++f) {
+		if (p.floors[f].walkable.size() != n || (!p.floors[f].decor.empty() && p.floors[f].decor.size() != n))
+			return std::unexpected(ReachabilityError::InvalidGrid);
+		for (size_t other = 0; other < f; ++other) if (p.floors[other].z == p.floors[f].z) return std::unexpected(ReachabilityError::InvalidGrid);
+		for (size_t i = 0; i < n; ++i) {
+			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(ReachabilityError::Cancelled);
+			const auto kind = p.floors[f].decor.empty() ? 0 : size_t(p.floors[f].decor[i]);
+			if (kind > decorKindCount) return std::unexpected(ReachabilityError::InvalidGrid);
+			const bool blocks = mask.empty() ? kind && blockingClasses[kind - 1] : mask[f * n + i] != 0;
+			r.walkable[f * n + i] = p.floors[f].walkable[i] && !blocks;
+		}
+	}
+	const auto validCell = [&](LevelCell c) { return c.floor < floors && c.cell < n; };
+	const auto index = [&](LevelCell c) { return uint32_t(c.floor * n + c.cell); };
+	// CSR adjacency for sparse Z edges: no allocation or edge-list scan per visited cell.
+	std::vector<uint32_t> offsets(n * floors + 1), neighbours(p.edges.size() * 2);
+	for (const auto& e : p.edges) {
+		if (!validCell(e.a) || !validCell(e.b) || std::abs(int64_t(p.floors[e.a.floor].z) - p.floors[e.b.floor].z) != 1)
+			return std::unexpected(ReachabilityError::InvalidGrid);
+		++offsets[index(e.a) + 1]; ++offsets[index(e.b) + 1];
+		++r.edges; r.walkableEdges += r.walkable[index(e.a)] && r.walkable[index(e.b)];
+	}
+	std::partial_sum(offsets.begin(), offsets.end(), offsets.begin());
+	auto cursor = offsets;
+	for (const auto& e : p.edges) {
+		neighbours[cursor[index(e.a)]++] = index(e.b);
+		neighbours[cursor[index(e.b)]++] = index(e.a);
+	}
+	WalkableLabels startLabels;
+	startLabels.label.assign(r.walkable.begin(), r.walkable.begin() + n);
+	r.start = fixedStartOf(startLabels, p.region.width, p.region.height);
+	std::vector<uint32_t> q;
+	q.reserve(n * floors);
+	const auto adjacent = [&](uint32_t i, auto visit) {
+		const auto cell = i % n, x = cell % p.region.width, y = cell / p.region.width;
+		if (x) visit(i - 1);
+		if (x + 1 < p.region.width) visit(i + 1);
+		if (y) visit(i - p.region.width);
+		if (y + 1 < p.region.height) visit(i + p.region.width);
+	};
+	if (r.start) { r.reached[*r.start] = 1; q.push_back(*r.start); }
+	for (size_t h = 0; h < q.size(); ++h) {
+		if (h % 4096 == 0 && stop.stop_requested()) return std::unexpected(ReachabilityError::Cancelled);
+		const auto visit = [&](uint32_t i) { if (r.walkable[i] && !r.reached[i]) { r.reached[i] = 1; q.push_back(i); } };
+		adjacent(q[h], visit);
+		for (auto j = offsets[q[h]]; j < offsets[q[h] + 1]; ++j) visit(neighbours[j]);
+	}
+	auto seen = r.reached;
+	for (uint32_t i = 0; i < seen.size(); ++i) if (r.walkable[i] && !seen[i]) {
+		++r.pockets[i / n]; q.clear(); q.push_back(i); seen[i] = 1;
+		for (size_t h = 0; h < q.size(); ++h) {
+			if (h % 4096 == 0 && stop.stop_requested()) return std::unexpected(ReachabilityError::Cancelled);
+			adjacent(q[h], [&](uint32_t j) { if (r.walkable[j] && !seen[j]) { seen[j] = 1; q.push_back(j); } });
+		}
+	}
+	std::vector<LevelPoi> sorted = p.pois;
+	for (const auto& poi : sorted)
+		if (!validCell(poi.at) || size_t(poi.kind) >= levelPoiKindCount) return std::unexpected(ReachabilityError::InvalidGrid);
+	std::ranges::sort(sorted, [&](const auto& a, const auto& b) {
+		return std::tuple{a.kind, p.floors[a.at.floor].z, a.at.cell} < std::tuple{b.kind, p.floors[b.at.floor].z, b.at.cell};
+	});
+	for (const auto& poi : sorted) {
+		// Caps count walkable terrace cells; every cave Floor remains a target,
+		// including one obstructed by a resolved client item.
+		if (poi.kind == LevelPoiKind::Cap && !r.walkable[index(poi.at)]) continue;
+		auto& c = r.categories[size_t(poi.kind)]; ++c.total; c.reached += r.reached[index(poi.at)] != 0;
+		if (!r.reached[index(poi.at)] && r.firstUnreachable.size() < 16)
+			r.firstUnreachable.push_back({poi.kind, p.region.x + int32_t(poi.at.cell % p.region.width),
+				p.region.y + int32_t(poi.at.cell / p.region.width), p.floors[poi.at.floor].z});
+	}
+	return r;
+} catch (const std::bad_alloc&) { return std::unexpected(ReachabilityError::AllocationFailed); }
 
 } // namespace rme::procedural
