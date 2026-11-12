@@ -294,12 +294,17 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 128) return fail(PreparationInputError::MemoryLimit);
 			semanticBytes += cellCount * 128 + 65536;
 		}
-        if (config.surface.repairReach) {
+        if (config.surface.repairReach || config.surface.passes) {
             // Expanded water-run Dijkstra states (distance, predecessor, heap),
             // full world copies, and provisional resolver plans. Charged before allocation.
             const auto perCell = 1024ULL + 64ULL * config.surface.fordLength;
             if (cellCount > (UINT64_MAX - semanticBytes - 65536) / perCell) return fail(PreparationInputError::MemoryLimit);
             semanticBytes += cellCount * perCell + 65536;
+        }
+        if (config.surface.passes) {
+            // Direction/run Dijkstra states, heap, masks and retained counterfactuals.
+            if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 1024) return fail(PreparationInputError::MemoryLimit);
+            semanticBytes += cellCount * 1024 + 65536;
         }
         if (hasPlateau(profile)) {
             if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 192) {
@@ -397,7 +402,8 @@ TerrainPreparationSteps runPreparation(
                 std::vector<PlateauGrid> levelCaps;
                 std::optional<LevelWorld> repairWorld;
                 LevelRepairReport repairReport;
-                if (input.config.surface.repairReach) {
+                std::vector<MountainPass> passes;
+                if (input.config.surface.repairReach || input.config.surface.passes) {
                     std::vector<ExitShape> caveShapes, capShapes;
                     if (hasCave(profile)) {
                         auto brushes = resolveCaveBrushes(profile, input.config);
@@ -412,6 +418,7 @@ TerrainPreparationSteps runPreparation(
                     auto world = buildLevelWorld(std::move(*grid), decor ? std::move(*decor) : DecorGrid{},
                         input.config.seed, input.config.surface, input.config.decor, caveShapes, capShapes, input.config.vegetation, stop);
                     if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
                     // Offline measurement deliberately uses conservative class flags instead.
                     const size_t capBase = world->cave ? 2 : 1;
@@ -446,10 +453,12 @@ TerrainPreparationSteps runPreparation(
                             if (!f && floorGrid.cells[i] == SurfaceKind::Rock) rockBlocks |= groundBlocks;
                         }
                     }
-                    auto repaired = repairLevelReach(*world, !profile.wall.empty(), rockBlocks, caveShapes, {},
-                        input.config.surface.fordLength, !profile.bridgeBrush.empty(), blocking, stop);
-                    if (!repaired) co_return fail(repaired.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                    repairReport = *repaired;
+                    if (input.config.surface.repairReach) {
+                        auto repaired = repairLevelReach(*world, !profile.wall.empty(), rockBlocks, caveShapes, {},
+                            input.config.surface.fordLength, !profile.bridgeBrush.empty(), blocking, stop);
+                        if (!repaired) co_return fail(repaired.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                        repairReport = *repaired;
+                    }
                     *grid = std::move(world->surface);
                     if (decor) *decor = world->decor[0];
                     repairWorld = std::move(*world);
@@ -784,6 +793,7 @@ TerrainPreparationSteps runPreparation(
                     PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                 levels = std::make_unique<PreparedTerrain::Levels>();
                 levels->repair = repairReport;
+                levels->passes = std::move(passes);
                 levels->plan = std::move(*semantic);
                 levels->blockingMask.resize(levelCells);
             } else {
@@ -822,6 +832,12 @@ TerrainPreparationSteps runPreparation(
             for (auto* cap = plateau.get(); cap; cap = cap->plateau.get()) {
                 previews.push_back(&cap->preview); plans.push_back(&cap->plan);
             }
+            if (!levels->passes.empty()) {
+                std::vector<uint8_t> clear(cellCount);
+                for (const auto& pass : levels->passes) for (const auto i : pass.cells) clear[i] = 1;
+                auto cleared = DrawOperations::clearTerrainPreviewBlockers(*previews.front(), clear, stop);
+                if (!cleared) co_return fail(cleared.error());
+            }
             for (;;) {
                 std::vector<uint8_t> repairMask(levels->blockingMask.size());
                 for (size_t f = 0; f < previews.size(); ++f) for (size_t i = 0; i < cellCount; ++i) {
@@ -844,6 +860,8 @@ TerrainPreparationSteps runPreparation(
                 if (!reach) co_return fail(reach.error() == ReachabilityError::Cancelled ?
                     PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
                 levels->report = std::move(*reach);
+                for (const auto& pass : levels->passes) for (const auto i : pass.cells)
+                    if (!levels->report.walkable[i]) co_return fail(PreviewError::InvalidPlan);
                 const bool complete = levels->report.allReached() && levels->report.walkableEdges == levels->report.edges;
                 if (!input.config.surface.repairReach) break;
                 levels->repair.unrepaired = !complete;

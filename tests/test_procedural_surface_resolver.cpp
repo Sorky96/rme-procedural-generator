@@ -2020,7 +2020,7 @@ void finalMaskRepairProbe(std::ostream& report) {
     std::filesystem::remove(file);
 }
 
-void caveFarExitDoorGuiProbe(std::ostream& report) {
+void caveFarExitDoorGuiProbe(std::ostream& report, bool mountainPasses = false) {
     UndoLimits limits;
     check(g_gui.NewMap(), "I41 GUI map");
     auto& editor = *g_gui.GetCurrentEditor();
@@ -2037,6 +2037,7 @@ void caveFarExitDoorGuiProbe(std::ostream& report) {
     constexpr uint32_t side = 256, n = side * side;
     spin("terrain-width", side); spin("terrain-height", side); spin("terrain-cave-entrances", 16);
     spin("terrain-plateau-percent", 10); spin("terrain-plateau-levels", 3);
+    if (mountainPasses) spin("terrain-mountain-passes", 4);
     auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
     check(seed, "I41 seed"); seed->SetValue("1001");
     auto* doors = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-cave-door-corridors", dialog));
@@ -2059,6 +2060,7 @@ void caveFarExitDoorGuiProbe(std::ostream& report) {
     config.surface.caveEntrances = 16; config.surface.caveDoorCorridors = true;
     config.surface.repairReach = 1; config.surface.shoreSmoothing = 2;
     config.surface.plateauMinTop = 64; config.surface.plateauMaxPercent = 10; config.surface.plateauLevels = 3;
+    if (mountainPasses) config.surface.passes = 4;
     GroundProfile p{{"grass","dirt","rocky ground","sand","clear water","clear water","cobblestone","stone floor"},8};
     p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
     p.caveDoor = "stone wall"; p.plateauGround = "grass"; p.plateauRamp = "ramp"; p.bridgeBrush = "bridge";
@@ -2070,6 +2072,31 @@ void caveFarExitDoorGuiProbe(std::ostream& report) {
         check(!prepared->levels->blockingMask[n + i] && prepared->levels->report.walkable[n + i], "Closed door must be openable in adapter mask");
     }
     check(maskDoors > 0 && prepared->levels->report.allReached(), "I41 adapter reachable doors");
+    std::vector<uint32_t> passCells;
+    if (mountainPasses) {
+        check(!prepared->levels->passes.empty(), "I42 adapter must produce a pass");
+        for (const auto& pass : prepared->levels->passes) for (auto i : pass.cells) {
+            check(prepared->levels->report.walkable[i] && !prepared->levels->blockingMask[i], "I42 final adapter pass mask");
+            for (const auto* unit = prepared->plateau.get(); unit; unit = unit->plateau.get()) {
+                const auto* tile = unit->preview.getBuffer().getTile(Position(100+int(i%side),100+int(i/side),unit->plan.config.region.z));
+                check(!tile || (!tile->ground && tile->items.empty()), "I42 empty tile above pass");
+            }
+            passCells.push_back(i);
+        }
+        auto fallbackConfig = config;
+        fallbackConfig.surface.caveEntrances = 0;
+        fallbackConfig.surface.caveDoorCorridors = false;
+        fallbackConfig.surface.repairReach = 0;
+        auto fallbackProfile = p;
+        fallbackProfile.count = GroundProfile::surfaceCount;
+        fallbackProfile.brushes[6].clear(); fallbackProfile.brushes[7].clear();
+        fallbackProfile.caveEntrance.clear(); fallbackProfile.caveExit.clear(); fallbackProfile.caveGround.clear();
+        fallbackProfile.caveWall.clear(); fallbackProfile.caveDoor.clear();
+        auto fallback = prepareTerrain(editor.map, fallbackConfig, fallbackProfile, {1000000,1100000,2000000,8ULL << 30});
+        check(fallback && fallback->levels && !fallback->levels->passes.empty(), "I42 passes without repair or path brush");
+        for (const auto& pass : fallback->levels->passes) for (auto i : pass.cells)
+            check(brushOf(fallback->plan.items[i]) == g_brushes.getBrush("dirt"), "I42 Dirt fallback");
+    }
     prepared = std::unexpected(PreparationError{PreparationInputError::Cancelled});
     MountainDialogRun run(*dialog, editor, 0, true);
     const int modal = dialog->ShowModal(); run.stop();
@@ -2100,6 +2127,16 @@ void caveFarExitDoorGuiProbe(std::ostream& report) {
         }
     }
     check(placedDoors > 0 && farExits > 0, "I41 GUI needs doors and exit without surface hole");
+    for (auto i : passCells) {
+        const int x = 100 + int(i%side), y = 100 + int(i/side);
+        const auto* tile = editor.map.getTile(Position(x,y,7));
+        check(tile && tile->ground && !tile->ground->isBlocking() &&
+            std::ranges::none_of(tile->items,[](const auto& item){return item->isBlocking();}), "I42 committed pass walkable");
+        for (int z = 4; z <= 6; ++z) {
+            const auto* upper = editor.map.getTile(Position(x,y,z));
+            check(!upper || (!upper->ground && upper->items.empty()), "I42 no item above committed pass");
+        }
+    }
     std::vector<std::vector<uint32_t>> after;
     for (int z=4; z<=8; ++z) after.push_back(stackImage(editor.map,98,98,z,side+4,side+4));
     const auto actions = editor.actionQueue->getSize();
@@ -2107,7 +2144,11 @@ void caveFarExitDoorGuiProbe(std::ostream& report) {
     check(editor.map.getTileCount() == 0, "I41 Undo restores empty map");
     for (size_t i=0; i<actions; ++i) check(editor.actionQueue->redo(), "I41 Redo");
     for (int z=4; z<=8; ++z) check(after[z-4] == stackImage(editor.map,98,98,z,side+4,side+4), "I41 identical Redo");
-    report << std::format("CAVE_FAR_EXIT_DOOR_GUI_PASS farExits={} doors={} maskDoors={} undoRedo={} brush=stone wall\n",farExits,placedDoors,maskDoors,actions);
+    if (mountainPasses)
+        report << std::format("MOUNTAIN_PASS_GUI_PASS cells={} farExits={} doors={} maskDoors={} undoRedo={}\n",
+            passCells.size(),farExits,placedDoors,maskDoors,actions);
+    else
+        report << std::format("CAVE_FAR_EXIT_DOOR_GUI_PASS farExits={} doors={} maskDoors={} undoRedo={} brush=stone wall\n",farExits,placedDoors,maskDoors,actions);
     dialog->Destroy(); editor.map.clearChanges();
 }
 
@@ -2122,6 +2163,7 @@ void run() {
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
         caveFarExitDoorGuiProbe(report);
+        caveFarExitDoorGuiProbe(report, true);
         finalMaskRepairProbe(report);
         mountainDialogControls(report);
         guiMountainPercentage(report);

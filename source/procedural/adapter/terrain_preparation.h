@@ -73,6 +73,7 @@ struct PreparedTerrain {
 		std::vector<uint8_t> blockingMask;
 		LevelReachabilityReport report;
         LevelRepairReport repair;
+        std::vector<MountainPass> passes;
 	};
 	std::unique_ptr<Levels> levels;
 };

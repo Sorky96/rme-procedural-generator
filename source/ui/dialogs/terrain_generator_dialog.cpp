@@ -657,6 +657,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
         "Each higher cap uses the same percentage of the cap below it."
     );
     form->Add(plateau_percent_spin_, 1, wxEXPAND);
+    form->Add(label("Mountain passes:"), 0, wxALIGN_CENTER_VERTICAL);
+    mountain_passes_spin_ = spin("terrain-mountain-passes", 0, 8, 0);
+    form->Add(mountain_passes_spin_, 1, wxEXPAND);
     form->Add(label("Plateau ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_ground_choice_ = brushChoice("terrain-plateau-ground", "grass", 0);
     form->Add(plateau_ground_choice_, 1, wxEXPAND);
@@ -795,7 +798,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxSpinCtrl* control :
          {x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_,
           path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_,
-           plateau_levels_spin_, plateau_percent_spin_}) {
+           plateau_levels_spin_, plateau_percent_spin_, mountain_passes_spin_}) {
         control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
     }
@@ -968,6 +971,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     const int prior = preview_floor_choice_->FindString(selectedFloor);
     preview_floor_choice_->SetSelection(prior == wxNOT_FOUND ? 0 : prior);
     plateau_percent_spin_->Enable(natural);
+    mountain_passes_spin_->Enable(natural);
     plateau_levels_spin_->Enable(natural && plateau_percent_spin_->GetValue() > 0);
     for (auto* c : {plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
         c->Enable(natural && plateau_percent_spin_->GetValue() > 0);
@@ -1100,6 +1104,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0 || config.surface.caveEntrances > 0);
     config.surface.plateauLevels = uint32_t(plateau_levels_spin_->GetValue());
     config.surface.plateauMaxPercent = natural ? uint32_t(plateau_percent_spin_->GetValue()) : 0;
+    config.surface.passes = natural ? uint32_t(mountain_passes_spin_->GetValue()) : 0;
     // Keep the component-size filter internal; the dialog enables mountains by area percentage.
     config.surface.plateauMinTop = config.surface.plateauMaxPercent ? mountainMinTopCells : 0;
     if (config.surface.plateauMinTop) {
@@ -1115,6 +1120,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	if (withPaths || withFloors) brushFields = surfaceWithFloorFields;
 	for (size_t i = 0; i < request.profile.count; ++i) {
 		request.profile.brushes[i] = std::string(brushFields[i]->GetValue().utf8_str());
+        if (i == 6 && config.surface.passes && request.profile.brushes[i].empty())
+            request.profile.brushes[i] = request.profile.brushes[1];
 		if (request.profile.brushes[i].empty()) {
 			SetStatus("Choose a ground brush for every terrain field.", true);
 			brushFields[i]->SetFocus();

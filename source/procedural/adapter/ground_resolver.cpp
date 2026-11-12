@@ -60,6 +60,7 @@ uint64_t GroundPlan::fingerprint() const {
 		hash = (hash ^ 0x62) * 1099511628211ULL;
 		for (const auto cell : caveFloor) hash = (hash ^ cell) * 1099511628211ULL;
 	}
+    if (config.surface.passes) hash = (hash ^ (0x7000u + config.surface.passes)) * 1099511628211ULL;
 	if (config.surface.caveEntrances > 0) hash = (hash ^ uint8_t(config.surface.caveEntranceStyle)) * 1099511628211ULL;
     if (config.surface.caveEntrances > 0 && (config.surface.caveFarExits || config.surface.caveDoorCorridors)) {
         hash = (hash ^ uint8_t(config.surface.caveFarExits)) * 1099511628211ULL;
