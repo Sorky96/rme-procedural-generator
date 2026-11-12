@@ -211,3 +211,22 @@ Zbocze pod każdą czapą, wszystko osiągalne, limity, roślinność ≥ 88 % p
 **Kryteria 4–5: spełnione.** Sonda: grunt „mountain” pod każdą czapą po autoborderze, otwarcia rampy tylko przy górach. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
 
 **Nie zweryfikowane:** wygląd w GUI (narożniki zbocza, przesunięcie rysowania), ruch w grze.
+
+## Iteracja 36 — walidator osiągalności przez wszystkie piętra, pomiar bramki G5 (2026-11-12): walidator PASS, **bramka G5 FAIL**
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 36” (`4b56caf`, uzupełnienie maski `2154da9`). Commity: `1ba60ef` (rdzeń `levelReachabilityOf`), `fe0cc50` (pomiar, `docs/procedural/smoke/g5_measure_levels.py`), `84a5b66` (adapter: maska z rozwiązanych przedmiotów, okno: linia stanu, ostrzeżenie przy Place, ponawianie seedów).
+
+**Model.** Skała powierzchni poza czapami przechodnia (10 z 10 wariantów „rocky ground” bez flagi blokowania w 10.98); zbocze „mountain” pod czapą niechodliwe. „small rocks” ma warianty mieszane, więc adapter liczy maskę na komórkę. **Odchylenie:** maska obejmuje też blokujące przedmioty obrysów, murów i gruntu, nie tylko dekor (inaczej model byłby niezgodny z mapą). `style_render` używa reguły ostrożnej (klasa blokuje, gdy blokuje którykolwiek wariant).
+
+**Kryteria 1, 2, 3, 5: spełnione.** Odcisk Seed 1729 i stare wiersze sond bez zmian (poza szacunkami pamięci). 100 porównań z niezależnym przeszukiwaniem pięciu pięter. Sonda: model zgodny z mapą na pięciu piętrach, krawędzie Z z przedmiotami floorchange, ponawianie seedów w oknie. 18/18 testów, obie sondy, `SUITE_PASS` w worktree i w głównym checkout.
+
+**Kryterium 4 (bramka G5): (a) NIE, (b) NIE, (c) NIE, (d) tak.** Pełna osiągalność: m06 0 z 32, m19 0 z 32 (bez ponawiania i z 8 próbami). Krawędzie Z chodliwe z obu stron: m06 692 / 774, m19 708 / 748.
+
+| Profil | Drzwi | Obozy i ruiny | Wejścia jaskini | Wyjścia jaskini | Komórki czap | Komórki jaskini |
+|---|---:|---:|---:|---:|---:|---:|
+| m06 | 2835 / 3086 | 1197 / 1266 | 1 / 83 | 75 / 83 | 541265 / 593789 | 54944 / 57163 |
+| m19 | 3248 / 4102 | 1254 / 1523 | 57 / 101 | 89 / 101 | 109139 / 322370 | 92943 / 106611 |
+
+**Przyczyny (diagnostyka na seedzie 1001, bez zmian generatora):** (1) naprawa osiągalności z iteracji 23 używa starego modelu (skała przechodnia, dekor ignorowany), więc roślinność blokująca dzieli ląd — w m19 główna przyczyna; (2) zbocza pod czapami (od iteracji 34) przecinają drogi, które wcześniej szły po skale — w m06 główna przyczyna; (3) wejścia jaskini leżą na brzegu skały, który od iteracji 34 jest zboczem. Wyłączenie blokowania dekoru i zboczy w modelu przywraca pełną osiągalność w obu profilach.
+
+**Nie zweryfikowane:** ruch w grze, kroki ukośne, wygląd linii stanu i ostrzeżenia w GUI, obszar 2000×2000 z walidatorem.

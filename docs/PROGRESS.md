@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-12 — G5: walidator przez wszystkie piętra (iteracja 36) — walidator PASS, bramka G5 FAIL
+
+Walidator osiągalności pięciu pięter w rdzeniu, adapterze i oknie (linia stanu, ostrzeżenie, ponawianie seedów). Bramka G5: 0 z 32 seedów z pełną osiągalnością w obu profilach; przyczyny: roślinność blokująca, zbocza gór, wejścia jaskini na zboczu. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 36”.
+
 ## 2026-11-11 — G5: góry na własnym zboczu (iteracja 34) — PASS, GUI czeka
 
 Czapa z − 1 na całym polu skały, zbocze „mountain” pod każdym wyższym piętrem, trawa do krawędzi, rampy przy zboczu z otwarciem na górze, roślinność jak na powierzchni. Na podstawie analizy 20 map referencyjnych. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 34”.
