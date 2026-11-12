@@ -46,6 +46,10 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         auto repaired = repairLevelReach(*world, true, false, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
+        const auto islands = sandIslandsOf(world->surface);
+        if (!islands) return std::unexpected(ReachabilityError::InvalidGrid);
+        vegetation += std::format("level islands total {} nonShoreIslands {} nonShoreCells {}\n",
+            islands->islands, islands->nonShoreIslands, islands->nonShoreCells);
         uint64_t surfaceGrass = 0, surfaceFlora = 0;
         for (size_t i = 0; i < n; ++i) if (world->surface.cells[i] == SurfaceKind::Grass) {
             ++surfaceGrass; surfaceFlora += world->decor[0].cells[i] != DecorKind::None;

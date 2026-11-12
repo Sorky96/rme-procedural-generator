@@ -283,3 +283,18 @@ Commity `bee437a`, `4b4c75a`. Po autoborderze adapter buduje maskę blokad z fak
 Kryteria (a)–(g) spełnione, dwa przebiegi bajtowo identyczne: **G5_GATE_PASS** dla osiągalności i poziomów. Zdiagnozowany bloker zastępczego przypadku: krawędź „shallow water” (border morza, przedmiot blokujący) na trawie, niewidoczna dla naprawy sprzed autoborderu; jest teraz usuwana.
 
 **Nie zweryfikowane:** dokładny przypadek ze zrzutu (91 miejsc, (1149,1026,7)) nie został odtworzony, bo nieznane były pozostałe ustawienia; wygląd w GUI po usunięciu krawędzi wody; ruch w grze.
+
+## Iteracja 40 (2026-11-12)
+
+Przyczyna: semantyczny Dirt pozostający we wnętrzu wyspy poza zasięgiem pierścieni brzegu; nie dekor ani ścieżka. Przed poprawką w korpusie m06 było 15 wysp, 21 komórek Dirt i 122 Grass; m19: 8 wysp, 107 Grass. Rdzeń po POI i brodach, przed maską zapisu, dekorem, czapami i naprawą zamienia niedostępne wyspy bez POI na Shore. Główna składowa (największa, remisy wierszami), połączenia lądowe, POI oraz składowe dotykające granicy prostokąta lub Preserve są zachowane. Odcisk Seed 1729 bez zmian: 17159159863505677800 (brak takich wysp).
+
+Pomiar jak w iteracji 39, seedy 1001–1032, bok 512, reguła ostrożna dekoru. Wyniki jednakowe bez ponawiania i z limitem 8 prób; oba przebiegi stdout/stderr bajtowo identyczne.
+
+| Profil | Pełne seedy | Krawędzie Z | Naprawy, mediana [min..max] | Usunięte POI | Mediana wejść | Flora czap z−1/z−2/z−3 | Wyspy | Wyspy nie tylko Shore / komórki inne niż Shore |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| m06 | 32/32 | 1808/1808 | 2 [0..5] | 0,04040 % | 18,5 | 97,5 / 93,2 / 86,2 % | 15 | 0 / 0 |
+| m19 | 32/32 | 2737/2737 | 14,5 [6..22] | 0,04465 % | 33 | 94,7 / 91,5 / 79,2 % | 8 | 0 / 0 |
+
+**G5_GATE_PASS**, kryteria (a)–(g) bez regresji. Kanoniczny build Windows x64, przebudowane cele rdzenia, 18/18 testów, obie sondy PASS, **SUITE_PASS**. Niezależny DFS: 120/120 planów; ręczne przypadki: dirt, bród/most/ścieżka, POI, Preserve, granica, największa składowa, inne piętro i metadane mostu. Stare asercje szerokości plaży i różnic po dodaniu brodu uwzględniają normalizację wysp; sonda brodu nadal sprawdza chodliwość, połączenia i Undo/Redo (443 komórki brodu, 7 połączonych składowych, zero blokad). Szacunek pamięci roboczej uwzględnia klasyfikację wysp. Pełne wyniki testów i sond oraz ograniczenia: niecommitowany `local-data/I40_IMPLEMENTATION_REPORT.md`.
+
+**Nie zweryfikowane:** dokładny przypadek użytkownika (brak ustawień), wygląd w GUI, ruch w grze, inne klienty niż 10.98, wczytanie w oryginalnym RME, profilowanie dużych obszarów.
