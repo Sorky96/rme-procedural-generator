@@ -325,3 +325,12 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 6. Ocena w GUI należy do użytkownika: wcięcia przy wejściach, drzewa na szczytach.
 
 **Zastrzeżenia z góry.** Wcięcie w czapie to widoczna zatoka skały przy wejściu; jeśli wygląda źle, w kolejnej iteracji wejście w zboczu. Reguła roślinności zmienia rozkład drzew na szczytach (mniej zwartych skupisk).
+
+## Iteracja 39: naprawa na końcowej masce i liczba wejść do jaskiń (2026-11-12)
+
+Wiążące przed implementacją.
+
+1. **Naprawa po autoborderze.** Adapter (okno i sonda) po rozwiązaniu pędzli i autoborderze buduje maskę blokad z faktycznych przedmiotów klienta i, jeśli `levelReachabilityOf` znajduje nieosiągalne cele, ponownie uruchamia naprawę na tej masce (usuwanie dekoru / przesieki przez DrawOperations, w tej samej akcji Undo). Pętla do stabilizacji, łączny limit 64 napraw na plan. Najpierw zdiagnozować i zapisać w raporcie, co blokuje (1149,1026,7) dla seed 1212 w oknie (m19-podobne ustawienia ze zrzutu: 10 wejść, góry 10 %, 3 poziomy) — konkretna nazwa przedmiotu/pędzla i dlaczego wcześniejsza naprawa go nie widziała.
+2. **Test E2E w GUI:** seed 1212 z tymi ustawieniami kończy się bez `Unrepaired`; nowy znacznik sondy `FINAL_MASK_REPAIR_E2E_PASS`; Undo przywraca pustą mapę, Redo identyczny wynik.
+3. **Wejścia do jaskiń (kryterium f iteracji 38):** mediana umieszczonych wejść ≥8 przy `caveEntrances=16` (ustawienia pomiaru jak w iteracji 38) dla m06 i m19. Dozwolone: większy budżet prób selektora RockFace, rozluźnienie wymogu Rock z trzech stron do dwóch przy zachowaniu otwartego wyjścia, usunięcie dekoru w miejscu docelowym wyjścia zamiast odrzucania wejścia. Odstęp 24 komórek zostaje.
+4. Bez regresji: kryteria (a)–(e), (g) iteracji 38, odcisk Seed 1729 100×100 = 17159159863505677800 (jeśli zmiana selektora go zmienia, tylko przy `repairReach=1`; stare ścieżki bez zmian), dwa przebiegi bajtowo identyczne, 18/18 testów, `SUITE_PASS`.
