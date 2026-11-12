@@ -306,3 +306,22 @@ Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej f
 6. Ocena w GUI należy do użytkownika: mosty, ścieżki przez las, góry bez szczytu po naprawie.
 
 **Zastrzeżenia z góry.** Most typu wall w 10.98 może mieć kierunki (poziomy, pionowy); wykonawca opisuje, jak dobiera wariant. Wycięty dekor może wyglądać jak przesieka. Ruch w grze nie sprawdzany.
+
+### Iteracja 38 — roślinność czap bez dzielenia, wejścia jaskini przed czapami, jaskinia tylko z wejściem (FAZA 5; zapisana 2026-11-12 przed implementacją i przed pomiarem; zgoda użytkownika)
+
+**Powód.** Iteracja 37: bramka G5 m06 32 / 32, m19 1 / 32 (7 / 32 z ponawianiem). Przyczyny m19: gęsta roślinność blokująca dzieli czapy na setki kieszeni (seed 1001: 395), naprawa kończy na limicie 64; jaskinie bez wejścia (wszystkie wejścia odfiltrowane pod czapami) są nieosiągalne. W m06 filtr zostawił 1 wejście na 32 seedy.
+
+**Definicje.**
+- **Roślinność czap (tylko `repairReach` 1):** dekor blokujący na komórce czapy (każde piętro) jest kładziony tylko wtedy, gdy nie zwiększa liczby składowych chodliwych tego piętra w obrębie czapy (sprawdzenie dokładne, deterministyczna kolejność wierszami). Dekor nieblokujący bez zmian. Przybycia, otwarcia i ich sąsiedzi bez dekoru jak dotąd. Powierzchnia bez zmian (naprawa radzi sobie tam w m06 i m19).
+- **Wejścia jaskini przed czapami (tylko `repairReach` 1):** wejścia wybierane jak w iteracji 29 (skała przy otwartym gruncie, odstępy), **zanim** powstaną czapy. Komórka wejścia i jej 8 sąsiadów są wyłączone z C_1 (wcięcie w czapie; skała pod wcięciem zostaje skałą powierzchni, nie zboczem). Wyższe czapy liczone od C_1 po wcięciu. Filtr wejść pod czapami z iteracji 37 przestaje być potrzebny (usunięty, jeśli martwy).
+- **Jaskinia tylko z wejściem:** składowa jaskini bez żadnego wejścia nie jest generowana (Solid), więc jej komórki nie są POI. Raport podaje liczbę takich usuniętych składowych.
+
+**Kryteria.**
+1. `repairReach` 0: odcisk Seed 1729 100×100 = 17159159863505677800, stare testy i wiersze sond bez zmian (poza szacunkami pamięci).
+2. Testy rdzenia: ręczne siatki — dekor nie dzieli czapy, wcięcie wokół wejścia i skała pod nim, jaskinia bez wejścia usunięta; porównanie z niezależnym przeszukiwaniem na ≥ 100 losowych planach; deterministyczność.
+3. Sonda G1 `--surface`: przypadek z wejściem we wcięciu czapy — przedmiot wejścia, brak zbocza pod wcięciem, krawędź Z chodliwa, Commit, Undo, Redo; nowy wiersz `LEVEL_ENTRANCE_NOTCH_E2E_PASS`.
+4. **Bramka G5** (ustawienia z iteracji 37): (a) bez ponawiania ≥ 30 / 32 w każdym profilu; (b) z ≤ 8 próbami 32 / 32; (c) 100 % krawędzi Z chodliwych; (d) dwa przebiegi identyczne; (e) usunięte POI ≤ 2 %. Dodatkowo: **(f)** wejścia jaskini mediana ≥ 8 na seed w każdym profilu (m06 w iteracji 27: 13); **(g)** udział roślinności na trawie czap ≥ 70 % udziału na trawie powierzchni (mediana, jak iteracja 34).
+5. Wszystkie testy rdzenia i obie sondy PASS po przebudowie, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: wcięcia przy wejściach, drzewa na szczytach.
+
+**Zastrzeżenia z góry.** Wcięcie w czapie to widoczna zatoka skały przy wejściu; jeśli wygląda źle, w kolejnej iteracji wejście w zboczu. Reguła roślinności zmienia rozkład drzew na szczytach (mniej zwartych skupisk).
