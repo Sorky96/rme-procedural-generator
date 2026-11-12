@@ -1,5 +1,39 @@
 # Procedural World Generator — postęp
 
+## 2026-11-12 — G5: stan FAZY 5 po iteracjach 37–40
+
+| Kryterium FAZY 5 | Stan | Dowód |
+|---|---|---|
+| Bramka G5: z ustalonego startu osiągalne POI, wejścia/wyjścia Z, brak krytycznych odcięć | **PASS** (m06 i m19, 32/32 seedów, iteracje 39–40) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) |
+| Walidator, naprawa, odrzucanie seedów, mosty | zrobione (iteracje 36–39), D22 zamknięty w zakresie pomiaru | iteracje 36–39 |
+| Graf regionów, brody, mosty | zrobione | iteracje 14b, 24, 37 |
+| Przełęcze w górach | **brak** | — |
+| Góry wielopiętrowe (z − 1..z − 3), rampy | zrobione, wygląd w GUI niesprawdzony | iteracje 32–34, 38 |
+| Jaskinia z + 1 z wejściami i wyjściem rampą pod wejściem | zrobione (mediana wejść 18,5 / 33) | iteracje 27–31, 38–39 |
+| Wyjścia jaskini na drugim końcu, korytarze z drzwiami | **brak** | — |
+| Lochy / struktury podziemne, schody w budynkach | **brak** | — |
+| Osady, ruiny, obozowiska z kontrolą kolizji | zrobione; ruiny i obozy bez oceny w GUI | iteracje 12, 25–26 |
+| Niedostępne wyspy tylko z piasku | zrobione | iteracja 40 |
+| Ruch w grze, oryginalny RME, inne klienty niż 10.98 | niesprawdzone | D23 |
+
+Do pełnego zamknięcia FAZY 5 brakuje: przełęczy, wyjść jaskini na drugim końcu z korytarzami i drzwiami, struktur podziemnych i schodów w budynkach (albo decyzji o długu) oraz przeglądu GUI gór, jaskiń, ruin i obozów.
+
+## 2026-11-12 — G5: niedostępne wyspy tylko z piasku (iteracja 40) — PASS
+
+Wyspy bez połączenia z lądem i bez POI dostają sam Shore; 0 komórek innych niż piasek w m06 (15 wysp) i m19 (8 wysp). Bez regresji, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 40”.
+
+## 2026-11-12 — G5: naprawa na końcowej masce, więcej wejść do jaskiń (iteracja 39) — G5_GATE_PASS
+
+Naprawa ponawiana po autoborderze na faktycznych przedmiotach (bloker: border „shallow water”). Mediana wejść 18,5 (m06) i 33 (m19). 32/32 seedów w obu profilach, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 39”.
+
+## 2026-11-12 — G5: roślinność czap bez dzielenia, wejścia przed czapami (iteracja 38) — FAIL tylko na liczbie wejść
+
+32/32 seedów osiągalnych w obu profilach; mediana wejść 2 i 3 (wymagane ≥ 8). SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 38”.
+
+## 2026-11-12 — G5: naprawa wielopiętrowa i mosty (iteracja 37) — bramka FAIL dla m19
+
+`repairLevelReach` i mosty z pędzla „bridge”. m06 32/32, m19 1/32 (7/32 z ponawianiem). SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 37”.
+
 ## 2026-11-12 — G5: walidator przez wszystkie piętra (iteracja 36) — walidator PASS, bramka G5 FAIL
 
 Walidator osiągalności pięciu pięter w rdzeniu, adapterze i oknie (linia stanu, ostrzeżenie, ponawianie seedów). Bramka G5: 0 z 32 seedów z pełną osiągalnością w obu profilach; przyczyny: roślinność blokująca, zbocza gór, wejścia jaskini na zboczu. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 36”.
