@@ -334,3 +334,13 @@ Wiążące przed implementacją.
 2. **Test E2E w GUI:** seed 1212 z tymi ustawieniami kończy się bez `Unrepaired`; nowy znacznik sondy `FINAL_MASK_REPAIR_E2E_PASS`; Undo przywraca pustą mapę, Redo identyczny wynik.
 3. **Wejścia do jaskiń (kryterium f iteracji 38):** mediana umieszczonych wejść ≥8 przy `caveEntrances=16` (ustawienia pomiaru jak w iteracji 38) dla m06 i m19. Dozwolone: większy budżet prób selektora RockFace, rozluźnienie wymogu Rock z trzech stron do dwóch przy zachowaniu otwartego wyjścia, usunięcie dekoru w miejscu docelowym wyjścia zamiast odrzucania wejścia. Odstęp 24 komórek zostaje.
 4. Bez regresji: kryteria (a)–(e), (g) iteracji 38, odcisk Seed 1729 100×100 = 17159159863505677800 (jeśli zmiana selektora go zmienia, tylko przy `repairReach=1`; stare ścieżki bez zmian), dwa przebiegi bajtowo identyczne, 18/18 testów, `SUITE_PASS`.
+
+## Iteracja 40: niedostępne wyspy tylko z piasku (2026-11-12)
+
+Wiążące przed implementacją. Zgłoszenie z GUI: na morzu są wyspy z piasku, na których leży dirt.
+
+1. Najpierw zdiagnozować, skąd bierze się dirt na wyspach (rodzaj semantyczny, pędzel, dekor lub ścieżka) i zapisać to w raporcie.
+2. Wyspa to składowa lądu powierzchni (z=7) całkowicie otoczona wodą, bez połączenia z główną składową lądu przez bród, most ani ścieżkę, i bez POI. Każda komórka takiej wyspy dostaje rodzaj Shore (piasek): bez dirt, trawy, ścieżek, dekoru, czap i wejść do jaskiń. Rozstrzygane w rdzeniu przed naprawą i rozwiązywaniem pędzli, deterministycznie.
+3. Wyspy połączone z lądem (bród, most) albo zawierające POI zostają bez zmian.
+4. Test rdzenia z ręcznym przypadkiem (wyspa z dirt → sam piasek; wyspa z brodem → bez zmian) oraz w 120 losowych planach: żadna niedostępna wyspa nie ma komórki innej niż Shore. Pomiar G5: liczba wysp i komórek innych niż Shore na niedostępnych wyspach = 0 dla m06 i m19.
+5. Bez regresji: kryteria (a)–(g) iteracji 38–39, determinizm, 18/18 testów, `SUITE_PASS`. Odcisk Seed 1729 100×100 może się zmienić tylko wtedy, gdy ten seed ma takie wyspy; zmianę uzasadnić w raporcie.
