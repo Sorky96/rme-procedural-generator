@@ -5,6 +5,7 @@
 #include "procedural/adapter/preparation_steps.h"
 #include "procedural/adapter/ground_resolver.h"
 #include "procedural/adapter/terrain_preview.h"
+#include "procedural/core/reachability.h"
 
 #include <cstdint>
 #include <expected>
@@ -66,6 +67,12 @@ struct PreparedTerrain {
 	PreparationMemory memory;
 	std::unique_ptr<PreparedTerrain> cave;
     std::unique_ptr<PreparedTerrain> plateau;
+	struct Levels {
+		LevelPlan plan;
+		std::vector<uint8_t> blockingMask;
+		LevelReachabilityReport report;
+	};
+	std::unique_ptr<Levels> levels;
 };
 
 // Captures, generates, resolves and builds the DrawOperations preview for one region in a single

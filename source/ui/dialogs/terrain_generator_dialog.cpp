@@ -431,6 +431,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("&Seed:"), 0, wxALIGN_CENTER_VERTICAL);
 	seed_text_ = text("terrain-seed", "1729");
 	form->Add(seed_text_, 1, wxEXPAND);
+    form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
+    retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
+    retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
+    form->Add(retry_spin_, 1, wxEXPAND);
+    retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 
 	section("Terrain");
 	form->Add(label("&Grass weight:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -951,6 +957,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
 	smooth_beaches_check_->Enable(natural);
 	repair_check_->Enable(natural);
+    retry_spin_->Enable(natural);
 	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
@@ -1189,7 +1196,10 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 		}
 		const std::span<const uint8_t> mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
 
-		pending_request_ = std::move(*request);
+		preview_attempt_ = 1;
+        preview_first_seed_ = request->config.seed;
+        preview_fallback_ = false;
+        pending_request_ = std::move(*request);
 		auto steps = prepareTerrainSteps(editor->map, pending_request_->config,
 			pending_request_->profile, preparationBudget, mask);
 		if (!steps) {
@@ -1251,6 +1261,28 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 			return;
 		}
 
+        if (result->levels && !result->levels->report.allReached() && !preview_fallback_) {
+            const auto limit = uint32_t(std::max(1, retry_spin_->GetValue()));
+            if (preview_attempt_ < limit || (preview_attempt_ > 1 && request->config.seed != preview_first_seed_)) {
+                if (preview_attempt_ < limit) {
+                    request->config.seed = preview_first_seed_ + preview_attempt_++;
+                } else {
+                    request->config.seed = preview_first_seed_;
+                    preview_fallback_ = true;
+                }
+                pending_request_ = std::move(*request);
+                const auto mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
+                auto steps = prepareTerrainSteps(CurrentTarget()->map, pending_request_->config,
+                    pending_request_->profile, preparationBudget, mask);
+                if (!steps) { ReleasePreview(); SetStatus(describe(steps.error()), true); return; }
+                preview_steps_.emplace(std::move(*steps));
+                UpdateControlStates();
+                SetStatus(wxstr(std::format("Checking seed {} (attempt {}).", pending_request_->config.seed, preview_attempt_)), false);
+                SchedulePreviewTick();
+                return;
+            }
+        }
+        seed_text_->ChangeValue(wxstr(std::format("{}", request->config.seed)));
 		// Fresh target and source validation before the result is retained or displayed.
 		const auto target = selection_ ?
 			validateSelectedTerrainTarget(*result, *selection_, request->config, request->profile) :
@@ -1292,6 +1324,18 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 			prepared_->snapshot.input.config.seed,
 			formatMiB(prepared_->memory.totalBytes + imageBytes + (selection_ ? selection_->estimatedBytes : 0)),
 			formatMiB(commitBudget.maxBytes))), false);
+        if (prepared_->levels) {
+            const auto& report = prepared_->levels->report;
+            uint64_t reached = 0, total = 0;
+            for (const auto& c : report.categories) { reached += c.reached; total += c.total; }
+            auto text = std::format("Reachable: {}/{} places on {} floors. Seed {}, {} attempts.",
+                reached, total, report.pockets.size(), prepared_->plan.config.seed, preview_attempt_);
+            if (!report.firstUnreachable.empty()) {
+                const auto& p = report.firstUnreachable.front();
+                text += std::format(" Unreachable: {} places (first: {}, {}, {}).", total - reached, p.x, p.y, p.z);
+            }
+            SetStatus(wxstr(text), !report.allReached());
+        }
 	} catch (const std::bad_alloc&) {
 		ReleasePreview();
 		SetStatus(memoryMessage, true);
@@ -1390,6 +1434,9 @@ void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
 		UpdateControlStates();
 		return;
 	}
+    if (prepared_->levels && !prepared_->levels->report.allReached() &&
+        wxMessageBox("Some places cannot be reached from the start. Place this terrain anyway?",
+            "Unreachable places", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES) return;
 	// The commit validates again and copies the owned diff; it never regenerates or reborders.
 	const auto receipt = selection_ ?
 		DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :

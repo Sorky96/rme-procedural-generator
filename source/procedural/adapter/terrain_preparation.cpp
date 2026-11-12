@@ -357,6 +357,7 @@ TerrainPreparationSteps runPreparation(
 		GroundPlan plan;
 		std::unique_ptr<PreparedTerrain> cave;
         std::unique_ptr<PreparedTerrain> plateau;
+        std::unique_ptr<PreparedTerrain::Levels> levels;
         {
 			if (input.config.algorithm == GenerationAlgorithm::Surface) {
 				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
@@ -382,6 +383,10 @@ TerrainPreparationSteps runPreparation(
 				if (!generated) co_return fail(fromSurface(generated.error()));
 				auto* grid = &generated->grid;
 				auto& decor = generated->decor;
+                std::optional<CaveGrid> levelCave;
+                CaveExitPlan levelExits;
+                std::vector<ExitShape> levelShapes;
+                std::vector<PlateauGrid> levelCaps;
 				const auto resolve = [&]() { return resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear); };
 				if (hasCave(profile)) {
 					auto brushes = resolveCaveBrushes(profile, input.config);
@@ -396,8 +401,11 @@ TerrainPreparationSteps runPreparation(
 					auto exits = placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
 					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
 						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
-					auto resolved = resolve();
-					if (!resolved) co_return fail(resolved.error());
+					levelCave = *generated;
+                    levelExits = *exits;
+                    levelShapes = brushes->shapes;
+                    auto resolved = resolve();
+                    if (!resolved) co_return fail(resolved.error());
 					plan = std::move(*resolved);
 					auto lowerConfig = input.config;
 					++lowerConfig.region.z;
@@ -504,7 +512,8 @@ TerrainPreparationSteps runPreparation(
                     if (g_version.GetAssetRevision() != input.assetRevision) co_return fail(PreviewError::StaleSnapshot);
                     if (!geometry) co_return fail(fromSurface(geometry.error()));
                     *grid = std::move(geometry->surface);
-                    auto& floors = geometry->floors;
+                    levelCaps = std::move(geometry->floors);
+                    auto& floors = levelCaps;
                     PreparedTerrain* lowerUnit = nullptr;
                     for (size_t level = 0; level < floors.size(); ++level) {
                         auto* generated = &floors[level];
@@ -662,6 +671,23 @@ TerrainPreparationSteps runPreparation(
                         lowerUnit = ptr;
                     }
                 }
+                // Read resolved items only on the GUI thread. The semantic graph remains
+                // independent of client assets and map state.
+                const uint64_t levelCells = cellCount * (1 + (cave ? 1 : 0) + levelCaps.size());
+                if (!reserve(levelCells * 96 + 65536)) co_return fail(PreparationInputError::MemoryLimit);
+                bool rockBlocks = false;
+                for (size_t i = 0; i < cellCount; ++i) if (grid->cells[i] == SurfaceKind::Rock && plan.items[i]) {
+                    // The final plan already substitutes mountain below caps.
+                    if (levelCaps.empty() || levelCaps.front().cells[i] != PlateauKind::Top)
+                        rockBlocks |= g_item_definitions.get(plan.items[i]).hasFlag(ItemFlag::Unpassable);
+                }
+                auto semantic = levelPlanOf(*grid, !profile.wall.empty(), rockBlocks,
+                    levelCave ? &*levelCave : nullptr, levelExits, levelShapes, levelCaps, {}, stop);
+                if (!semantic) co_return fail(semantic.error() == ReachabilityError::Cancelled ?
+                    PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                levels = std::make_unique<PreparedTerrain::Levels>();
+                levels->plan = std::move(*semantic);
+                levels->blockingMask.resize(levelCells);
             } else {
 				auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
 					input.mask, input.protection, stop);
@@ -688,6 +714,29 @@ TerrainPreparationSteps runPreparation(
 		if (!preview) co_return fail(preview.error());
 		const uint64_t previewBytes = preview->getEstimatedPeakBytes();
 		if (!reserve(previewBytes)) co_return fail(PreparationInputError::MemoryLimit);
+		if (levels) {
+			// Autobordering can add blocking items beside a cliff. Include those
+			// actual resolved items as well as decor; never predict client flags
+			// from a semantic terrain kind or alter the generated payload.
+			std::vector<const TerrainPreview*> previews {&*preview};
+			if (cave) previews.push_back(&cave->preview);
+			for (auto* cap = plateau.get(); cap; cap = cap->plateau.get()) previews.push_back(&cap->preview);
+			for (size_t f = 0; f < previews.size(); ++f) for (size_t i = 0; i < cellCount; ++i) {
+				if (i % 4096 == 0 && stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+				const Position position(input.config.region.x + int(i % input.config.region.width),
+					input.config.region.y + int(i / input.config.region.width), levels->plan.floors[f].z);
+				const auto* tile = previews[f]->getBuffer().getTile(position);
+				levels->plan.floors[f].walkable[i] &= tile && tile->ground;
+				if (!tile) continue;
+				bool blocks = tile->ground && tile->ground->isBlocking();
+				for (const auto& item : tile->items) blocks |= item->isBlocking();
+				levels->blockingMask[f * cellCount + i] = blocks;
+			}
+			auto reach = levelReachabilityOf(levels->plan, {}, levels->blockingMask, stop);
+			if (!reach) co_return fail(reach.error() == ReachabilityError::Cancelled ?
+				PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
+			levels->report = std::move(*reach);
+		}
 
 		if (cave && (cave->preview.getChanges().size() > budget.maxChanges - preview->getChanges().size())) co_return fail(PreparationInputError::ChangeLimit);
         auto extra = cave ? cave->preview.getChanges().size() : 0;
@@ -710,7 +759,7 @@ TerrainPreparationSteps runPreparation(
 		const PreparationMemory memory {
 			infrastructureBytes, snapshotBytes, semanticBytes, planBytes, previewBytes, budget.maxBytes - remaining
 		};
-        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau)};
+        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels)};
     } catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
 	} catch (const std::system_error&) {

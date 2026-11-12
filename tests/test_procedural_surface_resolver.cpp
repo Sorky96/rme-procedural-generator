@@ -27,6 +27,10 @@
 #include "ui/dialogs/terrain_generator_dialog.h"
 #include <wx/choice.h>
 #include <wx/spinctrl.h>
+#include <wx/button.h>
+#include <wx/checkbox.h>
+#include <wx/stattext.h>
+#include <wx/textctrl.h>
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
@@ -1406,6 +1410,133 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     );
 }
 
+void levelRetryProbe(std::ostream& report) {
+    check(g_gui.NewMap(), "Retry dialog map");
+    auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    const auto spin = [&](const char* name) {
+        auto* control = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+        check(control != nullptr, std::format("Missing {}", name)); return control;
+    };
+    auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-style", dialog));
+    style->SetSelection(1);
+    wxCommandEvent changed(wxEVT_CHOICE, style->GetId()); changed.SetEventObject(style);
+    style->GetEventHandler()->ProcessEvent(changed);
+    spin("terrain-width")->SetValue(100); spin("terrain-height")->SetValue(100);
+    spin("terrain-plateau-percent")->SetValue(10);
+    spin("terrain-plateau-levels")->SetValue(1);
+    spin("terrain-cave-entrances")->SetValue(1);
+    spin("terrain-building-density")->SetValue(0);
+    for (const char* name : {"terrain-walls", "terrain-vegetation", "terrain-repair"}) {
+        auto* control = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName(name, dialog));
+        check(control != nullptr, std::format("Missing {}", name));
+        control->SetValue(false);
+    }
+    auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+    auto* preview = dynamic_cast<wxButton*>(wxWindow::FindWindowByName("terrain-preview", dialog));
+    auto* place = dynamic_cast<wxButton*>(wxWindow::FindWindowByName("terrain-place", dialog));
+    auto* status = dynamic_cast<wxStaticText*>(wxWindow::FindWindowByName("terrain-status", dialog));
+    check(seed && preview && place && status, "Retry dialog controls");
+    const auto run = [&](uint64_t value, int retries) {
+        seed->ChangeValue(wxstr(std::format("{}", value)));
+        spin("terrain-retry-seeds")->SetValue(retries);
+        wxCommandEvent click(wxEVT_BUTTON, preview->GetId()); click.SetEventObject(preview);
+        preview->GetEventHandler()->ProcessEvent(click);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+        while (!preview->IsEnabled()) {
+            check(std::chrono::steady_clock::now() < deadline, "Retry dialog timeout");
+            wxYieldIfNeeded();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        check(place->IsEnabled(), "Retry dialog preview failed: " + status->GetLabel().ToStdString());
+        return !status->GetLabel().Contains("Unreachable:");
+    };
+    bool previousFailed = false, found = false;
+    for (uint64_t value = 1; value <= 64 && !found; ++value) {
+        const bool success = run(value, 0);
+        if (success && previousFailed) {
+            check(run(value - 1, 2), "Retry did not select reachable second seed");
+            check(seed->GetValue() == wxstr(std::format("{}", value)) && status->GetLabel().Contains("2 attempts"), "Retry seed or attempt count");
+            report << std::format("LEVEL_RETRY_E2E_PASS initial={} used={} attempts=2\n", value - 1, value);
+            found = true;
+        }
+        previousFailed = !success;
+    }
+    check(found, "No failing/succeeding consecutive retry seeds in search range");
+    dialog->Destroy();
+}
+
+void levelReachabilityProbe(std::ostream& report) {
+    UndoLimits limits;
+    check(g_gui.NewMap(), "Level reachability map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    constexpr uint32_t side = 256;
+    GenerationConfig config {{100, 100, 7, side, side}, 1729};
+    config.algorithm = GenerationAlgorithm::Surface;
+    config.vegetation = true;
+    config.surface.rockPermille = 300;
+    config.surface.buildingDensity = 30;
+    config.surface.campCount = 4;
+    config.surface.ruinPercent = 20;
+    config.surface.caveEntrances = 20;
+    config.surface.plateauMinTop = 64;
+    config.surface.plateauLevels = 3;
+    GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+    profile.wall = "stone wall"; profile.door = "Normal door";
+    profile.decorCount = 3;
+    profile.decor = {"trees", "bushes", "small rocks"};
+    profile.plateauGround = "grass"; profile.plateauRamp = "ramp";
+    profile.caveEntrance = "cave enter"; profile.caveExit = "ramp";
+    profile.caveGround = "cave"; profile.caveWall = "mountain";
+    constexpr PreparationBudget preparation {250000, 254016, 750000, 768ULL * 1024 * 1024};
+    constexpr TerrainCommitBudget commit {750000, 1536ULL * 1024 * 1024};
+    auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+    check(prepared && prepared->levels && prepared->cave && prepared->plateau, "Combined level preparation");
+    check(bool(DrawOperations::commitTerrainPreview(*prepared, config, profile, commit)), "Level reachability commit");
+    const auto& levels = *prepared->levels;
+    const auto& model = levels.report;
+    const size_t n = side * side;
+    std::vector<const GroundPlan*> plans {&prepared->plan, &prepared->cave->plan};
+    for (auto* cap = prepared->plateau.get(); cap; cap = cap->plateau.get()) plans.push_back(&cap->plan);
+    check(plans.size() == 5, "Combined reachability probe needs three mountain floors");
+    uint64_t open = 0, blocked = 0, mismatches = 0, transitions = 0;
+    const auto blocking = [](const Tile* tile) {
+        if (!tile) return false;
+        if (tile->ground && tile->ground->isBlocking()) return true;
+        return std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); });
+    };
+    for (size_t f = 0; f < levels.plan.floors.size(); ++f) for (size_t i = 0; i < n; ++i) {
+        const Position pos(100 + int(i % side), 100 + int(i / side), levels.plan.floors[f].z);
+        const auto* tile = editor.map.getTile(pos);
+        const bool modelOpen = model.walkable[f*n+i];
+        const bool decorOrSlope = levels.blockingMask[f*n+i] ||
+            (plans[f]->items[i] && g_item_definitions.get(plans[f]->items[i]).hasFlag(ItemFlag::Unpassable));
+        const bool mismatch = modelOpen ? !tile || !tile->ground || blocking(tile) :
+            decorOrSlope && tile && tile->ground && !blocking(tile);
+        open += modelOpen;
+        blocked += !modelOpen && decorOrSlope;
+        if (mismatch && mismatches++ < 16) {
+            report << std::format("LEVEL_MAP_MISMATCH at {},{},{} open={} ground={} blockers=", pos.x, pos.y, pos.z, modelOpen,
+                tile && tile->ground ? tile->ground->getID() : 0);
+            if (tile) for (const auto& item : tile->items) if (item->isBlocking()) report << item->getID() << ',';
+            report << '\n';
+        }
+    }
+    for (const auto& e : levels.plan.edges) {
+        const auto& a = e.a;
+        const Position pos(100 + int(a.cell % side), 100 + int(a.cell / side), levels.plan.floors[a.floor].z);
+        const auto* tile = editor.map.getTile(pos);
+        const auto floorchange = [](const auto& item) { return item && item->getDefinition().hasFlag(ItemFlag::FloorChange); };
+        // Cave entrances and mountain heads are at edge.a; cave exit heads too.
+        const bool present = tile && (floorchange(tile->ground) || std::ranges::any_of(tile->items, floorchange));
+        transitions += present;
+    }
+    report << std::format("LEVEL_REACHABILITY_E2E_{} walkable={} blocked={} mismatches={} floorchange={}/{} floors={}\n",
+        mismatches == 0 && transitions == levels.plan.edges.size() ? "PASS" : "FAIL", open, blocked, mismatches, transitions,
+        levels.plan.edges.size(), levels.plan.floors.size());
+    check(mismatches == 0 && transitions == levels.plan.edges.size(), "Level model and committed map disagree");
+    editor.map.clearChanges();
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -1419,6 +1550,8 @@ void run() {
         mountainDialogControls(report);
         plateaus(report);
         plateaus(report, 3);
+        levelReachabilityProbe(report);
+        levelRetryProbe(report);
 		for (uint64_t seed = 1; seed <= 4; ++seed) oneRun(100, seed, report, seed == 1);
 		oneRun(250, 1729, report, true);
 		oneRun(500, 1729, report, false);

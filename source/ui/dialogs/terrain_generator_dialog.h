@@ -84,7 +84,11 @@ private:
 	wxSpinCtrl* width_spin_ = nullptr;
 	wxSpinCtrl* height_spin_ = nullptr;
 	wxTextCtrl* seed_text_ = nullptr;
-	wxSpinCtrl* grass_weight_spin_ = nullptr;
+	wxSpinCtrl* retry_spin_ = nullptr;
+    uint32_t preview_attempt_ = 0;
+    uint64_t preview_first_seed_ = 0;
+    bool preview_fallback_ = false;
+    wxSpinCtrl* grass_weight_spin_ = nullptr;
 	wxSpinCtrl* dirt_weight_spin_ = nullptr;
 	wxSpinCtrl* water_weight_spin_ = nullptr;
 	wxComboBox* grass_brush_choice_ = nullptr;
