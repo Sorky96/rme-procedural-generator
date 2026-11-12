@@ -50,6 +50,8 @@ if args.probes:
         foreign = [line for line in stderr_lines if "'SetFocus' failed" not in line]
         ok = (report.get('exit_code') == 0 and report.get('input_assets_unchanged') is True
               and marker in report.get('report', '') and 'FAILED\t' not in report.get('report', '') and not foreign)
+        if mode == 'surface':
+            ok &= 'MOUNTAIN_PASS_GUI_PASS' in report.get('report', '')
         print(f'probe --{mode:<8} {"PASS" if ok else "FAIL"} (exit_code={report.get("exit_code")}, '
               f'input_assets_unchanged={report.get("input_assets_unchanged")}, SetFocus warnings={len(stderr_lines) - len(foreign)}, other stderr={len(foreign)})')
         if not ok:

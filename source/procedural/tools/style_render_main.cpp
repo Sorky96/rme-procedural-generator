@@ -109,6 +109,50 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         auto repaired = repairLevelReach(*world, true, false, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
+        if (config.tuning.passes) {
+            auto plan = levelPlanOf(world->surface, true, false, world->cave ? &*world->cave : nullptr,
+                world->exits, shapes, world->caps, world->decor);
+            if (!plan) return std::unexpected(plan.error());
+            auto reach = levelReachabilityOf(*plan, {true,true,true});
+            if (!reach) return std::unexpected(reach.error());
+            const auto w = config.region.width;
+            const auto bfs = [&](std::span<const uint8_t> open, uint32_t a, uint32_t b) {
+                std::vector<int32_t> d(n,-1); std::vector<uint32_t> q{a}; d[a]=0;
+                for (size_t head=0; head<q.size(); ++head) {
+                    const auto i=q[head]; if (i==b) return d[i];
+                    for (auto j : {i%w ? i-1 : uint32_t(n), i%w+1<w ? i+1 : uint32_t(n),
+                        i>=w ? i-w : uint32_t(n), i+w<n ? i+w : uint32_t(n)})
+                        if (j<n && open[j] && d[j]<0) { d[j]=d[i]+1; q.push_back(j); }
+                }
+                return -1;
+            };
+            uint64_t blocked=0, covered=0, small=0, invalid=0;
+            for (const auto& pass : world->passes) {
+                const auto through=bfs(std::span(reach->walkable).first(n),pass.from,pass.to);
+                const auto bypass=bfs(pass.before,pass.from,pass.to);
+                invalid += through<0 || bypass<0 || int64_t(through)*5>int64_t(bypass)*3;
+                vegetation += std::format("level pass route through {} bypass {}\n",through,bypass);
+                for (auto i:pass.cells) {
+                    blocked += !reach->walkable[i];
+                    for (const auto& cap:world->caps) covered += cap.cells[i]!=PlateauKind::None;
+                }
+            }
+            for (size_t k=0;k<world->caps.size();++k) {
+                const auto& cells=world->caps[k].cells;
+                std::vector<uint8_t> seen(n);
+                for (uint32_t i=0;i<n;++i) if (!seen[i] && cells[i]==PlateauKind::Top) {
+                    std::vector<uint32_t> q{i}; seen[i]=1;
+                    for (size_t head=0;head<q.size();++head) {
+                        const auto p=q[head];
+                        for (auto j:{p%w?p-1:uint32_t(n),p%w+1<w?p+1:uint32_t(n),p>=w?p-w:uint32_t(n),p+w<n?p+w:uint32_t(n)})
+                            if (j<n && !seen[j] && cells[j]==PlateauKind::Top) {seen[j]=1;q.push_back(j);}
+                    }
+                    small += q.size()<(k ? 30 : config.tuning.plateauMinTop);
+                }
+            }
+            vegetation += std::format("level passes count {} blocked {} covered {} smallCaps {} invalidRoutes {}\n",
+                world->passes.size(),blocked,covered,small,invalid);
+        }
         vegetation += caveMeasurements(*world);
         const auto islands = sandIslandsOf(world->surface);
         if (!islands) return std::unexpected(ReachabilityError::InvalidGrid);
@@ -228,6 +272,7 @@ int main(int argc, char** argv) {
 		else if (name == "repairReach") tuning.repairReach = value;
         else if (name == "caveFarExits") tuning.caveFarExits = value != 0;
         else if (name == "caveDoorCorridors") tuning.caveDoorCorridors = value != 0;
+        else if (name == "passes") tuning.passes = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
         else if (name == "plateauLevels") {

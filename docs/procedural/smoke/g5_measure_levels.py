@@ -1,4 +1,4 @@
-"""Iteration 40 gate, or --i41: far cave exits and door corridors as well."""
+"""G5 gate: --i41 includes cave exits/doors; --i42 also compares mountain passes=0/4."""
 import argparse
 import json
 import re
@@ -11,11 +11,14 @@ root = Path(__file__).resolve().parents[3]
 profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10')
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--i41', action='store_true')
+parser.add_argument('--i42', action='store_true')
 args = parser.parse_args()
-output = root / ('local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
+args.i41 |= args.i42
+output = root / ('local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
-    profile, density, length = spec
+    profile, density, length, passes = spec
+    label = f'{profile}-passes{passes}' if args.i42 else profile
     rows = []
     for retries in [0, 8]:
         logs = []
@@ -28,10 +31,12 @@ def measure(spec):
                        'repairReach=1', 'caveEntrances=16', 'caveExitShapes=ramp',
                        'plateauMinTop=64', 'plateauMaxPercent=10', 'plateauLevels=3']
             command += ['caveFarExits=1', 'caveDoorCorridors=1'] if args.i41 else ['caveFarExits=0']
+            if args.i42:
+                command += [f'passes={passes}']
             command += [str(seed) for seed in range(1001, 1033)]
             result = subprocess.run(command, capture_output=True)
-            (output / f'{profile}-retry{retries}-run{run}.log').write_bytes(result.stdout)
-            (output / f'{profile}-retry{retries}-run{run}.stderr').write_bytes(result.stderr)
+            (output / f'{label}-retry{retries}-run{run}.log').write_bytes(result.stdout)
+            (output / f'{label}-retry{retries}-run{run}.stderr').write_bytes(result.stderr)
             if result.returncode:
                 raise RuntimeError((command, result.returncode, result.stderr.decode()))
             logs.append(result.stdout)
@@ -89,7 +94,7 @@ def measure(spec):
                 'seedsWithDoors': sum(c[5] > 0 for c in caves),
                 'corridors': sum(c[5] for c in caves), 'invalidDoors': sum(c[6] for c in caves),
             }
-        rows.append({'profile': profile, 'retries': retries, 'identical': True,
+        rows.append({'profile': profile, 'passes': passes, 'retries': retries, 'identical': True,
                         'allSeeds': sum(s[3] == 'true' for s in seeds),
                         'edges': [sum(int(s[i]) for s in seeds) for i in [4, 5]],
                         'categories': categories, 'pockets': pockets, 'repairs': repairs,
@@ -101,14 +106,27 @@ def measure(spec):
                         'unrepairedSeeds': sum(line[5] == 'true' for line in repair_lines),
                         'removedPoiFraction': removed_pois / max(1, retained_pois + removed_pois)})
         rows[-1]['caveI41'] = cave_metrics
+        if args.i42 and passes:
+            cuts = [tuple(map(int, row)) for row in re.findall(
+                r'level passes count (\d+) blocked (\d+) covered (\d+) smallCaps (\d+) invalidRoutes (\d+)', text)]
+            assert len(cuts) == 32
+            routes = [tuple(map(int, row)) for row in re.findall(r'level pass route through (-?\d+) bypass (-?\d+)', text)]
+            rows[-1]['mountainPasses'] = {'median': statistics.median(c[0] for c in cuts),
+                'sum': sum(c[0] for c in cuts), 'blocked': sum(c[1] for c in cuts),
+                'covered': sum(c[2] for c in cuts), 'smallCaps': sum(c[3] for c in cuts),
+                'invalidRoutes': sum(c[4] for c in cuts),
+                'maximumRatio': max((a / b for a, b in routes if b > 0), default=0)}
         print(rows[-1], flush=True)
     return rows
 
 with ThreadPoolExecutor(max_workers=2) as executor:
-    summary = [row for rows in executor.map(measure, [('m06', 30, 40), ('m19', 40, 80)]) for row in rows]
+    specs = [(p, d, l, passes) for passes in ([0, 4] if args.i42 else [0])
+             for p, d, l in [('m06', 30, 40), ('m19', 40, 80)]]
+    summary = [row for rows in executor.map(measure, specs) for row in rows]
 (output / 'summary.json').write_text(json.dumps(summary, indent=2))
 passed = all(row['allSeeds'] >= (32 if row['retries'] or args.i41 else 30)
              and row['edges'][0] == row['edges'][1]
+             and row['unrepairedSeeds'] == 0
              and row['removedPoiFraction'] <= .02 and row['entranceMedian'] >= 8
              and row['islandNonShoreCells'] == 0
              and row['vegetation'] and all(v['ratioMedian'] >= .7 for v in row['vegetation'].values()) for row in summary)
@@ -116,5 +134,9 @@ if args.i41:
     passed &= all(row['caveI41']['componentExitShareMedian'] >= .8
                   and row['caveI41']['distanceMean'] >= 24 and row['caveI41']['distanceMinimum'] >= 24
                   and row['caveI41']['seedsWithDoors'] >= 26 and row['caveI41']['invalidDoors'] == 0 for row in summary)
+if args.i42:
+    passed &= all(row['mountainPasses']['median'] >= 2
+                  and all(row['mountainPasses'][key] == 0 for key in ['blocked', 'covered', 'smallCaps', 'invalidRoutes'])
+                  for row in summary if row['passes'])
 print('G5_GATE_PASS' if passed else 'G5_GATE_FAIL', flush=True)
 raise SystemExit(0 if passed else 1)

@@ -325,3 +325,34 @@ Status kryteriów:
 **Decyzje i odchylenia.** Bez zmiany kryteriów ani progów. Korytarz ma stałą dozwoloną długość 3; długość celu przedłużenia tunelu liczona w metryce Manhattan, potem obowiązkowo ponowny BFS od wejść. Obie komórki powierzchni (głowa i przybycie) są dodatkowo wymagane jako otwarty grunt. Historyczne sondy relacji rampa=wejście jawnie wyłączają nowe opcje; szacunki pamięci uwzględniają nowe pola i warstwy. Regresję zbyt szerokiego wyjątku chodliwości drzwi budynków wykryła stara sonda i poprawiono ją przed końcową serią.
 
 **Nie zweryfikowane:** wizualna ocena użytkownika, ruch i otwieranie drzwi na serwerze gry, inne klienty niż 10.98, oryginalny RME, obszar 2000×2000 z nowymi opcjami, wszystkie awarie alokacji (D3). Pełny raport i surowe wyniki w niecommitowanym `local-data/I41_IMPLEMENTATION_REPORT.md` i `local-data/i41-measurement/`.
+
+## Iteracja 42 — przełęcze w górach (2026-11-12): PASS w pomiarach i sondach
+
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 42”, bez zmian. Rdzeń: `4c8fc93`, adapter/GUI: `c18c7e7`. Nowe `passes` 0..8 (domyślnie 0), kontrolka „Mountain passes” w Levels. Masyw: 4-spójny Rock, ≥400 komórek. Przeciwległe końce przekrojów co 3 komórki, następnie dwa BFS: obejście i przejście przez cały dopuszczalny masyw; obejście ≥2× przejście. Dijkstra: krok `1+4*liczba_czap`, zakręt +6, co najmniej 3 kroki proste między zakrętami, remisy (y,x). Pas szerokości 3, bez dekoru; wycięcie wszystkich czap z dodatkową komórką odstępu. Po każdym cięciu ponowny wybór wejść oraz przebudowa czap/ramp istniejącymi selektorami z dotychczasowym minimum pola. Bez pędzla Path adapter wybiera Dirt. Po autoborderze usuwa blokujące bordery/dekor przez DrawOperations i sprawdza cały pas.
+
+Pomiar `py -I docs/procedural/smoke/g5_measure_levels.py --i42`: seedy 1001–1032, bok 512, ustawienia iteracji 41, oba profile i passes=0/4. Każdy wariant dwa razy bez ponawiania oraz z limitem 8 prób; stdout/stderr bajtowo identyczne, odcisk całego LevelPlan w stdout. Wyniki bez ponawiania i z ≤8 próbami jednakowe:
+
+| Profil | passes | Pełne seedy | Przełęcze mediana / suma | Maks. przez / obejście | Blokady pasa / pod czapą / małe czapy | Chodliwe krawędzie Z |
+|---|---:|---:|---:|---:|---:|---:|
+| m06 | 0 | 32/32 | 0 / 0 | — | — | 1840/1840 |
+| m19 | 0 | 32/32 | 0 / 0 | — | — | 2769/2769 |
+| m06 | 4 | 32/32 | 4 / 116 | 0,5 | 0 / 0 / 0 | 1878/1878 |
+| m19 | 4 | 32/32 | 4 / 92 | 0,5 | 0 / 0 / 0 | 2809/2809 |
+
+**G5_GATE_PASS** dla obu ustawień passes, bez nieosiągalnych celów ani `unrepaired`. Zachowane kryteria wcześniejszych iteracji: mediana wejść ≥8, roślinność czap ≥70% powierzchni, usunięte POI ≤2%, niedostępne wyspy wyłącznie Shore, dalekie wyjścia i drzwi jaskini. Szczegóły kategorii, kieszeni i napraw w `local-data/i42-measurement/summary.json`.
+
+Status kryteriów:
+
+1. **PASS:** ręczny masyw, rozcięcie czapy, minimum pola, rampa na pasie usunięta i wybrana ponownie; sonda potwierdza grunt chodliwy, Dirt bez pędzla Path i pustą przestrzeń nad pasem.
+2. **PASS:** BFS rzeczywistych tras, Dijkstra przez masyw, ograniczenie liczby, domyślne 0; count=9 odrzucany, anulowanie i determinizm w testach.
+3. **PASS:** mediana 4 w obu profilach; każda końcowa trasa ≤0,5 obejścia sprzed danego cięcia (wymagane ≤0,6).
+4. **PASS:** zero blokad, zero pokrycia czapą i zero składowych czap poniżej minimum; sonda sprawdza 261 komórek w końcowej masce adaptera i na zapisanej mapie.
+5. **PASS:** wszystkie 32 seedy, wszystkie kategorie POI i krawędzie Z osiągalne, passes=0 i passes=4, bez ponawiania i z ≤8 próbami.
+6. **PASS:** `MOUNTAIN_PASS_GUI_PASS cells=261 farExits=1 doors=1 maskDoors=1 undoRedo=4`; rzeczywisty dialog Preview/Validate/Place, cztery Undo do pustej mapy i cztery Redo z identycznymi stosami z=4..8. Brak przedmiotów nad pasem na z−1, z−2 i z−3. Dodatkowo Dirt przy braku pędzla Path z wyłączoną naprawą.
+7. **PASS:** kanoniczny build Windows x64, osobna przebudowa style_render i 18 celów (D25), 18/18 testów, obie sondy PASS, **SUITE_PASS**. Seed 1729 100×100 przy passes=0: **17159159863505677800**, bez zmian. Końcowe sondy: `suite-commit-20261112-225322` i `suite-surface-20261112-225322`; dane klienta niezmienione, 100 znanych ostrzeżeń SetFocus w sondzie Surface, zero innych wpisów stderr.
+
+Dodatkowa kontrola zgodności passes=0: niezależnie skompilowane źródła narzędzia i rdzenia z `af333e6` w niecommitowanym local-data; cały stdout i stderr dla obu profili, 32 seedów i retry=0/8 identyczny z nowym narzędziem (`PASSES_ZERO_BASELINE_BYTE_IDENTICAL`, `local-data/i42-baseline/comparison.json`).
+
+**Decyzje i odchylenia.** Kryteria, progi i parametry pomiaru niezmienione. Obejście mierzone przed konkretnym cięciem na piętrze powierzchni, bez skrótów Z; końcowa trasa na modelu levelReachabilityOf po dekoracji i naprawie. Selektory ponownie wyznaczają całą listę wejść/ramp, nie tylko element na pasie. Przy passes=0 dochodzą bajty nowych pól w szacunkach pamięci; stare odciski i wyniki semantyczne pozostają bez zmian.
+
+**Nie zweryfikowane:** ocena wizualna użytkownika, ruch na serwerze gry, inne klienty niż 10.98, oryginalny RME, obszar 2000×2000 z przełęczami, pełne profilowanie i wszystkie awarie alokacji (D3). Pełny raport: niecommitowany `local-data/I42_IMPLEMENTATION_REPORT.md`.
