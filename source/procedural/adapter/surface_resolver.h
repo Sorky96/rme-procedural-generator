@@ -13,6 +13,8 @@ namespace rme::procedural {
 
 struct BridgeBrush { uint16_t horizontal = 0, vertical = 0; };
 std::expected<BridgeBrush, ResolveError> resolveBridgeBrush(std::string_view name);
+struct CaveDoorBrush { uint16_t wall = 0, horizontal = 0, vertical = 0; };
+std::expected<CaveDoorBrush, ResolveError> resolveCaveDoorBrush(std::string_view name);
 
 struct CaveExitBrush {
 	struct Items { uint16_t ramp = 0, tail = 0, opening = 0; };

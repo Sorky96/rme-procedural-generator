@@ -81,6 +81,24 @@ bool hasCave(const GroundProfile& profile) noexcept {
 	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }
 
+std::expected<CaveDoorBrush, ResolveError> resolveCaveDoorBrush(std::string_view name) {
+    if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
+    if (!g_version.IsVersionLoaded()) return std::unexpected(ResolveError::NoClient);
+    if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
+    const auto* b = g_brushes.getBrush(std::string(name));
+    const auto* wall = b ? b->as<WallBrush>() : nullptr;
+    if (!wall || wall->is<WallDecorationBrush>()) return std::unexpected(ResolveError::InvalidProfile);
+    CaveDoorBrush result {wall->getPlacementItemId()};
+    for (const auto [alignment, target] : {std::pair{WALL_HORIZONTAL, &result.horizontal}, std::pair{WALL_VERTICAL, &result.vertical}})
+        for (const auto& door : wall->items.getDoorItems(alignment)) {
+            const auto def = g_item_definitions.get(door.id);
+            if (door.type == WALL_DOOR_NORMAL && !door.locked && def && def.clientId() && !def.isMetaItem() &&
+                !def.hasFlag(ItemFlag::IsOpen) && !def.isGroundTile()) { *target = door.id; break; }
+        }
+    if (!result.wall || !result.horizontal || !result.vertical) return std::unexpected(ResolveError::InvalidProfile);
+    return result;
+}
+
 bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept {
 	return !hasCave(profile) || (config.algorithm == GenerationAlgorithm::Surface && config.surface.caveEntrances > 0 &&
 		profile.count == GroundProfile::surfaceWithFloorCount && !profile.caveEntrance.empty() && profile.caveEntrance.size() <= 256 &&
@@ -91,6 +109,7 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 	if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
 	if (!g_version.IsVersionLoaded()) return std::unexpected(ResolveError::NoClient);
 	if (!hasCave(profile) || !validCaveProfile(profile, config)) return std::unexpected(ResolveError::InvalidProfile);
+    if (config.surface.caveDoorCorridors && !resolveCaveDoorBrush(profile.caveDoor)) return std::unexpected(ResolveError::InvalidProfile);
 	const auto doodad = [](const std::string& name) {
 		const auto* brush = g_brushes.getBrush(name);
 		return brush ? brush->as<DoodadBrush>() : nullptr;
@@ -261,7 +280,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor}) {
 		if (name->empty()) continue;
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;

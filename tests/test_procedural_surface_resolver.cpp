@@ -766,6 +766,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	config.algorithm = GenerationAlgorithm::Surface;
 	config.surface.buildingDensity = 10;
 	config.surface.caveEntrances = 20;
+    config.surface.caveFarExits = false; // historical entrance/ramp one-to-one regression
 	config.surface.caveEntranceStyle = style;
 	config.surface.rockPermille = 200;
 	GroundProfile profile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
@@ -1024,6 +1025,7 @@ void guiCaves(std::ostream& report) {
 		config.surface.shoreSmoothing = 2;
 		config.surface.buildingDensity = buildings;
 		config.surface.caveEntrances = 20;
+        config.surface.caveFarExits = false; // historical one-to-one matrix; new exits have their own GUI probe
 		config.surface.caveEntranceStyle = style;
 		config.surface.rockPermille = 200;
 		GroundProfile profile {{"grass", "dirt", "mountain", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
@@ -2018,6 +2020,97 @@ void finalMaskRepairProbe(std::ostream& report) {
     std::filesystem::remove(file);
 }
 
+void caveFarExitDoorGuiProbe(std::ostream& report) {
+    UndoLimits limits;
+    check(g_gui.NewMap(), "I41 GUI map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-style", dialog));
+    check(style, "I41 style control"); style->SetSelection(1);
+    wxCommandEvent changed(wxEVT_CHOICE, style->GetId()); changed.SetEventObject(style);
+    style->GetEventHandler()->ProcessEvent(changed);
+    const auto spin = [&](const char* name, int value) {
+        auto* c = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+        check(c, std::format("I41 spin {}", name)); c->SetValue(value);
+        wxSpinEvent event(wxEVT_SPINCTRL, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+    };
+    constexpr uint32_t side = 256, n = side * side;
+    spin("terrain-width", side); spin("terrain-height", side); spin("terrain-cave-entrances", 16);
+    spin("terrain-plateau-percent", 10); spin("terrain-plateau-levels", 3);
+    auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+    check(seed, "I41 seed"); seed->SetValue("1001");
+    auto* doors = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-cave-door-corridors", dialog));
+    auto* distant = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-cave-far-exits", dialog));
+    auto* brush = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-cave-door-brush", dialog));
+    check(doors && distant && brush && !doors->GetValue() && distant->GetValue(), "I41 option defaults");
+    wxCommandEvent dropdown(wxEVT_COMBOBOX_DROPDOWN, brush->GetId()); dropdown.SetEventObject(brush);
+    brush->GetEventHandler()->ProcessEvent(dropdown);
+    check(brush->SetStringSelection("bridge"), "I41 doorless wall brush offered");
+    wxCommandEvent brushChanged(wxEVT_COMBOBOX, brush->GetId()); brushChanged.SetEventObject(brush);
+    brush->GetEventHandler()->ProcessEvent(brushChanged);
+    check(!doors->IsEnabled() && !doors->GetValue(), "Missing door brush must disable corridors");
+    check(brush->SetStringSelection("stone wall"), "I41 normal-door wall brush offered");
+    brush->GetEventHandler()->ProcessEvent(brushChanged);
+    check(doors->IsEnabled(), "Valid cave door brush must enable corridors");
+    doors->SetValue(true);
+    wxCommandEvent enabled(wxEVT_CHECKBOX, doors->GetId()); enabled.SetEventObject(doors); doors->GetEventHandler()->ProcessEvent(enabled);
+    // Independent adapter preparation checks the concrete closed-door mask.
+    GenerationConfig config{{100,100,7,side,side},1001}; config.algorithm = GenerationAlgorithm::Surface;
+    config.surface.caveEntrances = 16; config.surface.caveDoorCorridors = true;
+    config.surface.repairReach = 1; config.surface.shoreSmoothing = 2;
+    config.surface.plateauMinTop = 64; config.surface.plateauMaxPercent = 10; config.surface.plateauLevels = 3;
+    GroundProfile p{{"grass","dirt","rocky ground","sand","clear water","clear water","cobblestone","stone floor"},8};
+    p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
+    p.caveDoor = "stone wall"; p.plateauGround = "grass"; p.plateauRamp = "ramp"; p.bridgeBrush = "bridge";
+    auto prepared = prepareTerrain(editor.map, config, p, {1000000,1100000,2000000,8ULL << 30});
+    check(prepared && prepared->levels && prepared->cave, "I41 adapter preparation");
+    size_t maskDoors = 0;
+    for (size_t i = 0; i < n; ++i) if (prepared->cave->plan.doors[i]) {
+        ++maskDoors;
+        check(!prepared->levels->blockingMask[n + i] && prepared->levels->report.walkable[n + i], "Closed door must be openable in adapter mask");
+    }
+    check(maskDoors > 0 && prepared->levels->report.allReached(), "I41 adapter reachable doors");
+    prepared = std::unexpected(PreparationError{PreparationInputError::Cancelled});
+    MountainDialogRun run(*dialog, editor, 0, true);
+    const int modal = dialog->ShowModal(); run.stop();
+    check(modal == wxID_OK && run.placed(), "I41 GUI flow: " + run.failure());
+    const auto resolved = resolveCaveDoorBrush("stone wall"); check(bool(resolved), "I41 door resolution");
+    size_t placedDoors = 0, farExits = 0;
+    const auto open = [&](int x, int y) {
+        const auto* t = editor.map.getTile(Position(x, y, 8));
+        return t && t->ground && !t->ground->isBlocking() && std::ranges::none_of(t->items,
+            [](const auto& item) { return item->isBlocking() && !item->isBrushDoor(); });
+    };
+    for (uint32_t i = 0; i < n; ++i) {
+        const int x = 100 + int(i % side), y = 100 + int(i / side);
+        const auto* tile = editor.map.getTile(Position(x, y, 8));
+        if (!tile) continue;
+        for (const auto& item : tile->items) {
+            if (item->isBrushDoor()) {
+                ++placedDoors;
+                check(!item->isOpen() && (item->getID() == resolved->horizontal || item->getID() == resolved->vertical), "I41 closed unlocked door item");
+                const bool west = open(x-1,y), east = open(x+1,y), north = open(x,y-1), south = open(x,y+1);
+                check((west && east && !north && !south) || (north && south && !west && !east), "I41 committed door neighbours");
+            }
+            if (item->getDefinition().hasFlag(ItemFlag::FloorChange) && !item->getDefinition().hasFlag(ItemFlag::FloorChangeDown)) {
+                const auto* upper = editor.map.getTile(Position(x,y,7));
+                const auto down = [](const auto& v) { return v && v->getDefinition().hasFlag(ItemFlag::FloorChangeDown); };
+                if (upper && upper->ground && !down(upper->ground) && std::ranges::none_of(upper->items, down)) ++farExits;
+            }
+        }
+    }
+    check(placedDoors > 0 && farExits > 0, "I41 GUI needs doors and exit without surface hole");
+    std::vector<std::vector<uint32_t>> after;
+    for (int z=4; z<=8; ++z) after.push_back(stackImage(editor.map,98,98,z,side+4,side+4));
+    const auto actions = editor.actionQueue->getSize();
+    for (size_t i=0; i<actions; ++i) check(editor.actionQueue->undo(), "I41 Undo");
+    check(editor.map.getTileCount() == 0, "I41 Undo restores empty map");
+    for (size_t i=0; i<actions; ++i) check(editor.actionQueue->redo(), "I41 Redo");
+    for (int z=4; z<=8; ++z) check(after[z-4] == stackImage(editor.map,98,98,z,side+4,side+4), "I41 identical Redo");
+    report << std::format("CAVE_FAR_EXIT_DOOR_GUI_PASS farExits={} doors={} maskDoors={} undoRedo={} brush=stone wall\n",farExits,placedDoors,maskDoors,actions);
+    dialog->Destroy(); editor.map.clearChanges();
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -2028,6 +2121,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        caveFarExitDoorGuiProbe(report);
         finalMaskRepairProbe(report);
         mountainDialogControls(report);
         guiMountainPercentage(report);

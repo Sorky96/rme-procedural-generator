@@ -627,6 +627,28 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	if (ground_names_.Index("mountain") == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
 	form->Add(cave_wall_brush_choice_, 1, wxEXPAND);
 
+    form->Add(label("Far cave exits:"), 0, wxALIGN_CENTER_VERTICAL);
+    cave_far_exits_check_ = newd wxCheckBox(host, wxID_ANY, "Exit at the other end of each cave");
+    cave_far_exits_check_->SetName("terrain-cave-far-exits");
+    cave_far_exits_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    cave_far_exits_check_->SetValue(true);
+    cave_far_exits_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(cave_far_exits_check_, 1, wxEXPAND);
+    form->Add(label("Cave door brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    cave_door_brush_choice_ = brushChoice("terrain-cave-door-brush", "stone wall", 2);
+    form->Add(cave_door_brush_choice_, 1, wxEXPAND);
+    form->Add(label("Cave corridors:"), 0, wxALIGN_CENTER_VERTICAL);
+    cave_door_corridors_check_ = newd wxCheckBox(host, wxID_ANY, "Narrow corridors with closed, unlocked doors");
+    cave_door_corridors_check_->SetName("terrain-cave-door-corridors");
+    cave_door_corridors_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    cave_door_corridors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    cave_door_brush_choice_->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    cave_door_brush_choice_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(cave_door_corridors_check_, 1, wxEXPAND);
+    form->AddSpacer(0);
+    cave_door_hint_ = label("");
+    form->Add(cave_door_hint_, 1, wxEXPAND);
+
     form->Add(label("Mountain area z-1 (%):"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
     plateau_percent_spin_->SetToolTip(
@@ -969,6 +991,13 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     retry_spin_->Enable(natural);
 	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
+    const bool caves = natural && cave_entrances_spin_->GetValue() > 0;
+    cave_far_exits_check_->Enable(caves);
+    cave_door_brush_choice_->Enable(caves);
+    const bool doorAvailable = bool(rme::procedural::resolveCaveDoorBrush(std::string(cave_door_brush_choice_->GetValue().utf8_str())));
+    cave_door_corridors_check_->Enable(caves && doorAvailable);
+    if (!doorAvailable) cave_door_corridors_check_->SetValue(false);
+    cave_door_hint_->SetLabel(doorAvailable ? wxString{} : wxString("Choose a wall brush with closed, unlocked normal doors to enable corridors."));
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
 	doors_check_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
@@ -1112,6 +1141,9 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		request.profile.caveExit = std::string(cave_exit_brush_choice_->GetValue().utf8_str());
 		request.profile.caveGround = std::string(cave_ground_brush_choice_->GetValue().utf8_str());
 		request.profile.caveWall = std::string(cave_wall_brush_choice_->GetValue().utf8_str());
+        config.surface.caveFarExits = cave_far_exits_check_->GetValue();
+        config.surface.caveDoorCorridors = cave_door_corridors_check_->IsEnabled() && cave_door_corridors_check_->GetValue();
+        if (config.surface.caveDoorCorridors) request.profile.caveDoor = std::string(cave_door_brush_choice_->GetValue().utf8_str());
 	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();

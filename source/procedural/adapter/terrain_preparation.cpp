@@ -242,7 +242,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.bridgeBrush}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
 	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
@@ -261,7 +261,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount);
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
+        + (config.surface.caveDoorCorridors ? cellCount * 3 : 0);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -467,6 +468,14 @@ TerrainPreparationSteps runPreparation(
 					auto exits = repairWorld ? std::expected<CaveExitPlan, UndergroundError>(repairWorld->exits) : placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
 					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
 						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
+                    if (!repairWorld && input.config.surface.caveFarExits) {
+                        auto distant = placeFarCaveExits(*grid, *generated, *exits, brushes->shapes, input.config.seed, occupied, stop);
+                        if (!distant) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    }
+                    if (!repairWorld && input.config.surface.caveDoorCorridors) {
+                        auto doors = placeCaveDoorCorridors(*generated, *exits, brushes->shapes, stop);
+                        if (!doors) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    }
 					levelCave = *generated;
                     levelExits = *exits;
                     levelShapes = brushes->shapes;
@@ -497,18 +506,38 @@ TerrainPreparationSteps runPreparation(
 						if ((floor || wall) && lowerSnapshot->input.mask[i] && !lowerSnapshot->input.protection[i]) lowerPlan.items[i] = floor ? brushes->ground : brushes->wall;
 					}
 					for (const auto& exit : exits->exits) {
-						const auto e = grid->entrances[exit.entrance], p = exit.cell;
-						if (!plan.items[e] || !lowerPlan.items[p]) continue;
+                        const auto p = exit.cell;
+                        if (!lowerPlan.items[p]) continue;
 						const auto& ids = brushes->items[exit.shape];
 						const auto& shape = brushes->shapes[exit.shape];
 						const auto tail = size_t(int64_t(p) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
 						if (shape.hasTail && !lowerPlan.items[tail]) continue;
-						plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
-						if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
-						if (!plan.decor.empty()) plan.decor[e] = 0;
+                        if (!exit.distant) {
+                            const auto e = grid->entrances[exit.entrance];
+                            if (!plan.items[e]) continue;
+                            plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
+                            if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
+                            if (!plan.decor.empty()) plan.decor[e] = 0;
+                        }
+                        if (exit.distant && !plan.decor.empty()) {
+                            constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+                            const auto d = size_t(shape.direction);
+                            const auto arrival = size_t(int64_t(p) + dx[d] + int64_t(dy[d]) * grid->region.width);
+                            plan.decor[arrival] = 0;
+                        }
 						lowerPlan.exits[p] = ids.ramp;
 						if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
 					}
+                    if (input.config.surface.caveDoorCorridors) {
+                        auto door = resolveCaveDoorBrush(profile.caveDoor);
+                        if (!door) co_return fail(door.error());
+                        lowerPlan.walls.assign(cellCount, 0); lowerPlan.doors.assign(cellCount, 0);
+                        for (const auto& c : generated->corridors) {
+                            const auto side = c.horizontal ? grid->region.width : 1u;
+                            for (auto i : {c.door - side, c.door, c.door + side}) lowerPlan.walls[i] = door->wall;
+                            lowerPlan.doors[c.door] = 1;
+                        }
+                    }
 					auto lowerSteps = DrawOperations::prepareTerrainPreviewSteps(map, *lowerSnapshot, lowerPlan,
 						{budget.maxChanges, remaining}, stop);
 					auto lower = lowerSteps.advance();
@@ -802,7 +831,9 @@ TerrainPreparationSteps runPreparation(
                     const auto* tile = previews[f]->getBuffer().getTile(position);
                     levels->plan.floors[f].walkable[i] &= tile && tile->ground;
                     uint8_t blocks = tile && tile->ground && tile->ground->isBlocking() ? 2 : 0;
-                    if (tile) for (const auto& item : tile->items) if (item->isBlocking()) {
+                    if (tile) for (const auto& item : tile->items) if (item->isBlocking() &&
+                        !(!plans[f]->caveFloor.empty() && plans[f]->config.surface.caveDoorCorridors &&
+                            !plans[f]->doors.empty() && plans[f]->doors[i] && item->isBrushDoor())) {
                         const bool decor = !plans[f]->decor.empty() && plans[f]->decor[i] == item->getID();
                         blocks = std::max<uint8_t>(blocks, item->isBorder() || decor ? 1 : 2);
                     }

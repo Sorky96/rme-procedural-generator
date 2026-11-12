@@ -151,6 +151,11 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.config.surface.caveEntrances, 4);
 		hashField(hash, uint8_t(plan.config.surface.caveEntranceStyle), 1);
 		if (!plan.profile.caveWall.empty()) string(plan.profile.caveWall);
+        if (plan.config.surface.caveFarExits || plan.config.surface.caveDoorCorridors) {
+            hashField(hash, plan.config.surface.caveFarExits, 1);
+            hashField(hash, plan.config.surface.caveDoorCorridors, 1);
+            if (!plan.profile.caveDoor.empty()) string(plan.profile.caveDoor);
+        }
 	}
     if (plan.config.surface.plateauMinTop) {
         hashField(hash, plan.config.surface.plateauMinTop, 4);
@@ -318,7 +323,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     }
     if (!validCaveProfile(plan.profile, plan.config) || (cave && (!hasCave(plan.profile) || plan.caveFloor.size() != plan.items.size())))
 		co_return std::unexpected(PreviewError::InvalidPlan);
-	if (cave && (!plan.decor.empty() || !plan.walls.empty() || !plan.doors.empty() || !plan.fires.empty())) co_return std::unexpected(PreviewError::InvalidPlan);
+	if (cave && (!plan.decor.empty() || !plan.fires.empty() ||
+        (!plan.config.surface.caveDoorCorridors && (!plan.walls.empty() || !plan.doors.empty())))) co_return std::unexpected(PreviewError::InvalidPlan);
 	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -408,8 +414,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     // Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
 	std::vector<uint16_t> wallIds;
 	const WallBrush* wallBrush = nullptr;
-    if (!cave && !upper && !plan.profile.wall.empty()) {
-        const auto* brush = plan.profile.wall.size() <= 256 ? g_brushes.getBrush(plan.profile.wall) : nullptr;
+    const auto& wallName = cave ? plan.profile.caveDoor : plan.profile.wall;
+    const bool caveDoors = cave && plan.config.surface.caveDoorCorridors;
+    if (!upper && ((!cave && !wallName.empty()) || caveDoors)) {
+        const auto* brush = wallName.size() <= 256 ? g_brushes.getBrush(wallName) : nullptr;
 		wallBrush = brush ? brush->as<WallBrush>() : nullptr;
 		if (!wallBrush || plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
 		const_cast<WallBrush*>(wallBrush)->getRelatedItems(wallIds);
@@ -419,7 +427,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     } else if (!plan.walls.empty()) {
         co_return std::unexpected(PreviewError::InvalidPlan);
     }
-    const auto doorType = cave || upper || plan.profile.door.empty() ? std::nullopt : doorTypeOf(plan.profile.door);
+    const auto doorType = caveDoors ? std::optional<DoorType>(WALL_DOOR_NORMAL) :
+        cave || upper || plan.profile.door.empty() ? std::nullopt : doorTypeOf(plan.profile.door);
+    if (caveDoors && (!wallBrush || plan.doors.size() != plan.items.size() || !resolveCaveDoorBrush(plan.profile.caveDoor)))
+        co_return std::unexpected(PreviewError::InvalidPlan);
     if ((!cave && !upper && plan.profile.door.empty() != plan.doors.empty())
         || (!cave && !upper && !plan.profile.door.empty() && (!doorType || !wallBrush || plan.doors.size() != plan.items.size()))) {
         co_return std::unexpected(PreviewError::InvalidPlan);
@@ -679,6 +690,16 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 				auto* tile = result.buffer_->getTile(position);
 				if (!tile || !doorBrush.canDraw(result.buffer_.get(), position)) co_return std::unexpected(PreviewError::InvalidItem);
 				doorBrush.draw(result.buffer_.get(), tile, nullptr);
+                if (caveDoors) {
+                    // DoorBrush follows the editor's lock preference. Generated cave
+                    // doors always use the client's closed, unlocked normal variant.
+                    const auto resolved = resolveCaveDoorBrush(plan.profile.caveDoor);
+                    auto* door = tile->getWall();
+                    if (!resolved || !door || !door->isBrushDoor()) co_return std::unexpected(PreviewError::InvalidItem);
+                    const auto alignment = door->getWallAlignment();
+                    if (alignment != WALL_HORIZONTAL && alignment != WALL_VERTICAL) co_return std::unexpected(PreviewError::InvalidItem);
+                    door->setID(alignment == WALL_HORIZONTAL ? resolved->horizontal : resolved->vertical);
+                }
 			}
 		}
 		// Classify actual values, ignoring only derived caches. Even a border on

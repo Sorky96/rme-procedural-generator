@@ -36,6 +36,7 @@ struct GroundProfile {
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;
+    std::string caveDoor; // wall brush supplying closed, unlocked normal doors
     std::string plateauGround, plateauRamp;
     std::string plateauCliff = "mountain";
     std::string bridgeBrush; // empty: sand fords; otherwise walkable wall-brush ground variants
