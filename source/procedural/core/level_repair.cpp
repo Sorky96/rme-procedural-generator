@@ -154,6 +154,8 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     world.decor.push_back(std::move(decor));
     std::vector<uint8_t> occupied(n);
     for (size_t i = 0; i < n; ++i) occupied[i] = world.decor[0].cells[i] != DecorKind::None;
+    if (tuning.rockBlocks)
+        if (auto outside = occupyOutsideStartLand(world.surface, occupied, stop); !outside) return std::unexpected(outside.error());
     if (tuning.plateauMinTop) {
         auto cap = generatePlateau(world.surface, seed, tuning.plateauMinTop, capShapes, occupied, stop, tuning.plateauMaxPercent, true);
         if (!cap) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
@@ -358,13 +360,19 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
             }
             ++result.repairs;
         } else if (f == 0) {
-            std::vector<uint8_t> erase(n);
-            if (world.surface.cells[cell] == SurfaceKind::Floor) {
-                std::vector<uint8_t> floor(n);
-                for (size_t i = 0; i < n; ++i) floor[i] = world.surface.cells[i] == SurfaceKind::Floor;
-                erase = component(floor, cell, w, h);
+            // One repair removes every POI of the target's walkable component (iteration 44):
+            // buildings and camps on it, cave entrances approached from it, ramps landing on it.
+            const auto& area = sources;
+            const auto inArea = [&](uint32_t i) { return i < n && area[i] != 0; };
+            std::vector<uint8_t> floor(n), erase(n);
+            for (size_t i = 0; i < n; ++i) floor[i] = world.surface.cells[i] == SurfaceKind::Floor;
+            bool changed = false;
+            for (uint32_t first = 0; first < n; ++first) {
+                if (!inArea(first) || !floor[first] || erase[first]) continue;
+                const auto building = component(floor, first, w, h);
                 uint32_t minX = w, minY = h, maxX = 0, maxY = 0;
-                for (uint32_t i = 0; i < n; ++i) if (erase[i]) {
+                for (uint32_t i = 0; i < n; ++i) if (building[i]) {
+                    erase[i] = 1;
                     minX = std::min(minX, i % w); maxX = std::max(maxX, i % w);
                     minY = std::min(minY, i / w); maxY = std::max(maxY, i / w);
                 }
@@ -373,19 +381,27 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                     if (inside) { world.surface.cells[i] = SurfaceKind::Grass; clearDecor(0, i); }
                     return inside;
                 });
-                for (uint32_t i = 0; i < n; ++i) if (erase[i]) { world.surface.cells[i] = SurfaceKind::Grass; clearDecor(0, i); }
-                result.removedPois += uint32_t(std::erase_if(world.surface.doors, [&](auto i) { return erase[i]; }));
-                result.removedPois += uint32_t(std::erase_if(world.surface.sites, [&](auto i) { return erase[i]; }));
-                std::erase_if(world.surface.gaps, [&](auto i) { return erase[i]; });
-                result.removedStoreys += uint32_t(std::erase_if(world.storeys, [&](const BuildingStorey& s) {
-                    return erase[size_t(s.y0) * w + s.x0] != 0;
-                }));
-                dropStoreyFloor();
-            } else if (const auto entry = std::ranges::find(world.surface.entrances, cell); entry != world.surface.entrances.end()) {
-                const auto index = uint32_t(entry - world.surface.entrances.begin());
-                world.surface.entrances.erase(entry);
+                changed = true;
+            }
+            for (uint32_t i = 0; i < n; ++i) if (erase[i]) { world.surface.cells[i] = SurfaceKind::Grass; clearDecor(0, i); }
+            result.removedPois += uint32_t(std::erase_if(world.surface.doors, [&](auto i) { return erase[i]; }));
+            result.removedPois += uint32_t(std::erase_if(world.surface.sites, [&](auto i) { return erase[i]; }));
+            std::erase_if(world.surface.gaps, [&](auto i) { return erase[i]; });
+            result.removedStoreys += uint32_t(std::erase_if(world.storeys, [&](const BuildingStorey& s) {
+                return erase[size_t(s.y0) * w + s.x0] != 0;
+            }));
+            dropStoreyFloor();
+            bool entrancesRemoved = false;
+            for (auto index = uint32_t(world.surface.entrances.size()); index-- > 0;) {
+                const auto entry = world.surface.entrances[index];
+                if (!inArea(entry) && !inArea(caveEntranceApproach(world.surface, entry))) continue;
+                world.surface.entrances.erase(world.surface.entrances.begin() + index);
                 std::erase_if(world.exits.exits, [&](const auto& e) { return e.entrance == index && !e.distant; });
                 for (auto& e : world.exits.exits) if (e.entrance > index) --e.entrance;
+                ++result.removedPois;
+                entrancesRemoved = true;
+            }
+            if (entrancesRemoved) {
                 world.exits.skipped.clear();
                 if (world.cave) {
                     auto removed = removeUnenteredCaveComponents(*world.cave, world.exits, stop);
@@ -394,12 +410,10 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                     std::erase_if(world.exits.exits, [&](const auto& e) { return world.cave->cells[e.cell] != CaveKind::Floor; });
                     std::erase_if(world.cave->corridors, [&](const auto& c) { return world.cave->cells[c.door] != CaveKind::Floor; });
                 }
-                ++result.removedPois;
-            } else if (!world.caps.empty() && std::ranges::any_of(world.caps.front().ramps, [&](const PlateauRamp& r) { return r.cell == cell; })) {
-                // The surface end of a ramp lies where no clearance reaches. Drop the ramp;
-                // a cap left without access is removed by a later pass.
-                std::erase_if(world.caps.front().ramps, [&](const PlateauRamp& r) { return r.cell == cell; });
-            } else { result.unrepaired = true; break; }
+            }
+            // A ramp landing where no clearance reaches is dropped; a cap left without access goes on a later pass.
+            if (!world.caps.empty() && std::erase_if(world.caps.front().ramps, [&](const PlateauRamp& r) { return inArea(r.cell); })) changed = true;
+            if (!changed && !entrancesRemoved) { result.unrepaired = true; break; }
             ++result.repairs;
         } else { result.unrepaired = true; break; }
     }

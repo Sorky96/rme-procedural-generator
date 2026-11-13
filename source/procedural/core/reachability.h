@@ -60,6 +60,17 @@ enum class ReachabilityError : uint8_t { InvalidGrid, Cancelled, AllocationFaile
 [[nodiscard]] std::optional<uint32_t> fixedStartOf(const WalkableLabels& labels, uint32_t width, uint32_t height);
 [[nodiscard]] std::vector<uint32_t> exitCellsOf(const WalkableLabels& labels, uint32_t width, uint32_t height);
 
+// Iteration 44, impassable rock: 1 for every cell of the walkable surface component holding the fixed start, with
+// Rock not walkable and building outlines open only at doors and gaps. Empty when no cell is walkable.
+[[nodiscard]] std::expected<std::vector<uint8_t>, ReachabilityError> startLandOf(const SurfaceGrid& grid, std::stop_token stop = {});
+// Marks every cell outside startLandOf in `occupied` (sized like the grid), so no cap ramp is placed there.
+[[nodiscard]] std::expected<void, ReachabilityError> occupyOutsideStartLand(const SurfaceGrid& grid, std::span<uint8_t> occupied, std::stop_token stop = {});
+// The open cell a player stands on to use a cave entrance: south of a rock-face entrance, the entrance itself for a hole.
+[[nodiscard]] uint32_t caveEntranceApproach(const SurfaceGrid& grid, uint32_t entrance) noexcept;
+// Removes buildings and camps that touch no cell of startLandOf, and cave entrances whose approach is outside it.
+// Removed Floor becomes Grass like the repair does. Returns the number of removed POIs (doors, sites, entrances).
+[[nodiscard]] std::expected<uint32_t, ReachabilityError> keepStartLandPois(SurfaceGrid& grid, std::stop_token stop = {});
+
 // Reachability from a fixed start (G4 iteration 22, FAZA 5). Start: the walkable cell nearest to the middle of the area (squared
 // distance, ties: lower index). Entrances: the door cells of SurfaceGrid::doors. Exits: for each side the walkable cell on that edge
 // nearest to the middle of the side (ties: lower index); a side without a walkable edge cell has no exit. A point is reached when it

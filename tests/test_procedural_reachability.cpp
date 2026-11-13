@@ -919,7 +919,65 @@ void testFinalMaskRepair() {
     std::cout << "FINAL_MASK_REPAIR_CROSS_CHECK randomPlans=100\n";
 }
 
+// Iteration 44: impassable rock. POIs only on the start's land, rock-face entrances walkable, one repair per cut-off area.
+void testImpassableRock() {
+    // Rock column x = 6 splits a 13 x 9 field; the start is on the left (centre (6, 4) is rock, (5, 4) wins the tie).
+    auto g = grid(13, 9, SurfaceKind::Grass);
+    for (uint32_t y = 0; y < 9; ++y) g.cells[y * 13 + 6] = SurfaceKind::Rock;
+    fillRect(g, 1, 1, 3, 3, SurfaceKind::Floor); g.doors = {2 * 13 + 3};      // left building, door east
+    fillRect(g, 9, 1, 11, 3, SurfaceKind::Floor); g.doors.push_back(2 * 13 + 9); // right building, door west
+    g.sites = {5 * 13 + 10}; g.cells[5 * 13 + 10] = SurfaceKind::Floor;       // right camp site
+    g.entrances = {4 * 13 + 6};                                                // rock face, approach (6, 5) is rock
+    auto land = startLandOf(g);
+    check(land && !land->empty() && (*land)[4 * 13 + 5] && !(*land)[4 * 13 + 7], "start land is the left side");
+    auto kept = g;
+    auto removed = keepStartLandPois(kept);
+    check(removed && *removed == 3 && kept.doors == std::vector<uint32_t>{2 * 13 + 3} && kept.sites.empty() && kept.entrances.empty() &&
+        kept.cells[2 * 13 + 10] == SurfaceKind::Grass && kept.cells[2 * 13 + 2] == SurfaceKind::Floor, "keep only POIs on start land");
+    // An entrance whose approach is on the start land stays, and the level plan walks it despite the rock.
+    auto face = grid(13, 9, SurfaceKind::Grass);
+    fillRect(face, 4, 0, 8, 3, SurfaceKind::Rock);
+    face.entrances = {3 * 13 + 6};
+    kept = face;
+    check(keepStartLandPois(kept) && kept.entrances.size() == 1, "entrance approached from start land stays");
+    const auto plan = levelPlanOf(face, true, true, nullptr, {}, {}, {});
+    check(plan && plan->floors[0].walkable[3 * 13 + 6] && !plan->floors[0].walkable[2 * 13 + 6], "rock-face entrance walkable with impassable rock");
+    // Repair: two buildings in one sealed pocket go in one repair.
+    LevelWorld world;
+    world.surface = grid(13, 9, SurfaceKind::Grass);
+    for (uint32_t y = 0; y < 9; ++y) world.surface.cells[y * 13 + 6] = SurfaceKind::Preserve;
+    world.surface.cells[1 * 13 + 9] = world.surface.cells[1 * 13 + 11] = SurfaceKind::Floor;
+    world.surface.sites = {1 * 13 + 9, 1 * 13 + 11};
+    world.surface.cells[7 * 13 + 10] = SurfaceKind::Floor; world.surface.sites.push_back(7 * 13 + 10);
+    world.decor.push_back({world.surface.region, std::vector<DecorKind>(117)});
+    const auto repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
+    check(repaired && repaired->repairs == 1 && repaired->removedPois == 3 && world.surface.sites.empty() && !repaired->unrepaired,
+        "one repair removes every POI of a cut-off area");
+    // Generated surfaces: with impassable rock every door, site and entrance approach lies on the start land.
+    uint32_t doors = 0, entrances = 0, removedTotal = 0;
+    for (uint64_t seed = 1; seed <= 12; ++seed) {
+        SurfaceConfig config{{100, 100, 7, 192, 192}, seed};
+        config.tuning.rockPermille = 360; config.tuning.buildingDensity = 60; config.tuning.campCount = 10; config.tuning.caveEntrances = 10;
+        config.tuning.repairReach = 1;
+        auto open = generateSurface(config, {65536, 65536, 16}, {1u << 20, 64u << 20, 512u << 20});
+        config.tuning.rockBlocks = true;
+        auto closed = generateSurface(config, {65536, 65536, 16}, {1u << 20, 64u << 20, 512u << 20});
+        check(open && closed, "generate with impassable rock");
+        if (!open || !closed) continue;
+        const auto startLand = startLandOf(*closed);
+        check(startLand && !startLand->empty(), "start land exists");
+        if (!startLand || startLand->empty()) continue;
+        for (const auto d : closed->doors) { ++doors; check((*startLand)[d], std::format("door on start land, seed {}", seed)); }
+        for (const auto e : closed->entrances) { ++entrances; check((*startLand)[caveEntranceApproach(*closed, e)], std::format("entrance approach on start land, seed {}", seed)); }
+        removedTotal += uint32_t(open->doors.size() + open->sites.size() + open->entrances.size() - closed->doors.size() - closed->sites.size() - closed->entrances.size());
+        auto again = generateSurface(config, {65536, 65536, 16}, {1u << 20, 64u << 20, 512u << 20});
+        check(again && again->fingerprint() == closed->fingerprint(), "impassable rock deterministic");
+    }
+    std::cout << std::format("IMPASSABLE_ROCK_PASS seeds=12 doors={} entrances={} removedPois={}\n", doors, entrances, removedTotal);
+}
+
 int main() {
+    testImpassableRock();
     testFinalMaskRepair();
     testRepairPaths();
     testLevelRepair();

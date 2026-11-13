@@ -63,6 +63,9 @@ struct SurfaceTuning {
     uint32_t passes = 0; // mountain valleys, 0..8; zero preserves historical output
     bool buildingStoreys = false; // iteration 43: z - 1 floor with stairs above some buildings; off preserves historical output
     uint32_t upperFloorPercent = 30; // share of qualifying buildings (interior >= 16 cells) that get the floor, 0..100
+    // Iteration 44: the client ground of the rock brush cannot be walked on. POIs and cap ramps are then kept only on the
+    // land connected to the start; false preserves historical output.
+    bool rockBlocks = false;
     bool operator==(const SurfaceTuning&) const = default;
 };
 

@@ -174,7 +174,10 @@ std::expected<void, ReachabilityError> placeMountainPasses(
         world.caps.clear();
         if (tuning.plateauMinTop) {
             // Occupied prevents a newly selected ramp from occupying the valley.
-            auto cap=generatePlateau(base,seed,tuning.plateauMinTop,shapes,clearance,stop,tuning.plateauMaxPercent,true);
+            auto occupied=clearance;
+            if (tuning.rockBlocks)
+                if (auto outside=occupyOutsideStartLand(surface,occupied,stop); !outside) return std::unexpected(outside.error());
+            auto cap=generatePlateau(base,seed,tuning.plateauMinTop,shapes,occupied,stop,tuning.plateauMaxPercent,true);
             if (!cap) return std::unexpected(stop.stop_requested()?ReachabilityError::Cancelled:ReachabilityError::InvalidGrid);
             world.caps.push_back(std::move(*cap));
             for (uint32_t k=2;k<=tuning.plateauLevels;++k) {

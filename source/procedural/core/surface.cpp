@@ -914,6 +914,10 @@ std::expected<void, SurfaceError> reselectCaveEntrances(SurfaceGrid& grid, const
     grid.entrances.clear();
     if (!placeEntrances(grid.cells, grid.region.width, grid.region.height, config, grid.entrances, stop))
         return std::unexpected(SurfaceError::Cancelled);
+    if (config.tuning.rockBlocks) {
+        if (const auto kept = keepStartLandPois(grid, stop); !kept)
+            return std::unexpected(kept.error() == ReachabilityError::Cancelled ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
+    }
     return {};
 } catch (const std::bad_alloc&) { return std::unexpected(SurfaceError::AllocationFailed); }
 
@@ -1333,6 +1337,11 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::erase_if(grid.sites, [&](uint32_t site) { return grid.cells[site] != SurfaceKind::Floor; });
 		std::erase_if(grid.fires, [&](uint32_t fire) { return grid.cells[fire] != SurfaceKind::Path; });
 		std::erase_if(grid.entrances, [&](uint32_t entrance) { return !caveEntranceAllowed(grid.cells, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
+		if (config.tuning.rockBlocks) {
+			// Impassable rock splits the land: no POI where the start cannot walk (iteration 44).
+			if (const auto kept = keepStartLandPois(grid, stop); !kept)
+				return std::unexpected(kept.error() == ReachabilityError::Cancelled ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
+		}
 		return grid;
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);

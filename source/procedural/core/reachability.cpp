@@ -123,6 +123,77 @@ std::vector<uint32_t> exitCellsOf(const WalkableLabels& labels, uint32_t widthIn
 	return cells;
 }
 
+std::expected<std::vector<uint8_t>, ReachabilityError> startLandOf(const SurfaceGrid& grid, std::stop_token stop) try {
+	if (!grid.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
+	auto cells = grid.cells;
+	std::ranges::replace(cells, SurfaceKind::Rock, SurfaceKind::Preserve);
+	auto labels = walkableLabelsOf(cells, grid.region.width, grid.region.height, openingsOf(grid), true, stop);
+	if (!labels) return std::unexpected(labels.error());
+	std::vector<uint8_t> land;
+	const auto start = fixedStartOf(*labels, grid.region.width, grid.region.height);
+	if (!start) return land;
+	land.resize(cells.size());
+	for (size_t i = 0; i < cells.size(); ++i) land[i] = labels->label[i] == labels->label[*start];
+	return land;
+} catch (const std::bad_alloc&) { return std::unexpected(ReachabilityError::AllocationFailed); }
+
+std::expected<void, ReachabilityError> occupyOutsideStartLand(const SurfaceGrid& grid, std::span<uint8_t> occupied, std::stop_token stop) {
+	if (occupied.size() != grid.cells.size()) return std::unexpected(ReachabilityError::InvalidGrid);
+	const auto land = startLandOf(grid, stop);
+	if (!land) return std::unexpected(land.error());
+	for (size_t i = 0; i < occupied.size(); ++i) occupied[i] |= land->empty() || !(*land)[i];
+	return {};
+}
+
+uint32_t caveEntranceApproach(const SurfaceGrid& grid, uint32_t entrance) noexcept {
+	return grid.cells[entrance] == SurfaceKind::Rock ? entrance + grid.region.width : entrance;
+}
+
+std::expected<uint32_t, ReachabilityError> keepStartLandPois(SurfaceGrid& grid, std::stop_token stop) try {
+	auto land = startLandOf(grid, stop);
+	if (!land) return std::unexpected(land.error());
+	const size_t w = grid.region.width, h = grid.region.height, n = grid.cells.size();
+	if (land->empty()) land->assign(n, 0);
+	std::vector<uint8_t> erase(n), seen(n);
+	std::vector<uint32_t> queue;
+	for (size_t first = 0; first < n; ++first) {
+		if (first % 4096 == 0 && stop.stop_requested()) return std::unexpected(ReachabilityError::Cancelled);
+		if (seen[first] || grid.cells[first] != SurfaceKind::Floor) continue;
+		queue.assign(1, uint32_t(first));
+		seen[first] = 1;
+		bool touches = false;
+		size_t minX = w, minY = h, maxX = 0, maxY = 0;
+		for (size_t head = 0; head < queue.size(); ++head) {
+			const size_t i = queue[head], x = i % w, y = i / w;
+			minX = std::min(minX, x); maxX = std::max(maxX, x); minY = std::min(minY, y); maxY = std::max(maxY, y);
+			touches |= (*land)[i] != 0;
+			for (const size_t j : {x ? i - 1 : n, x + 1 < w ? i + 1 : n, y ? i - w : n, y + 1 < h ? i + w : n}) {
+				if (j == n) continue;
+				touches |= (*land)[j] != 0;
+				if (!seen[j] && grid.cells[j] == SurfaceKind::Floor) { seen[j] = 1; queue.push_back(uint32_t(j)); }
+			}
+		}
+		if (touches) continue;
+		for (const auto i : queue) erase[i] = 1;
+		// Camp fires stand on Path inside the clearing of their tent.
+		std::erase_if(grid.fires, [&](uint32_t i) {
+			const bool inside = i % w >= minX && i % w <= maxX && i / w >= minY && i / w <= maxY;
+			if (inside) grid.cells[i] = SurfaceKind::Grass;
+			return inside;
+		});
+	}
+	uint32_t removed = 0;
+	for (size_t i = 0; i < n; ++i) if (erase[i]) grid.cells[i] = SurfaceKind::Grass;
+	removed += uint32_t(std::erase_if(grid.doors, [&](uint32_t i) { return erase[i] != 0; }));
+	removed += uint32_t(std::erase_if(grid.sites, [&](uint32_t i) { return erase[i] != 0; }));
+	std::erase_if(grid.gaps, [&](uint32_t i) { return erase[i] != 0; });
+	removed += uint32_t(std::erase_if(grid.entrances, [&](uint32_t e) {
+		const auto approach = caveEntranceApproach(grid, e);
+		return approach >= n || !(*land)[approach];
+	}));
+	return removed;
+} catch (const std::bad_alloc&) { return std::unexpected(ReachabilityError::AllocationFailed); }
+
 std::expected<PoiReport, ReachabilityError> poiReachabilityOf(const SurfaceGrid& grid, bool walls, std::stop_token stop) {
 	if (!grid.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
 	const int64_t width = grid.region.width, height = grid.region.height;
@@ -227,6 +298,8 @@ std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 	LevelPlan p {surface.region};
 	p.floors.push_back({surface.region.z, std::vector<uint8_t>(n)});
 	for (size_t i = 0; i < n; ++i) p.floors[0].walkable[i] = labels->label[i] && !(rockBlocks && surface.cells[i] == SurfaceKind::Rock);
+	// A rock-face entrance gets walkable ground from the adapter (iteration 44).
+	for (const auto e : surface.entrances) if (e < n) p.floors[0].walkable[e] = labels->label[e] != 0;
 	for (const auto i : surface.doors) p.pois.push_back({LevelPoiKind::Door, {0, i}});
 	for (const auto i : surface.sites) p.pois.push_back({LevelPoiKind::Site, {0, i}});
 	const auto matches = [&](const GenerationRegion& r, int z) {
