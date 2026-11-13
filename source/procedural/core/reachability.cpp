@@ -217,7 +217,8 @@ bool LevelReachabilityReport::allReached() const noexcept {
 std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 	const SurfaceGrid& surface, bool walls, bool rockBlocks, const CaveGrid* cave,
 	const CaveExitPlan& exits, std::span<const ExitShape> caveShapes,
-	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor, std::stop_token stop) try {
+	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor, std::stop_token stop,
+	std::span<const BuildingStorey> storeys) try {
 	if (!surface.valid() || caps.size() > 3) return std::unexpected(ReachabilityError::InvalidGrid);
 	const auto n = surface.cells.size();
 	const auto w = surface.region.width;
@@ -279,8 +280,35 @@ std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 			p.edges.push_back({{lower, r.cell}, {upper, r.destination}});
 		}
 	}
+	std::vector<uint8_t> storeyCell;
+	const uint32_t storeyFloor = cave ? 2 : 1;
+	if (!storeys.empty()) {
+		if (surface.region.z < 1) return std::unexpected(ReachabilityError::InvalidGrid);
+		if (caps.empty()) p.floors.push_back({surface.region.z - 1, std::vector<uint8_t>(n)});
+		storeyCell.assign(n, 0);
+		auto& upper = p.floors[storeyFloor].walkable;
+		for (const auto& s : storeys) {
+			if (s.x0 + 2 > s.x1 || s.y0 + 2 > s.y1 || s.x1 >= w || s.y1 >= surface.region.height)
+				return std::unexpected(ReachabilityError::InvalidGrid);
+			const auto inside = [&](uint32_t i) {
+				const auto x = i % w, y = i / w;
+				return i < n && x > s.x0 && x < s.x1 && y > s.y0 && y < s.y1;
+			};
+			const auto sx = s.stairs % w, sy = s.stairs / w, ax = s.arrival % w, ay = s.arrival / w;
+			if (!inside(s.stairs) || !inside(s.arrival) || (sx > ax ? sx - ax : ax - sx) + (sy > ay ? sy - ay : ay - sy) != 1)
+				return std::unexpected(ReachabilityError::InvalidGrid);
+			for (uint32_t y = s.y0; y <= s.y1; ++y) for (uint32_t x = s.x0; x <= s.x1; ++x) {
+				const auto i = y * w + x;
+				if (surface.cells[i] != SurfaceKind::Floor || storeyCell[i] || upper[i]) return std::unexpected(ReachabilityError::InvalidGrid);
+				storeyCell[i] = 1;
+				upper[i] = inside(i);
+			}
+			p.edges.push_back({{0, s.stairs}, {storeyFloor, s.arrival}});
+		}
+	}
 	for (size_t f = cave ? 2 : 1; f < p.floors.size(); ++f)
-		for (uint32_t i = 0; i < n; ++i) if (p.floors[f].walkable[i]) p.pois.push_back({LevelPoiKind::Cap, {uint32_t(f), i}});
+		for (uint32_t i = 0; i < n; ++i) if (p.floors[f].walkable[i])
+			p.pois.push_back({f == storeyFloor && !storeyCell.empty() && storeyCell[i] ? LevelPoiKind::Storey : LevelPoiKind::Cap, {uint32_t(f), i}});
 	if (!decor.empty()) {
 		if (decor.size() != p.floors.size()) return std::unexpected(ReachabilityError::InvalidGrid);
 		for (size_t f = 0; f < decor.size(); ++f) {

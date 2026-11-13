@@ -79,7 +79,7 @@ struct PoiReport {
 // Iteration 36. Floors share the region's x/y rectangle; index 0 is the surface.
 // Producers translate plan semantics (including cliffs and ramp openings) to walkable.
 // No item IDs or client/editor objects cross this boundary.
-enum class LevelPoiKind : uint8_t { Door, Site, CaveEntrance, CaveExit, Cap, CaveCell, Count };
+enum class LevelPoiKind : uint8_t { Door, Site, CaveEntrance, CaveExit, Cap, CaveCell, Storey, Count };
 inline constexpr size_t levelPoiKindCount = size_t(LevelPoiKind::Count);
 struct LevelFloor {
 	int32_t z = 0;
@@ -98,12 +98,25 @@ struct LevelPlan {
 	std::vector<LevelEdge> edges; // undirected Z transitions only
 	std::vector<LevelPoi> pois;
 };
+// Iteration 43: the floor z - 1 above a rectangular building (same footprint; walls on its outline, no door). The
+// stairs item stands on the ground-floor cell `stairs` and leads to `arrival` (a 4-neighbour) on z - 1, where the
+// cell above `stairs` holds the floor-change-down opening.
+struct BuildingStorey {
+	uint32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0; // inclusive footprint
+	uint32_t stairs = 0, arrival = 0;          // row-major cells
+	uint8_t shape = 0;                         // index into the stair shapes
+	bool operator==(const BuildingStorey&) const = default;
+};
+
 // Semantics only: cap Top closes the supporting lower cell; landings and ramp
 // openings are open. Only entrances with an actually placed exit produce Z edges.
+// Storey interiors are walkable on z - 1 (the first cap's floor, or a floor of their own after the cave when
+// there are no caps) and are Storey POIs; each storey adds one Z edge stairs (surface) <-> arrival (z - 1).
 [[nodiscard]] std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 	const SurfaceGrid& surface, bool walls, bool rockBlocks, const CaveGrid* cave,
 	const CaveExitPlan& exits, std::span<const ExitShape> caveShapes,
-	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor = {}, std::stop_token stop = {});
+	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor = {}, std::stop_token stop = {},
+	std::span<const BuildingStorey> storeys = {});
 struct LevelCount { uint64_t reached = 0, total = 0; };
 struct UnreachablePlace { LevelPoiKind kind; int32_t x = 0, y = 0, z = 0; };
 struct LevelReachabilityReport {

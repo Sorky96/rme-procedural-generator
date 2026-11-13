@@ -61,6 +61,8 @@ struct SurfaceTuning {
     bool caveFarExits = true; // only used when caves are enabled
     bool caveDoorCorridors = false;
     uint32_t passes = 0; // mountain valleys, 0..8; zero preserves historical output
+    bool buildingStoreys = false; // iteration 43: z - 1 floor with stairs above some buildings; off preserves historical output
+    uint32_t upperFloorPercent = 30; // share of qualifying buildings (interior >= 16 cells) that get the floor, 0..100
     bool operator==(const SurfaceTuning&) const = default;
 };
 

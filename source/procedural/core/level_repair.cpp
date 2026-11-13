@@ -143,7 +143,8 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
 std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,
-    std::span<const ExitShape> capShapes, bool vegetation, std::stop_token stop) try {
+    std::span<const ExitShape> capShapes, bool vegetation, std::stop_token stop,
+    std::span<const ExitShape> stairShapes) try {
     if (!surface.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
     LevelWorld world;
     world.surface = std::move(surface);
@@ -201,10 +202,12 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
         } else { d.region = world.caps[k].region; d.cells.resize(n); }
         world.decor.push_back(std::move(d));
     }
+    if (auto storeys = placeBuildingStoreys(world, seed, tuning, stairShapes, stop); !storeys)
+        return std::unexpected(storeys.error());
     // Clear all transition endpoints before testing reachability. These are
     // placement reservations, not repair paths and do not consume the repair limit.
     auto plan = levelPlanOf(world.surface, true, false, world.cave ? &*world.cave : nullptr,
-        world.exits, caveShapes, world.caps, world.decor, stop);
+        world.exits, caveShapes, world.caps, world.decor, stop, world.storeys);
     if (!plan) return std::unexpected(plan.error());
     for (const auto& edge : plan->edges) for (const auto c : {edge.a, edge.b})
         if (!world.decor[c.floor].cells.empty()) world.decor[c.floor].cells[c.cell] = DecorKind::None;
@@ -215,7 +218,9 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
     LevelWorld& world, bool walls, bool rockBlocks, std::span<const ExitShape> shapes,
     std::array<bool, decorKindCount> blockingClasses, uint32_t fordLength, bool bridges,
     std::span<const uint8_t> blockingMask, std::stop_token stop) try {
-    if (world.decor.size() != 1 + size_t(world.cave.has_value()) + world.caps.size() || fordLength > 256)
+    const size_t capBase = world.cave ? 2 : 1;
+    const bool storeyFloor = !world.storeys.empty() && world.caps.empty();
+    if (world.decor.size() != capBase + world.caps.size() + storeyFloor || fordLength > 256)
         return std::unexpected(ReachabilityError::InvalidGrid);
     const auto n = world.surface.cells.size();
     const auto w = world.surface.region.width, h = world.surface.region.height;
@@ -227,10 +232,9 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
     // Start with the undecorated semantic floor (higher caps close their support).
     // Accept blockers in row-major order only when removal cannot split it.
     auto undecorated = levelPlanOf(world.surface, walls, rockBlocks, world.cave ? &*world.cave : nullptr,
-        world.exits, shapes, world.caps, world.decor, stop);
+        world.exits, shapes, world.caps, world.decor, stop, world.storeys);
     if (!undecorated) return std::unexpected(undecorated.error());
-    const size_t capBase = world.cave ? 2 : 1;
-    for (size_t f = capBase; f < world.decor.size(); ++f) {
+    for (size_t f = capBase; f < capBase + world.caps.size(); ++f) {
         auto floorMask = mask.empty() ? std::span<uint8_t>{} : std::span(mask).subspan(f * n, n);
         auto filtered = preserveDecorationConnectivity(world.decor[f], undecorated->floors[f].walkable,
             blockingClasses, floorMask, stop);
@@ -244,9 +248,15 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
         }
         if (!mask.empty()) mask[f * n + i] = 0;
     };
+    // A storey-only z - 1 floor disappears with its last storey.
+    const auto dropStoreyFloor = [&] {
+        if (!world.storeys.empty() || !world.caps.empty() || world.decor.size() == capBase) return;
+        world.decor.pop_back();
+        if (!mask.empty()) mask.resize(mask.size() - n);
+    };
     for (;;) {
         auto plan = levelPlanOf(world.surface, walls, rockBlocks, world.cave ? &*world.cave : nullptr,
-            world.exits, shapes, world.caps, world.decor, stop);
+            world.exits, shapes, world.caps, world.decor, stop, world.storeys);
         if (!plan) return std::unexpected(plan.error());
         auto reach = levelReachabilityOf(*plan, blockingClasses, mask, stop);
         if (!reach) return std::unexpected(reach.error());
@@ -311,7 +321,18 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
             }
             continue;
         }
-        const size_t capBase = world.cave ? 2 : 1;
+        const auto storey = std::ranges::find_if(world.storeys, [&](const BuildingStorey& s) {
+            const auto x = cell % w, y = cell / w;
+            return f == capBase && x >= s.x0 && x <= s.x1 && y >= s.y0 && y <= s.y1;
+        });
+        if (storey != world.storeys.end()) {
+            // Nothing on a storey can be cleared: the building keeps its ground floor only.
+            world.storeys.erase(storey);
+            dropStoreyFloor();
+            ++result.removedStoreys;
+            ++result.repairs;
+            continue;
+        }
         if (f >= capBase) {
             // Remove the complete geometric cap, including upper components
             // supported by it. A remaining sibling keeps its own ramps.
@@ -356,6 +377,10 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                 result.removedPois += uint32_t(std::erase_if(world.surface.doors, [&](auto i) { return erase[i]; }));
                 result.removedPois += uint32_t(std::erase_if(world.surface.sites, [&](auto i) { return erase[i]; }));
                 std::erase_if(world.surface.gaps, [&](auto i) { return erase[i]; });
+                result.removedStoreys += uint32_t(std::erase_if(world.storeys, [&](const BuildingStorey& s) {
+                    return erase[size_t(s.y0) * w + s.x0] != 0;
+                }));
+                dropStoreyFloor();
             } else if (const auto entry = std::ranges::find(world.surface.entrances, cell); entry != world.surface.entrances.end()) {
                 const auto index = uint32_t(entry - world.surface.entrances.begin());
                 world.surface.entrances.erase(entry);

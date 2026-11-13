@@ -755,7 +755,143 @@ void testMountainPasses() {
     std::cout << "MOUNTAIN_PASS_CORE_PASS count=" << result->passes.size() << '\n';
 }
 
+// Independent check of one storey: footprint, stairs rules and a 3D walk door -> stairs -> every upper cell.
+bool storeyValid(const LevelWorld& world, const BuildingStorey& s, std::span<const ExitShape> shapes) {
+    const auto& g = world.surface;
+    const auto w = g.region.width;
+    const auto at = [&](uint32_t x, uint32_t y) { return y * w + x; };
+    const auto inside = [&](int64_t x, int64_t y) { return x > s.x0 && x < s.x1 && y > s.y0 && y < s.y1; };
+    uint32_t doors = 0, door = 0;
+    for (uint32_t y = s.y0; y <= s.y1; ++y) for (uint32_t x = s.x0; x <= s.x1; ++x) {
+        if (g.cells[at(x, y)] != SurfaceKind::Floor) return false;
+        if (std::ranges::find(g.doors, at(x, y)) != g.doors.end()) { ++doors; door = at(x, y); }
+    }
+    if (doors != 1 || (s.x1 - s.x0 - 1) * (s.y1 - s.y0 - 1) < 16 || s.shape >= shapes.size()) return false;
+    const auto& shape = shapes[s.shape];
+    constexpr int sx[] = {0, 0, 1, -1}, sy[] = {-1, 1, 0, 0};
+    const int64_t x = s.stairs % w, y = s.stairs / w, d = int64_t(shape.direction);
+    const int64_t tx = x + shape.tailDx, ty = y + shape.tailDy, ex = tx - sx[d], ey = ty - sy[d];
+    if (s.arrival != at(uint32_t(x + sx[d]), uint32_t(y + sy[d])) || !inside(x + sx[d], y + sy[d]) || !inside(tx, ty) || !inside(ex, ey)) return false;
+    if (sx[d] == 0 ? x != s.x0 + 1 && x != s.x1 - 1 : y != s.y0 + 1 && y != s.y1 - 1) return false;
+    // Ground floor without the stairs and tail: one component reached from the door.
+    std::vector<uint8_t> seen(g.cells.size());
+    const auto blockedGround = [&](uint32_t i) { return i == s.stairs || i == at(uint32_t(tx), uint32_t(ty)); };
+    std::vector<uint32_t> q{door}; seen[door] = 1;
+    for (size_t h = 0; h < q.size(); ++h) for (const auto j : {q[h] - 1, q[h] + 1, q[h] - w, q[h] + w})
+        if (!seen[j] && inside(j % w, j / w) && !blockedGround(j)) { seen[j] = 1; q.push_back(j); }
+    bool stairsReached = false;
+    for (const auto j : {s.stairs - 1, s.stairs + 1, s.stairs - w, s.stairs + w}) stairsReached |= seen[j] && inside(j % w, j / w);
+    // q holds the door (outline) and every interior cell except the stairs and its tail.
+    if (q.size() - 1 + (shape.hasTail ? 2 : 1) != (s.x1 - s.x0 - 1) * (s.y1 - s.y0 - 1) || !stairsReached) return false;
+    std::vector<uint8_t> upper(g.cells.size());
+    q.assign(1, s.arrival); upper[s.arrival] = 1;
+    for (size_t h = 0; h < q.size(); ++h) for (const auto j : {q[h] - 1, q[h] + 1, q[h] - w, q[h] + w})
+        if (!upper[j] && inside(j % w, j / w)) { upper[j] = 1; q.push_back(j); }
+    return q.size() == (s.x1 - s.x0 - 1) * (s.y1 - s.y0 - 1);
+}
+
+void testBuildingStoreys() {
+    static constexpr ExitShape shapes[]={{ExitDirection::North,0,1,true},{ExitDirection::West,1,0,true},
+        {ExitDirection::South,0,-1,true},{ExitDirection::East,-1,0,true}};
+    auto surface = grid(48, 40, SurfaceKind::Grass);
+    fillRect(surface, 5, 5, 13, 11, SurfaceKind::Floor);   // interior 7 x 5: qualifies
+    fillRect(surface, 20, 5, 26, 9, SurfaceKind::Floor);   // interior 5 x 3 = 15: too small
+    fillRect(surface, 5, 20, 12, 25, SurfaceKind::Floor);  // interior 6 x 4 = 24: qualifies
+    surface.doors = {11 * 48 + 9, 9 * 48 + 23, 20 * 48 + 8};
+    SurfaceTuning tuning; tuning.buildingStoreys = true; tuning.upperFloorPercent = 100;
+    const auto make = [&](SurfaceTuning t, const SurfaceGrid& s) { return buildLevelWorld(s, {}, 1729, t, {}, {}, shapes, false, {}, shapes); };
+    auto off = make(SurfaceTuning{}, surface);
+    check(off && off->storeys.empty() && off->decor.size() == 1, "storeys off: nothing placed");
+    auto world = make(tuning, surface), again = make(tuning, surface);
+    check(world && again && world->storeys.size() == 2 && world->storeyReport.qualifying == 2 &&
+        world->storeys == again->storeys && world->decor.size() == 2, "two qualifying buildings get storeys, deterministically");
+    if (!world || world->storeys.size() != 2) return;
+    for (const auto& s : world->storeys) check(storeyValid(*world, s, shapes), "hand storey rules");
+    auto plan = levelPlanOf(world->surface, true, false, nullptr, {}, {}, {}, world->decor, {}, world->storeys);
+    check(plan && plan->floors.size() == 2 && plan->floors[1].z == 6 && plan->edges.size() == 2, "storey floor and stairs edges");
+    if (!plan) return;
+    auto reach = levelReachabilityOf(*plan, {});
+    check(reach && reach->allReached() && reach->categories[size_t(LevelPoiKind::Storey)].total == 35 + 24 &&
+        reach->walkableEdges == 2, "every storey cell reached through door and stairs");
+    // Outline on z - 1 is a wall: not walkable.
+    check(!plan->floors[1].walkable[5 * 48 + 5] && plan->floors[1].walkable[6 * 48 + 6], "storey walls closed, interior open");
+    tuning.upperFloorPercent = 0;
+    auto none = make(tuning, surface);
+    check(none && none->storeys.empty() && none->storeyReport.chosen == 0 && none->decor.size() == 1, "percent 0 places none");
+    // A cap within one cell of the footprint on z - 1 keeps the building single-floor.
+    tuning.upperFloorPercent = 100;
+    auto capped = *off;
+    PlateauGrid cap; cap.region = {0, 0, 6, 48, 40}; cap.cells.assign(48 * 40, PlateauKind::None); cap.landings.assign(48 * 40, 0);
+    for (uint32_t y = 2; y <= 12; ++y) for (uint32_t x = 15; x <= 18; ++x) cap.cells[y * 48 + x] = PlateauKind::Top;
+    for (uint32_t y = 4; y <= 6; ++y) cap.cells[y * 48 + 14] = PlateauKind::Top;
+    cap.components = 1;
+    capped.caps.push_back(cap); capped.decor.push_back({});
+    check(bool(placeBuildingStoreys(capped, 1729, tuning, shapes)) && capped.storeyReport.collisions == 1 &&
+        capped.storeys.size() == 1 && capped.decor.size() == 2, "cap beside a building blocks its storey");
+    auto mixed = levelPlanOf(capped.surface, true, false, nullptr, {}, {}, capped.caps, capped.decor, {}, capped.storeys);
+    check(mixed && mixed->floors.size() == 2 && std::ranges::count_if(mixed->pois, [](const auto& p) { return p.kind == LevelPoiKind::Storey; }) == 24 &&
+        std::ranges::count_if(mixed->pois, [](const auto& p) { return p.kind == LevelPoiKind::Cap; }) == 4 * 11 + 3, "storey shares the first cap floor");
+    // Repair: an unreachable storey (arrival permanently blocked) is removed, the building stays.
+    auto broken = *world;
+    std::vector<uint8_t> mask(48 * 40 * 2);
+    for (const auto& s : broken.storeys) for (uint32_t y = s.y0 + 1; y < s.y1; ++y) for (uint32_t x = s.x0 + 1; x < s.x1; ++x)
+        if (s.x0 == 5 && s.y0 == 5) mask[48 * 40 + y * 48 + x] = 2;
+    auto repaired = repairLevelReach(broken, true, false, {}, {}, 0, false, mask);
+    check(repaired && repaired->removedStoreys == 1 && repaired->removedPois == 0 && !repaired->unrepaired &&
+        broken.storeys.size() == 1 && broken.decor.size() == 2, "repair drops the unreachable storey only");
+    // A ruin gap or a missing door disqualifies; invalid parameters and cancellation.
+    auto bad = *off; bad.surface.doors.clear();
+    check(bool(placeBuildingStoreys(bad, 1729, tuning, shapes)) && bad.storeys.empty() && bad.storeyReport.qualifying == 0, "doorless buildings never qualify");
+    tuning.upperFloorPercent = 101;
+    check(!placeBuildingStoreys(bad, 1729, tuning, shapes), "invalid percentage");
+    tuning.upperFloorPercent = 30;
+    std::stop_source stop; stop.request_stop();
+    auto cancelled = placeBuildingStoreys(bad, 1729, tuning, shapes, stop.get_token());
+    check(!cancelled && cancelled.error() == ReachabilityError::Cancelled, "storey cancellation");
+    auto invalid = levelPlanOf(world->surface, true, false, nullptr, {}, {}, {}, world->decor, {},
+        std::vector<BuildingStorey>{{5, 5, 13, 11, 6 * 48 + 6, 8 * 48 + 6, 0}});
+    check(!invalid, "stairs and arrival must be neighbours");
+
+    // Generated settlements: independent rules, 3D reachability and determinism on 60 seeds.
+    uint64_t placed = 0, qualifying = 0, checkedSeeds = 0;
+    for (uint64_t seed = 4300; seed < 4360; ++seed) {
+        SurfaceConfig config{{100, 100, 7, 96, 96}, seed, {}};
+        config.tuning.buildingDensity = 60; config.tuning.pathLength = 40; config.tuning.ruinPercent = 20;
+        config.tuning.buildingStoreys = true; config.tuning.upperFloorPercent = 50;
+        if (seed % 3 == 0) { config.tuning.plateauMinTop = 32; config.tuning.plateauLevels = 2; config.tuning.rockPermille = 300; }
+        auto generated = generateSurface(config, {65001, 65001, 16}, {9216, 9216 * 8, 9216 * 96 + (1u << 20)});
+        if (!generated) { check(false, "storey surface"); continue; }
+        auto a = buildLevelWorld(*generated, {}, seed, config.tuning, {}, {}, shapes, false, {}, shapes);
+        auto b = buildLevelWorld(*generated, {}, seed, config.tuning, {}, {}, shapes, false, {}, shapes);
+        check(a && b && a->storeys == b->storeys, "generated storeys deterministic");
+        if (!a) continue;
+        ++checkedSeeds;
+        qualifying += a->storeyReport.qualifying; placed += a->storeys.size();
+        for (const auto& s : a->storeys) {
+            check(storeyValid(*a, s, shapes), std::format("generated storey rules seed {}", seed));
+            if (!a->caps.empty()) for (uint32_t y = s.y0 - 1; y <= s.y1 + 1; ++y) for (uint32_t x = s.x0 - 1; x <= s.x1 + 1; ++x)
+                check(a->caps.front().cells[y * 96 + x] == PlateauKind::None && !a->caps.front().landings[y * 96 + x], "storey clear of caps");
+        }
+        auto p = levelPlanOf(a->surface, true, false, nullptr, {}, {}, a->caps, a->decor, {}, a->storeys);
+        auto r = p ? levelReachabilityOf(*p, {}) : std::unexpected(ReachabilityError::InvalidGrid);
+        check(bool(r), "generated storey plan");
+        if (!r) continue;
+        // Storey cells are reached exactly when the building's door is.
+        for (const auto& s : a->storeys) {
+            const auto doorIt = std::ranges::find_if(a->surface.doors, [&](uint32_t d) {
+                return d % 96 >= s.x0 && d % 96 <= s.x1 && d / 96 >= s.y0 && d / 96 <= s.y1; });
+            const bool doorReached = doorIt != a->surface.doors.end() && r->reached[*doorIt];
+            // Without a cave the storeys share floor 1 with the first cap, or have it to themselves.
+            for (uint32_t y = s.y0 + 1; y < s.y1; ++y) for (uint32_t x = s.x0 + 1; x < s.x1; ++x)
+                check(bool(r->reached[9216 + y * 96 + x]) == doorReached, "storey reached with its door");
+        }
+    }
+    check(checkedSeeds == 60 && placed > 0 && placed < qualifying, "generated storeys exist and are a share");
+    std::cout << std::format("BUILDING_STOREY_CORE_PASS seeds={} qualifying={} placed={}\n", checkedSeeds, qualifying, placed);
+}
+
 int main() {
+    testBuildingStoreys();
     testMountainPasses();
     testFarExitsAndDoors();
     {
