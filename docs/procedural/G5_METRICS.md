@@ -390,3 +390,14 @@ Wiążące przed implementacją. Zgłoszenie z GUI: x 1000, y 1000, 512×512, m1
 4. **Test regresji:** dokładny przypadek ze zgłoszenia przez prawdziwe okno z fixture m19 → pełna osiągalność (0 nieosiągalnych, bez `Unrepaired`); nowy znacznik sondy `M19_ROCK_GUI_CASE_PASS`.
 5. **Pomiar bramki z rzeczywistą przechodnością skały:** seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 43 (z piętrami): 32/32 pełne seedy w obu profilach; mediana wejść do jaskiń ≥ 8; udział usuniętych POI raportowany. Wcześniejsze wyniki iteracji 39–43 dla m19 opisać w G5_GATE_STATUS.md jako zmierzone bez przechodności podłoża skały.
 6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 (jeśli się zmieni, uzasadnić: m06/brak klienta), testy rdzenia, `SUITE_PASS`.
+
+## Iteracja 45: lochy pod budynkami — dług D27, część 2 (2026-11-13)
+
+Wiążące przed implementacją. Decyzja użytkownika: „Akceptuję — weź kolejny punkt długu”.
+
+1. **Loch.** Opcja w zakładce „Underground” (domyślnie wyłączona; przy wyłączonej wynik bajtowo jak dotąd): część budynków (`dungeonPercent`, 0..100, domyślnie 20) o wnętrzu ≥ 16 komórek dostaje loch na z + 1: 2..6 pomieszczeń prostokątnych (wnętrze 4×4..9×9) z podłogą i murami z pędzli profilu (nowe pola, np. `dungeonFloor`, `dungeonWall`; bez identyfikatorów w kodzie), połączonych korytarzami szerokości 1–2 z drzwiami (zamknięte, bez klucza) w wejściu do pomieszczenia. Loch nie nachodzi na jaskinię z + 1 (odstęp ≥ 2 komórek od Floor jaskini i jej pasa ścian) ani na inne lochy; bez miejsca budynek zostaje bez lochu.
+2. **Zejście.** W budynku z lochem jedno przejście w dół we wnętrzu przy murze (przedmiot/pędzel z danych 10.98 ze zmianą piętra w dół, np. schody lub drabina; wybór wykonawcy, nazwa w profilu) i wyjście w górę w lochu dokładnie pod nim z chodliwym polem obok. Nie blokuje drogi od drzwi do reszty wnętrza; nie koliduje ze schodami piętra z iteracji 43.
+3. **Osiągalność.** Loch jest częścią piętra z + 1 w `levelReachabilityOf` i naprawie; każde pomieszczenie osiągalne ze startu przez drzwi budynku, zejście i korytarze. Bramka G5 (pomiar z iteracji 44, rzeczywista przechodność skały) bez regresji z opcją włączoną i wyłączoną.
+4. **Pomiar.** Seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 44 plus opcja: udział kwalifikujących się budynków z lochem w paśmie 10..30 % (mediana), mediana pomieszczeń na loch ≥ 3, 100 % lochów z zejściem i wyjściem, zero kolizji z jaskinią.
+5. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `DUNGEON_GUI_PASS` sprawdzający mury, drzwi, przedmioty zejścia/wyjścia i maskę z adaptera.
+6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonej opcji, testy rdzenia (nowe dopisane), `SUITE_PASS`. Po zakończeniu D27 w TECH_DEBT.md zamknięty albo z opisaną resztą.
