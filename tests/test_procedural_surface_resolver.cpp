@@ -2316,13 +2316,13 @@ void dungeonGuiProbe(std::ostream& report) {
     auto& editor = *g_gui.GetCurrentEditor();
     constexpr uint32_t side = 192, n = side * side;
     const auto stairs = resolveBuildingStairsBrush("ramp");
-    const auto doorItems = resolveCaveDoorBrush("dark stone wall");
+    const auto doorItems = resolveCaveDoorBrush("brick wall");
     check(bool(stairs) && bool(doorItems), "I45 dungeon brushes resolve");
     std::vector<uint16_t> ramps, openings;
     for (const auto& ids : stairs->items) { ramps.push_back(ids.ramp); openings.push_back(ids.opening); }
     const auto* floorBrush = g_brushes.getBrush("dark tiled stone floor");
     std::vector<uint16_t> wallIds;
-    if (auto* walls = g_brushes.getBrush("dark stone wall"); walls && walls->as<WallBrush>()) const_cast<WallBrush*>(walls->as<WallBrush>())->getRelatedItems(wallIds);
+    if (auto* walls = g_brushes.getBrush("brick wall"); walls && walls->as<WallBrush>()) const_cast<WallBrush*>(walls->as<WallBrush>())->getRelatedItems(wallIds);
     check(!wallIds.empty(), "I45 dungeon wall pieces");
     const auto dungeonWall = [&](const Item* item) { return item && std::ranges::find(wallIds, item->getID()) != wallIds.end(); };
     GenerationConfig config{{100, 100, 7, side, side}, 1001};
@@ -2331,10 +2331,12 @@ void dungeonGuiProbe(std::ostream& report) {
     config.surface.caveEntrances = 16; config.surface.shoreSmoothing = 2;
     config.surface.buildingStoreys = true; config.surface.upperFloorPercent = 50;
     config.surface.buildingDungeons = true; config.surface.dungeonPercent = 60;
-    GroundProfile p{{"grass", "dirt", "rocky ground", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
+    // Impassable rock (as m19) turns on the rock-face entrance clearing that removed building walls beside the stairs down.
+    GroundProfile p{{"grass", "dirt", "mountain", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
     p.wall = "stone wall"; p.door = "Normal door"; p.bridgeBrush = "bridge"; p.buildingStairs = "ramp";
     p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
-    p.dungeonFloor = "dark tiled stone floor"; p.dungeonWall = "dark stone wall"; p.dungeonStairs = "ramp"; p.dungeonDescent = "gray stone stairs";
+    p.dungeonFloor = "dark tiled stone floor"; p.dungeonWall = "brick wall"; p.dungeonStairs = "ramp"; p.dungeonDescent = "stairs down";
+    check(!resolveCaveDoorBrush("dark stone wall"), "I45c wall brush whose door slots hold plain walls is refused");
     const auto dungeonIds = resolveDungeonBrushes(p);
     check(dungeonIds && g_item_definitions.get(dungeonIds->descent).hasFlag(ItemFlag::FloorChangeDown), "I45b stairs down resolve");
     const uint16_t descent = dungeonIds ? dungeonIds->descent : 0;
@@ -2394,7 +2396,7 @@ void dungeonGuiProbe(std::ostream& report) {
             ++maskDoors;
             const auto* door = tile ? tile->getWall() : nullptr;
             check(door && door->isBrushDoor() && !door->isLocked() && !door->isOpen() &&
-                (door->getID() == doorItems->horizontal || door->getID() == doorItems->vertical), "I45 closed unlocked dungeon door");
+                (door->getID() == doorItems->horizontal || door->getID() == doorItems->vertical) && door->getDefinition().isDoor(), "I45 closed unlocked dungeon door");
             check(!levels.blockingMask[n + i] && levels.report.walkable[n + i], "I45 dungeon door openable in adapter mask");
         }
         const auto ramp = std::ranges::find(ramps, lower.plan.exits[i]);
@@ -2404,9 +2406,21 @@ void dungeonGuiProbe(std::ostream& report) {
         check(prepared->plan.entrances[i] == descent && top && top->ground && top->ground->getID() == descent &&
             top->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I45b stairs down above the dungeon stairs");
         check(tile && std::ranges::any_of(tile->items, [&](const auto& item) { return item->getID() == *ramp; }), "I45 stairs item in lower preview");
+        check(stairs->shapes[size_t(ramp - ramps.begin())].direction == ExitDirection::North &&
+            g_item_definitions.get(*ramp).hasFlag(ItemFlag::FloorChangeNorth), "I45c stairs up face north");
+        // The stairs down stand inside the building, the building wall south of them stays.
+        const auto* wallBelow = prepared->preview.getBuffer().getTile(Position(above.x, above.y + 1, 7));
+        check(wallBelow && wallBelow->hasWall(), "I45c building wall south of the stairs down");
         check(!levels.blockingMask[i] && !levels.blockingMask[n + i], "I45 stairs cells walkable in adapter mask");
     }
     check(maskCells > 0 && wallCells > 0 && maskDoors > 0 && adapterStairs > 0 && !cornerPieces.empty(), "I45 adapter placed dungeons");
+    // Building outlines: every planned wall (or door) of the surface is on the preview.
+    size_t missingWalls = 0;
+    for (uint32_t i = 0; i < n; ++i) if (!prepared->plan.walls.empty() && prepared->plan.walls[i]) {
+        const auto* t = prepared->preview.getBuffer().getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
+        missingWalls += !t || !t->getWall();
+    }
+    check(missingWalls == 0, std::format("I45c building walls intact: {} missing", missingWalls));
     const auto previewOutside = outsideFloor([&](const Position& at) { return lower.preview.getBuffer().getTile(at); });
     const auto previewHoles = surfaceOpenings([&](const Position& at) { return prepared->preview.getBuffer().getTile(at); });
     check(previewOutside == 0 && previewHoles == 0, std::format("I45b preview: floor outside the walls {}, stairs openings on z 7 {}", previewOutside, previewHoles));
@@ -2437,15 +2451,15 @@ void dungeonGuiProbe(std::ostream& report) {
     auto* floor = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-dungeon-floor", dialog));
     auto* stairsChoice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-dungeon-stairs", dialog));
     auto* percent = wxWindow::FindWindowByName("terrain-dungeon-percent", dialog);
-    check(dungeons && wall && floor && stairsChoice && percent && !dungeons->GetValue() && wall->GetValue() == "dark stone wall" &&
+    check(dungeons && wall && floor && stairsChoice && percent && !dungeons->GetValue() && wall->GetValue() == "brick wall" &&
         floor->GetValue() == "dark tiled stone floor" && stairsChoice->GetValue() == "ramp" && dungeons->IsEnabled(), "I45 option defaults");
     wxCommandEvent dropdown(wxEVT_COMBOBOX_DROPDOWN, wall->GetId()); dropdown.SetEventObject(wall);
     wall->GetEventHandler()->ProcessEvent(dropdown);
-    check(wall->SetStringSelection("bridge"), "I45 doorless wall brush offered");
+    check(wall->SetStringSelection("dark stone wall"), "I45c wall brush without real doors offered");
     wxCommandEvent wallChanged(wxEVT_COMBOBOX, wall->GetId()); wallChanged.SetEventObject(wall);
     wall->GetEventHandler()->ProcessEvent(wallChanged);
     check(!dungeons->IsEnabled() && !dungeons->GetValue(), "Missing dungeon door brush must disable dungeons");
-    check(wall->SetStringSelection("dark stone wall"), "I45 dungeon wall brush offered");
+    check(wall->SetStringSelection("brick wall"), "I45 dungeon wall brush offered");
     wall->GetEventHandler()->ProcessEvent(wallChanged);
     check(dungeons->IsEnabled(), "Valid dungeon brushes must enable dungeons");
     tick("terrain-building-dungeons");
@@ -2470,7 +2484,8 @@ void dungeonGuiProbe(std::ostream& report) {
         if (const auto* w = tile->getWall()) {
             if (w->isBrushDoor()) {
                 ++committedDoors;
-                check(!w->isLocked() && !w->isOpen() && (w->getID() == doorItems->horizontal || w->getID() == doorItems->vertical), "I45 committed door item");
+                check(!w->isLocked() && !w->isOpen() && w->getDefinition().isDoor() &&
+                    (w->getID() == doorItems->horizontal || w->getID() == doorItems->vertical), "I45 committed door item");
                 const bool west = walkable({x - 1, y, 8}), east = walkable({x + 1, y, 8}), north = walkable({x, y - 1, 8}), south = walkable({x, y + 1, 8});
                 check((west && east && !north && !south) || (north && south && !west && !east), "I45 committed door neighbours");
             } else {
@@ -2482,6 +2497,7 @@ void dungeonGuiProbe(std::ostream& report) {
             const auto ramp = std::ranges::find(ramps, item->getID());
             if (ramp == ramps.end()) continue;
             const auto shape = stairs->shapes[size_t(ramp - ramps.begin())];
+            check(shape.direction == ExitDirection::North, "I45c committed stairs up face north");
             const auto d = size_t(shape.direction);
             const auto* above = editor.map.getTile(Position(x, y, 7));
             check(above && above->ground && above->ground->getID() == descent &&
@@ -2503,9 +2519,9 @@ void dungeonGuiProbe(std::ostream& report) {
     for (size_t i = 0; i < actions; ++i) check(editor.actionQueue->redo(), "I45 Redo");
     for (int z = 4; z <= 8; ++z) check(after[size_t(z - 4)] == stackImage(editor.map, 98, 98, z, side + 4, side + 4), "I45 identical Redo");
     report << std::format("DUNGEON_GUI_PASS adapterStairs={} maskCells={} walls={} doors={} committedStairs={} committedWalls={} committedDoors={} "
-        "undoRedo={} dialogFloors={} outsideFloor={}/{} surfaceOpenings={}/{} cornerPieces={} brushes=dark tiled stone floor/dark stone wall/ramp/gray stone stairs\n",
+        "undoRedo={} dialogFloors={} outsideFloor={}/{} surfaceOpenings={}/{} cornerPieces={} missingWalls={} brushes=dark tiled stone floor/brick wall/ramp/stairs down\n",
         adapterStairs, maskCells, wallCells, maskDoors, committedStairs, committedWalls, committedDoors, actions, run.floors(),
-        previewOutside, committedOutside, previewHoles, committedHoles, pieces);
+        previewOutside, committedOutside, previewHoles, committedHoles, pieces, missingWalls);
     editor.map.clearChanges();
 }
 
