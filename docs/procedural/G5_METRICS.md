@@ -379,3 +379,14 @@ Wiążące przed implementacją. Decyzja użytkownika: „Rozpocznij pracę nad 
 4. **Pomiar.** Seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 42 plus opcja z domyślnym procentem: udział kwalifikujących się budynków z piętrem w paśmie 20..40 % (mediana), 100 % pięter ze schodami, zero kolizji z czapami/przełęczami.
 5. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `BUILDING_STAIRS_GUI_PASS`, sprawdzający przedmioty schodów na obu piętrach i maskę z adaptera.
 6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonej opcji, nowe testy rdzenia, `SUITE_PASS`.
+
+## Iteracja 44: nieprzechodnia skała w profilu m19 — przypadek z GUI (2026-11-13)
+
+Wiążące przed implementacją. Zgłoszenie z GUI: x 1000, y 1000, 512×512, m19, 10 wejść, góry 3 poziomy, seed 1729, budynki 100 z piętrami 30 % → ok. 5200 nieosiągalnych (diagnoza: pędzel skały „mountain” ma nieprzechodnie podłoże; pomiar bramki z iteracji 39–40 tego nie widział, bo reguła ostrożna dotyczyła tylko dekoru). Decyzje użytkownika: „Chodliwe podłoże”, „POI tylko w połączonym”, „Usuwaj obszar naraz”.
+
+1. **Wejście w ścianie skały:** komórka przedmiotu wejścia i pole przed nim dostają chodliwy grunt (pędzel z profilu, np. ziemia lub grunt jaskini; bez identyfikatorów w kodzie); wygląd wejścia w ścianie zostaje. Każde wejście ma chodliwą krawędź Z w masce z adaptera.
+2. **POI tylko w połączonym lądzie:** rdzeń dostaje informację, czy skała powierzchni jest przechodnia (z adaptera, z flag klienta podłoża pędzla skały; bez klienta — reguła ostrożna: nieprzechodnia, gdy którykolwiek wariant blokuje). Przy nieprzechodniej skale budynki, obozy, ruiny, wejścia do jaskiń i czapy powstają tylko na lądzie połączonym ze startem (BFS w tym modelu, z brodami/mostami/przełęczami); odcięty ląd bez POI.
+3. **Naprawa obszarem:** gdy cel na powierzchni nie ma ścieżki, jedna naprawa usuwa wszystkie POI jego składowej (jedno zdarzenie w limicie 64); liczba usuniętych miejsc w raporcie jak dotąd.
+4. **Test regresji:** dokładny przypadek ze zgłoszenia przez prawdziwe okno z fixture m19 → pełna osiągalność (0 nieosiągalnych, bez `Unrepaired`); nowy znacznik sondy `M19_ROCK_GUI_CASE_PASS`.
+5. **Pomiar bramki z rzeczywistą przechodnością skały:** seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 43 (z piętrami): 32/32 pełne seedy w obu profilach; mediana wejść do jaskiń ≥ 8; udział usuniętych POI raportowany. Wcześniejsze wyniki iteracji 39–43 dla m19 opisać w G5_GATE_STATUS.md jako zmierzone bez przechodności podłoża skały.
+6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 (jeśli się zmieni, uzasadnić: m06/brak klienta), testy rdzenia, `SUITE_PASS`.
