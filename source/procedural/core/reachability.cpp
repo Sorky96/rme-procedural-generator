@@ -20,7 +20,28 @@ bool naturallyWalkable(SurfaceKind kind) noexcept {
 		kind == SurfaceKind::Path || kind == SurfaceKind::Bridge;
 }
 
+// Visits every walkable cell of a dungeon once per rectangle or door (visit(cell, isDoor)); false when one lies outside.
+template<class Visit> bool forEachDungeonCell(const BuildingDungeon& d, uint32_t w, uint32_t h, Visit visit) {
+	const auto rect = [&](const DungeonRect& r) {
+		if (r.x0 > r.x1 || r.y0 > r.y1 || r.x1 >= w || r.y1 >= h) return false;
+		for (uint32_t y = r.y0; y <= r.y1; ++y) for (uint32_t x = r.x0; x <= r.x1; ++x) visit(y * w + x, false);
+		return true;
+	};
+	for (const auto& r : d.rooms) if (!rect(r)) return false;
+	for (const auto& c : d.corridors) {
+		if (!rect(c.cells) || c.doorA >= uint64_t(w) * h || c.doorB >= uint64_t(w) * h) return false;
+		visit(c.doorA, true);
+		visit(c.doorB, true);
+	}
+	return true;
+}
+
 } // namespace
+
+bool markDungeonCells(const BuildingDungeon& dungeon, uint32_t width, uint32_t height, std::span<uint8_t> cells) {
+	if (cells.size() != uint64_t(width) * height) return false;
+	return forEachDungeonCell(dungeon, width, height, [&](uint32_t i, bool) { cells[i] = 1; });
+}
 
 std::expected<WalkableLabels, ReachabilityError> walkableLabelsOf(
 	std::span<const SurfaceKind> cells, uint32_t widthIn, uint32_t heightIn, std::span<const uint32_t> doors, bool walls, std::stop_token stop) {
@@ -289,7 +310,7 @@ std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 	const SurfaceGrid& surface, bool walls, bool rockBlocks, const CaveGrid* cave,
 	const CaveExitPlan& exits, std::span<const ExitShape> caveShapes,
 	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor, std::stop_token stop,
-	std::span<const BuildingStorey> storeys) try {
+	std::span<const BuildingStorey> storeys, std::span<const BuildingDungeon> dungeons) try {
 	if (!surface.valid() || caps.size() > 3) return std::unexpected(ReachabilityError::InvalidGrid);
 	const auto n = surface.cells.size();
 	const auto w = surface.region.width;
@@ -377,6 +398,32 @@ std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 				upper[i] = inside(i);
 			}
 			p.edges.push_back({{0, s.stairs}, {storeyFloor, s.arrival}});
+		}
+	}
+	if (!dungeons.empty()) {
+		if (!cave) return std::unexpected(ReachabilityError::InvalidGrid);
+		auto& below = p.floors[1].walkable;
+		std::vector<uint8_t> taken(n);
+		for (const auto& d : dungeons) {
+			const auto& b = d.building;
+			const auto inBuilding = [&](uint32_t i) {
+				return i < n && i % w > b.x0 && i % w < b.x1 && i / w > b.y0 && i / w < b.y1;
+			};
+			const auto dx = d.descent % w, dy = d.descent / w, ax = d.arrival % w, ay = d.arrival / w;
+			if (d.rooms.empty() || b.x1 >= w || b.y1 >= surface.region.height || !inBuilding(d.descent) || !inBuilding(d.arrival) ||
+				(dx > ax ? dx - ax : ax - dx) + (dy > ay ? dy - ay : ay - dy) != 1 || surface.cells[d.descent] != SurfaceKind::Floor ||
+				dx < d.rooms[0].x0 || dx > d.rooms[0].x1 || dy < d.rooms[0].y0 || dy > d.rooms[0].y1)
+				return std::unexpected(ReachabilityError::InvalidGrid);
+			bool valid = true;
+			const bool inside = forEachDungeonCell(d, w, surface.region.height, [&](uint32_t i, bool door) {
+				if (taken[i] || cave->cells[i] != CaveKind::Solid) { valid = false; return; }
+				taken[i] = 1;
+				below[i] = 1;
+				p.pois.push_back({door ? LevelPoiKind::Door : LevelPoiKind::Dungeon, {1, i}});
+			});
+			if (!inside || !valid) return std::unexpected(ReachabilityError::InvalidGrid);
+			p.edges.push_back({{0, d.descent}, {1, d.descent}});
+			p.edges.push_back({{1, d.descent}, {0, d.arrival}});
 		}
 	}
 	for (size_t f = cave ? 2 : 1; f < p.floors.size(); ++f)

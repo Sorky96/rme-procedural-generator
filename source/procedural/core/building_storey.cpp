@@ -10,19 +10,16 @@ namespace {
 constexpr uint64_t storeyStream = 0x73746f7265793433ULL; // "storey43"
 constexpr uint32_t minInterior = 16;
 constexpr int stepX[] = {0, 0, 1, -1}, stepY[] = {-1, 1, 0, 0}; // ExitDirection order
-
-struct Footprint {
-    uint32_t x0, y0, x1, y1, door;
-};
+} // namespace
 
 // Rectangular Floor components holding exactly one door on their outline, in row-major order of their first cell.
-std::vector<Footprint> qualifyingBuildings(const SurfaceGrid& s, std::stop_token stop, bool& cancelled) {
+std::vector<BuildingFootprint> qualifyingBuildings(const SurfaceGrid& s, std::stop_token stop, bool& cancelled) {
     const auto w = s.region.width, h = s.region.height;
     const auto n = s.cells.size();
     std::vector<uint8_t> seen(n), door(n), other(n);
     for (const auto i : s.doors) door[i] = 1;
     for (const auto* list : {&s.gaps, &s.sites, &s.fires}) for (const auto i : *list) other[i] = 1;
-    std::vector<Footprint> result;
+    std::vector<BuildingFootprint> result;
     std::vector<uint32_t> queue;
     for (uint32_t first = 0; first < n; ++first) {
         if (first % 4096 == 0 && stop.stop_requested()) { cancelled = true; return {}; }
@@ -46,7 +43,6 @@ std::vector<Footprint> qualifyingBuildings(const SurfaceGrid& s, std::stop_token
     }
     return result;
 }
-} // namespace
 
 std::expected<void, ReachabilityError> placeBuildingStoreys(
     LevelWorld& world, uint64_t seed, const SurfaceTuning& tuning,

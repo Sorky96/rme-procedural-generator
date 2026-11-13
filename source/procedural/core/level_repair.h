@@ -9,6 +9,7 @@ struct LevelRepairReport {
     uint32_t removedDecor = 0;
     uint32_t removedCaveComponents = 0;
     uint32_t removedStoreys = 0;
+    uint32_t removedDungeons = 0;
     bool unrepaired = false;
 };
 
@@ -18,6 +19,19 @@ struct LevelRepairReport {
 struct StoreyReport {
     uint32_t qualifying = 0, chosen = 0, placed = 0, collisions = 0, noStairs = 0;
 };
+
+// Iteration 45 placement counts (same qualifying buildings as storeys): a chosen building loses its dungeon when no
+// stairs position keeps its ground floor connected (noStairs) or when fewer than two rooms fit (noSpace).
+struct DungeonReport {
+    uint32_t qualifying = 0, chosen = 0, placed = 0, noStairs = 0, noSpace = 0;
+};
+
+// Doored rectangular Floor components with an interior of at least 16 cells and no ruin gap, site or fire, in
+// row-major order of their first cell (iterations 43 and 45). Sets `cancelled` and returns nothing on a stop request.
+struct BuildingFootprint {
+    uint32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0, door = 0;
+};
+[[nodiscard]] std::vector<BuildingFootprint> qualifyingBuildings(const SurfaceGrid& surface, std::stop_token stop, bool& cancelled);
 
 struct MountainPass {
     uint32_t from = 0, to = 0;
@@ -35,6 +49,8 @@ struct LevelWorld {
     std::vector<MountainPass> passes;
     std::vector<BuildingStorey> storeys;
     StoreyReport storeyReport;
+    std::vector<BuildingDungeon> dungeons;
+    DungeonReport dungeonReport;
 };
 
 // Iteration 43: chooses tuning.upperFloorPercent % of the qualifying buildings (one roll each, row-major order of
@@ -45,6 +61,19 @@ struct LevelWorld {
 [[nodiscard]] std::expected<void, ReachabilityError> placeBuildingStoreys(
     LevelWorld& world, uint64_t seed, const SurfaceTuning& tuning,
     std::span<const ExitShape> stairShapes, std::stop_token stop = {});
+
+// Iteration 45: chooses tuning.dungeonPercent % of the qualifying buildings (one roll each, own stream, row-major order)
+// and gives each a dungeon on the cave floor. On the surface the descent D lies inside the building with D - d on its
+// outline and the arrival D + d inside; the interior without D (and without storey stairs) stays connected to the door.
+// On z + 1 the stairs up stand on D, with their tail, the landing D - d and the cell beyond the tail inside room 0.
+// Rooms (2..6, interiors 4..9 x 4..9) hang off earlier rooms through straight corridors (length 2..6, width 1..2) with a
+// door at both ends. Walkable cells keep a Chebyshev distance >= 5 from cave Floor (two empty cells between the wall
+// rings), >= 5 from other dungeons, >= 3 between unconnected parts of one dungeon and >= 2 from the area's edge, and
+// never lie under a Preserve surface cell. Without a cave (or the option, or shapes) nothing is placed. `storeyShapes`
+// are the iteration 43 stair shapes of world.storeys, whose ground-floor cells the descent avoids.
+[[nodiscard]] std::expected<void, ReachabilityError> placeBuildingDungeons(
+    LevelWorld& world, uint64_t seed, const SurfaceTuning& tuning, std::span<const ExitShape> stairShapes,
+    std::span<const ExitShape> storeyShapes = {}, std::stop_token stop = {});
 
 // Carve valleys, rebuild caps/ramp selections and reselect affected entrances.
 [[nodiscard]] std::expected<void, ReachabilityError> placeMountainPasses(
@@ -57,7 +86,7 @@ struct LevelWorld {
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,
     std::span<const ExitShape> capShapes, bool vegetation, std::stop_token stop = {},
-    std::span<const ExitShape> stairShapes = {});
+    std::span<const ExitShape> stairShapes = {}, std::span<const ExitShape> dungeonShapes = {});
 
 // Costs: 0 forbidden, 1 open, 3 removable blocking decor, 6 water.
 // Sources and destinations are masks. Water-run length is part of the search

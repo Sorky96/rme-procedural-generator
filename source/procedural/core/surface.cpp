@@ -988,6 +988,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
         || config.tuning.repairReach > 1 || config.tuning.ruinPercent > 100 || config.tuning.campCount > 50
         || config.tuning.caveEntrances > 20 || config.tuning.plateauLevels < 1 || config.tuning.plateauLevels > 3
         || config.tuning.plateauMaxPercent > 100 || config.tuning.passes > 8 || config.tuning.upperFloorPercent > 100
+        || config.tuning.dungeonPercent > 100
         || (config.tuning.plateauMinTop && (config.tuning.plateauMinTop < 16 || config.tuning.plateauMinTop > 4096))
         || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole || config.tuning.dirtPermille > 1000
         || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {

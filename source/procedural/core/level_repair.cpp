@@ -144,7 +144,7 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,
     std::span<const ExitShape> capShapes, bool vegetation, std::stop_token stop,
-    std::span<const ExitShape> stairShapes) try {
+    std::span<const ExitShape> stairShapes, std::span<const ExitShape> dungeonShapes) try {
     if (!surface.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
     LevelWorld world;
     world.surface = std::move(surface);
@@ -206,10 +206,12 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     }
     if (auto storeys = placeBuildingStoreys(world, seed, tuning, stairShapes, stop); !storeys)
         return std::unexpected(storeys.error());
+    if (auto dungeons = placeBuildingDungeons(world, seed, tuning, dungeonShapes, stairShapes, stop); !dungeons)
+        return std::unexpected(dungeons.error());
     // Clear all transition endpoints before testing reachability. These are
     // placement reservations, not repair paths and do not consume the repair limit.
     auto plan = levelPlanOf(world.surface, true, false, world.cave ? &*world.cave : nullptr,
-        world.exits, caveShapes, world.caps, world.decor, stop, world.storeys);
+        world.exits, caveShapes, world.caps, world.decor, stop, world.storeys, world.dungeons);
     if (!plan) return std::unexpected(plan.error());
     for (const auto& edge : plan->edges) for (const auto c : {edge.a, edge.b})
         if (!world.decor[c.floor].cells.empty()) world.decor[c.floor].cells[c.cell] = DecorKind::None;
@@ -234,7 +236,7 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
     // Start with the undecorated semantic floor (higher caps close their support).
     // Accept blockers in row-major order only when removal cannot split it.
     auto undecorated = levelPlanOf(world.surface, walls, rockBlocks, world.cave ? &*world.cave : nullptr,
-        world.exits, shapes, world.caps, world.decor, stop, world.storeys);
+        world.exits, shapes, world.caps, world.decor, stop, world.storeys, world.dungeons);
     if (!undecorated) return std::unexpected(undecorated.error());
     for (size_t f = capBase; f < capBase + world.caps.size(); ++f) {
         auto floorMask = mask.empty() ? std::span<uint8_t>{} : std::span(mask).subspan(f * n, n);
@@ -258,7 +260,7 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
     };
     for (;;) {
         auto plan = levelPlanOf(world.surface, walls, rockBlocks, world.cave ? &*world.cave : nullptr,
-            world.exits, shapes, world.caps, world.decor, stop, world.storeys);
+            world.exits, shapes, world.caps, world.decor, stop, world.storeys, world.dungeons);
         if (!plan) return std::unexpected(plan.error());
         auto reach = levelReachabilityOf(*plan, blockingClasses, mask, stop);
         if (!reach) return std::unexpected(reach.error());
@@ -335,6 +337,19 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
             ++result.repairs;
             continue;
         }
+        if (f == 1 && world.cave) {
+            // A dungeon cell no clearance reaches: the building keeps its ground floor only.
+            std::vector<uint8_t> cells(n);
+            const auto dungeon = std::ranges::find_if(world.dungeons, [&](const BuildingDungeon& d) {
+                return markDungeonCells(d, w, h, cells) && cells[cell];
+            });
+            if (dungeon != world.dungeons.end()) {
+                world.dungeons.erase(dungeon);
+                ++result.removedDungeons;
+                ++result.repairs;
+                continue;
+            }
+        }
         if (f >= capBase) {
             // Remove the complete geometric cap, including upper components
             // supported by it. A remaining sibling keeps its own ramps.
@@ -391,6 +406,9 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                 return erase[size_t(s.y0) * w + s.x0] != 0;
             }));
             dropStoreyFloor();
+            result.removedDungeons += uint32_t(std::erase_if(world.dungeons, [&](const BuildingDungeon& d) {
+                return erase[size_t(d.building.y0) * w + d.building.x0] != 0;
+            }));
             bool entrancesRemoved = false;
             for (auto index = uint32_t(world.surface.entrances.size()); index-- > 0;) {
                 const auto entry = world.surface.entrances[index];

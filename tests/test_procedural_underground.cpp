@@ -890,7 +890,219 @@ void testBuildingStoreys() {
     std::cout << std::format("BUILDING_STOREY_CORE_PASS seeds={} qualifying={} placed={}\n", checkedSeeds, qualifying, placed);
 }
 
+// Independent check of one dungeon (iteration 45): sizes, corridors and doors, stairs and landing in room 0, one
+// walkable component, the gap to cave Floor and the ground floor of the building without the opening (and storey stairs).
+bool dungeonValid(const LevelWorld& world, const BuildingDungeon& d, std::span<const ExitShape> shapes,
+    std::span<const ExitShape> storeyShapes, std::string& why) {
+    const auto& g = world.surface;
+    const auto w = g.region.width, h = g.region.height;
+    const auto n = size_t(w) * h;
+    constexpr int sx[] = {0, 0, 1, -1}, sy[] = {-1, 1, 0, 0};
+    const auto fail = [&](std::string reason) { why = std::move(reason); return false; };
+    if (d.rooms.size() < 2 || d.rooms.size() > 6 || d.corridors.size() + 1 != d.rooms.size()) return fail("room count");
+    std::vector<uint8_t> walk(n);
+    const auto paint = [&](const DungeonRect& r) {
+        for (uint32_t y = r.y0; y <= r.y1; ++y) for (uint32_t x = r.x0; x <= r.x1; ++x) walk[size_t(y) * w + x] = 1;
+    };
+    for (const auto& r : d.rooms) {
+        if (r.x1 - r.x0 + 1 < 4 || r.x1 - r.x0 + 1 > 9 || r.y1 - r.y0 + 1 < 4 || r.y1 - r.y0 + 1 > 9) return fail("room size");
+        paint(r);
+    }
+    for (const auto& c : d.corridors) {
+        const auto cw = c.cells.x1 - c.cells.x0 + 1, ch = c.cells.y1 - c.cells.y0 + 1;
+        const bool horizontal = c.doorA / w == c.doorB / w;
+        const auto along = horizontal ? cw : ch, across = horizontal ? ch : cw;
+        if (along < 2 || along > 6 || across < 1 || across > 2) return fail("corridor size");
+        paint(c.cells);
+        walk[c.doorA] = walk[c.doorB] = 1;
+    }
+    if (size_t(std::ranges::count(walk, uint8_t(1))) != [&] {
+        size_t total = 2 * d.corridors.size();
+        for (const auto& r : d.rooms) total += size_t(r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1);
+        for (const auto& c : d.corridors) total += size_t(c.cells.x1 - c.cells.x0 + 1) * (c.cells.y1 - c.cells.y0 + 1);
+        return total; }()) return fail("overlapping parts");
+    for (const auto& c : d.corridors) for (const auto door : {c.doorA, c.doorB}) {
+        const bool west = walk[door - 1], east = walk[door + 1], north = walk[door - w], south = walk[door + w];
+        if (!((west && east && !north && !south) || (north && south && !west && !east))) return fail("door neighbours");
+    }
+    // Gap to cave Floor: two empty cells between the wall rings.
+    for (size_t i = 0; i < n; ++i) if (walk[i] && world.cave)
+        for (int dy = -4; dy <= 4; ++dy) for (int dx = -4; dx <= 4; ++dx) {
+            const int64_t x = int64_t(i % w) + dx, y = int64_t(i / w) + dy;
+            if (x >= 0 && y >= 0 && x < w && y < h && world.cave->cells[size_t(y) * w + size_t(x)] == CaveKind::Floor) return fail("cave gap");
+        }
+    for (size_t i = 0; i < n; ++i) if (walk[i] && (i % w < 2 || i / w < 2 || i % w + 2 >= w || i / w + 2 >= h)) return fail("edge");
+    std::vector<uint32_t> q{d.descent};
+    std::vector<uint8_t> seen(n);
+    seen[d.descent] = 1;
+    for (size_t head = 0; head < q.size(); ++head) for (const auto j : {q[head] - 1, q[head] + 1, q[head] - w, q[head] + w})
+        if (walk[j] && !seen[j]) { seen[j] = 1; q.push_back(j); }
+    if (q.size() != size_t(std::ranges::count(walk, uint8_t(1)))) return fail("dungeon split");
+    // Stairs: opening against the wall, arrival inside; stairs, tail, landing and the cell beyond the tail in room 0.
+    const auto& b = d.building;
+    const auto inside = [&](int64_t x, int64_t y) { return x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; };
+    const auto& r0 = d.rooms.front();
+    const auto inRoom0 = [&](int64_t x, int64_t y) { return x >= r0.x0 && x <= r0.x1 && y >= r0.y0 && y <= r0.y1; };
+    if (d.shape >= shapes.size()) return fail("shape");
+    const auto& shape = shapes[d.shape];
+    const auto dir = size_t(shape.direction);
+    const int64_t x = d.descent % w, y = d.descent / w, tx = x + shape.tailDx, ty = y + shape.tailDy;
+    if (!inside(x, y) || inside(x - sx[dir], y - sy[dir]) || !inside(x + sx[dir], y + sy[dir]) ||
+        int64_t(d.arrival) != (y + sy[dir]) * w + x + sx[dir] || g.cells[d.descent] != SurfaceKind::Floor) return fail("surface stairs");
+    if (!inRoom0(x, y) || !inRoom0(tx, ty) || !inRoom0(x - sx[dir], y - sy[dir]) || !inRoom0(tx - sx[dir], ty - sy[dir])) return fail("room 0 stairs");
+    // Ground floor: the door reaches every interior cell except the opening and storey stairs and tail.
+    std::vector<uint8_t> blocked(n);
+    blocked[d.descent] = 1;
+    for (const auto& s : world.storeys) if (s.x0 == b.x0 && s.y0 == b.y0) {
+        const auto& ss = storeyShapes[s.shape];
+        const auto storeyTail = uint32_t(int64_t(s.stairs) + ss.tailDx + int64_t(ss.tailDy) * w);
+        const auto sd = size_t(ss.direction);
+        const auto entry = uint32_t(int64_t(storeyTail) - sx[sd] - int64_t(sy[sd]) * w);
+        for (const auto c : {s.stairs, storeyTail, entry}) if (c == d.descent || c == d.arrival) return fail("storey stairs collision");
+        blocked[s.stairs] = blocked[storeyTail] = 1;
+    }
+    const auto door = std::ranges::find_if(g.doors, [&](uint32_t c) { return c % w >= b.x0 && c % w <= b.x1 && c / w >= b.y0 && c / w <= b.y1; });
+    if (door == g.doors.end()) return fail("building door");
+    std::ranges::fill(seen, uint8_t(0));
+    q.assign(1, *door); seen[*door] = 1;
+    size_t interior = 0, open = 0;
+    for (int64_t yy = b.y0 + 1; yy < b.y1; ++yy) for (int64_t xx = b.x0 + 1; xx < b.x1; ++xx) { ++interior; open += !blocked[size_t(yy) * w + size_t(xx)]; }
+    for (size_t head = 0; head < q.size(); ++head) for (const auto j : {q[head] - 1, q[head] + 1, q[head] - w, q[head] + w})
+        if (!seen[j] && inside(j % w, j / w) && !blocked[j]) { seen[j] = 1; q.push_back(j); }
+    if (q.size() - 1 != open || interior < 16) return fail("ground floor split");
+    return true;
+}
+
+void testBuildingDungeons() {
+    static constexpr ExitShape shapes[]={{ExitDirection::North,0,1,true},{ExitDirection::West,1,0,true},
+        {ExitDirection::South,0,-1,true},{ExitDirection::East,-1,0,true}};
+    constexpr uint32_t w = 72, h = 64, n = w * h;
+    auto surface = grid(w, h, SurfaceKind::Grass);
+    fillRect(surface, 10, 10, 18, 16, SurfaceKind::Floor);   // interior 7 x 5
+    fillRect(surface, 44, 44, 51, 49, SurfaceKind::Floor);   // interior 6 x 4
+    fillRect(surface, 44, 10, 48, 13, SurfaceKind::Floor);   // interior 3 x 2: too small
+    surface.doors = {16 * w + 14, 44 * w + 47, 13 * w + 46};
+    LevelWorld base;
+    base.surface = surface;
+    base.cave = emptyCave(surface);
+    base.decor = {DecorGrid{surface.region, std::vector<DecorKind>(n)}, DecorGrid{}};
+    SurfaceTuning tuning; tuning.buildingDungeons = true; tuning.dungeonPercent = 100;
+    auto off = base;
+    check(bool(placeBuildingDungeons(off, 1729, SurfaceTuning{}, shapes)) && off.dungeons.empty(), "dungeons off: nothing placed");
+    auto world = base, again = base;
+    check(bool(placeBuildingDungeons(world, 1729, tuning, shapes)) && bool(placeBuildingDungeons(again, 1729, tuning, shapes)) &&
+        world.dungeons.size() == 2 && world.dungeonReport.qualifying == 2 && world.dungeons == again.dungeons, "two qualifying buildings get dungeons, deterministically");
+    std::string why;
+    for (const auto& d : world.dungeons) check(dungeonValid(world, d, shapes, shapes, why), "hand dungeon rules: " + why);
+    auto plan = levelPlanOf(world.surface, true, false, &*world.cave, world.exits, {}, {}, world.decor, {}, {}, world.dungeons);
+    check(plan && plan->floors.size() == 2 && plan->floors[1].z == 8 && plan->edges.size() == 4, "dungeon floor and stairs edges");
+    if (!plan) return;
+    auto reach = levelReachabilityOf(*plan, {});
+    uint64_t cells = 0;
+    for (const auto& d : world.dungeons) {
+        for (const auto& r : d.rooms) cells += uint64_t(r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1);
+        for (const auto& c : d.corridors) cells += uint64_t(c.cells.x1 - c.cells.x0 + 1) * (c.cells.y1 - c.cells.y0 + 1);
+    }
+    check(reach && reach->allReached() && reach->categories[size_t(LevelPoiKind::Dungeon)].total == cells &&
+        reach->walkableEdges == 4, "every dungeon room reached through door, stairs and corridors");
+    tuning.dungeonPercent = 0;
+    auto none = base;
+    check(bool(placeBuildingDungeons(none, 1729, tuning, shapes)) && none.dungeons.empty() && none.dungeonReport.chosen == 0, "percent 0 places none");
+    tuning.dungeonPercent = 100;
+    // A cave beside the second building leaves no room for its dungeon; the first keeps its own.
+    auto caved = base;
+    for (uint32_t y = 40; y <= 58; ++y) for (uint32_t x = 38; x <= 60; ++x) caved.cave->cells[y * w + x] = CaveKind::Floor;
+    check(bool(placeBuildingDungeons(caved, 1729, tuning, shapes)) && caved.dungeons.size() == 1 && caved.dungeonReport.noSpace == 1 &&
+        caved.dungeons.front().building == DungeonRect{10, 10, 18, 16}, "cave below a building blocks its dungeon");
+    for (const auto& d : caved.dungeons) check(dungeonValid(caved, d, shapes, shapes, why), "dungeon keeps the cave gap: " + why);
+    // Storey stairs of the same building are avoided and the ground floor stays connected.
+    auto storeyed = base;
+    SurfaceTuning both = tuning; both.buildingStoreys = true; both.upperFloorPercent = 100;
+    check(bool(placeBuildingStoreys(storeyed, 1729, both, shapes)) && storeyed.storeys.size() == 2, "storeys before dungeons");
+    check(bool(placeBuildingDungeons(storeyed, 1729, both, shapes, shapes)) && storeyed.dungeons.size() == 2, "dungeons beside storeys");
+    for (const auto& d : storeyed.dungeons) check(dungeonValid(storeyed, d, shapes, shapes, why), "dungeon beside storey stairs: " + why);
+    // Repair: a dungeon whose rooms are permanently blocked is removed, the building stays.
+    auto blocked = world;
+    std::vector<uint8_t> mask(size_t(n) * 2);
+    const auto& first = blocked.dungeons.front();
+    std::vector<uint8_t> walk(n);
+    check(markDungeonCells(first, w, h, walk), "mark dungeon cells");
+    for (size_t i = 0; i < n; ++i) if (walk[i] && i != first.descent) mask[n + i] = 2;
+    auto repaired = repairLevelReach(blocked, true, false, {}, {}, 0, false, mask);
+    check(repaired && repaired->removedDungeons == 1 && repaired->removedPois == 0 && !repaired->unrepaired &&
+        blocked.dungeons.size() == 1 && blocked.surface.doors.size() == 3, "repair drops the unreachable dungeon only");
+    // Repair: a building cut off by water loses its dungeon with it.
+    auto island = base;
+    fillRect(island.surface, 38, 38, 57, 55, SurfaceKind::Lake);
+    fillRect(island.surface, 41, 41, 54, 52, SurfaceKind::Grass);
+    fillRect(island.surface, 44, 44, 51, 49, SurfaceKind::Floor);
+    check(bool(placeBuildingDungeons(island, 1729, tuning, shapes)) && island.dungeons.size() == 2, "island dungeon placed");
+    auto cut = repairLevelReach(island, true, false, {}, {}, 0, false);
+    check(cut && cut->removedDungeons == 1 && cut->removedPois >= 1 && !cut->unrepaired && island.dungeons.size() == 1 &&
+        island.dungeons.front().building == DungeonRect{10, 10, 18, 16}, "removed building takes its dungeon");
+    // Invalid input and cancellation.
+    tuning.dungeonPercent = 101;
+    auto bad = base;
+    check(!placeBuildingDungeons(bad, 1729, tuning, shapes), "invalid percentage");
+    tuning.dungeonPercent = 20;
+    std::stop_source stop; stop.request_stop();
+    auto cancelled = placeBuildingDungeons(bad, 1729, tuning, shapes, {}, stop.get_token());
+    check(!cancelled && cancelled.error() == ReachabilityError::Cancelled, "dungeon cancellation");
+    check(!levelPlanOf(world.surface, true, false, nullptr, {}, {}, {}, {}, {}, {}, world.dungeons), "dungeons need the cave floor");
+    auto moved = world.dungeons;
+    moved.front().arrival = moved.front().descent + 2;
+    check(!levelPlanOf(world.surface, true, false, &*world.cave, {}, {}, {}, {}, {}, {}, moved), "arrival must neighbour the descent");
+    auto overCave = base;
+    overCave.cave->cells[world.dungeons.front().rooms.front().y0 * w + world.dungeons.front().rooms.front().x0] = CaveKind::Floor;
+    check(!levelPlanOf(overCave.surface, true, false, &*overCave.cave, {}, {}, {}, {}, {}, {}, world.dungeons), "dungeon over cave Floor refused");
+
+    // Generated settlements with caves: independent rules, 3D reachability and determinism on 48 seeds.
+    uint64_t placed = 0, qualifying = 0, checkedSeeds = 0, rooms = 0;
+    for (uint64_t seed = 4500; seed < 4548; ++seed) {
+        SurfaceConfig config{{100, 100, 7, 128, 128}, seed, {}};
+        config.tuning.buildingDensity = 60; config.tuning.pathLength = 40; config.tuning.ruinPercent = 20;
+        config.tuning.caveEntrances = 8; config.tuning.rockPermille = 200;
+        config.tuning.buildingDungeons = true; config.tuning.dungeonPercent = 40;
+        if (seed % 2 == 0) { config.tuning.buildingStoreys = true; config.tuning.upperFloorPercent = 50; }
+        if (seed % 3 == 0) { config.tuning.plateauMinTop = 32; config.tuning.plateauLevels = 2; }
+        auto generated = generateSurface(config, {65001, 65001, 16}, {16384, 16384 * 8, 16384 * 96 + (1u << 20)});
+        if (!generated) { check(false, "dungeon surface"); continue; }
+        auto a = buildLevelWorld(*generated, {}, seed, config.tuning, {}, shapes, shapes, false, {}, shapes, shapes);
+        auto b = buildLevelWorld(*generated, {}, seed, config.tuning, {}, shapes, shapes, false, {}, shapes, shapes);
+        check(a && b && a->dungeons == b->dungeons, "generated dungeons deterministic");
+        if (!a || !a->cave) continue;
+        ++checkedSeeds;
+        qualifying += a->dungeonReport.qualifying; placed += a->dungeons.size();
+        for (const auto& d : a->dungeons) {
+            rooms += d.rooms.size();
+            check(dungeonValid(*a, d, shapes, shapes, why), std::format("generated dungeon rules seed {}: {}", seed, why));
+        }
+        for (size_t i = 0; i < a->dungeons.size(); ++i) for (size_t j = i + 1; j < a->dungeons.size(); ++j)
+            for (const auto& p : a->dungeons[i].rooms) for (const auto& q : a->dungeons[j].rooms) {
+                const auto dx = std::max<int64_t>({0, int64_t(q.x0) - p.x1, int64_t(p.x0) - q.x1});
+                const auto dy = std::max<int64_t>({0, int64_t(q.y0) - p.y1, int64_t(p.y0) - q.y1});
+                check(std::max(dx, dy) >= 5, "dungeons keep apart");
+            }
+        auto p = levelPlanOf(a->surface, true, false, &*a->cave, a->exits, shapes, a->caps, a->decor, {}, a->storeys, a->dungeons);
+        auto r = p ? levelReachabilityOf(*p, {}) : std::unexpected(ReachabilityError::InvalidGrid);
+        check(bool(r), "generated dungeon plan");
+        if (!r) continue;
+        // Dungeon cells are reached exactly when the building's door is.
+        for (const auto& d : a->dungeons) {
+            const auto doorIt = std::ranges::find_if(a->surface.doors, [&](uint32_t c) {
+                return c % 128 >= d.building.x0 && c % 128 <= d.building.x1 && c / 128 >= d.building.y0 && c / 128 <= d.building.y1; });
+            const bool doorReached = doorIt != a->surface.doors.end() && r->reached[*doorIt];
+            std::vector<uint8_t> walk(16384);
+            check(markDungeonCells(d, 128, 128, walk), "generated dungeon cells");
+            for (uint32_t i = 0; i < 16384; ++i) if (walk[i]) check(bool(r->reached[16384 + i]) == doorReached, "dungeon reached with its door");
+        }
+    }
+    check(checkedSeeds == 48 && placed > 0 && placed < qualifying && rooms >= 3 * placed / 2, "generated dungeons exist and are a share");
+    std::cout << std::format("BUILDING_DUNGEON_CORE_PASS seeds={} qualifying={} placed={} rooms={}\n", checkedSeeds, qualifying, placed, rooms);
+}
+
 int main() {
+    testBuildingDungeons();
     testBuildingStoreys();
     testMountainPasses();
     testFarExitsAndDoors();

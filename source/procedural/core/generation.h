@@ -66,6 +66,10 @@ struct SurfaceTuning {
     // Iteration 44: the client ground of the rock brush cannot be walked on. POIs and cap ramps are then kept only on the
     // land connected to the start; false preserves historical output.
     bool rockBlocks = false;
+    // Iteration 45: a walled dungeon on z + 1 (the cave floor) below some buildings, reached by stairs down inside;
+    // needs caves (caveEntrances > 0). Off preserves historical output.
+    bool buildingDungeons = false;
+    uint32_t dungeonPercent = 20; // share of qualifying buildings (interior >= 16 cells) that get a dungeon, 0..100
     bool operator==(const SurfaceTuning&) const = default;
 };
 

@@ -90,7 +90,7 @@ struct PoiReport {
 // Iteration 36. Floors share the region's x/y rectangle; index 0 is the surface.
 // Producers translate plan semantics (including cliffs and ramp openings) to walkable.
 // No item IDs or client/editor objects cross this boundary.
-enum class LevelPoiKind : uint8_t { Door, Site, CaveEntrance, CaveExit, Cap, CaveCell, Storey, Count };
+enum class LevelPoiKind : uint8_t { Door, Site, CaveEntrance, CaveExit, Cap, CaveCell, Storey, Dungeon, Count };
 inline constexpr size_t levelPoiKindCount = size_t(LevelPoiKind::Count);
 struct LevelFloor {
 	int32_t z = 0;
@@ -119,15 +119,43 @@ struct BuildingStorey {
 	bool operator==(const BuildingStorey&) const = default;
 };
 
+// Iteration 45: a dungeon on z + 1 (the cave floor) below a rectangular building. All rectangles are inclusive and
+// row-major cells share the surface grid. Walls are the 8-neighbour ring of the walkable cells (room interiors,
+// corridors and doors); a corridor joins two rooms through a door in each room's wall.
+struct DungeonRect {
+	uint32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+	bool operator==(const DungeonRect&) const = default;
+};
+struct DungeonCorridor {
+	DungeonRect cells;              // corridor floor, without its doors
+	uint32_t doorA = 0, doorB = 0;  // closed, unlocked doors in the walls of the two rooms
+	bool operator==(const DungeonCorridor&) const = default;
+};
+struct BuildingDungeon {
+	DungeonRect building;           // surface footprint of the building above
+	uint32_t descent = 0;           // surface: floor-change-down opening; z + 1: the stairs up at the same cell
+	uint32_t arrival = 0;           // surface: where the stairs up lead (a 4-neighbour of descent inside the building)
+	uint8_t shape = 0;              // index into the stair shapes
+	std::vector<DungeonRect> rooms; // interiors; rooms[0] holds the stairs, their tail and the landing
+	std::vector<DungeonCorridor> corridors;
+	bool operator==(const BuildingDungeon&) const = default;
+};
+
 // Semantics only: cap Top closes the supporting lower cell; landings and ramp
 // openings are open. Only entrances with an actually placed exit produce Z edges.
 // Storey interiors are walkable on z - 1 (the first cap's floor, or a floor of their own after the cave when
 // there are no caps) and are Storey POIs; each storey adds one Z edge stairs (surface) <-> arrival (z - 1).
+// Dungeons need the cave floor: rooms and corridors are walkable Dungeon POIs on it, their doors Door POIs; each adds
+// the Z edges descent (surface) <-> descent (z + 1) and descent (z + 1) <-> arrival (surface).
 [[nodiscard]] std::expected<LevelPlan, ReachabilityError> levelPlanOf(
 	const SurfaceGrid& surface, bool walls, bool rockBlocks, const CaveGrid* cave,
 	const CaveExitPlan& exits, std::span<const ExitShape> caveShapes,
 	std::span<const PlateauGrid> caps, std::span<const DecorGrid> decor = {}, std::stop_token stop = {},
-	std::span<const BuildingStorey> storeys = {});
+	std::span<const BuildingStorey> storeys = {}, std::span<const BuildingDungeon> dungeons = {});
+
+// Walkable cells (rooms, corridors, doors) of one dungeon, marked in a row-major grid of the surface's size.
+// Returns false when a rectangle or door lies outside the grid.
+[[nodiscard]] bool markDungeonCells(const BuildingDungeon& dungeon, uint32_t width, uint32_t height, std::span<uint8_t> cells);
 struct LevelCount { uint64_t reached = 0, total = 0; };
 struct UnreachablePlace { LevelPoiKind kind; int32_t x = 0, y = 0, z = 0; };
 struct LevelReachabilityReport {
