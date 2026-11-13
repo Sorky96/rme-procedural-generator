@@ -4,6 +4,7 @@
 #include "procedural/adapter/door_types.h"
 
 #include "app/managers/version_manager.h"
+#include "brushes/ground/ground_brush.h"
 #include "editor/operations/draw_operations.h"
 #include "map/map.h"
 #include "item_definitions/core/item_definition_store.h"
@@ -507,6 +508,12 @@ TerrainPreparationSteps runPreparation(
 					auto exits = repairWorld ? std::expected<CaveExitPlan, UndergroundError>(repairWorld->exits) : placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
 					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
 						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
+                    // Walkable ground under a rock-face entrance when the rock brush is impassable: a surface brush of the profile.
+                    uint16_t entranceGround = 0;
+                    if (const auto* dirt = g_brushes.getBrush(profile.brushes[1]); dirt && dirt->as<GroundBrush>()) {
+                        const auto id = dirt->as<GroundBrush>()->getPlacementItemId();
+                        if (id && !g_item_definitions.get(id).hasFlag(ItemFlag::Unpassable)) entranceGround = id;
+                    }
                     if (!repairWorld && input.config.surface.caveFarExits) {
                         auto distant = placeFarCaveExits(*grid, *generated, *exits, brushes->shapes, input.config.seed, occupied, stop);
                         if (!distant) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
@@ -556,9 +563,9 @@ TerrainPreparationSteps runPreparation(
                             if (!plan.items[e]) continue;
                             plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
                             if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
-                            else if (input.config.surface.rockBlocks && !g_item_definitions.get(brushes->ground).hasFlag(ItemFlag::Unpassable)) {
-                                // Impassable rock: the rock-face entrance stands on walkable cave ground (iteration 44).
-                                plan.items[e] = brushes->ground;
+                            else if (input.config.surface.rockBlocks && entranceGround) {
+                                // Impassable rock: the rock-face entrance stands on the profile's dirt ground (iteration 44).
+                                plan.items[e] = entranceGround;
                                 if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0;
                             }
                             if (!plan.decor.empty()) plan.decor[e] = 0;
