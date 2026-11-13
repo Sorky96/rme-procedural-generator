@@ -409,3 +409,12 @@ Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (m19, x 1000, y 
 1. **Rogi lochów.** Na z + 1 żadna komórka poza obrysem murów lochu (także po przekątnej od narożników) nie ma gruntu ani przedmiotu lochu; podłoga tylko wewnątrz murów i pod murami. Najpierw zdiagnozować źródło (podłoga pod komórką narożną, border pędzla podłogi, element narożny muru) i zapisać w raporcie. Test/sonda: zero komórek z gruntem lochu poza obrysem (z dopuszczeniem korytarzy).
 2. **Zejście widoczne.** Na powierzchni w budynku z lochem nie ma gruntu „stairs” (czarna dziura). Zejście ma wyglądać jak schody w dół: przedmiot schodów ze zmianą piętra w dół (np. „stairs” lub „wooden stairs” z danych 10.98, także jako przedmiot RAW wskazany nazwą w profilu, bez ID w kodzie) na podłodze budynku, a w lochu pod nim chodliwe pole przybycia z rampą/schodami w górę. Działa jak przejścia Z dotąd: krawędź Z chodliwa w masce adaptera.
 3. Sonda `DUNGEON_GUI_PASS` sprawdza oba punkty (brak gruntu „stairs” w budynkach, brak gruntu lochu poza obrysem). Bramka G5 i pomiar iteracji 45 bez regresji, determinizm, odcisk Seed 1729 przy wyłączonej opcji, `SUITE_PASS`.
+
+## Iteracja 45c: lochy — kierunek schodów, przejścia, mury budynku (2026-11-13)
+
+Wiążące przed implementacją. Uwagi użytkownika po teście GUI 45b (m19, x 1000, y 1000, 512×512, seed 1729; np. budynek ok. (1094,1402,7), loch ok. (1328,1336,8)).
+
+1. **Kierunek.** Schody w dół na powierzchni i rampa w górę w lochu mają ten sam kierunek: północ (zgodnie z rampą). Wariant przedmiotu/gruntu schodów wybierany według kierunku (węzeł kierunku pędzla lub osobne nazwy w profilu; bez ID w kodzie). Przybycie w lochu po stronie zgodnej z kierunkiem.
+2. **Przejścia między pomieszczeniami.** Każde połączenie korytarz–pomieszczenie ma otwór w murze: drzwi (zamknięte, bez klucza) albo przejście bez muru. Najpierw zdiagnozować, dlaczego w GUI na końcach korytarzy stoi pełny mur (drzwi nie postawione? zastąpione przez autoborder muru?). Sonda: każdy styk korytarza z pomieszczeniem ma na mapie komórkę bez blokującego muru lub z przedmiotem drzwi; zero styków zamkniętych murem.
+3. **Mury budynku nietknięte.** Zejście stoi we wnętrzu budynku, nigdy na komórce muru ani tak, by autoborder/zmiana gruntu usunęła mur; obrys murów budynku z lochem na mapie jest identyczny jak bez lochu (poza drzwiami). Sonda to sprawdza.
+4. `DUNGEON_GUI_PASS` rozszerzona o punkty 1–3; bramka G5, pomiar iteracji 45 bez regresji, determinizm, odcisk Seed 1729 przy wyłączonej opcji, `SUITE_PASS`.
