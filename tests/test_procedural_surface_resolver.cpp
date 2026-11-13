@@ -2293,6 +2293,33 @@ void buildingStairsGuiProbe(std::ostream& report) {
     editor.map.clearChanges();
 }
 
+// GUI report after iteration 43 (Buildings 100, walls, doors, upper floors, mountains 10 %): "Repairs: 0 ... Unrepaired".
+// Seed 1729 at (1300, 850) 512x512 has a cap whose only ramp lands in a surface pocket sealed by the cap and the
+// kept-clear rim; the repair stopped at that ramp instead of dropping it and the cap, and processed nothing after it.
+void storeySealedRampRepair(std::ostream& report) {
+    check(g_gui.NewMap(), "Sealed ramp map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    GenerationConfig config{{1300, 850, 7, 512, 512}, 1729};
+    config.algorithm = GenerationAlgorithm::Surface;
+    config.surface.buildingDensity = 100; config.surface.repairReach = 1; config.surface.shoreSmoothing = 2;
+    config.surface.plateauMinTop = 64; config.surface.plateauMaxPercent = 10; config.surface.plateauLevels = 1;
+    config.surface.buildingStoreys = true; config.surface.upperFloorPercent = 30;
+    GroundProfile p{{"grass", "dirt", "rocky ground", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
+    p.wall = "stone wall"; p.door = "Normal door"; p.bridgeBrush = "bridge"; p.buildingStairs = "ramp";
+    p.plateauGround = "grass"; p.plateauRamp = "ramp"; p.plateauCliff = "mountain";
+    const auto prepared = prepareTerrain(editor.map, config, p, {1000000, 1100000, 2000000, 8ULL << 30});
+    check(prepared && prepared->levels, "Sealed ramp preparation");
+    const auto& levels = *prepared->levels;
+    const auto& storeys = levels.report.categories[size_t(LevelPoiKind::Storey)];
+    check(levels.report.allReached() && levels.report.walkableEdges == levels.report.edges && !levels.repair.unrepaired &&
+        levels.repair.removedCaps > 0 && storeys.total > 0 && storeys.reached == storeys.total,
+        std::format("Sealed ramp repair: repairs {} removedCaps {} unrepaired {} unreachable {}", levels.repair.repairs,
+            levels.repair.removedCaps, levels.repair.unrepaired, levels.report.firstUnreachable.size()));
+    report << std::format("STOREY_SEALED_RAMP_REPAIR_PASS repairs={} removedCaps={} storeys={}\n",
+        levels.repair.repairs, levels.repair.removedCaps, storeys.total);
+    editor.map.clearChanges();
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -2304,6 +2331,7 @@ void run() {
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
         buildingStairsGuiProbe(report);
+        storeySealedRampRepair(report);
         caveFarExitDoorGuiProbe(report);
         caveFarExitDoorGuiProbe(report, true);
         finalMaskRepairProbe(report);
