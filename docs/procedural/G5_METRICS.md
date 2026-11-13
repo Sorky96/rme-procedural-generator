@@ -368,3 +368,14 @@ Wiążące przed implementacją. Decyzja użytkownika: kolejność prac, punkt 3
 5. **Osiągalność.** Bramka G5 bez regresji (32/32 seedów, zero nieosiągalnych celów) z `passes=4` i z `passes=0`.
 6. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `MOUNTAIN_PASS_GUI_PASS`; sonda sprawdza, że nad komórką przełęczy na z − 1 nic nie ma.
 7. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy `passes=0`, nowe testy rdzenia (ręczny masyw z przełęczą, rozcięta czapa, rampa na pasie), `SUITE_PASS`.
+
+## Iteracja 43: schody i piętro w budynkach — dług D27, część 1 (2026-11-13)
+
+Wiążące przed implementacją. Decyzja użytkownika: „Rozpocznij pracę nad długiem”.
+
+1. **Piętro budynku.** Opcja w zakładce budynków (domyślnie wyłączona; przy wyłączonej wynik bajtowo jak dotąd): część budynków (`upperFloorPercent`, 0..100, domyślnie 30) o wnętrzu ≥ 16 komórek dostaje piętro z − 1 o tym samym obrysie: podłoga z pędzla podłogi budynku, mury na obrysie z pędzla murów budynku, bez drzwi zewnętrznych. Piętro nie może kolidować z czapą gór, przełęczą ani innym budynkiem na z − 1 (wtedy budynek zostaje parterowy).
+2. **Schody.** W każdym takim budynku jedna para przejść Z: na parterze przedmiot schodów w górę we wnętrzu, przy murze, z wolną komórką wejścia przed nim; na z − 1 miejsce przybycia (chodliwa komórka podłogi) i zejście w dół. Przedmioty z pędzla/doodadu dostępnego w danych 10.98 (wykonawca wybiera nazwy z `data/`, zapisuje w profilu, np. `buildingStairs`; bez identyfikatorów w kodzie). Bez pędzla opcja wyłączona z komunikatem w oknie. Schody nie blokują drogi od drzwi do reszty wnętrza parteru.
+3. **Osiągalność.** Piętro budynku jest nowym piętrem w `levelReachabilityOf` i naprawie; każda komórka podłogi piętra osiągalna ze startu przez drzwi i schody. Bramka G5 bez regresji (32/32 seedów, zero nieosiągalnych celów) z opcją włączoną i wyłączoną.
+4. **Pomiar.** Seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 42 plus opcja z domyślnym procentem: udział kwalifikujących się budynków z piętrem w paśmie 20..40 % (mediana), 100 % pięter ze schodami, zero kolizji z czapami/przełęczami.
+5. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `BUILDING_STAIRS_GUI_PASS`, sprawdzający przedmioty schodów na obu piętrach i maskę z adaptera.
+6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonej opcji, nowe testy rdzenia, `SUITE_PASS`.
