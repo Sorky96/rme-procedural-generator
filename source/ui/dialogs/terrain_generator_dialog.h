@@ -129,6 +129,10 @@ private:
 	wxSpinCtrl* cave_entrances_spin_ = nullptr;
     wxSpinCtrl *plateau_levels_spin_ = nullptr, *plateau_percent_spin_ = nullptr;
     wxSpinCtrl* mountain_passes_spin_ = nullptr;
+    wxCheckBox* building_storeys_check_ = nullptr;
+    wxSpinCtrl* upper_floor_percent_spin_ = nullptr;
+    wxComboBox* building_stairs_choice_ = nullptr;
+    wxStaticText* building_storeys_hint_ = nullptr;
     wxComboBox *plateau_ground_choice_ = nullptr, *plateau_ramp_choice_ = nullptr, *plateau_cliff_choice_ = nullptr;
     wxCheckBox* vegetation_check_ = nullptr;
 	wxArrayString ground_names_;

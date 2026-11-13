@@ -32,6 +32,11 @@ struct CaveBrushes : CaveExitBrush {
 [[nodiscard]] bool validPlateauProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
 std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundProfile& profile, const GenerationConfig& config);
 
+// Iteration 43: storeys need walled buildings and a ramp-like stairs doodad (same shape rules as cave exits);
+// the stairs name is set exactly when the option is on.
+[[nodiscard]] bool validStoreyProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::string_view name);
+
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
 [[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
 // Translates a ramp-like doodad (every alternate a composite: a floor-change tile, a tile on the floor

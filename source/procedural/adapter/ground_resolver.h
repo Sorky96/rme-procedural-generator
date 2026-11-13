@@ -40,6 +40,7 @@ struct GroundProfile {
     std::string plateauGround, plateauRamp;
     std::string plateauCliff = "mountain";
     std::string bridgeBrush; // empty: sand fords; otherwise walkable wall-brush ground variants
+    std::string buildingStairs; // ramp-like doodad for storey stairs; set exactly when SurfaceTuning::buildingStoreys is
 };
 
 struct GroundPlan {
@@ -67,8 +68,11 @@ struct GroundPlan {
 	std::vector<uint16_t> exits;
 	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band; authenticates placement and borders.
 	std::vector<uint8_t> caveFloor;
-    std::vector<uint8_t> plateauFloor; // 0 None, 1 grass, 2 cliff supporting the next cap, 3 ramp opening
+    // 0 None, 1 grass, 2 cliff supporting the next cap, 3 ramp opening, 4 storey floor, 5 storey stairs opening
+    std::vector<uint8_t> plateauFloor;
     std::vector<uint16_t> plateauRamps;
+    // Surface plan with storeys: stairs and tail items on the ground floor (0 = none); empty otherwise.
+    std::vector<uint16_t> stairs;
 };
 
 // True when a ground brush of the profile has an outer border to "nothing": the border calculator then draws

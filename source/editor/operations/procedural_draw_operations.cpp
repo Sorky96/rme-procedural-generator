@@ -175,6 +175,14 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
             hashField(hash, id, 2);
         }
     }
+    if (plan.config.surface.buildingStoreys) {
+        hashField(hash, plan.config.surface.upperFloorPercent, 4);
+        string(plan.profile.buildingStairs);
+        hashField(hash, plan.plateauFloor.size());
+        for (auto c : plan.plateauFloor) hashField(hash, c, 1);
+        hashField(hash, plan.stairs.size());
+        for (auto id : plan.stairs) hashField(hash, id, 2);
+    }
     return hash;
 }
 
@@ -317,9 +325,26 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     const auto bridge = resolveBridgeBrush(plan.profile.bridgeBrush);
     if (!bridge) co_return std::unexpected(PreviewError::InvalidItem);
     const bool upper = !plan.plateauFloor.empty();
-    if (!validPlateauProfile(plan.profile, plan.config)
-        || (upper && (cave || !hasPlateau(plan.profile) || plan.plateauFloor.size() != plan.items.size()))) {
+    const bool storeys = plan.config.surface.buildingStoreys;
+    const bool mountains = hasPlateau(plan.profile);
+    if (!validPlateauProfile(plan.profile, plan.config) || !validStoreyProfile(plan.profile, plan.config)
+        || (upper && (cave || !(mountains || storeys) || plan.plateauFloor.size() != plan.items.size()))
+        || ((upper || cave || !storeys) ? !plan.stairs.empty() : plan.stairs.size() != plan.items.size())) {
         co_return std::unexpected(PreviewError::InvalidPlan);
+    }
+    // Storeys (iteration 43): floor brush on z - 1 and the stairs items on both floors.
+    const GroundBrush* storeyFloorBrush = nullptr;
+    std::vector<uint16_t> stairIds, stairOpenings;
+    if (storeys) {
+        const auto resolved = resolveBuildingStairsBrush(plan.profile.buildingStairs);
+        const auto* floor = g_brushes.getBrush(plan.profile.brushes[GroundProfile::surfaceWithFloorCount - 1]);
+        storeyFloorBrush = floor ? floor->as<GroundBrush>() : nullptr;
+        if (!resolved || !storeyFloorBrush) co_return std::unexpected(PreviewError::InvalidPlan);
+        for (const auto& ids : resolved->items) {
+            stairIds.push_back(ids.ramp);
+            if (ids.tail) stairIds.push_back(ids.tail);
+            stairOpenings.push_back(ids.opening);
+        }
     }
     if (!validCaveProfile(plan.profile, plan.config) || (cave && (!hasCave(plan.profile) || plan.caveFloor.size() != plan.items.size())))
 		co_return std::unexpected(PreviewError::InvalidPlan);
@@ -329,7 +354,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
         const auto* brush = g_brushes.getBrush(
-            upper      ? (i == 1 ? plan.profile.plateauCliff : plan.profile.plateauGround)
+            upper && mountains ? (i == 1 ? plan.profile.plateauCliff : plan.profile.plateauGround)
                 : cave ? (i == 1 ? plan.profile.caveWall : plan.profile.caveGround)
                        : plan.profile.brushes[i]
         );
@@ -408,15 +433,19 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
         if (!plan.plateauRamps.empty() && (plan.plateauRamps.size() != plan.items.size())) {
             co_return std::unexpected(PreviewError::InvalidPlan);
         }
-    } else if (upper || !plan.plateauRamps.empty()) {
+    } else if ((upper && !storeys) || !plan.plateauRamps.empty()) {
         co_return std::unexpected(PreviewError::InvalidPlan);
     }
+    decorIds.insert(decorIds.end(), stairIds.begin(), stairIds.end());
+    decorIds.insert(decorIds.end(), stairOpenings.begin(), stairOpenings.end());
     // Wall items: every piece of the profile's wall brush may end up on a tile once RME aligns them.
 	std::vector<uint16_t> wallIds;
 	const WallBrush* wallBrush = nullptr;
     const auto& wallName = cave ? plan.profile.caveDoor : plan.profile.wall;
     const bool caveDoors = cave && plan.config.surface.caveDoorCorridors;
-    if (!upper && ((!cave && !wallName.empty()) || caveDoors)) {
+    // Storey outlines on z - 1 carry the building's wall brush.
+    const bool storeyWalls = upper && storeys && !plan.walls.empty();
+    if ((!upper && ((!cave && !wallName.empty()) || caveDoors)) || storeyWalls) {
         const auto* brush = wallName.size() <= 256 ? g_brushes.getBrush(wallName) : nullptr;
 		wallBrush = brush ? brush->as<WallBrush>() : nullptr;
 		if (!wallBrush || plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -454,18 +483,28 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
         }
         if (cave && (plan.caveFloor[i] > 2 || (plan.caveFloor[i] == 1 && (i % r.width < 2 || i / r.width < 2 || i % r.width + 2 >= r.width || i / r.width + 2 >= r.height)))) co_return std::unexpected(PreviewError::InvalidPlan);
         if (upper) {
-            if (plan.plateauFloor[i] > 3) {
+            const auto code = plan.plateauFloor[i];
+            if (code > 5 || (code >= 4 && !storeys) || (code <= 3 && code && !mountains)) {
                 co_return std::unexpected(PreviewError::InvalidPlan);
             }
-            if (!plan.decor.empty() && plan.decor[i] && plan.plateauFloor[i] != 1) {
+            if (!plan.decor.empty() && plan.decor[i] && code != 1) {
                 co_return std::unexpected(PreviewError::InvalidPlan);
             }
+            if (!plan.walls.empty() && plan.walls[i] && code != 4) co_return std::unexpected(PreviewError::InvalidPlan);
             if (plan.items[i]) {
                 auto def = g_item_definitions.get(plan.items[i]);
-                if (!def || (plan.plateauFloor[i] == 3 ? std::ranges::find(plateauIds, plan.items[i]) == plateauIds.end() : def.editorData().brush != (plan.plateauFloor[i] == 2 ? brushes[1] : brushes[0]))) {
+                const bool expected = code == 3 ? std::ranges::find(plateauIds, plan.items[i]) != plateauIds.end() :
+                    code == 5 ? std::ranges::find(stairOpenings, plan.items[i]) != stairOpenings.end() :
+                    code == 4 ? def.editorData().brush == storeyFloorBrush :
+                    def.editorData().brush == (code == 2 ? brushes[1] : brushes[0]);
+                if (!def || !expected) {
                     co_return std::unexpected(PreviewError::InvalidItem);
                 }
             }
+        }
+        if (!plan.stairs.empty() && plan.stairs[i]) {
+            if (!plan.items[i] || std::ranges::find(stairIds, plan.stairs[i]) == stairIds.end()) co_return std::unexpected(PreviewError::InvalidItem);
+            ++decorPlacements;
         }
         if (!plan.plateauRamps.empty() && plan.plateauRamps[i]) {
             if (!plan.items[i] || std::ranges::find(plateauIds, plan.plateauRamps[i]) == plateauIds.end()) {
@@ -537,7 +576,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
             const auto* cliff = g_brushes.getBrush(plan.profile.plateauCliff)->as<GroundBrush>();
             for (const auto& v : cliff->getBorderItems()) if (v.id == plan.items[i]) found = true;
         }
-        if (!found && !groundHole && !(upper && plan.plateauFloor[i] == 3 && std::ranges::find(plateauIds, plan.items[i]) != plateauIds.end())) co_return std::unexpected(PreviewError::InvalidItem);
+        if (upper && plan.plateauFloor[i] == 4) for (const auto& variant : storeyFloorBrush->getBorderItems()) found |= variant.id == plan.items[i];
+        if (!found && !groundHole && !(upper && plan.plateauFloor[i] == 3 && std::ranges::find(plateauIds, plan.items[i]) != plateauIds.end()) &&
+            !(upper && plan.plateauFloor[i] == 5 && std::ranges::find(stairOpenings, plan.items[i]) != stairOpenings.end()))
+            co_return std::unexpected(PreviewError::InvalidItem);
 	}
 	if (placements > budget.maxChanges) co_return std::unexpected(PreviewError::Limit);
 	const uint64_t count = snapshot.cells.size();
@@ -655,7 +697,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.fires[i]));
 		}
-        for (const auto layer : {std::span(plan.entrances), std::span(plan.exits), std::span(plan.plateauRamps)}) {
+        for (const auto layer : {std::span(plan.entrances), std::span(plan.exits), std::span(plan.plateauRamps), std::span(plan.stairs)}) {
             for (size_t i = 0; i < layer.size(); ++i) {
 				if (!layer[i]) continue;
 				auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));

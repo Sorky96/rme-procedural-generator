@@ -572,6 +572,22 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	ruin_percent_spin_->SetToolTip("Share of the buildings that become ruins: no door and gaps in the wall. 0 = none. Needs buildings.");
 	form->Add(ruin_percent_spin_, 1, wxEXPAND);
 
+    form->Add(label("Upper floors:"), 0, wxALIGN_CENTER_VERTICAL);
+    building_storeys_check_ = newd wxCheckBox(host, wxID_ANY, "Floor z-1 with stairs in some buildings");
+    building_storeys_check_->SetName("terrain-building-storeys");
+    building_storeys_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    building_storeys_check_->SetToolTip("Buildings with a door and at least 16 interior cells may get a walled floor above them, reached by stairs inside. The floor z-1 must be empty in the whole rectangle.");
+    form->Add(building_storeys_check_, 1, wxEXPAND);
+    form->Add(label("Upper floor share (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    upper_floor_percent_spin_ = spin("terrain-upper-floor-percent", 0, 100, 30);
+    form->Add(upper_floor_percent_spin_, 1, wxEXPAND);
+    form->Add(label("Stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    building_stairs_choice_ = brushChoice("terrain-building-stairs", "ramp", 3);
+    form->Add(building_stairs_choice_, 1, wxEXPAND);
+    form->AddSpacer(0);
+    building_storeys_hint_ = label("");
+    form->Add(building_storeys_hint_, 1, wxEXPAND);
+
 	form->Add(label("Camps:"), 0, wxALIGN_CENTER_VERTICAL);
 	camp_count_spin_ = spin("terrain-camp-count", 0, 50, 0);
 	camp_count_spin_->SetToolTip("Clearings with an open tent floor per 65536 map cells. 0 = none. Uses the path and floor brushes.");
@@ -798,7 +814,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxSpinCtrl* control :
          {x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_,
           path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_,
-           plateau_levels_spin_, plateau_percent_spin_, mountain_passes_spin_}) {
+           plateau_levels_spin_, plateau_percent_spin_, mountain_passes_spin_, upper_floor_percent_spin_}) {
         control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
     }
@@ -806,7 +822,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxComboBox* control :
          {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
           floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
-          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_}) {
+          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_, building_stairs_choice_}) {
         control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     }
     scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -815,6 +831,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	walls_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	doors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    building_storeys_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	rock_passes_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	smooth_beaches_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	repair_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -965,7 +982,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     if (prepared_) {
         int level = 1;
         for (auto* p = prepared_->plateau.get(); p; p = p->plateau.get(), ++level) {
-            preview_floor_choice_->Append(wxstr(std::format("Plateau z-{}", level)));
+            preview_floor_choice_->Append(wxstr(p->plan.config.surface.plateauMinTop ? std::format("Plateau z-{}", level) : std::format("Upper floor z-{}", level)));
         }
     }
     const int prior = preview_floor_choice_->FindString(selectedFloor);
@@ -1006,6 +1023,13 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
 	doors_check_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
 	door_type_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue() && doors_check_->GetValue());
+    const bool walledBuildings = natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue();
+    const bool stairsAvailable = bool(rme::procedural::resolveBuildingStairsBrush(std::string(building_stairs_choice_->GetValue().utf8_str())));
+    building_stairs_choice_->Enable(walledBuildings);
+    building_storeys_check_->Enable(walledBuildings && stairsAvailable);
+    if (!stairsAvailable) building_storeys_check_->SetValue(false);
+    upper_floor_percent_spin_->Enable(walledBuildings && stairsAvailable && building_storeys_check_->GetValue());
+    building_storeys_hint_->SetLabel(stairsAvailable ? wxString{} : wxString("Choose a stairs brush with a floor-change item and an upper part to enable upper floors."));
 	vegetation_check_->Enable(natural);
 	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
@@ -1140,6 +1164,9 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			const wxString kind = door_type_choice_->GetStringSelection();
 			request.profile.door = std::string(kind.utf8_str());
 		}
+        config.surface.buildingStoreys = building_storeys_check_->IsEnabled() && building_storeys_check_->GetValue();
+        config.surface.upperFloorPercent = uint32_t(upper_floor_percent_spin_->GetValue());
+        if (config.surface.buildingStoreys) request.profile.buildingStairs = std::string(building_stairs_choice_->GetValue().utf8_str());
 	}
 
 	if (withFloors && config.surface.campCount > 0) request.profile.campfire = std::string(campfire_brush_choice_->GetValue().utf8_str());

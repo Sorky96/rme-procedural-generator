@@ -99,6 +99,16 @@ uint64_t GroundPlan::fingerprint() const {
         }
     }
     if (!profile.bridgeBrush.empty()) { for (const unsigned char c : profile.bridgeBrush) hash = (hash ^ c) * 1099511628211ULL; }
+    // Appended only with storeys (iteration 43), so other plans keep their fingerprint.
+    if (config.surface.buildingStoreys) {
+        hash = (hash ^ (0x5300u + config.surface.upperFloorPercent)) * 1099511628211ULL;
+        for (const unsigned char c : profile.buildingStairs) hash = (hash ^ c) * 1099511628211ULL;
+        for (const auto c : plateauFloor) hash = (hash ^ c) * 1099511628211ULL;
+        for (const auto id : stairs) {
+            hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+            hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+        }
+    }
 	return hash;
 }
 

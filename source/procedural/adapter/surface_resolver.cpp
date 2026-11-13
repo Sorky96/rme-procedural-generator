@@ -77,6 +77,22 @@ std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundPro
     return resolveCaveExitBrush(*d);
 }
 
+bool validStoreyProfile(const GroundProfile& p, const GenerationConfig& c) noexcept {
+    if (!c.surface.buildingStoreys) return p.buildingStairs.empty();
+    return c.algorithm == GenerationAlgorithm::Surface && c.surface.buildingDensity > 0 && c.surface.upperFloorPercent <= 100 &&
+        p.count == GroundProfile::surfaceWithFloorCount && !p.wall.empty() && !p.buildingStairs.empty() && p.buildingStairs.size() <= 256;
+}
+
+std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::string_view name) {
+    if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
+    if (!g_version.IsVersionLoaded()) return std::unexpected(ResolveError::NoClient);
+    if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
+    const auto* brush = g_brushes.getBrush(std::string(name));
+    const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
+    if (!doodad) return std::unexpected(ResolveError::InvalidProfile);
+    return resolveCaveExitBrush(*doodad);
+}
+
 bool hasCave(const GroundProfile& profile) noexcept {
 	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }

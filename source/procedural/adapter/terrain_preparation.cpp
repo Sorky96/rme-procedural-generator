@@ -183,8 +183,21 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	} else if (profile.count != expectedBrushes) {
 		return fail(PreparationInputError::InvalidProfile);
 	}
-    if (!validPlateauProfile(profile, config) || !validCaveProfile(profile, config)) {
+    if (!validPlateauProfile(profile, config) || !validCaveProfile(profile, config) || !validStoreyProfile(profile, config)) {
         return fail(PreparationInputError::InvalidProfile);
+    }
+    const bool storeys = config.surface.buildingStoreys;
+    if (storeys) {
+        if (!resolveBuildingStairsBrush(profile.buildingStairs)) return fail(PreparationInputError::InvalidProfile);
+        if (region.z < 1) return fail(PreparationInputError::NoUpperFloor);
+        // With mountains the z - 1 check below covers the storeys as well.
+        for (uint32_t y = 0; !hasPlateau(profile) && y < region.height; ++y) {
+            if (stop.stop_requested()) return fail(PreparationInputError::Cancelled);
+            for (uint32_t x = 0; x < region.width; ++x) {
+                if (!emptyTerrainContent(map.getTile(Position(region.x + int(x), region.y + int(y), region.z - 1))))
+                    return fail(PreparationInputError::UpperFloorOccupied);
+            }
+        }
     }
     if (hasCave(profile)) {
 		if (region.z >= MAP_MAX_LAYER) return fail(PreparationInputError::NoLowerFloor);
@@ -242,7 +255,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush, &profile.buildingStairs}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
 	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
@@ -262,7 +275,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		return fail(PreparationInputError::MemoryLimit);
 	}
 	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
-        + (config.surface.caveDoorCorridors ? cellCount * 3 : 0);
+        + (config.surface.caveDoorCorridors ? cellCount * 3 : 0) + (storeys ? cellCount * 2 : 0);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -294,7 +307,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 128) return fail(PreparationInputError::MemoryLimit);
 			semanticBytes += cellCount * 128 + 65536;
 		}
-        if (config.surface.repairReach || config.surface.passes) {
+        if (config.surface.repairReach || config.surface.passes || storeys) {
             // Expanded water-run Dijkstra states (distance, predecessor, heap),
             // full world copies, and provisional resolver plans. Charged before allocation.
             const auto perCell = 1024ULL + 64ULL * config.surface.fordLength;
@@ -306,11 +319,11 @@ std::expected<PreparationPreflight, PreparationError> preflight(
             if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 1024) return fail(PreparationInputError::MemoryLimit);
             semanticBytes += cellCount * 1024 + 65536;
         }
-        if (hasPlateau(profile)) {
+        if (hasPlateau(profile) || storeys) {
             if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 192) {
                 return fail(PreparationInputError::MemoryLimit);
             }
-            semanticBytes += (cellCount * 192 + 65536) * config.surface.plateauLevels;
+            semanticBytes += (cellCount * 192 + 65536) * (hasPlateau(profile) ? config.surface.plateauLevels : 1);
         }
         if (vegetation) {
 			if (cellCount > (std::numeric_limits<uint64_t>::max() - semanticBytes) / decorationBytesPerCell) {
@@ -403,7 +416,14 @@ TerrainPreparationSteps runPreparation(
                 std::optional<LevelWorld> repairWorld;
                 LevelRepairReport repairReport;
                 std::vector<MountainPass> passes;
-                if (input.config.surface.repairReach || input.config.surface.passes) {
+                std::vector<BuildingStorey> levelStoreys;
+                CaveExitBrush stairBrush;
+                if (input.config.surface.buildingStoreys) {
+                    auto resolved = resolveBuildingStairsBrush(profile.buildingStairs);
+                    if (!resolved) co_return fail(resolved.error());
+                    stairBrush = std::move(*resolved);
+                }
+                if (input.config.surface.repairReach || input.config.surface.passes || input.config.surface.buildingStoreys) {
                     std::vector<ExitShape> caveShapes, capShapes;
                     if (hasCave(profile)) {
                         auto brushes = resolveCaveBrushes(profile, input.config);
@@ -416,7 +436,8 @@ TerrainPreparationSteps runPreparation(
                         capShapes = brushes->shapes;
                     }
                     auto world = buildLevelWorld(std::move(*grid), decor ? std::move(*decor) : DecorGrid{},
-                        input.config.seed, input.config.surface, input.config.decor, caveShapes, capShapes, input.config.vegetation, stop);
+                        input.config.seed, input.config.surface, input.config.decor, caveShapes, capShapes, input.config.vegetation, stop,
+                        stairBrush.shapes);
                     if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                     passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
@@ -425,7 +446,8 @@ TerrainPreparationSteps runPreparation(
                     std::vector<uint8_t> blocking(cellCount * world->decor.size());
                     bool rockBlocks = false;
                     for (size_t f = 0; f < world->decor.size(); ++f) {
-                        if (world->cave && f == 1) continue;
+                        // The cave and a storey-only z - 1 have no resolved vegetation or blocking ground here.
+                        if ((world->cave && f == 1) || (f >= capBase && f - capBase >= world->caps.size())) continue;
                         auto floorInput = input;
                         auto floorProfile = profile;
                         auto floorGrid = world->surface;
@@ -461,6 +483,7 @@ TerrainPreparationSteps runPreparation(
                     }
                     *grid = std::move(world->surface);
                     if (decor) *decor = world->decor[0];
+                    levelStoreys = world->storeys;
                     repairWorld = std::move(*world);
                 }
 				const auto resolve = [&]() { return resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear); };
@@ -566,10 +589,25 @@ TerrainPreparationSteps runPreparation(
 					if (!resolved) co_return fail(resolved.error());
 					plan = std::move(*resolved);
 				}
-                if (hasPlateau(profile)) {
-                    auto brushes = resolvePlateauBrushes(profile, input.config);
-                    if (!brushes) {
-                        co_return fail(brushes.error());
+                if (input.config.surface.buildingStoreys) {
+                    // Ground-floor stairs (and tail) stand on the building floor, drawn like ramp items.
+                    plan.stairs.assign(cellCount, 0);
+                    for (const auto& s : levelStoreys) {
+                        const auto& shape = stairBrush.shapes[s.shape];
+                        const auto& ids = stairBrush.items[s.shape];
+                        const auto tail = size_t(int64_t(s.stairs) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
+                        if (!plan.items[s.stairs] || (shape.hasTail && !plan.items[tail])) co_return fail(PreparationInputError::InvalidParameters);
+                        plan.stairs[s.stairs] = ids.ramp;
+                        if (shape.hasTail) plan.stairs[tail] = ids.tail;
+                    }
+                }
+                if (hasPlateau(profile) || !levelStoreys.empty()) {
+                    const bool mountains = hasPlateau(profile);
+                    CaveExitBrush brushes;
+                    if (mountains) {
+                        auto resolved = resolvePlateauBrushes(profile, input.config);
+                        if (!resolved) co_return fail(resolved.error());
+                        brushes = std::move(*resolved);
                     }
                     std::vector<uint8_t> occupied(cellCount);
                     for (size_t i = 0; i < cellCount; ++i) {
@@ -597,7 +635,7 @@ TerrainPreparationSteps runPreparation(
                             }
                         }
                     }
-                    auto work = [surface = repairWorld ? *grid : std::move(*grid), config = input.config, shapes = brushes->shapes,
+                    auto work = [surface = repairWorld ? *grid : std::move(*grid), config = input.config, shapes = brushes.shapes,
                                  occupied = std::move(occupied)](std::stop_token token) mutable {
                         return buildMountains(std::move(surface), config, shapes, occupied, token);
                     };
@@ -621,8 +659,19 @@ TerrainPreparationSteps runPreparation(
                     levelCaps = std::move(geometry->floors);
                     auto& floors = levelCaps;
                     PreparedTerrain* lowerUnit = nullptr;
-                    for (size_t level = 0; level < floors.size(); ++level) {
-                        auto* generated = &floors[level];
+                    // Storeys share z - 1 with the first cap; without mountains they get that floor to themselves.
+                    PlateauGrid noCap;
+                    noCap.region = input.config.region;
+                    --noCap.region.z;
+                    noCap.cells.assign(cellCount, PlateauKind::None);
+                    noCap.landings.assign(cellCount, 0);
+                    std::vector<uint8_t> storeyCell(cellCount); // 1 interior, 2 outline
+                    for (const auto& s : levelStoreys) for (uint32_t y = s.y0; y <= s.y1; ++y) for (uint32_t x = s.x0; x <= s.x1; ++x)
+                        storeyCell[size_t(y) * grid->region.width + x] = x == s.x0 || x == s.x1 || y == s.y0 || y == s.y1 ? 2 : 1;
+                    const size_t upperLevels = std::max(floors.size(), levelStoreys.empty() ? size_t(0) : size_t(1));
+                    for (size_t level = 0; level < upperLevels; ++level) {
+                        auto* generated = level < floors.size() ? &floors[level] : &noCap;
+                        const bool withStoreys = level == 0 && !levelStoreys.empty();
                         auto& lowerPlan = lowerUnit ? lowerUnit->plan : plan;
                         auto upperConfig = input.config;
                         upperConfig.region.z -= int(level + 1);
@@ -643,13 +692,16 @@ TerrainPreparationSteps runPreparation(
                         upperGrid.cells.resize(cellCount, SurfaceKind::Preserve);
                         std::vector<uint8_t> clear(cellCount);
                         for (size_t i = 0; i < cellCount; ++i) {
-                            clear[i] = generated->cells[i] == PlateauKind::None;
+                            const bool storey = withStoreys && storeyCell[i];
+                            clear[i] = generated->cells[i] == PlateauKind::None && !storey;
                             if (!clear[i]) {
-                                upperGrid.cells[i] = SurfaceKind::Grass;
+                                upperGrid.cells[i] = storey ? SurfaceKind::Floor : SurfaceKind::Grass;
                             }
                         }
                         std::optional<DecorGrid> upperDecor;
-                        if (input.config.vegetation) {
+                        if (input.config.vegetation && !mountains) {
+                            upperDecor = DecorGrid{upperConfig.region, std::vector<DecorKind>(cellCount, DecorKind::None)};
+                        } else if (input.config.vegetation) {
                             auto d = generatePlateauDecoration(
                                 *generated, input.config.seed ^ (uint64_t(level) << 48), input.config.decor, stop
                             );
@@ -659,9 +711,12 @@ TerrainPreparationSteps runPreparation(
                             upperDecor = repairWorld ? std::move(repairWorld->decor[(cave ? 2 : 1) + level]) : std::move(*d);
                         }
                         auto upperProfile = profile;
-                        upperProfile.brushes[0] = profile.plateauGround;
-                        upperProfile.brushes[2] = profile.plateauCliff;
-                        upperProfile.wall.clear();
+                        if (mountains) {
+                            upperProfile.brushes[0] = profile.plateauGround;
+                            upperProfile.brushes[2] = profile.plateauCliff;
+                        }
+                        // Storey outlines keep the building's wall brush; caps have none.
+                        if (!withStoreys) upperProfile.wall.clear();
                         upperProfile.door.clear();
                         upperProfile.campfire.clear();
                         auto upperPlan = resolveSurfacePlan(
@@ -672,33 +727,45 @@ TerrainPreparationSteps runPreparation(
                         }
                         upperPlan->profile = profile;
                         upperPlan->plateauFloor.resize(cellCount);
-                        upperPlan->walls.clear();
+                        if (!withStoreys) upperPlan->walls.clear();
                         upperPlan->doors.clear();
                         upperPlan->fires.clear();
                         for (size_t i = 0; i < cellCount; ++i) {
-                            upperPlan->plateauFloor[i] = generated->cells[i] == PlateauKind::Top ? 1 : 0;
+                            upperPlan->plateauFloor[i] = generated->cells[i] == PlateauKind::Top ? 1 : withStoreys && storeyCell[i] ? 4 : 0;
                         }
-                        // Resolve cliff variants with the existing ground resolver, then use the normal border/undo path.
-                        auto cliffGrid = upperGrid;
-                        cliffGrid.region = lowerPlan.config.region;
-                        for (auto& k : cliffGrid.cells) if (k == SurfaceKind::Grass) k = SurfaceKind::Rock;
-                        auto cliffProfile = upperProfile;
-                        cliffProfile.brushes[2] = profile.plateauCliff;
-                        auto cliffInput = upperSnapshot->input;
-                        cliffInput.config.region = lowerPlan.config.region;
-                        cliffInput.config.vegetation = false;
-                        cliffProfile.decorCount = 0;
-                        auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, clear);
-                        if (!cliffs) co_return fail(cliffs.error());
-                        for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {
-                            lowerPlan.items[i] = cliffs->items[i];
-                            if (lowerUnit) lowerPlan.plateauFloor[i] = 2;
-                            if (!lowerPlan.decor.empty()) lowerPlan.decor[i] = 0;
+                        for (const auto& s : withStoreys ? std::span<const BuildingStorey>(levelStoreys) : std::span<const BuildingStorey>{}) {
+                            if (!upperPlan->items[s.stairs] || !upperPlan->items[s.arrival]) co_return fail(PreparationInputError::InvalidParameters);
+                            upperPlan->items[s.stairs] = stairBrush.items[s.shape].opening;
+                            upperPlan->plateauFloor[s.stairs] = 5;
                         }
-                        lowerPlan.plateauRamps.assign(cellCount, 0);
+                        if (mountains) {
+                            // Resolve cliff variants with the existing ground resolver, then use the normal border/undo path.
+                            auto cliffGrid = upperGrid;
+                            cliffGrid.region = lowerPlan.config.region;
+                            auto cliffClear = clear;
+                            for (size_t i = 0; i < cellCount; ++i) {
+                                if (cliffGrid.cells[i] == SurfaceKind::Grass) cliffGrid.cells[i] = SurfaceKind::Rock;
+                                else if (cliffGrid.cells[i] == SurfaceKind::Floor) { cliffGrid.cells[i] = SurfaceKind::Preserve; cliffClear[i] = 1; }
+                            }
+                            auto cliffProfile = upperProfile;
+                            cliffProfile.brushes[2] = profile.plateauCliff;
+                            cliffProfile.wall.clear();
+                            auto cliffInput = upperSnapshot->input;
+                            cliffInput.config.region = lowerPlan.config.region;
+                            cliffInput.config.vegetation = false;
+                            cliffProfile.decorCount = 0;
+                            auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, cliffClear);
+                            if (!cliffs) co_return fail(cliffs.error());
+                            for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {
+                                lowerPlan.items[i] = cliffs->items[i];
+                                if (lowerUnit) lowerPlan.plateauFloor[i] = 2;
+                                if (!lowerPlan.decor.empty()) lowerPlan.decor[i] = 0;
+                            }
+                            lowerPlan.plateauRamps.assign(cellCount, 0);
+                        }
                         for (const auto& ramp : generated->ramps) {
-                            const auto& ids = brushes->items[ramp.shape];
-                            const auto& shape = brushes->shapes[ramp.shape];
+                            const auto& ids = brushes.items[ramp.shape];
+                            const auto& shape = brushes.shapes[ramp.shape];
                             if (!lowerPlan.items[ramp.cell] || !upperPlan->items[ramp.destination]) {
                                 co_return fail(PreparationInputError::InvalidParameters);
                             }
@@ -779,7 +846,7 @@ TerrainPreparationSteps runPreparation(
                 }
                 // Read resolved items only on the GUI thread. The semantic graph remains
                 // independent of client assets and map state.
-                const uint64_t levelCells = cellCount * (1 + (cave ? 1 : 0) + levelCaps.size());
+                const uint64_t levelCells = cellCount * (1 + (cave ? 1 : 0) + std::max(levelCaps.size(), levelStoreys.empty() ? size_t(0) : size_t(1)));
                 if (!reserve(levelCells * 96 + 65536)) co_return fail(PreparationInputError::MemoryLimit);
                 bool rockBlocks = false;
                 for (size_t i = 0; i < cellCount; ++i) if (grid->cells[i] == SurfaceKind::Rock && plan.items[i]) {
@@ -788,7 +855,7 @@ TerrainPreparationSteps runPreparation(
                         rockBlocks |= g_item_definitions.get(plan.items[i]).hasFlag(ItemFlag::Unpassable);
                 }
                 auto semantic = levelPlanOf(*grid, !profile.wall.empty(), rockBlocks,
-                    levelCave ? &*levelCave : nullptr, levelExits, levelShapes, levelCaps, {}, stop);
+                    levelCave ? &*levelCave : nullptr, levelExits, levelShapes, levelCaps, {}, stop, levelStoreys);
                 if (!semantic) co_return fail(semantic.error() == ReachabilityError::Cancelled ?
                     PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                 levels = std::make_unique<PreparedTerrain::Levels>();

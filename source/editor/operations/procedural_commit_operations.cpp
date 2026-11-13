@@ -105,11 +105,12 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 			return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
 		for (const auto* name : {&unit.plan.profile.wall, &unit.plan.profile.door, &unit.plan.profile.campfire,
-			&unit.plan.profile.caveEntrance, &unit.plan.profile.caveExit, &unit.plan.profile.caveGround, &unit.plan.profile.bridgeBrush}) {
+			&unit.plan.profile.caveEntrance, &unit.plan.profile.caveExit, &unit.plan.profile.caveGround, &unit.plan.profile.bridgeBrush,
+			&unit.plan.profile.buildingStairs}) {
 			if (!charge(name->capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
 		for (const auto layer : {std::span(unit.plan.walls), std::span(unit.plan.fires), std::span(unit.plan.entrances),
-			std::span(unit.plan.exits)}) {
+			std::span(unit.plan.exits), std::span(unit.plan.stairs)}) {
 			if (!charge(layer.size(), sizeof(uint16_t))) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
 		if (!charge(unit.plan.caveFloor.capacity()) || !charge(unit.plan.doors.capacity())) return std::unexpected(TerrainCommitFailure::MemoryLimit);
