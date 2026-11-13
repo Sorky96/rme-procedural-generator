@@ -94,10 +94,10 @@ std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::strin
 }
 
 bool validDungeonProfile(const GroundProfile& p, const GenerationConfig& c) noexcept {
-    if (!c.surface.buildingDungeons) return p.dungeonFloor.empty() && p.dungeonWall.empty() && p.dungeonStairs.empty();
+    if (!c.surface.buildingDungeons) return p.dungeonFloor.empty() && p.dungeonWall.empty() && p.dungeonStairs.empty() && p.dungeonDescent.empty();
     return c.algorithm == GenerationAlgorithm::Surface && c.surface.buildingDensity > 0 && c.surface.dungeonPercent <= 100 &&
         c.surface.caveEntrances > 0 && hasCave(p) && p.count == GroundProfile::surfaceWithFloorCount && !p.wall.empty() && !p.door.empty() &&
-        std::ranges::all_of(std::array{&p.dungeonFloor, &p.dungeonWall, &p.dungeonStairs},
+        std::ranges::all_of(std::array{&p.dungeonFloor, &p.dungeonWall, &p.dungeonStairs, &p.dungeonDescent},
             [](const std::string* name) { return !name->empty() && name->size() <= 256; });
 }
 
@@ -120,6 +120,17 @@ std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundPr
     auto stairs = resolveBuildingStairsBrush(p.dungeonStairs);
     if (!stairs) return std::unexpected(stairs.error());
     result.stairs = std::move(*stairs);
+    // Iteration 45b: a ground brush (its placement ground) or a doodad brush (its first single item) naming a
+    // full, walkable floor-change-down ground; the ramp's upper part shows as a black hole inside a building.
+    if (p.dungeonDescent.empty() || p.dungeonDescent.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
+    const auto* descentBrush = g_brushes.getBrush(p.dungeonDescent);
+    if (const auto* ground = descentBrush ? descentBrush->as<GroundBrush>() : nullptr) result.descent = ground->getPlacementItemId();
+    else if (const auto* doodad = descentBrush ? descentBrush->as<DoodadBrush>() : nullptr;
+             doodad && doodad->hasSingleObjects(0) && doodad->getSingleChance(0) > 0)
+        if (const auto* item = doodad->getRandomSingleItem(0, 1)) result.descent = item->getID();
+    const auto down = g_item_definitions.get(result.descent);
+    if (!down || !down.clientId() || down.isMetaItem() || !down.isGroundTile() || !down.hasFlag(ItemFlag::FloorChangeDown) ||
+        down.hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidProfile);
     return result;
 }
 

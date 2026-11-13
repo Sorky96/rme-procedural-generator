@@ -135,7 +135,8 @@ private:
     wxStaticText* building_storeys_hint_ = nullptr;
     wxCheckBox* building_dungeons_check_ = nullptr;
     wxSpinCtrl* dungeon_percent_spin_ = nullptr;
-    wxComboBox *dungeon_floor_choice_ = nullptr, *dungeon_wall_choice_ = nullptr, *dungeon_stairs_choice_ = nullptr;
+    wxComboBox *dungeon_floor_choice_ = nullptr, *dungeon_wall_choice_ = nullptr, *dungeon_stairs_choice_ = nullptr,
+        *dungeon_descent_choice_ = nullptr;
     wxStaticText* building_dungeons_hint_ = nullptr;
     wxComboBox *plateau_ground_choice_ = nullptr, *plateau_ramp_choice_ = nullptr, *plateau_cliff_choice_ = nullptr;
     wxCheckBox* vegetation_check_ = nullptr;

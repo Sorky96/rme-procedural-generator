@@ -267,7 +267,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
 	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush, &profile.buildingStairs,
-		&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs}) {
+		&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs, &profile.dungeonDescent}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
 	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
@@ -611,15 +611,21 @@ TerrainPreparationSteps runPreparation(
                         std::vector<uint8_t> walk(cellCount);
                         for (const auto& d : levelDungeons) if (!markDungeonCells(d, w, h, walk)) co_return fail(PreparationInputError::InvalidParameters);
                         for (size_t i = 0; i < cellCount; ++i) {
-                            bool wall = false;
+                            bool wall = false, side = false;
                             const int x = int(i % w), y = int(i / w);
                             if (!walk[i]) for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
-                                if (x + dx >= 0 && y + dy >= 0 && x + dx < int(w) && y + dy < int(h)) wall |= walk[size_t(y + dy) * w + size_t(x + dx)] != 0;
+                                if (x + dx >= 0 && y + dy >= 0 && x + dx < int(w) && y + dy < int(h)) {
+                                    const bool open = walk[size_t(y + dy) * w + size_t(x + dx)] != 0;
+                                    wall |= open;
+                                    side |= open && (dx == 0 || dy == 0);
+                                }
                             if (!walk[i] && !wall) continue;
                             if (!lowerSnapshot->input.mask[i] || lowerSnapshot->input.protection[i] || lowerPlan.caveFloor[i])
                                 co_return fail(PreparationInputError::InvalidParameters);
-                            lowerPlan.caveFloor[i] = walk[i] ? 3 : 4;
-                            lowerPlan.items[i] = dungeonBrushes->floor;
+                            // A corner of the ring touches the dungeon only diagonally: its wall piece (a pole at the NE and
+                            // SW corners) leaves the tile open, so it stands without floor (iteration 45b).
+                            lowerPlan.caveFloor[i] = walk[i] ? 3 : side ? 4 : 5;
+                            lowerPlan.items[i] = walk[i] || side ? dungeonBrushes->floor : 0;
                             if (wall) lowerPlan.walls[i] = dungeonBrushes->wall.wall;
                         }
                         for (const auto& d : levelDungeons) {
@@ -634,8 +640,8 @@ TerrainPreparationSteps runPreparation(
                             if (!plan.items[d.descent]) co_return fail(PreparationInputError::InvalidParameters);
                             lowerPlan.exits[d.descent] = ids.ramp;
                             if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
-                            plan.entrances[d.descent] = ids.opening;
-                            if (g_item_definitions.get(ids.opening).isGroundTile()) plan.items[d.descent] = ids.opening;
+                            // Visible stairs down replace the building floor (iteration 45b).
+                            plan.entrances[d.descent] = plan.items[d.descent] = dungeonBrushes->descent;
                             if (!plan.decor.empty()) plan.decor[d.descent] = 0;
                         }
                     }

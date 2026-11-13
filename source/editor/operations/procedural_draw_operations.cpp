@@ -185,7 +185,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
     }
     if (plan.config.surface.buildingDungeons) {
         hashField(hash, plan.config.surface.dungeonPercent, 4);
-        string(plan.profile.dungeonFloor); string(plan.profile.dungeonWall); string(plan.profile.dungeonStairs);
+        string(plan.profile.dungeonFloor); string(plan.profile.dungeonWall); string(plan.profile.dungeonStairs); string(plan.profile.dungeonDescent);
         hashField(hash, plan.doors.size());
         for (const auto door : plan.doors) hashField(hash, door, 1);
     }
@@ -354,7 +354,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     }
     if (!validCaveProfile(plan.profile, plan.config) || (cave && (!hasCave(plan.profile) || plan.caveFloor.size() != plan.items.size())))
 		co_return std::unexpected(PreviewError::InvalidPlan);
-    // Dungeons (iteration 45): floor, walls and doors on the cave floor, stairs up there and their opening on the surface.
+    // Dungeons (iteration 45): floor, walls and doors on the cave floor, stairs up there and the stairs down on the surface.
     const bool dungeons = plan.config.surface.buildingDungeons;
     if (!validDungeonProfile(plan.profile, plan.config)) co_return std::unexpected(PreviewError::InvalidPlan);
     const GroundBrush* dungeonFloorBrush = nullptr;
@@ -367,8 +367,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
         for (const auto& ids : resolved->stairs.items) {
             dungeonRamps.push_back(ids.ramp);
             if (ids.tail) dungeonRamps.push_back(ids.tail);
-            dungeonOpenings.push_back(ids.opening);
         }
+        dungeonOpenings.push_back(resolved->descent);
     }
 	if (cave && (!plan.decor.empty() || !plan.fires.empty() ||
         (!plan.config.surface.caveDoorCorridors && !dungeons && (!plan.walls.empty() || !plan.doors.empty())))) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -512,14 +512,15 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
         if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x, y)])
             || bool(plan.items[i])
-                != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]) && (!cave || plan.caveFloor[i])
+                != (input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]) && (!cave || (plan.caveFloor[i] && plan.caveFloor[i] != 5))
                     && (!upper || plan.plateauFloor[i]))) {
             co_return std::unexpected(PreviewError::InvalidPlan);
         }
-        if (cave && (plan.caveFloor[i] > (dungeons ? 4 : 2) || ((plan.caveFloor[i] == 1 || plan.caveFloor[i] == 3) &&
+        if (cave && (plan.caveFloor[i] > (dungeons ? 5 : 2) || ((plan.caveFloor[i] == 1 || plan.caveFloor[i] == 3) &&
             (i % r.width < 2 || i / r.width < 2 || i % r.width + 2 >= r.width || i / r.width + 2 >= r.height)))) co_return std::unexpected(PreviewError::InvalidPlan);
         // Dungeon walls and doors stand exactly on the dungeon's wall cells.
-        if (cave && plan.caveFloor[i] >= 3 && (plan.caveFloor[i] == 4) != (!plan.walls.empty() && plan.walls[i] != 0))
+        if (cave && plan.caveFloor[i] >= 3 && ((plan.caveFloor[i] >= 4) != (!plan.walls.empty() && plan.walls[i] != 0) ||
+            (plan.caveFloor[i] == 5 && (plan.items[i] || plan.doors[i]))))
             co_return std::unexpected(PreviewError::InvalidPlan);
         if (upper) {
             const auto code = plan.plateauFloor[i];
@@ -573,7 +574,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		}
 		if (plan.decor.empty() ? false : bool(plan.decor[i]) && !plan.items[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.walls.empty() && plan.walls[i]) {
-			if (!plan.items[i] || !std::ranges::binary_search(wallIds, plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+			// A dungeon ring corner (caveFloor 5) carries its wall piece without ground.
+			if ((!plan.items[i] && !(cave && plan.caveFloor[i] == 5)) || !std::ranges::binary_search(wallIds, plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
 			const auto wallDefinition = g_item_definitions.get(plan.walls[i]);
 			if (!wallDefinition || !wallDefinition.clientId() || wallDefinition.isMetaItem() || wallDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 		}
@@ -755,7 +757,9 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		// picks the right piece (straight, corner) from the neighbouring walls.
 		for (size_t i = 0; i < plan.walls.size(); ++i) {
 			if (!plan.walls[i]) continue;
-			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			const Position position(r.x + int(i % r.width), r.y + int(i / r.width), r.z);
+			// Only a dungeon ring corner has no ground tile yet.
+			auto* tile = cave && plan.caveFloor[i] == 5 ? result.buffer_->getOrCreateTile(position) : result.buffer_->getTile(position);
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.walls[i]));
 		}

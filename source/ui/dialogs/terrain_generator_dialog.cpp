@@ -684,6 +684,10 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(label("Dungeon stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
     dungeon_stairs_choice_ = brushChoice("terrain-dungeon-stairs", "ramp", 3);
     form->Add(dungeon_stairs_choice_, 1, wxEXPAND);
+    form->Add(label("Dungeon stairs down:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_descent_choice_ = brushChoice("terrain-dungeon-descent", "gray stone stairs", 1);
+    dungeon_descent_choice_->SetToolTip("Doodad or ground brush whose floor-change-down ground is the stairs down inside the building.");
+    form->Add(dungeon_descent_choice_, 1, wxEXPAND);
     form->AddSpacer(0);
     building_dungeons_hint_ = label("");
     form->Add(building_dungeons_hint_, 1, wxEXPAND);
@@ -846,7 +850,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
          {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
           floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
           cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_, building_stairs_choice_,
-          dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_}) {
+          dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_, dungeon_descent_choice_}) {
         control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     }
     scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -1061,12 +1065,13 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     dungeonProfile.dungeonFloor = std::string(dungeon_floor_choice_->GetValue().utf8_str());
     dungeonProfile.dungeonWall = std::string(dungeon_wall_choice_->GetValue().utf8_str());
     dungeonProfile.dungeonStairs = std::string(dungeon_stairs_choice_->GetValue().utf8_str());
+    dungeonProfile.dungeonDescent = std::string(dungeon_descent_choice_->GetValue().utf8_str());
     const bool dungeonBrushes = bool(rme::procedural::resolveDungeonBrushes(dungeonProfile));
-    for (auto* control : {dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_}) control->Enable(dungeonPlaces);
+    for (auto* control : {dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_, dungeon_descent_choice_}) control->Enable(dungeonPlaces);
     building_dungeons_check_->Enable(dungeonPlaces && dungeonBrushes);
     if (!dungeonBrushes) building_dungeons_check_->SetValue(false);
     dungeon_percent_spin_->Enable(dungeonPlaces && dungeonBrushes && building_dungeons_check_->GetValue());
-    building_dungeons_hint_->SetLabel(!dungeonBrushes ? wxString("Choose a floor brush, a wall brush with closed, unlocked normal doors and a stairs brush with an upper part to enable dungeons.")
+    building_dungeons_hint_->SetLabel(!dungeonBrushes ? wxString("Choose a floor brush, a wall brush with closed, unlocked normal doors and a stairs brush with an upper part and a stairs-down brush with a floor-change-down ground to enable dungeons.")
         : !dungeonPlaces ? wxString("Dungeons need cave entrances and buildings with walls and doors.") : wxString{});
 	vegetation_check_->Enable(natural);
 	profile_choice_->Enable(natural);
@@ -1222,6 +1227,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
             request.profile.dungeonFloor = std::string(dungeon_floor_choice_->GetValue().utf8_str());
             request.profile.dungeonWall = std::string(dungeon_wall_choice_->GetValue().utf8_str());
             request.profile.dungeonStairs = std::string(dungeon_stairs_choice_->GetValue().utf8_str());
+            request.profile.dungeonDescent = std::string(dungeon_descent_choice_->GetValue().utf8_str());
         }
 	}
 

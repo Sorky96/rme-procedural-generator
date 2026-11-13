@@ -112,7 +112,7 @@ uint64_t GroundPlan::fingerprint() const {
     // Appended only with dungeons (iteration 45), so other plans keep their fingerprint.
     if (config.surface.buildingDungeons) {
         hash = (hash ^ (0x4400u + config.surface.dungeonPercent)) * 1099511628211ULL;
-        for (const auto* name : {&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs}) {
+        for (const auto* name : {&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs, &profile.dungeonDescent}) {
             for (const unsigned char c : *name) hash = (hash ^ c) * 1099511628211ULL;
             hash = (hash ^ 0) * 1099511628211ULL;
         }

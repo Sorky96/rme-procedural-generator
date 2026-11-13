@@ -44,7 +44,8 @@ std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::strin
 struct DungeonBrushes {
     uint16_t floor = 0;   // placement item of the floor brush
     CaveDoorBrush wall;   // wall piece and door items
-    CaveExitBrush stairs; // stairs up on z + 1, opening on the surface
+    CaveExitBrush stairs; // stairs up on z + 1 (their upper part is not used)
+    uint16_t descent = 0; // visible stairs down on the surface: a floor-change-down ground of the descent brush
 };
 std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundProfile& profile);
 
