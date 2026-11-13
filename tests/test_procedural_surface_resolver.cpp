@@ -2334,7 +2334,35 @@ void dungeonGuiProbe(std::ostream& report) {
     GroundProfile p{{"grass", "dirt", "rocky ground", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
     p.wall = "stone wall"; p.door = "Normal door"; p.bridgeBrush = "bridge"; p.buildingStairs = "ramp";
     p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
-    p.dungeonFloor = "dark tiled stone floor"; p.dungeonWall = "dark stone wall"; p.dungeonStairs = "ramp";
+    p.dungeonFloor = "dark tiled stone floor"; p.dungeonWall = "dark stone wall"; p.dungeonStairs = "ramp"; p.dungeonDescent = "gray stone stairs";
+    const auto dungeonIds = resolveDungeonBrushes(p);
+    check(dungeonIds && g_item_definitions.get(dungeonIds->descent).hasFlag(ItemFlag::FloorChangeDown), "I45b stairs down resolve");
+    const uint16_t descent = dungeonIds ? dungeonIds->descent : 0;
+    // Iteration 45b: dungeon floor only inside the walls and under walls touching the dungeon by a side; the ring corners
+    // carry their wall piece without ground. No ramp opening ("stairs" ground) on the surface.
+    const auto outsideFloor = [&](auto tileAt) {
+        size_t outside = 0;
+        const auto open = [&](int x, int y) {
+            const auto* t = tileAt(Position(x, y, 8));
+            return t && t->ground && brushOf(t->ground->getID()) == floorBrush && (!t->getWall() || t->getWall()->isBrushDoor());
+        };
+        for (uint32_t i = 0; i < n; ++i) {
+            const int x = 100 + int(i % side), y = 100 + int(i / side);
+            const auto* t = tileAt(Position(x, y, 8));
+            if (!t || !t->ground || brushOf(t->ground->getID()) != floorBrush || open(x, y)) continue;
+            outside += !(open(x - 1, y) || open(x + 1, y) || open(x, y - 1) || open(x, y + 1));
+        }
+        return outside;
+    };
+    const auto surfaceOpenings = [&](auto tileAt) {
+        size_t holes = 0;
+        for (uint32_t i = 0; i < n; ++i) {
+            const auto* t = tileAt(Position(100 + int(i % side), 100 + int(i / side), 7));
+            holes += t && t->ground && std::ranges::find(openings, t->ground->getID()) != openings.end();
+        }
+        return holes;
+    };
+    std::map<uint16_t, size_t> cornerPieces;
     auto prepared = prepareTerrain(editor.map, config, p, {1000000, 1100000, 2000000, 8ULL << 30});
     check(prepared && prepared->levels && prepared->cave, "I45 adapter preparation");
     if (!prepared || !prepared->levels || !prepared->cave) return;
@@ -2352,8 +2380,12 @@ void dungeonGuiProbe(std::ostream& report) {
     for (uint32_t i = 0; i < n; ++i) {
         const Position below(100 + int(i % side), 100 + int(i / side), 8), above(below.x, below.y, 7);
         const auto* tile = lower.preview.getBuffer().getTile(below);
-        if (lower.plan.caveFloor[i] >= 3)
+        if (lower.plan.caveFloor[i] == 3 || lower.plan.caveFloor[i] == 4)
             check(tile && tile->ground && brushOf(tile->ground->getID()) == floorBrush, "I45 dungeon floor ground in lower preview");
+        if (lower.plan.caveFloor[i] == 5) {
+            check(tile && !tile->ground && dungeonWall(tile->getWall()), "I45b ring corner wall without ground");
+            if (tile && tile->getWall()) ++cornerPieces[tile->getWall()->getID()];
+        }
         if (lower.plan.caveFloor[i] == 4 && !lower.plan.doors[i]) {
             ++wallCells;
             check(tile && dungeonWall(tile->getWall()), "I45 dungeon wall in lower preview");
@@ -2368,14 +2400,18 @@ void dungeonGuiProbe(std::ostream& report) {
         const auto ramp = std::ranges::find(ramps, lower.plan.exits[i]);
         if (lower.plan.caveFloor[i] != 3 || ramp == ramps.end()) continue;
         ++adapterStairs;
-        const auto opening = openings[size_t(ramp - ramps.begin())];
         const auto* top = prepared->preview.getBuffer().getTile(above);
-        check(prepared->plan.entrances[i] == opening && top && top->ground && top->ground->getID() == opening &&
-            top->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I45 opening above the dungeon stairs");
+        check(prepared->plan.entrances[i] == descent && top && top->ground && top->ground->getID() == descent &&
+            top->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I45b stairs down above the dungeon stairs");
         check(tile && std::ranges::any_of(tile->items, [&](const auto& item) { return item->getID() == *ramp; }), "I45 stairs item in lower preview");
         check(!levels.blockingMask[i] && !levels.blockingMask[n + i], "I45 stairs cells walkable in adapter mask");
     }
-    check(maskCells > 0 && wallCells > 0 && maskDoors > 0 && adapterStairs > 0, "I45 adapter placed dungeons");
+    check(maskCells > 0 && wallCells > 0 && maskDoors > 0 && adapterStairs > 0 && !cornerPieces.empty(), "I45 adapter placed dungeons");
+    const auto previewOutside = outsideFloor([&](const Position& at) { return lower.preview.getBuffer().getTile(at); });
+    const auto previewHoles = surfaceOpenings([&](const Position& at) { return prepared->preview.getBuffer().getTile(at); });
+    check(previewOutside == 0 && previewHoles == 0, std::format("I45b preview: floor outside the walls {}, stairs openings on z 7 {}", previewOutside, previewHoles));
+    std::string pieces;
+    for (const auto& [id, count] : cornerPieces) pieces += std::format("{}{}x{}", pieces.empty() ? "" : ",", id, count);
     prepared = std::unexpected(PreparationError{PreparationInputError::Cancelled});
 
     // Dialog: a wall brush without normal doors disables the option with a message; the real brushes enable it.
@@ -2448,7 +2484,7 @@ void dungeonGuiProbe(std::ostream& report) {
             const auto shape = stairs->shapes[size_t(ramp - ramps.begin())];
             const auto d = size_t(shape.direction);
             const auto* above = editor.map.getTile(Position(x, y, 7));
-            check(above && above->ground && above->ground->getID() == openings[size_t(ramp - ramps.begin())] &&
+            check(above && above->ground && above->ground->getID() == descent &&
                 above->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I45 committed opening above dungeon stairs");
             const int tx = x + shape.tailDx, ty = y + shape.tailDy;
             check(walkable({x + sx[d], y + sy[d], 7}) && walkable({tx - sx[d], ty - sy[d], 8}), "I45 committed arrival and dungeon entry walkable");
@@ -2456,6 +2492,9 @@ void dungeonGuiProbe(std::ostream& report) {
         }
     }
     check(committedDoors > 0 && committedWalls > 0 && committedStairs > 0, "I45 committed dungeons");
+    const auto mapTile = [&](const Position& at) -> const Tile* { return editor.map.getTile(at); };
+    const auto committedOutside = outsideFloor(mapTile), committedHoles = surfaceOpenings(mapTile);
+    check(committedOutside == 0 && committedHoles == 0, std::format("I45b map: floor outside the walls {}, stairs openings on z 7 {}", committedOutside, committedHoles));
     std::vector<std::vector<uint32_t>> after;
     for (int z = 4; z <= 8; ++z) after.push_back(stackImage(editor.map, 98, 98, z, side + 4, side + 4));
     const auto actions = editor.actionQueue->getSize();
@@ -2464,8 +2503,9 @@ void dungeonGuiProbe(std::ostream& report) {
     for (size_t i = 0; i < actions; ++i) check(editor.actionQueue->redo(), "I45 Redo");
     for (int z = 4; z <= 8; ++z) check(after[size_t(z - 4)] == stackImage(editor.map, 98, 98, z, side + 4, side + 4), "I45 identical Redo");
     report << std::format("DUNGEON_GUI_PASS adapterStairs={} maskCells={} walls={} doors={} committedStairs={} committedWalls={} committedDoors={} "
-        "undoRedo={} dialogFloors={} brushes=dark tiled stone floor/dark stone wall/ramp\n", adapterStairs, maskCells, wallCells, maskDoors,
-        committedStairs, committedWalls, committedDoors, actions, run.floors());
+        "undoRedo={} dialogFloors={} outsideFloor={}/{} surfaceOpenings={}/{} cornerPieces={} brushes=dark tiled stone floor/dark stone wall/ramp/gray stone stairs\n",
+        adapterStairs, maskCells, wallCells, maskDoors, committedStairs, committedWalls, committedDoors, actions, run.floors(),
+        previewOutside, committedOutside, previewHoles, committedHoles, pieces);
     editor.map.clearChanges();
 }
 
