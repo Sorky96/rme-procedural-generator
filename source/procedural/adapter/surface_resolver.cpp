@@ -149,7 +149,8 @@ std::expected<CaveDoorBrush, ResolveError> resolveCaveDoorBrush(std::string_view
     for (const auto [alignment, target] : {std::pair{WALL_HORIZONTAL, &result.horizontal}, std::pair{WALL_VERTICAL, &result.vertical}})
         for (const auto& door : wall->items.getDoorItems(alignment)) {
             const auto def = g_item_definitions.get(door.id);
-            if (door.type == WALL_DOOR_NORMAL && !door.locked && def && def.clientId() && !def.isMetaItem() &&
+            // The client item must be a door: some brushes list plain wall pieces in their door slots (iteration 45c).
+            if (door.type == WALL_DOOR_NORMAL && !door.locked && def && def.clientId() && !def.isMetaItem() && def.isDoor() &&
                 !def.hasFlag(ItemFlag::IsOpen) && !def.isGroundTile()) { *target = door.id; break; }
         }
     if (!result.wall || !result.horizontal || !result.vertical) return std::unexpected(ResolveError::InvalidProfile);

@@ -979,9 +979,11 @@ TerrainPreparationSteps runPreparation(
             if (!levels->passes.empty() || rockFaceEntrances) {
                 std::vector<uint8_t> clear(cellCount);
                 for (const auto& pass : levels->passes) for (const auto i : pass.cells) clear[i] = 1;
-                // Rock borders on a rock-face entrance and the cell before it would block the walkable ground.
+                // Rock borders on a rock-face entrance and the cell before it would block the walkable ground. A dungeon's
+                // stairs down (its ground is the entrance item) are not cleared: the cell south of them is the building
+                // wall, and clearing would remove it (iteration 45c).
                 if (rockFaceEntrances) for (size_t i = 0; i + input.config.region.width < cellCount; ++i)
-                    if (plan.entrances[i]) clear[i] = clear[i + input.config.region.width] = 1;
+                    if (plan.entrances[i] && plan.entrances[i] != plan.items[i]) clear[i] = clear[i + input.config.region.width] = 1;
                 auto cleared = DrawOperations::clearTerrainPreviewBlockers(*previews.front(), clear, stop);
                 if (!cleared) co_return fail(cleared.error());
             }

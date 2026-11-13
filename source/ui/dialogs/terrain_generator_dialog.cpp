@@ -679,14 +679,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     dungeon_floor_choice_ = brushChoice("terrain-dungeon-floor", "dark tiled stone floor", 0);
     form->Add(dungeon_floor_choice_, 1, wxEXPAND);
     form->Add(label("Dungeon wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
-    dungeon_wall_choice_ = brushChoice("terrain-dungeon-wall", "dark stone wall", 2);
+    dungeon_wall_choice_ = brushChoice("terrain-dungeon-wall", "brick wall", 2);
     form->Add(dungeon_wall_choice_, 1, wxEXPAND);
     form->Add(label("Dungeon stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
     dungeon_stairs_choice_ = brushChoice("terrain-dungeon-stairs", "ramp", 3);
     form->Add(dungeon_stairs_choice_, 1, wxEXPAND);
     form->Add(label("Dungeon stairs down:"), 0, wxALIGN_CENTER_VERTICAL);
-    dungeon_descent_choice_ = brushChoice("terrain-dungeon-descent", "gray stone stairs", 1);
-    dungeon_descent_choice_->SetToolTip("Doodad or ground brush whose floor-change-down ground is the stairs down inside the building.");
+    dungeon_descent_choice_ = brushChoice("terrain-dungeon-descent", "stairs down", 0);
+    dungeon_descent_choice_->SetToolTip("Ground brush whose floor-change-down ground is the stairs down inside the building, facing north like the stairs up below it.");
     form->Add(dungeon_descent_choice_, 1, wxEXPAND);
     form->AddSpacer(0);
     building_dungeons_hint_ = label("");
