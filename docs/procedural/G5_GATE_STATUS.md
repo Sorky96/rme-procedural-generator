@@ -463,7 +463,7 @@ Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 45b”, bez zmian. Poprawk
 **Nie zweryfikowane:** wygląd w GUI po poprawce (ocena użytkownika), kierunek grafiki „gray stone stairs” względem rampy w lochu, przejście po schodach na serwerze gry, który element trafia na który narożnik (sonda liczy elementy, nie ich położenie).
 ### Iteracja 45c — lochy: kierunek schodów, przejścia, mury budynku (2026-11-13): PASS
 
-Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 45c”, bez zmian. Poprawki `9bbc421` (rdzeń), `2b5224c` (adapter/okno), sonda `2b5224c`..`2ecad33`.
+Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 45c”, bez zmian. Poprawki `9bbc421` (rdzeń), `2b5224c` (adapter/okno), sonda `2ecad33`.
 
 1. **Kierunek.** Rdzeń używał dowolnego z czterech kształtów doodadu „ramp”, a „gray stone stairs” ma jeden wariant. Teraz loch używa tylko kształtów zwróconych na północ (rampa z floorchange north, ogon i lądowisko na południe od niej), a zejście domyślnie to pędzel gruntu „stairs down” (grunt z floorchange down; w danych 10.98 to para dla schodów w górę na północ). Pole profilu `dungeonDescent` opisuje teraz schody zwrócone na północ.
 2. **Przejścia — diagnoza:** drzwi stały, ale w slotach drzwi pędzla „dark stone wall” są przedmioty 25283–25296, które dane klienta opisują jako zwykły „stone wall” (bez typu door, nieprzechodnie). Logika drzwi RME postawiła je jako „drzwi”, więc na każdym końcu korytarza widać było pełny mur (a maska adaptera traktowała je jako otwieralne). **Poprawka:** `resolveCaveDoorBrush` przyjmuje tylko przedmioty będące w kliencie drzwiami; „dark stone wall” jest odrzucany (opcja wyłączona z komunikatem), domyślny mur lochu to „brick wall” (prawdziwe drzwi normal).
