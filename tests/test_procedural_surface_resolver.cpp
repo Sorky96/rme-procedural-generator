@@ -1733,7 +1733,10 @@ void levelReachabilityProbe(std::ostream& report) {
     const auto blocking = [](const Tile* tile) {
         if (!tile) return false;
         if (tile->ground && tile->ground->isBlocking()) return true;
-        return std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); });
+        // Closed, unlocked doors are walkable, as in the adapter's level mask.
+        return std::ranges::any_of(tile->items, [](const auto& item) {
+            return item->isBlocking() && !(item->isBrushDoor() && !item->isLocked());
+        });
     };
     for (size_t f = 0; f < levels.plan.floors.size(); ++f) for (size_t i = 0; i < n; ++i) {
         const Position pos(100 + int(i % side), 100 + int(i / side), levels.plan.floors[f].z);
@@ -1829,7 +1832,7 @@ void levelRepairProbe(std::ostream& report) {
         std::vector<uint8_t> mask(n);
         for (size_t i = 0; i < n; ++i) {
             const auto* tile = editor.map.getTile(Position(100 + int(i % side), 100 + int(i / side), 7));
-            mask[i] = tile && ((tile->ground && tile->ground->isBlocking()) || std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); }));
+            mask[i] = tile && ((tile->ground && tile->ground->isBlocking()) || std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking() && !(item->isBrushDoor() && !item->isLocked()); }));
         }
         const auto reach = levelReachabilityOf(*semantic, {}, mask);
         check(reach && reach->allReached(), "Repaired committed model must reach POI");
@@ -1876,7 +1879,7 @@ void levelRepairProbe(std::ostream& report) {
     for (size_t f = 0; f < levels.plan.floors.size(); ++f) for (size_t i = 0; i < 128 * 128; ++i) {
         const auto* tile = editor.map.getTile(Position(100 + int(i % 128), 100 + int(i / 128), levels.plan.floors[f].z));
         const bool blocks = tile && ((tile->ground && tile->ground->isBlocking()) ||
-            std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); }));
+            std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking() && !(item->isBrushDoor() && !item->isLocked()); }));
         check(bool(levels.blockingMask[f * 128 * 128 + i]) == blocks, "Integrated repair mask/map mismatch");
         if (levels.report.walkable[f * 128 * 128 + i]) check(tile && tile->ground && !blocks, "Integrated repaired walkability mismatch");
     }
@@ -1962,7 +1965,7 @@ void finalMaskRepairProbe(std::ostream& report) {
                     const auto* after = unit->preview.getBuffer().getTile(pos);
                     if (!before) continue;
                     rawMask[f * 90000 + i] = (before->ground && before->ground->isBlocking()) ||
-                        std::ranges::any_of(before->items, [](const auto& item) { return item->isBlocking(); });
+                        std::ranges::any_of(before->items, [](const auto& item) { return item->isBlocking() && !(item->isBrushDoor() && !item->isLocked()); });
                     for (const auto& item : before->items) if (item->isBlocking() && item->isBorder() && after &&
                         std::ranges::none_of(after->items, [&](const auto& other) { return other->getID() == item->getID(); })) {
                         ++clearedBorders;

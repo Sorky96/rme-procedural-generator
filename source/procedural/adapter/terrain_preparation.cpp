@@ -915,8 +915,7 @@ TerrainPreparationSteps runPreparation(
                     levels->plan.floors[f].walkable[i] &= tile && tile->ground;
                     uint8_t blocks = tile && tile->ground && tile->ground->isBlocking() ? 2 : 0;
                     if (tile) for (const auto& item : tile->items) if (item->isBlocking() &&
-                        !(!plans[f]->caveFloor.empty() && plans[f]->config.surface.caveDoorCorridors &&
-                            !plans[f]->doors.empty() && plans[f]->doors[i] && item->isBrushDoor())) {
+                        !(!plans[f]->doors.empty() && plans[f]->doors[i] && item->isBrushDoor() && !item->isLocked())) {
                         const bool decor = !plans[f]->decor.empty() && plans[f]->decor[i] == item->getID();
                         blocks = std::max<uint8_t>(blocks, item->isBorder() || decor ? 1 : 2);
                     }
