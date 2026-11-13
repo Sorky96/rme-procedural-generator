@@ -41,6 +41,9 @@ struct GroundProfile {
     std::string plateauCliff = "mountain";
     std::string bridgeBrush; // empty: sand fords; otherwise walkable wall-brush ground variants
     std::string buildingStairs; // ramp-like doodad for storey stairs; set exactly when SurfaceTuning::buildingStoreys is
+    // Iteration 45, set exactly when SurfaceTuning::buildingDungeons is: dungeon floor (ground brush), walls with closed,
+    // unlocked normal doors (wall brush) and the ramp-like doodad whose upper part is the descent's opening.
+    std::string dungeonFloor, dungeonWall, dungeonStairs;
 };
 
 struct GroundPlan {
@@ -66,7 +69,8 @@ struct GroundPlan {
 	[[nodiscard]] uint64_t fingerprint() const;
 	std::vector<uint16_t> entrances;
 	std::vector<uint16_t> exits;
-	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band; authenticates placement and borders.
+	// Lower-floor cells: 0 = empty Solid, 1 = Floor, 2 = Solid wall band, 3 = dungeon floor, 4 = dungeon wall or door;
+	// authenticates placement and borders.
 	std::vector<uint8_t> caveFloor;
     // 0 None, 1 grass, 2 cliff supporting the next cap, 3 ramp opening, 4 storey floor, 5 storey stairs opening
     std::vector<uint8_t> plateauFloor;

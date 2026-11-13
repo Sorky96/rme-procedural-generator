@@ -665,6 +665,29 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     cave_door_hint_ = label("");
     form->Add(cave_door_hint_, 1, wxEXPAND);
 
+    form->Add(label("Dungeons:"), 0, wxALIGN_CENTER_VERTICAL);
+    building_dungeons_check_ = newd wxCheckBox(host, wxID_ANY, "Dungeon z+1 below some buildings");
+    building_dungeons_check_->SetName("terrain-building-dungeons");
+    building_dungeons_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    building_dungeons_check_->SetToolTip("Buildings with a door and at least 16 interior cells may get walled rooms on the cave floor, "
+        "joined by corridors with closed doors and reached by stairs down inside. Needs cave entrances and buildings with walls and doors.");
+    form->Add(building_dungeons_check_, 1, wxEXPAND);
+    form->Add(label("Dungeon share (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_percent_spin_ = spin("terrain-dungeon-percent", 0, 100, 20);
+    form->Add(dungeon_percent_spin_, 1, wxEXPAND);
+    form->Add(label("Dungeon floor brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_floor_choice_ = brushChoice("terrain-dungeon-floor", "dark tiled stone floor", 0);
+    form->Add(dungeon_floor_choice_, 1, wxEXPAND);
+    form->Add(label("Dungeon wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_wall_choice_ = brushChoice("terrain-dungeon-wall", "dark stone wall", 2);
+    form->Add(dungeon_wall_choice_, 1, wxEXPAND);
+    form->Add(label("Dungeon stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_stairs_choice_ = brushChoice("terrain-dungeon-stairs", "ramp", 3);
+    form->Add(dungeon_stairs_choice_, 1, wxEXPAND);
+    form->AddSpacer(0);
+    building_dungeons_hint_ = label("");
+    form->Add(building_dungeons_hint_, 1, wxEXPAND);
+
     form->Add(label("Mountain area z-1 (%):"), 0, wxALIGN_CENTER_VERTICAL);
     plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
     plateau_percent_spin_->SetToolTip(
@@ -814,7 +837,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxSpinCtrl* control :
          {x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_,
           path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_,
-           plateau_levels_spin_, plateau_percent_spin_, mountain_passes_spin_, upper_floor_percent_spin_}) {
+           plateau_levels_spin_, plateau_percent_spin_, mountain_passes_spin_, upper_floor_percent_spin_, dungeon_percent_spin_}) {
         control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
     }
@@ -822,7 +845,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     for (wxComboBox* control :
          {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
           floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
-          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_, building_stairs_choice_}) {
+          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_, building_stairs_choice_,
+          dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_}) {
         control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     }
     scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -832,6 +856,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	walls_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	doors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
     building_storeys_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    building_dungeons_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	rock_passes_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	smooth_beaches_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	repair_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -1030,6 +1055,19 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     if (!stairsAvailable) building_storeys_check_->SetValue(false);
     upper_floor_percent_spin_->Enable(walledBuildings && stairsAvailable && building_storeys_check_->GetValue());
     building_storeys_hint_->SetLabel(stairsAvailable ? wxString{} : wxString("Choose a stairs brush with a floor-change item and an upper part to enable upper floors."));
+    // Dungeons (iteration 45) are drawn on the cave floor below doored, walled buildings.
+    const bool dungeonPlaces = caves && walledBuildings && doors_check_->GetValue();
+    rme::procedural::GroundProfile dungeonProfile;
+    dungeonProfile.dungeonFloor = std::string(dungeon_floor_choice_->GetValue().utf8_str());
+    dungeonProfile.dungeonWall = std::string(dungeon_wall_choice_->GetValue().utf8_str());
+    dungeonProfile.dungeonStairs = std::string(dungeon_stairs_choice_->GetValue().utf8_str());
+    const bool dungeonBrushes = bool(rme::procedural::resolveDungeonBrushes(dungeonProfile));
+    for (auto* control : {dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_}) control->Enable(dungeonPlaces);
+    building_dungeons_check_->Enable(dungeonPlaces && dungeonBrushes);
+    if (!dungeonBrushes) building_dungeons_check_->SetValue(false);
+    dungeon_percent_spin_->Enable(dungeonPlaces && dungeonBrushes && building_dungeons_check_->GetValue());
+    building_dungeons_hint_->SetLabel(!dungeonBrushes ? wxString("Choose a floor brush, a wall brush with closed, unlocked normal doors and a stairs brush with an upper part to enable dungeons.")
+        : !dungeonPlaces ? wxString("Dungeons need cave entrances and buildings with walls and doors.") : wxString{});
 	vegetation_check_->Enable(natural);
 	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
@@ -1178,6 +1216,13 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
         config.surface.caveFarExits = cave_far_exits_check_->GetValue();
         config.surface.caveDoorCorridors = cave_door_corridors_check_->IsEnabled() && cave_door_corridors_check_->GetValue();
         if (config.surface.caveDoorCorridors) request.profile.caveDoor = std::string(cave_door_brush_choice_->GetValue().utf8_str());
+        config.surface.buildingDungeons = building_dungeons_check_->IsEnabled() && building_dungeons_check_->GetValue() && !request.profile.door.empty();
+        config.surface.dungeonPercent = uint32_t(dungeon_percent_spin_->GetValue());
+        if (config.surface.buildingDungeons) {
+            request.profile.dungeonFloor = std::string(dungeon_floor_choice_->GetValue().utf8_str());
+            request.profile.dungeonWall = std::string(dungeon_wall_choice_->GetValue().utf8_str());
+            request.profile.dungeonStairs = std::string(dungeon_stairs_choice_->GetValue().utf8_str());
+        }
 	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();

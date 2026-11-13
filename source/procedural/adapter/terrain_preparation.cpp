@@ -190,10 +190,14 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	} else if (profile.count != expectedBrushes) {
 		return fail(PreparationInputError::InvalidProfile);
 	}
-    if (!validPlateauProfile(profile, config) || !validCaveProfile(profile, config) || !validStoreyProfile(profile, config)) {
+    if (!validPlateauProfile(profile, config) || !validCaveProfile(profile, config) || !validStoreyProfile(profile, config) ||
+        !validDungeonProfile(profile, config)) {
         return fail(PreparationInputError::InvalidProfile);
     }
     const bool storeys = config.surface.buildingStoreys;
+    // Dungeons live on the cave floor; its emptiness check below covers them.
+    const bool dungeons = config.surface.buildingDungeons;
+    if (dungeons && !resolveDungeonBrushes(profile)) return fail(PreparationInputError::InvalidProfile);
     if (storeys) {
         if (!resolveBuildingStairsBrush(profile.buildingStairs)) return fail(PreparationInputError::InvalidProfile);
         if (region.z < 1) return fail(PreparationInputError::NoUpperFloor);
@@ -262,7 +266,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush, &profile.buildingStairs}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush, &profile.buildingStairs,
+		&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
 	}
 	// Borrowed, allocation-free length check: an oversized client ID is rejected before any
@@ -282,7 +287,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		return fail(PreparationInputError::MemoryLimit);
 	}
 	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
-        + (config.surface.caveDoorCorridors ? cellCount * 3 : 0) + (storeys ? cellCount * 2 : 0);
+        + (config.surface.caveDoorCorridors || dungeons ? cellCount * 3 : 0) + (storeys ? cellCount * 2 : 0);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -314,7 +319,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			if (cellCount > (UINT64_MAX - semanticBytes - 65536) / 128) return fail(PreparationInputError::MemoryLimit);
 			semanticBytes += cellCount * 128 + 65536;
 		}
-        if (config.surface.repairReach || config.surface.passes || storeys) {
+        if (config.surface.repairReach || config.surface.passes || storeys || dungeons) {
             // Expanded water-run Dijkstra states (distance, predecessor, heap),
             // full world copies, and provisional resolver plans. Charged before allocation.
             const auto perCell = 1024ULL + 64ULL * config.surface.fordLength;
@@ -431,7 +436,15 @@ TerrainPreparationSteps runPreparation(
                     if (!resolved) co_return fail(resolved.error());
                     stairBrush = std::move(*resolved);
                 }
-                if (input.config.surface.repairReach || input.config.surface.passes || input.config.surface.buildingStoreys) {
+                std::vector<BuildingDungeon> levelDungeons;
+                std::optional<DungeonBrushes> dungeonBrushes;
+                if (input.config.surface.buildingDungeons) {
+                    auto resolved = resolveDungeonBrushes(profile);
+                    if (!resolved) co_return fail(resolved.error());
+                    dungeonBrushes = std::move(*resolved);
+                }
+                if (input.config.surface.repairReach || input.config.surface.passes || input.config.surface.buildingStoreys ||
+                    input.config.surface.buildingDungeons) {
                     std::vector<ExitShape> caveShapes, capShapes;
                     if (hasCave(profile)) {
                         auto brushes = resolveCaveBrushes(profile, input.config);
@@ -445,7 +458,7 @@ TerrainPreparationSteps runPreparation(
                     }
                     auto world = buildLevelWorld(std::move(*grid), decor ? std::move(*decor) : DecorGrid{},
                         input.config.seed, input.config.surface, input.config.decor, caveShapes, capShapes, input.config.vegetation, stop,
-                        stairBrush.shapes);
+                        stairBrush.shapes, dungeonBrushes ? std::span<const ExitShape>(dungeonBrushes->stairs.shapes) : std::span<const ExitShape>{});
                     if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                     passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
@@ -492,6 +505,7 @@ TerrainPreparationSteps runPreparation(
                     *grid = std::move(world->surface);
                     if (decor) *decor = world->decor[0];
                     levelStoreys = world->storeys;
+                    levelDungeons = world->dungeons;
                     repairWorld = std::move(*world);
                 }
 				const auto resolve = [&]() { return resolveSurfacePlan(input, *grid, profile, planBytes, stop, decor ? &*decor : nullptr, keepClear); };
@@ -587,6 +601,42 @@ TerrainPreparationSteps runPreparation(
                             const auto side = c.horizontal ? grid->region.width : 1u;
                             for (auto i : {c.door - side, c.door, c.door + side}) lowerPlan.walls[i] = door->wall;
                             lowerPlan.doors[c.door] = 1;
+                        }
+                    }
+                    if (dungeonBrushes) {
+                        // Dungeons (iteration 45): floor under every walkable and wall cell, walls on the ring, doors in the
+                        // room walls, stairs up on z + 1 and their opening on the surface, all at the core's cells.
+                        const auto w = grid->region.width, h = grid->region.height;
+                        if (lowerPlan.walls.empty()) { lowerPlan.walls.assign(cellCount, 0); lowerPlan.doors.assign(cellCount, 0); }
+                        std::vector<uint8_t> walk(cellCount);
+                        for (const auto& d : levelDungeons) if (!markDungeonCells(d, w, h, walk)) co_return fail(PreparationInputError::InvalidParameters);
+                        for (size_t i = 0; i < cellCount; ++i) {
+                            bool wall = false;
+                            const int x = int(i % w), y = int(i / w);
+                            if (!walk[i]) for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
+                                if (x + dx >= 0 && y + dy >= 0 && x + dx < int(w) && y + dy < int(h)) wall |= walk[size_t(y + dy) * w + size_t(x + dx)] != 0;
+                            if (!walk[i] && !wall) continue;
+                            if (!lowerSnapshot->input.mask[i] || lowerSnapshot->input.protection[i] || lowerPlan.caveFloor[i])
+                                co_return fail(PreparationInputError::InvalidParameters);
+                            lowerPlan.caveFloor[i] = walk[i] ? 3 : 4;
+                            lowerPlan.items[i] = dungeonBrushes->floor;
+                            if (wall) lowerPlan.walls[i] = dungeonBrushes->wall.wall;
+                        }
+                        for (const auto& d : levelDungeons) {
+                            for (const auto& c : d.corridors) for (const auto door : {c.doorA, c.doorB}) {
+                                lowerPlan.caveFloor[door] = 4;
+                                lowerPlan.walls[door] = dungeonBrushes->wall.wall;
+                                lowerPlan.doors[door] = 1;
+                            }
+                            const auto& shape = dungeonBrushes->stairs.shapes[d.shape];
+                            const auto& ids = dungeonBrushes->stairs.items[d.shape];
+                            const auto tail = size_t(int64_t(d.descent) + shape.tailDx + int64_t(shape.tailDy) * w);
+                            if (!plan.items[d.descent]) co_return fail(PreparationInputError::InvalidParameters);
+                            lowerPlan.exits[d.descent] = ids.ramp;
+                            if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
+                            plan.entrances[d.descent] = ids.opening;
+                            if (g_item_definitions.get(ids.opening).isGroundTile()) plan.items[d.descent] = ids.opening;
+                            if (!plan.decor.empty()) plan.decor[d.descent] = 0;
                         }
                     }
 					auto lowerSteps = DrawOperations::prepareTerrainPreviewSteps(map, *lowerSnapshot, lowerPlan,
@@ -874,7 +924,7 @@ TerrainPreparationSteps runPreparation(
                         rockBlocks |= g_item_definitions.get(plan.items[i]).hasFlag(ItemFlag::Unpassable);
                 }
                 auto semantic = levelPlanOf(*grid, !profile.wall.empty(), rockBlocks,
-                    levelCave ? &*levelCave : nullptr, levelExits, levelShapes, levelCaps, {}, stop, levelStoreys);
+                    levelCave ? &*levelCave : nullptr, levelExits, levelShapes, levelCaps, {}, stop, levelStoreys, levelDungeons);
                 if (!semantic) co_return fail(semantic.error() == ReachabilityError::Cancelled ?
                     PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                 levels = std::make_unique<PreparedTerrain::Levels>();

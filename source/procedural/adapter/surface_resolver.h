@@ -37,6 +37,17 @@ std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundPro
 [[nodiscard]] bool validStoreyProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
 std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::string_view name);
 
+// Iteration 45: dungeons need walled, doored buildings, a cave (z + 1 is drawn with the cave's unit), a ground brush
+// for the floor, a wall brush with closed, unlocked normal doors and a ramp-like stairs doodad; the three names are
+// set exactly when the option is on.
+[[nodiscard]] bool validDungeonProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+struct DungeonBrushes {
+    uint16_t floor = 0;   // placement item of the floor brush
+    CaveDoorBrush wall;   // wall piece and door items
+    CaveExitBrush stairs; // stairs up on z + 1, opening on the surface
+};
+std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundProfile& profile);
+
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
 [[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
 // Translates a ramp-like doodad (every alternate a composite: a floor-change tile, a tile on the floor

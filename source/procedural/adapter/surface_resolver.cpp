@@ -93,6 +93,36 @@ std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::strin
     return resolveCaveExitBrush(*doodad);
 }
 
+bool validDungeonProfile(const GroundProfile& p, const GenerationConfig& c) noexcept {
+    if (!c.surface.buildingDungeons) return p.dungeonFloor.empty() && p.dungeonWall.empty() && p.dungeonStairs.empty();
+    return c.algorithm == GenerationAlgorithm::Surface && c.surface.buildingDensity > 0 && c.surface.dungeonPercent <= 100 &&
+        c.surface.caveEntrances > 0 && hasCave(p) && p.count == GroundProfile::surfaceWithFloorCount && !p.wall.empty() && !p.door.empty() &&
+        std::ranges::all_of(std::array{&p.dungeonFloor, &p.dungeonWall, &p.dungeonStairs},
+            [](const std::string* name) { return !name->empty() && name->size() <= 256; });
+}
+
+std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundProfile& p) {
+    if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
+    if (!g_version.IsVersionLoaded()) return std::unexpected(ResolveError::NoClient);
+    if (p.dungeonFloor.empty() || p.dungeonFloor.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
+    const auto* brush = g_brushes.getBrush(p.dungeonFloor);
+    const auto* floor = brush ? brush->as<GroundBrush>() : nullptr;
+    if (!floor || floor->getTotalChance() <= 0) return std::unexpected(ResolveError::InvalidProfile);
+    DungeonBrushes result;
+    result.floor = floor->getPlacementItemId();
+    const auto def = g_item_definitions.get(result.floor);
+    if (!def || !def.clientId() || def.isMetaItem() || !def.isGroundTile() || def.hasFlag(ItemFlag::Unpassable) ||
+        std::ranges::none_of(floor->getBorderItems(), [&](const auto& variant) { return variant.id == result.floor; }))
+        return std::unexpected(ResolveError::InvalidProfile);
+    auto wall = resolveCaveDoorBrush(p.dungeonWall);
+    if (!wall) return std::unexpected(wall.error());
+    result.wall = *wall;
+    auto stairs = resolveBuildingStairsBrush(p.dungeonStairs);
+    if (!stairs) return std::unexpected(stairs.error());
+    result.stairs = std::move(*stairs);
+    return result;
+}
+
 bool hasCave(const GroundProfile& profile) noexcept {
 	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }

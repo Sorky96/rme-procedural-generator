@@ -183,6 +183,12 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
         hashField(hash, plan.stairs.size());
         for (auto id : plan.stairs) hashField(hash, id, 2);
     }
+    if (plan.config.surface.buildingDungeons) {
+        hashField(hash, plan.config.surface.dungeonPercent, 4);
+        string(plan.profile.dungeonFloor); string(plan.profile.dungeonWall); string(plan.profile.dungeonStairs);
+        hashField(hash, plan.doors.size());
+        for (const auto door : plan.doors) hashField(hash, door, 1);
+    }
     return hash;
 }
 
@@ -348,8 +354,24 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     }
     if (!validCaveProfile(plan.profile, plan.config) || (cave && (!hasCave(plan.profile) || plan.caveFloor.size() != plan.items.size())))
 		co_return std::unexpected(PreviewError::InvalidPlan);
+    // Dungeons (iteration 45): floor, walls and doors on the cave floor, stairs up there and their opening on the surface.
+    const bool dungeons = plan.config.surface.buildingDungeons;
+    if (!validDungeonProfile(plan.profile, plan.config)) co_return std::unexpected(PreviewError::InvalidPlan);
+    const GroundBrush* dungeonFloorBrush = nullptr;
+    std::vector<uint16_t> dungeonRamps, dungeonOpenings;
+    if (dungeons && !upper) {
+        const auto resolved = resolveDungeonBrushes(plan.profile);
+        const auto* floor = g_brushes.getBrush(plan.profile.dungeonFloor);
+        dungeonFloorBrush = floor ? floor->as<GroundBrush>() : nullptr;
+        if (!resolved || !dungeonFloorBrush) co_return std::unexpected(PreviewError::InvalidPlan);
+        for (const auto& ids : resolved->stairs.items) {
+            dungeonRamps.push_back(ids.ramp);
+            if (ids.tail) dungeonRamps.push_back(ids.tail);
+            dungeonOpenings.push_back(ids.opening);
+        }
+    }
 	if (cave && (!plan.decor.empty() || !plan.fires.empty() ||
-        (!plan.config.surface.caveDoorCorridors && (!plan.walls.empty() || !plan.doors.empty())))) co_return std::unexpected(PreviewError::InvalidPlan);
+        (!plan.config.surface.caveDoorCorridors && !dungeons && (!plan.walls.empty() || !plan.doors.empty())))) co_return std::unexpected(PreviewError::InvalidPlan);
 	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -409,6 +431,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			exitIds.push_back(ids.ramp);
 			if (ids.tail) exitIds.push_back(ids.tail);
 		}
+        entranceIds.insert(entranceIds.end(), dungeonOpenings.begin(), dungeonOpenings.end());
+        exitIds.insert(exitIds.end(), dungeonRamps.begin(), dungeonRamps.end());
 		if (cave ? (!plan.entrances.empty() || plan.exits.size() != plan.items.size()) :
 			(!plan.exits.empty() || plan.entrances.size() != plan.items.size()))
 			co_return std::unexpected(PreviewError::InvalidPlan);
@@ -445,21 +469,32 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     const bool caveDoors = cave && plan.config.surface.caveDoorCorridors;
     // Storey outlines on z - 1 carry the building's wall brush.
     const bool storeyWalls = upper && storeys && !plan.walls.empty();
-    if ((!upper && ((!cave && !wallName.empty()) || caveDoors)) || storeyWalls) {
-        const auto* brush = wallName.size() <= 256 ? g_brushes.getBrush(wallName) : nullptr;
-		wallBrush = brush ? brush->as<WallBrush>() : nullptr;
-		if (!wallBrush || plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
-		const_cast<WallBrush*>(wallBrush)->getRelatedItems(wallIds);
+    const bool dungeonWalls = cave && dungeons;
+    // Collects every piece of a wall brush; the first brush is the plan's main one.
+    const auto addWallBrush = [&](const std::string& name) {
+        const auto* brush = name.size() <= 256 ? g_brushes.getBrush(name) : nullptr;
+        const auto* walls = brush ? brush->as<WallBrush>() : nullptr;
+        if (!walls) return false;
+        if (!wallBrush) wallBrush = walls;
+        const_cast<WallBrush*>(walls)->getRelatedItems(wallIds);
+        return true;
+    };
+    if (((!upper && ((!cave && !wallName.empty()) || caveDoors)) || storeyWalls) && !addWallBrush(wallName))
+        co_return std::unexpected(PreviewError::InvalidPlan);
+    if (dungeonWalls && !addWallBrush(plan.profile.dungeonWall)) co_return std::unexpected(PreviewError::InvalidPlan);
+    if (wallBrush) {
+		if (plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
 		std::ranges::sort(wallIds);
 		wallIds.erase(std::ranges::unique(wallIds).begin(), wallIds.end());
 		decorIds.insert(decorIds.end(), wallIds.begin(), wallIds.end());
     } else if (!plan.walls.empty()) {
         co_return std::unexpected(PreviewError::InvalidPlan);
     }
-    const auto doorType = caveDoors ? std::optional<DoorType>(WALL_DOOR_NORMAL) :
+    const auto doorType = caveDoors || dungeonWalls ? std::optional<DoorType>(WALL_DOOR_NORMAL) :
         cave || upper || plan.profile.door.empty() ? std::nullopt : doorTypeOf(plan.profile.door);
     if (caveDoors && (!wallBrush || plan.doors.size() != plan.items.size() || !resolveCaveDoorBrush(plan.profile.caveDoor)))
         co_return std::unexpected(PreviewError::InvalidPlan);
+    if (dungeonWalls && plan.doors.size() != plan.items.size()) co_return std::unexpected(PreviewError::InvalidPlan);
     if ((!cave && !upper && plan.profile.door.empty() != plan.doors.empty())
         || (!cave && !upper && !plan.profile.door.empty() && (!doorType || !wallBrush || plan.doors.size() != plan.items.size()))) {
         co_return std::unexpected(PreviewError::InvalidPlan);
@@ -481,7 +516,11 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
                     && (!upper || plan.plateauFloor[i]))) {
             co_return std::unexpected(PreviewError::InvalidPlan);
         }
-        if (cave && (plan.caveFloor[i] > 2 || (plan.caveFloor[i] == 1 && (i % r.width < 2 || i / r.width < 2 || i % r.width + 2 >= r.width || i / r.width + 2 >= r.height)))) co_return std::unexpected(PreviewError::InvalidPlan);
+        if (cave && (plan.caveFloor[i] > (dungeons ? 4 : 2) || ((plan.caveFloor[i] == 1 || plan.caveFloor[i] == 3) &&
+            (i % r.width < 2 || i / r.width < 2 || i % r.width + 2 >= r.width || i / r.width + 2 >= r.height)))) co_return std::unexpected(PreviewError::InvalidPlan);
+        // Dungeon walls and doors stand exactly on the dungeon's wall cells.
+        if (cave && plan.caveFloor[i] >= 3 && (plan.caveFloor[i] == 4) != (!plan.walls.empty() && plan.walls[i] != 0))
+            co_return std::unexpected(PreviewError::InvalidPlan);
         if (upper) {
             const auto code = plan.plateauFloor[i];
             if (code > 5 || (code >= 4 && !storeys) || (code <= 3 && code && !mountains)) {
@@ -522,7 +561,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (plan.caveFloor[i] != 1 && (plan.caveFloor[i] == 2) != adjacentFloor) co_return std::unexpected(PreviewError::InvalidPlan);
 			if (plan.items[i]) {
 				const auto def = g_item_definitions.get(plan.items[i]);
-				if (!def || def.editorData().brush != (plan.caveFloor[i] == 1 ? brushes[0] : brushes[1])) co_return std::unexpected(PreviewError::InvalidItem);
+				if (!def || def.editorData().brush != (plan.caveFloor[i] == 1 ? brushes[0] : plan.caveFloor[i] >= 3 ? dungeonFloorBrush : brushes[1]))
+					co_return std::unexpected(PreviewError::InvalidItem);
 			}
 		}
 		for (const auto [layer, allowed] : {std::pair{std::span(plan.entrances), std::span(entranceIds)},
@@ -569,9 +609,11 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}
-		const bool groundHole = !cave && plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole &&
+		const bool groundHole = !cave && (plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole ||
+			std::ranges::find(dungeonOpenings, plan.items[i]) != dungeonOpenings.end()) &&
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&
 			definition.hasFlag(ItemFlag::FloorChangeDown) && std::ranges::find(entranceIds, plan.items[i]) != entranceIds.end();
+        if (cave && plan.caveFloor[i] >= 3) for (const auto& variant : dungeonFloorBrush->getBorderItems()) found |= variant.id == plan.items[i];
 		if (!upper && hasPlateau(plan.profile)) {
             const auto* cliff = g_brushes.getBrush(plan.profile.plateauCliff)->as<GroundBrush>();
             for (const auto& v : cliff->getBorderItems()) if (v.id == plan.items[i]) found = true;
@@ -732,10 +774,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 				auto* tile = result.buffer_->getTile(position);
 				if (!tile || !doorBrush.canDraw(result.buffer_.get(), position)) co_return std::unexpected(PreviewError::InvalidItem);
 				doorBrush.draw(result.buffer_.get(), tile, nullptr);
-                if (caveDoors) {
-                    // DoorBrush follows the editor's lock preference. Generated cave
-                    // doors always use the client's closed, unlocked normal variant.
-                    const auto resolved = resolveCaveDoorBrush(plan.profile.caveDoor);
+                if (cave) {
+                    // DoorBrush follows the editor's lock preference. Generated cave and dungeon
+                    // doors always use the client's closed, unlocked normal variant of their wall brush.
+                    const auto resolved = resolveCaveDoorBrush(plan.caveFloor[i] >= 3 ? plan.profile.dungeonWall : plan.profile.caveDoor);
                     auto* door = tile->getWall();
                     if (!resolved || !door || !door->isBrushDoor()) co_return std::unexpected(PreviewError::InvalidItem);
                     const auto alignment = door->getWallAlignment();
