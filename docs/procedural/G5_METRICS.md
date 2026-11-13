@@ -401,3 +401,11 @@ Wiążące przed implementacją. Decyzja użytkownika: „Akceptuję — weź ko
 4. **Pomiar.** Seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 44 plus opcja: udział kwalifikujących się budynków z lochem w paśmie 10..30 % (mediana), mediana pomieszczeń na loch ≥ 3, 100 % lochów z zejściem i wyjściem, zero kolizji z jaskinią.
 5. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `DUNGEON_GUI_PASS` sprawdzający mury, drzwi, przedmioty zejścia/wyjścia i maskę z adaptera.
 6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonej opcji, testy rdzenia (nowe dopisane), `SUITE_PASS`. Po zakończeniu D27 w TECH_DEBT.md zamknięty albo z opisaną resztą.
+
+## Iteracja 45b: poprawki lochów po teście GUI (2026-11-13)
+
+Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (m19, x 1000, y 1000, 512×512, seed 1729): „W rogach wystają kratki w lochach”; „tam gdzie powinno być wejście rampą jest dziura w podłodze zamiast zejścia”.
+
+1. **Rogi lochów.** Na z + 1 żadna komórka poza obrysem murów lochu (także po przekątnej od narożników) nie ma gruntu ani przedmiotu lochu; podłoga tylko wewnątrz murów i pod murami. Najpierw zdiagnozować źródło (podłoga pod komórką narożną, border pędzla podłogi, element narożny muru) i zapisać w raporcie. Test/sonda: zero komórek z gruntem lochu poza obrysem (z dopuszczeniem korytarzy).
+2. **Zejście widoczne.** Na powierzchni w budynku z lochem nie ma gruntu „stairs” (czarna dziura). Zejście ma wyglądać jak schody w dół: przedmiot schodów ze zmianą piętra w dół (np. „stairs” lub „wooden stairs” z danych 10.98, także jako przedmiot RAW wskazany nazwą w profilu, bez ID w kodzie) na podłodze budynku, a w lochu pod nim chodliwe pole przybycia z rampą/schodami w górę. Działa jak przejścia Z dotąd: krawędź Z chodliwa w masce adaptera.
+3. Sonda `DUNGEON_GUI_PASS` sprawdza oba punkty (brak gruntu „stairs” w budynkach, brak gruntu lochu poza obrysem). Bramka G5 i pomiar iteracji 45 bez regresji, determinizm, odcisk Seed 1729 przy wyłączonej opcji, `SUITE_PASS`.
