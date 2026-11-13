@@ -63,7 +63,8 @@ struct LevelWorld {
     std::span<const ExitShape> stairShapes, std::stop_token stop = {});
 
 // Iteration 45: chooses tuning.dungeonPercent % of the qualifying buildings (one roll each, own stream, row-major order)
-// and gives each a dungeon on the cave floor. On the surface the descent D lies inside the building with D - d on its
+// and gives each a dungeon on the cave floor. Only north-facing stair shapes are used (iteration 45c), so the visible
+// stairs down and the stairs up below them share one direction. On the surface the descent D lies inside the building with D - d on its
 // outline and the arrival D + d inside; the interior without D (and without storey stairs) stays connected to the door.
 // On z + 1 the stairs up stand on D, with their tail, the landing D - d and the cell beyond the tail inside room 0.
 // Rooms (2..6, interiors 4..9 x 4..9) hang off earlier rooms through straight corridors (length 2..6, width 1..2) with a

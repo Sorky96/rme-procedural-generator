@@ -125,6 +125,8 @@ std::expected<void, ReachabilityError> placeBuildingDungeons(
         const auto local = [&](int64_t xx, int64_t yy) { return uint32_t((yy - b.y0) * bw + (xx - b.x0)); };
         candidates.clear();
         for (uint32_t s = 0; s < shapes.size(); ++s) {
+            // Iteration 45c: the stairs down on the surface and the stairs up below them both face north.
+            if (shapes[s].direction != ExitDirection::North) continue;
             const auto d = size_t(shapes[s].direction);
             for (int64_t y = b.y0 + 1; y < b.y1; ++y) for (int64_t x = b.x0 + 1; x < b.x1; ++x) {
                 // The opening stands against the wall; its stairs lead away from it.

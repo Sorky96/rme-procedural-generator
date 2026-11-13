@@ -943,7 +943,7 @@ bool dungeonValid(const LevelWorld& world, const BuildingDungeon& d, std::span<c
     const auto inside = [&](int64_t x, int64_t y) { return x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; };
     const auto& r0 = d.rooms.front();
     const auto inRoom0 = [&](int64_t x, int64_t y) { return x >= r0.x0 && x <= r0.x1 && y >= r0.y0 && y <= r0.y1; };
-    if (d.shape >= shapes.size()) return fail("shape");
+    if (d.shape >= shapes.size() || shapes[d.shape].direction != ExitDirection::North) return fail("shape (north only)");
     const auto& shape = shapes[d.shape];
     const auto dir = size_t(shape.direction);
     const int64_t x = d.descent % w, y = d.descent / w, tx = x + shape.tailDx, ty = y + shape.tailDy;
