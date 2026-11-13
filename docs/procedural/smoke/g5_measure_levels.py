@@ -1,5 +1,6 @@
 """G5 gate: --i41 includes cave exits/doors; --i42 also compares mountain passes=0/4;
---i43 runs passes=4 with building storeys off and on (default 30 %)."""
+--i43 runs passes=4 with building storeys off and on (default 30 %);
+--i44 runs the i43 settings with storeys on and the client's rock passability per profile (--rock-blocks m19=1 ...)."""
 import argparse
 import json
 import re
@@ -14,9 +15,15 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--i41', action='store_true')
 parser.add_argument('--i42', action='store_true')
 parser.add_argument('--i43', action='store_true')
+parser.add_argument('--i44', action='store_true')
+parser.add_argument('--rock-blocks', nargs='*', default=[], metavar='PROFILE=0|1')
 args = parser.parse_args()
+rock_blocks = dict(item.split('=') for item in args.rock_blocks)
+if args.i44 and set(rock_blocks) != {'m06', 'm19'}:
+    parser.error('--i44 needs --rock-blocks m06=0|1 m19=0|1 (from M19_ROCK_GUI_CASE_PASS)')
+args.i43 |= args.i44
 args.i41 |= args.i42 or args.i43
-output = root / ('local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
+output = root / ('local-data/i44-measurement' if args.i44 else 'local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length, passes, storeys = spec
@@ -37,6 +44,8 @@ def measure(spec):
                 command += [f'passes={passes}']
             if args.i43:
                 command += [f'buildingStoreys={storeys}']
+            if args.i44:
+                command += [f'rockBlocks={rock_blocks[profile]}']
             command += [str(seed) for seed in range(1001, 1033)]
             result = subprocess.run(command, capture_output=True)
             (output / f'{label}-retry{retries}-run{run}.log').write_bytes(result.stdout)
@@ -138,7 +147,7 @@ def measure(spec):
 
 with ThreadPoolExecutor(max_workers=2) as executor:
     specs = [(p, d, l, passes, storeys) for passes in ([4] if args.i43 else [0, 4] if args.i42 else [0])
-             for storeys in ([0, 1] if args.i43 else [0])
+             for storeys in ([1] if args.i44 else [0, 1] if args.i43 else [0])
              for p, d, l in [('m06', 30, 40), ('m19', 40, 80)]]
     summary = [row for rows in executor.map(measure, specs) for row in rows]
 (output / 'summary.json').write_text(json.dumps(summary, indent=2))

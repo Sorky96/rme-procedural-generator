@@ -116,7 +116,7 @@ std::string storeyMeasurements(const LevelWorld& world, std::span<const ExitShap
         r.qualifying, r.chosen, r.placed, r.collisions, r.noStairs, world.repair.removedStoreys, world.storeys.size(), withStairs, overlaps);
 }
 
-// Offline 10.98 model: rocky ground is open; trees, bushes and small rocks
+// Offline 10.98 model: rocky ground is open (rockBlocks=1 models an impassable rock brush); trees, bushes and small rocks
 // each have at least one Unpassable variant. No client IDs are embedded here.
 std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& config,
     const SurfaceBudget& budget, const DecorTuning& decorTuning, LevelRepairReport& repair, std::string& vegetation) {
@@ -132,11 +132,11 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         auto world = buildLevelWorld(std::move(*surface), std::move(*decor), config.seed, config.tuning,
             decorTuning, shapes, shapes, true, {}, shapes);
         if (!world) return std::unexpected(world.error());
-        auto repaired = repairLevelReach(*world, true, false, shapes, {true, true, true}, config.tuning.fordLength, true);
+        auto repaired = repairLevelReach(*world, true, config.tuning.rockBlocks, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
         if (config.tuning.passes) {
-            auto plan = levelPlanOf(world->surface, true, false, world->cave ? &*world->cave : nullptr,
+            auto plan = levelPlanOf(world->surface, true, config.tuning.rockBlocks, world->cave ? &*world->cave : nullptr,
                 world->exits, shapes, world->caps, world->decor, {}, world->storeys);
             if (!plan) return std::unexpected(plan.error());
             auto reach = levelReachabilityOf(*plan, {true,true,true});
@@ -198,7 +198,7 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
                 k + 1, grass, flora, surfaceGrass, surfaceFlora);
         }
         if (config.tuning.buildingStoreys) vegetation += storeyMeasurements(*world, shapes);
-        return levelPlanOf(world->surface, true, false, world->cave ? &*world->cave : nullptr,
+        return levelPlanOf(world->surface, true, config.tuning.rockBlocks, world->cave ? &*world->cave : nullptr,
             world->exits, shapes, world->caps, world->decor, {}, world->storeys);
     }
     std::optional<CaveGrid> cave;
@@ -255,7 +255,7 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
             decoration.push_back(std::move(*d));
         }
     }
-    return levelPlanOf(*surface, true, false, cave ? &*cave : nullptr, exits, shapes, caps, decoration);
+    return levelPlanOf(*surface, true, config.tuning.rockBlocks, cave ? &*cave : nullptr, exits, shapes, caps, decoration);
 }
 
 int main(int argc, char** argv) {
@@ -301,6 +301,7 @@ int main(int argc, char** argv) {
         else if (name == "caveDoorCorridors") tuning.caveDoorCorridors = value != 0;
         else if (name == "passes") tuning.passes = value;
         else if (name == "buildingStoreys") tuning.buildingStoreys = value != 0;
+        else if (name == "rockBlocks") tuning.rockBlocks = value != 0; // iteration 44: rock brush ground is impassable
         else if (name == "upperFloorPercent") tuning.upperFloorPercent = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
