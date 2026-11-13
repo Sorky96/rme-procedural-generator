@@ -395,6 +395,10 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                     std::erase_if(world.cave->corridors, [&](const auto& c) { return world.cave->cells[c.door] != CaveKind::Floor; });
                 }
                 ++result.removedPois;
+            } else if (!world.caps.empty() && std::ranges::any_of(world.caps.front().ramps, [&](const PlateauRamp& r) { return r.cell == cell; })) {
+                // The surface end of a ramp lies where no clearance reaches. Drop the ramp;
+                // a cap left without access is removed by a later pass.
+                std::erase_if(world.caps.front().ramps, [&](const PlateauRamp& r) { return r.cell == cell; });
             } else { result.unrepaired = true; break; }
             ++result.repairs;
         } else { result.unrepaired = true; break; }

@@ -767,6 +767,21 @@ void testLevelRepair() {
     world.surface.cells[35] = SurfaceKind::Floor; world.surface.sites = {35};
     repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
     check(repaired && repaired->removedPois == 1 && world.surface.sites.empty(), "remove impossible POI");
+    // A ramp whose surface end lies in a sealed pocket must not stop the repair: the ramp goes,
+    // then its cap, and later targets are still processed (GUI report: Repairs 0, Unrepaired).
+    world = make();
+    for (uint32_t y = 0; y < 7; ++y) world.surface.cells[y * 9 + 5] = SurfaceKind::Preserve;
+    cap.region = world.surface.region; cap.region.z = world.surface.region.z - 1;
+    cap.cells.assign(63, PlateauKind::None); cap.landings.assign(63, 0); cap.components = 1;
+    cap.cells[25] = cap.cells[34] = PlateauKind::Top;
+    world.surface.cells[25] = world.surface.cells[34] = SurfaceKind::Rock;
+    cap.ramps = {{43, 34, 0, 0}};
+    world.caps = {cap}; world.decor.push_back({cap.region, std::vector<DecorKind>(63)});
+    world.surface.cells[9] = SurfaceKind::Floor; world.surface.sites = {9};
+    world.surface.cells[17] = SurfaceKind::Floor; world.surface.sites.push_back(17);
+    repaired = repairLevelReach(world, false, false, {}, {}, 0, true);
+    check(repaired && !repaired->unrepaired && repaired->removedCaps == 1 && repaired->removedPois == 1 &&
+        world.caps[0].ramps.empty() && world.surface.sites == std::vector<uint32_t>{9}, "ramp into sealed pocket");
     // Forbidden wall costs are never traversed, even when cheaper than water.
     std::vector<uint8_t> costs {1, 0, 1}, source {1, 0, 0}, goal {0, 0, 1};
     check(cheapestLevelPath(costs, 3, 1, source, goal, 256)->cells.empty(), "wall and slope forbidden");
