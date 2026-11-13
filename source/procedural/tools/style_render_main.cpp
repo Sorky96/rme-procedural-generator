@@ -116,6 +116,75 @@ std::string storeyMeasurements(const LevelWorld& world, std::span<const ExitShap
         r.qualifying, r.chosen, r.placed, r.collisions, r.noStairs, world.repair.removedStoreys, world.storeys.size(), withStairs, overlaps);
 }
 
+// Iteration 45: dungeon placement counts plus independent checks of the final world (after repair): stairs (opening
+// against the building wall, arrival inside, stairs, tail and landing in room 0), one 4-connected walkable set per
+// dungeon, doors with exactly two opposite walkable neighbours, and the gaps between the wall rings (8-neighbour ring
+// of the walkable cells) of a dungeon and the cave (Floor and its wall band) or another dungeon: at least two cells.
+std::string dungeonMeasurements(const LevelWorld& world, std::span<const ExitShape> shapes) {
+    const auto w = world.surface.region.width, h = world.surface.region.height;
+    const auto n = size_t(w) * h;
+    const auto dilate = [&](std::span<const uint8_t> cells, int radius) {
+        std::vector<uint8_t> out(n);
+        for (uint32_t i = 0; i < n; ++i) if (cells[i])
+            for (int dy = -radius; dy <= radius; ++dy) for (int dx = -radius; dx <= radius; ++dx) {
+                const int64_t x = int64_t(i % w) + dx, y = int64_t(i / w) + dy;
+                if (x >= 0 && y >= 0 && x < w && y < h) out[size_t(y) * w + size_t(x)] = 1;
+            }
+        return out;
+    };
+    std::vector<uint8_t> caveFloor(n);
+    if (world.cave) for (size_t i = 0; i < n; ++i) caveFloor[i] = world.cave->cells[i] == CaveKind::Floor;
+    // Wall ring plus two empty cells: a dungeon wall cell inside this set breaks the gap.
+    const auto caveNear = dilate(caveFloor, 3);
+    constexpr int sx[] = {0, 0, 1, -1}, sy[] = {-1, 1, 0, 0};
+    std::vector<uint8_t> earlier(n); // earlier dungeons' wall rings plus two cells
+    uint32_t withStairs = 0, connected = 0, caveCollisions = 0, overlaps = 0, badDoors = 0;
+    std::string rooms;
+    for (size_t k = 0; k < world.dungeons.size(); ++k) {
+        const auto& d = world.dungeons[k];
+        std::vector<uint8_t> walk(n);
+        if (!markDungeonCells(d, w, h, walk)) { ++overlaps; continue; }
+        const auto footprint = dilate(walk, 1), near = dilate(footprint, 2);
+        for (size_t i = 0; i < n; ++i) {
+            caveCollisions += footprint[i] && caveNear[i];
+            overlaps += footprint[i] && earlier[i];
+        }
+        for (size_t i = 0; i < n; ++i) earlier[i] |= near[i];
+        rooms += std::format("{}{}", rooms.empty() ? "" : ",", d.rooms.size());
+        const auto& b = d.building;
+        const auto inBuilding = [&](int64_t x, int64_t y) { return x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; };
+        const auto inRoom0 = [&](int64_t x, int64_t y) {
+            const auto& r = d.rooms.front(); return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+        };
+        if (d.shape < shapes.size()) {
+            const auto& shape = shapes[d.shape];
+            const auto dir = size_t(shape.direction);
+            const int64_t x = d.descent % w, y = d.descent / w;
+            const int64_t tx = shape.hasTail ? x + shape.tailDx : x, ty = shape.hasTail ? y + shape.tailDy : y;
+            withStairs += inBuilding(x, y) && !inBuilding(x - sx[dir], y - sy[dir]) && inBuilding(x + sx[dir], y + sy[dir]) &&
+                int64_t(d.arrival) == (y + sy[dir]) * w + x + sx[dir] && world.surface.cells[d.descent] == SurfaceKind::Floor &&
+                inRoom0(x, y) && inRoom0(tx, ty) && inRoom0(x - sx[dir], y - sy[dir]) && inRoom0(tx - sx[dir], ty - sy[dir]);
+        }
+        std::vector<uint32_t> queue{d.descent};
+        std::vector<uint8_t> seen(n);
+        seen[d.descent] = 1;
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const auto i = queue[head];
+            for (const auto j : {i % w ? i - 1 : i, i % w + 1 < w ? i + 1 : i, i >= w ? i - w : i, i + w < n ? i + w : i})
+                if (walk[j] && !seen[j]) { seen[j] = 1; queue.push_back(j); }
+        }
+        connected += queue.size() == size_t(std::ranges::count(walk, uint8_t(1)));
+        for (const auto& c : d.corridors) for (const auto door : {c.doorA, c.doorB}) {
+            const bool west = walk[door - 1], east = walk[door + 1], north = walk[door - w], south = walk[door + w];
+            badDoors += !((west && east && !north && !south) || (north && south && !west && !east));
+        }
+    }
+    const auto& r = world.dungeonReport;
+    return std::format("level dungeons qualifying {} chosen {} placed {} noStairs {} noSpace {} removed {} final {} withStairs {} "
+        "connected {} caveCollisions {} overlaps {} badDoors {} rooms {}\n", r.qualifying, r.chosen, r.placed, r.noStairs, r.noSpace,
+        world.repair.removedDungeons, world.dungeons.size(), withStairs, connected, caveCollisions, overlaps, badDoors, rooms.empty() ? "-" : rooms);
+}
+
 // Offline 10.98 model: rocky ground is open (rockBlocks=1 models an impassable rock brush); trees, bushes and small rocks
 // each have at least one Unpassable variant. No client IDs are embedded here.
 std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& config,
@@ -130,14 +199,14 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
     if (config.tuning.repairReach) {
         // Stairs use the same offline ramp shapes as caves and caps.
         auto world = buildLevelWorld(std::move(*surface), std::move(*decor), config.seed, config.tuning,
-            decorTuning, shapes, shapes, true, {}, shapes);
+            decorTuning, shapes, shapes, true, {}, shapes, shapes);
         if (!world) return std::unexpected(world.error());
         auto repaired = repairLevelReach(*world, true, config.tuning.rockBlocks, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
         if (config.tuning.passes) {
             auto plan = levelPlanOf(world->surface, true, config.tuning.rockBlocks, world->cave ? &*world->cave : nullptr,
-                world->exits, shapes, world->caps, world->decor, {}, world->storeys);
+                world->exits, shapes, world->caps, world->decor, {}, world->storeys, world->dungeons);
             if (!plan) return std::unexpected(plan.error());
             auto reach = levelReachabilityOf(*plan, {true,true,true});
             if (!reach) return std::unexpected(reach.error());
@@ -198,8 +267,9 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
                 k + 1, grass, flora, surfaceGrass, surfaceFlora);
         }
         if (config.tuning.buildingStoreys) vegetation += storeyMeasurements(*world, shapes);
+        if (config.tuning.buildingDungeons) vegetation += dungeonMeasurements(*world, shapes);
         return levelPlanOf(world->surface, true, config.tuning.rockBlocks, world->cave ? &*world->cave : nullptr,
-            world->exits, shapes, world->caps, world->decor, {}, world->storeys);
+            world->exits, shapes, world->caps, world->decor, {}, world->storeys, world->dungeons);
     }
     std::optional<CaveGrid> cave;
     CaveExitPlan exits;
@@ -303,6 +373,8 @@ int main(int argc, char** argv) {
         else if (name == "buildingStoreys") tuning.buildingStoreys = value != 0;
         else if (name == "rockBlocks") tuning.rockBlocks = value != 0; // iteration 44: rock brush ground is impassable
         else if (name == "upperFloorPercent") tuning.upperFloorPercent = value;
+        else if (name == "buildingDungeons") tuning.buildingDungeons = value != 0;
+        else if (name == "dungeonPercent") tuning.dungeonPercent = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
         else if (name == "plateauLevels") {
@@ -368,7 +440,7 @@ int main(int argc, char** argv) {
                 seed, used, attempts, chosen->allReached(), chosen->walkableEdges, chosen->edges);
             if (tuning.caveFarExits || tuning.caveDoorCorridors)
                 std::cout << std::format("level fingerprint seed {} value {}\n", seed, levelFingerprint(*chosenPlan));
-            constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells", "storeys"};
+            constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells", "storeys", "dungeons"};
             for (size_t c = 0; c < levelPoiKindCount; ++c)
                 std::cout << std::format("level category seed {} {} {}/{}\n", seed, names[c], chosen->categories[c].reached, chosen->categories[c].total);
             for (size_t f = 0; f < chosen->pockets.size(); ++f)

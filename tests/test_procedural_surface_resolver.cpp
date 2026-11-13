@@ -23,6 +23,7 @@
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/ground/terrain_placement.h"
+#include "brushes/wall/wall_brush.h"
 #include "item_definitions/core/item_definition_store.h"
 #include "map/map.h"
 #include "ui/gui.h"
@@ -2307,6 +2308,167 @@ void buildingStairsGuiProbe(std::ostream& report) {
     editor.map.clearChanges();
 }
 
+// Iteration 45: dungeons below buildings through the adapter (mask, walls, doors, stairs and opening) and the real
+// dialog (missing brush message, Preview, Validate, Place, Undo, Redo).
+void dungeonGuiProbe(std::ostream& report) {
+    UndoLimits limits;
+    check(g_gui.NewMap(), "I45 GUI map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    constexpr uint32_t side = 192, n = side * side;
+    const auto stairs = resolveBuildingStairsBrush("ramp");
+    const auto doorItems = resolveCaveDoorBrush("dark stone wall");
+    check(bool(stairs) && bool(doorItems), "I45 dungeon brushes resolve");
+    std::vector<uint16_t> ramps, openings;
+    for (const auto& ids : stairs->items) { ramps.push_back(ids.ramp); openings.push_back(ids.opening); }
+    const auto* floorBrush = g_brushes.getBrush("dark tiled stone floor");
+    std::vector<uint16_t> wallIds;
+    if (auto* walls = g_brushes.getBrush("dark stone wall"); walls && walls->as<WallBrush>()) const_cast<WallBrush*>(walls->as<WallBrush>())->getRelatedItems(wallIds);
+    check(!wallIds.empty(), "I45 dungeon wall pieces");
+    const auto dungeonWall = [&](const Item* item) { return item && std::ranges::find(wallIds, item->getID()) != wallIds.end(); };
+    GenerationConfig config{{100, 100, 7, side, side}, 1001};
+    config.algorithm = GenerationAlgorithm::Surface;
+    config.surface.buildingDensity = 60; config.surface.repairReach = 1; config.surface.rockPermille = 200;
+    config.surface.caveEntrances = 16; config.surface.shoreSmoothing = 2;
+    config.surface.buildingStoreys = true; config.surface.upperFloorPercent = 50;
+    config.surface.buildingDungeons = true; config.surface.dungeonPercent = 60;
+    GroundProfile p{{"grass", "dirt", "rocky ground", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
+    p.wall = "stone wall"; p.door = "Normal door"; p.bridgeBrush = "bridge"; p.buildingStairs = "ramp";
+    p.caveEntrance = "cave enter"; p.caveExit = "ramp"; p.caveGround = "cave"; p.caveWall = "mountain";
+    p.dungeonFloor = "dark tiled stone floor"; p.dungeonWall = "dark stone wall"; p.dungeonStairs = "ramp";
+    auto prepared = prepareTerrain(editor.map, config, p, {1000000, 1100000, 2000000, 8ULL << 30});
+    check(prepared && prepared->levels && prepared->cave, "I45 adapter preparation");
+    if (!prepared || !prepared->levels || !prepared->cave) return;
+    const auto& levels = *prepared->levels;
+    const auto& lower = *prepared->cave;
+    const auto& dungeonCount = levels.report.categories[size_t(LevelPoiKind::Dungeon)];
+    check(dungeonCount.total > 0 && dungeonCount.reached == dungeonCount.total && levels.report.allReached() &&
+        levels.report.walkableEdges == levels.report.edges, std::format("I45 every dungeon cell reachable: {}/{} edges {}/{}",
+        dungeonCount.reached, dungeonCount.total, levels.report.walkableEdges, levels.report.edges));
+    size_t maskCells = 0, wallCells = 0, maskDoors = 0, adapterStairs = 0;
+    for (const auto& poi : levels.plan.pois) if (poi.kind == LevelPoiKind::Dungeon) {
+        ++maskCells;
+        check(poi.at.floor == 1 && !levels.blockingMask[n + poi.at.cell] && levels.report.walkable[n + poi.at.cell], "I45 dungeon cell open in adapter mask");
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        const Position below(100 + int(i % side), 100 + int(i / side), 8), above(below.x, below.y, 7);
+        const auto* tile = lower.preview.getBuffer().getTile(below);
+        if (lower.plan.caveFloor[i] >= 3)
+            check(tile && tile->ground && brushOf(tile->ground->getID()) == floorBrush, "I45 dungeon floor ground in lower preview");
+        if (lower.plan.caveFloor[i] == 4 && !lower.plan.doors[i]) {
+            ++wallCells;
+            check(tile && dungeonWall(tile->getWall()), "I45 dungeon wall in lower preview");
+        }
+        if (lower.plan.caveFloor[i] == 4 && lower.plan.doors[i]) {
+            ++maskDoors;
+            const auto* door = tile ? tile->getWall() : nullptr;
+            check(door && door->isBrushDoor() && !door->isLocked() && !door->isOpen() &&
+                (door->getID() == doorItems->horizontal || door->getID() == doorItems->vertical), "I45 closed unlocked dungeon door");
+            check(!levels.blockingMask[n + i] && levels.report.walkable[n + i], "I45 dungeon door openable in adapter mask");
+        }
+        const auto ramp = std::ranges::find(ramps, lower.plan.exits[i]);
+        if (lower.plan.caveFloor[i] != 3 || ramp == ramps.end()) continue;
+        ++adapterStairs;
+        const auto opening = openings[size_t(ramp - ramps.begin())];
+        const auto* top = prepared->preview.getBuffer().getTile(above);
+        check(prepared->plan.entrances[i] == opening && top && top->ground && top->ground->getID() == opening &&
+            top->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I45 opening above the dungeon stairs");
+        check(tile && std::ranges::any_of(tile->items, [&](const auto& item) { return item->getID() == *ramp; }), "I45 stairs item in lower preview");
+        check(!levels.blockingMask[i] && !levels.blockingMask[n + i], "I45 stairs cells walkable in adapter mask");
+    }
+    check(maskCells > 0 && wallCells > 0 && maskDoors > 0 && adapterStairs > 0, "I45 adapter placed dungeons");
+    prepared = std::unexpected(PreparationError{PreparationInputError::Cancelled});
+
+    // Dialog: a wall brush without normal doors disables the option with a message; the real brushes enable it.
+    auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    const auto spin = [&](const char* name, int value) {
+        auto* c = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+        check(c, std::format("I45 spin {}", name)); c->SetValue(value);
+        wxSpinEvent event(wxEVT_SPINCTRL, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+    };
+    const auto tick = [&](const char* name) {
+        auto* c = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName(name, dialog));
+        check(c && c->IsEnabled(), std::format("I45 check {}", name)); c->SetValue(true);
+        wxCommandEvent event(wxEVT_CHECKBOX, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+    };
+    auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-style", dialog));
+    check(style, "I45 style control"); style->SetSelection(1);
+    wxCommandEvent changed(wxEVT_CHOICE, style->GetId()); changed.SetEventObject(style);
+    style->GetEventHandler()->ProcessEvent(changed);
+    spin("terrain-width", side); spin("terrain-height", side); spin("terrain-building-density", 60); spin("terrain-cave-entrances", 16);
+    tick("terrain-walls"); tick("terrain-doors");
+    auto* dungeons = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-building-dungeons", dialog));
+    auto* wall = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-dungeon-wall", dialog));
+    auto* floor = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-dungeon-floor", dialog));
+    auto* stairsChoice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-dungeon-stairs", dialog));
+    auto* percent = wxWindow::FindWindowByName("terrain-dungeon-percent", dialog);
+    check(dungeons && wall && floor && stairsChoice && percent && !dungeons->GetValue() && wall->GetValue() == "dark stone wall" &&
+        floor->GetValue() == "dark tiled stone floor" && stairsChoice->GetValue() == "ramp" && dungeons->IsEnabled(), "I45 option defaults");
+    wxCommandEvent dropdown(wxEVT_COMBOBOX_DROPDOWN, wall->GetId()); dropdown.SetEventObject(wall);
+    wall->GetEventHandler()->ProcessEvent(dropdown);
+    check(wall->SetStringSelection("bridge"), "I45 doorless wall brush offered");
+    wxCommandEvent wallChanged(wxEVT_COMBOBOX, wall->GetId()); wallChanged.SetEventObject(wall);
+    wall->GetEventHandler()->ProcessEvent(wallChanged);
+    check(!dungeons->IsEnabled() && !dungeons->GetValue(), "Missing dungeon door brush must disable dungeons");
+    check(wall->SetStringSelection("dark stone wall"), "I45 dungeon wall brush offered");
+    wall->GetEventHandler()->ProcessEvent(wallChanged);
+    check(dungeons->IsEnabled(), "Valid dungeon brushes must enable dungeons");
+    tick("terrain-building-dungeons");
+    spin("terrain-dungeon-percent", 60);
+    auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+    check(seed, "I45 seed"); seed->SetValue("1001");
+    MountainDialogRun run(*dialog, editor, 0, true);
+    const int modal = dialog->ShowModal(); run.stop();
+    check(modal == wxID_OK && run.placed(), "I45 GUI flow: " + run.failure() + " " + run.status());
+    dialog->Destroy();
+    // Committed map: dungeon walls and closed unlocked doors on z + 1, stairs below an opening inside the building.
+    constexpr int sx[] = {0, 0, 1, -1}, sy[] = {-1, 1, 0, 0};
+    size_t committedDoors = 0, committedWalls = 0, committedStairs = 0;
+    const auto walkable = [&](const Position& at) {
+        const auto* t = editor.map.getTile(at);
+        return t && t->ground && !t->ground->isBlocking() && std::ranges::none_of(t->items, [](const auto& it) { return it->isBlocking(); });
+    };
+    for (uint32_t i = 0; i < n; ++i) {
+        const int x = 100 + int(i % side), y = 100 + int(i / side);
+        const auto* tile = editor.map.getTile(Position(x, y, 8));
+        if (!tile || !tile->ground || brushOf(tile->ground->getID()) != floorBrush) continue;
+        if (const auto* w = tile->getWall()) {
+            if (w->isBrushDoor()) {
+                ++committedDoors;
+                check(!w->isLocked() && !w->isOpen() && (w->getID() == doorItems->horizontal || w->getID() == doorItems->vertical), "I45 committed door item");
+                const bool west = walkable({x - 1, y, 8}), east = walkable({x + 1, y, 8}), north = walkable({x, y - 1, 8}), south = walkable({x, y + 1, 8});
+                check((west && east && !north && !south) || (north && south && !west && !east), "I45 committed door neighbours");
+            } else {
+                ++committedWalls;
+                check(dungeonWall(w), "I45 committed dungeon wall");
+            }
+        }
+        for (const auto& item : tile->items) {
+            const auto ramp = std::ranges::find(ramps, item->getID());
+            if (ramp == ramps.end()) continue;
+            const auto shape = stairs->shapes[size_t(ramp - ramps.begin())];
+            const auto d = size_t(shape.direction);
+            const auto* above = editor.map.getTile(Position(x, y, 7));
+            check(above && above->ground && above->ground->getID() == openings[size_t(ramp - ramps.begin())] &&
+                above->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I45 committed opening above dungeon stairs");
+            const int tx = x + shape.tailDx, ty = y + shape.tailDy;
+            check(walkable({x + sx[d], y + sy[d], 7}) && walkable({tx - sx[d], ty - sy[d], 8}), "I45 committed arrival and dungeon entry walkable");
+            ++committedStairs;
+        }
+    }
+    check(committedDoors > 0 && committedWalls > 0 && committedStairs > 0, "I45 committed dungeons");
+    std::vector<std::vector<uint32_t>> after;
+    for (int z = 4; z <= 8; ++z) after.push_back(stackImage(editor.map, 98, 98, z, side + 4, side + 4));
+    const auto actions = editor.actionQueue->getSize();
+    for (size_t i = 0; i < actions; ++i) check(editor.actionQueue->undo(), "I45 Undo");
+    check(editor.map.getTileCount() == 0, "I45 Undo restores empty map");
+    for (size_t i = 0; i < actions; ++i) check(editor.actionQueue->redo(), "I45 Redo");
+    for (int z = 4; z <= 8; ++z) check(after[size_t(z - 4)] == stackImage(editor.map, 98, 98, z, side + 4, side + 4), "I45 identical Redo");
+    report << std::format("DUNGEON_GUI_PASS adapterStairs={} maskCells={} walls={} doors={} committedStairs={} committedWalls={} committedDoors={} "
+        "undoRedo={} dialogFloors={} brushes=dark tiled stone floor/dark stone wall/ramp\n", adapterStairs, maskCells, wallCells, maskDoors,
+        committedStairs, committedWalls, committedDoors, actions, run.floors());
+    editor.map.clearChanges();
+}
+
 // GUI report after iteration 43 (Buildings 100, walls, doors, upper floors, mountains 10 %): "Repairs: 0 ... Unrepaired".
 // Seed 1729 at (1300, 850) 512x512 has a cap whose only ramp lands in a surface pocket sealed by the cap and the
 // kept-clear rim; the repair stopped at that ramp instead of dropping it and the cap, and processed nothing after it.
@@ -2417,6 +2579,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        dungeonGuiProbe(report);
         buildingStairsGuiProbe(report);
         storeySealedRampRepair(report);
         m19RockGuiCase(report);
