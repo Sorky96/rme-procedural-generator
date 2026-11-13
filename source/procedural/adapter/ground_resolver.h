@@ -80,6 +80,11 @@ struct GroundPlan {
 // surfaceKeepClear(snapshot, true). Brushes that do not resolve count as false; resolution reports them.
 [[nodiscard]] bool profileNeedsEdgeClearance(const GroundProfile& profile);
 
+// Iteration 44: the config with SurfaceTuning::rockBlocks set when any ground variant of the profile's rock brush is
+// unpassable in the loaded client (surface algorithm only). Preparation and validation both use it, so callers keep
+// passing the dialog's config.
+[[nodiscard]] GenerationConfig withRockPassability(GenerationConfig config, const GroundProfile& profile);
+
 enum class ResolveError {
 	WrongThread, NoClient, StaleAssets, InvalidInput, InvalidProfile, InvalidItem,
 	PlanLimit, Cancelled, AllocationFailed

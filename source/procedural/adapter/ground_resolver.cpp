@@ -124,6 +124,20 @@ bool profileNeedsEdgeClearance(const GroundProfile& profile) {
     return hasPlateau(profile) && (needsClearance(profile.plateauCliff) || needsClearance(profile.plateauGround));
 }
 
+GenerationConfig withRockPassability(GenerationConfig config, const GroundProfile& profile) {
+    constexpr size_t rockIndex = 2; // Grass, Dirt, Rock, ... in a surface profile
+    bool blocks = false;
+    if (config.algorithm == GenerationAlgorithm::Surface && profile.count > rockIndex) {
+        const auto* brush = g_brushes.getBrush(profile.brushes[rockIndex]);
+        if (const auto* ground = brush ? brush->as<GroundBrush>() : nullptr)
+            blocks = std::ranges::any_of(ground->getBorderItems(), [](const GroundBrush::ItemChanceBlock& variant) {
+                return g_item_definitions.get(variant.id).hasFlag(ItemFlag::Unpassable);
+            });
+    }
+    config.surface.rockBlocks = blocks;
+    return config;
+}
+
 std::expected<GroundPlan, ResolveError> resolveGroundPlan(
 	const GenerationInput& input, const SemanticGrid& grid, const GroundProfile& profile,
 	uint64_t maxPlanBytes, std::stop_token stop) {

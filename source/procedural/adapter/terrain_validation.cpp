@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/main.h"
 #include "procedural/adapter/terrain_validation.h"
+#include "procedural/adapter/ground_resolver.h"
 
 #include "app/managers/version_manager.h"
 
@@ -45,7 +46,9 @@ std::expected<void, PreparedValidationError> validatePreparedTerrain(
 	if (!*assets) return fail(PreparedValidationError::StaleAssets);
 
 	// Request: explicit config fields and exact profile names against both captured copies.
-	if (!sameConfig(currentConfig, input.config) || !sameConfig(currentConfig, plan.config) ||
+	// Preparation derives rock passability from the client (iteration 44); derive it the same way here.
+	const auto expected = withRockPassability(currentConfig, currentProfile);
+	if (!sameConfig(expected, input.config) || !sameConfig(expected, plan.config) ||
 		!(currentProfile == plan.profile)) {
 		return fail(PreparedValidationError::StaleRequest);
 	}

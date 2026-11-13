@@ -40,7 +40,13 @@ struct MountainStage {
 
 std::expected<MountainStage, SurfaceError> buildMountains(SurfaceGrid surface, const GenerationConfig& config,
 	std::span<const ExitShape> shapes, std::span<const uint8_t> occupied, std::stop_token stop) {
-	auto first = generatePlateau(surface, config.seed, config.surface.plateauMinTop, shapes, occupied, stop, config.surface.plateauMaxPercent);
+	std::vector<uint8_t> reserved(occupied.begin(), occupied.end());
+	if (config.surface.rockBlocks) {
+		// Cap ramps only on the land connected to the start (iteration 44).
+		reserved.resize(surface.cells.size());
+		if (!occupyOutsideStartLand(surface, reserved, stop)) return std::unexpected(stop.stop_requested() ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
+	}
+	auto first = generatePlateau(surface, config.seed, config.surface.plateauMinTop, shapes, reserved, stop, config.surface.plateauMaxPercent);
 	if (!first) return std::unexpected(first.error());
 	std::vector<PlateauGrid> floors;
 	floors.push_back(std::move(*first));
@@ -340,7 +346,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 }
 
 TerrainPreparationSteps runPreparation(
-	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
+	// By value: the coroutine frame outlives the caller's effective config (iteration 44).
+	const Map& map, GenerationConfig config, const GroundProfile& profile,
 	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop, PreparationPreflight limits, bool background) {
 	if (!wxIsMainThread()) co_return fail(PreparationInputError::WrongThread);
 	if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
@@ -549,6 +556,11 @@ TerrainPreparationSteps runPreparation(
                             if (!plan.items[e]) continue;
                             plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
                             if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
+                            else if (input.config.surface.rockBlocks && !g_item_definitions.get(brushes->ground).hasFlag(ItemFlag::Unpassable)) {
+                                // Impassable rock: the rock-face entrance stands on walkable cave ground (iteration 44).
+                                plan.items[e] = brushes->ground;
+                                if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0;
+                            }
                             if (!plan.decor.empty()) plan.decor[e] = 0;
                         }
                         if (exit.distant && !plan.decor.empty()) {
@@ -899,9 +911,14 @@ TerrainPreparationSteps runPreparation(
             for (auto* cap = plateau.get(); cap; cap = cap->plateau.get()) {
                 previews.push_back(&cap->preview); plans.push_back(&cap->plan);
             }
-            if (!levels->passes.empty()) {
+            const bool rockFaceEntrances = input.config.surface.rockBlocks && input.config.surface.caveEntranceStyle == CaveEntranceStyle::RockFace &&
+                !plan.entrances.empty() && std::ranges::any_of(plan.entrances, [](uint16_t id) { return id != 0; });
+            if (!levels->passes.empty() || rockFaceEntrances) {
                 std::vector<uint8_t> clear(cellCount);
                 for (const auto& pass : levels->passes) for (const auto i : pass.cells) clear[i] = 1;
+                // Rock borders on a rock-face entrance and the cell before it would block the walkable ground.
+                if (rockFaceEntrances) for (size_t i = 0; i + input.config.region.width < cellCount; ++i)
+                    if (plan.entrances[i]) clear[i] = clear[i + input.config.region.width] = 1;
                 auto cleared = DrawOperations::clearTerrainPreviewBlockers(*previews.front(), clear, stop);
                 if (!cleared) co_return fail(cleared.error());
             }
@@ -985,9 +1002,10 @@ std::expected<TerrainPreparationSteps, PreparationError> prepareTerrainSteps(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
 	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop) {
 	try {
-		const auto limits = preflight(map, config, profile, budget, mask, stop, true);
+		const auto effective = withRockPassability(config, profile);
+		const auto limits = preflight(map, effective, profile, budget, mask, stop, true);
 		if (!limits) return fail(limits.error());
-		return runPreparation(map, config, profile, budget, mask, stop, *limits, true);
+		return runPreparation(map, effective, profile, budget, mask, stop, *limits, true);
 	} catch (const std::bad_alloc&) {
 		return fail(PreparationInputError::AllocationFailed);
 	}
@@ -997,9 +1015,10 @@ std::expected<PreparedTerrain, PreparationError> prepareTerrain(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
 	PreparationBudget budget, std::span<const uint8_t> mask, std::stop_token stop) {
 	try {
-		const auto limits = preflight(map, config, profile, budget, mask, stop, false);
+		const auto effective = withRockPassability(config, profile);
+		const auto limits = preflight(map, effective, profile, budget, mask, stop, false);
 		if (!limits) return fail(limits.error());
-		auto steps = runPreparation(map, config, profile, budget, mask, stop, *limits, false);
+		auto steps = runPreparation(map, effective, profile, budget, mask, stop, *limits, false);
 		return steps.finish();
 	} catch (const std::bad_alloc&) {
 		return fail(PreparationInputError::AllocationFailed);
