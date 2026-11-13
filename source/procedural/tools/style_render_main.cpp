@@ -91,6 +91,31 @@ std::string caveMeasurements(const LevelWorld& world) {
         std::ranges::count(entered, uint8_t(1)), withExit, count, sum, count ? minimum : 0, c.corridors.size(), invalid);
 }
 
+// Iteration 43: storey placement counts plus independent checks of the final world (after repair): every storey
+// has stairs (ground cell inside the footprint, arrival its 4-neighbour inside, both Floor below) and no footprint
+// cell lies under a cap, landing, ramp opening or pass.
+std::string storeyMeasurements(const LevelWorld& world, std::span<const ExitShape> shapes) {
+    const auto w = world.surface.region.width;
+    std::vector<uint8_t> taken(world.surface.cells.size());
+    for (const auto& cap : world.caps) {
+        for (size_t i = 0; i < taken.size(); ++i) taken[i] |= cap.cells[i] != PlateauKind::None || cap.landings[i];
+        for (const auto& r : cap.ramps) taken[r.cell] = taken[r.destination] = 1;
+    }
+    for (const auto& pass : world.passes) for (const auto i : pass.cells) taken[i] = 1;
+    constexpr int sx[] = {0, 0, 1, -1}, sy[] = {-1, 1, 0, 0};
+    uint32_t withStairs = 0, overlaps = 0;
+    for (const auto& s : world.storeys) {
+        const auto inside = [&](uint32_t i) { return i % w > s.x0 && i % w < s.x1 && i / w > s.y0 && i / w < s.y1; };
+        const auto d = s.shape < shapes.size() ? size_t(shapes[s.shape].direction) : 4;
+        withStairs += d < 4 && inside(s.stairs) && inside(s.arrival) && world.surface.cells[s.stairs] == SurfaceKind::Floor &&
+            int64_t(s.arrival) == int64_t(s.stairs) + sx[d] + int64_t(sy[d]) * w;
+        for (uint32_t y = s.y0; y <= s.y1; ++y) for (uint32_t x = s.x0; x <= s.x1; ++x) overlaps += taken[size_t(y) * w + x];
+    }
+    const auto& r = world.storeyReport;
+    return std::format("level storeys qualifying {} chosen {} placed {} collisions {} noStairs {} removed {} final {} withStairs {} overlaps {}\n",
+        r.qualifying, r.chosen, r.placed, r.collisions, r.noStairs, world.repair.removedStoreys, world.storeys.size(), withStairs, overlaps);
+}
+
 // Offline 10.98 model: rocky ground is open; trees, bushes and small rocks
 // each have at least one Unpassable variant. No client IDs are embedded here.
 std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& config,
@@ -103,15 +128,16 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
     constexpr ExitShape shapes[] = {{ExitDirection::North, 0, 1, true}, {ExitDirection::West, 1, 0, true},
         {ExitDirection::South, 0, -1, true}, {ExitDirection::East, -1, 0, true}};
     if (config.tuning.repairReach) {
+        // Stairs use the same offline ramp shapes as caves and caps.
         auto world = buildLevelWorld(std::move(*surface), std::move(*decor), config.seed, config.tuning,
-            decorTuning, shapes, shapes, true);
+            decorTuning, shapes, shapes, true, {}, shapes);
         if (!world) return std::unexpected(world.error());
         auto repaired = repairLevelReach(*world, true, false, shapes, {true, true, true}, config.tuning.fordLength, true);
         if (!repaired) return std::unexpected(repaired.error());
         repair = *repaired;
         if (config.tuning.passes) {
             auto plan = levelPlanOf(world->surface, true, false, world->cave ? &*world->cave : nullptr,
-                world->exits, shapes, world->caps, world->decor);
+                world->exits, shapes, world->caps, world->decor, {}, world->storeys);
             if (!plan) return std::unexpected(plan.error());
             auto reach = levelReachabilityOf(*plan, {true,true,true});
             if (!reach) return std::unexpected(reach.error());
@@ -171,8 +197,9 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
             vegetation += std::format("level flora level {} grass {} flora {} surfaceGrass {} surfaceFlora {}\n",
                 k + 1, grass, flora, surfaceGrass, surfaceFlora);
         }
+        if (config.tuning.buildingStoreys) vegetation += storeyMeasurements(*world, shapes);
         return levelPlanOf(world->surface, true, false, world->cave ? &*world->cave : nullptr,
-            world->exits, shapes, world->caps, world->decor);
+            world->exits, shapes, world->caps, world->decor, {}, world->storeys);
     }
     std::optional<CaveGrid> cave;
     CaveExitPlan exits;
@@ -273,6 +300,8 @@ int main(int argc, char** argv) {
         else if (name == "caveFarExits") tuning.caveFarExits = value != 0;
         else if (name == "caveDoorCorridors") tuning.caveDoorCorridors = value != 0;
         else if (name == "passes") tuning.passes = value;
+        else if (name == "buildingStoreys") tuning.buildingStoreys = value != 0;
+        else if (name == "upperFloorPercent") tuning.upperFloorPercent = value;
 		else if (name == "ruinPercent") tuning.ruinPercent = value;
 		else if (name == "campCount") tuning.campCount = value;
         else if (name == "plateauLevels") {
@@ -338,7 +367,7 @@ int main(int argc, char** argv) {
                 seed, used, attempts, chosen->allReached(), chosen->walkableEdges, chosen->edges);
             if (tuning.caveFarExits || tuning.caveDoorCorridors)
                 std::cout << std::format("level fingerprint seed {} value {}\n", seed, levelFingerprint(*chosenPlan));
-            constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells"};
+            constexpr std::string_view names[] = {"doors", "sites", "caveEntrances", "caveExits", "caps", "caveCells", "storeys"};
             for (size_t c = 0; c < levelPoiKindCount; ++c)
                 std::cout << std::format("level category seed {} {} {}/{}\n", seed, names[c], chosen->categories[c].reached, chosen->categories[c].total);
             for (size_t f = 0; f < chosen->pockets.size(); ++f)

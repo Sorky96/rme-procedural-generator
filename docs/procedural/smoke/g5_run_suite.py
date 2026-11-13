@@ -52,6 +52,7 @@ if args.probes:
               and marker in report.get('report', '') and 'FAILED\t' not in report.get('report', '') and not foreign)
         if mode == 'surface':
             ok &= 'MOUNTAIN_PASS_GUI_PASS' in report.get('report', '')
+            ok &= 'BUILDING_STAIRS_GUI_PASS' in report.get('report', '')
         print(f'probe --{mode:<8} {"PASS" if ok else "FAIL"} (exit_code={report.get("exit_code")}, '
               f'input_assets_unchanged={report.get("input_assets_unchanged")}, SetFocus warnings={len(stderr_lines) - len(foreign)}, other stderr={len(foreign)})')
         if not ok:

@@ -1,4 +1,5 @@
-"""G5 gate: --i41 includes cave exits/doors; --i42 also compares mountain passes=0/4."""
+"""G5 gate: --i41 includes cave exits/doors; --i42 also compares mountain passes=0/4;
+--i43 runs passes=4 with building storeys off and on (default 30 %)."""
 import argparse
 import json
 import re
@@ -12,13 +13,14 @@ profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-s
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--i41', action='store_true')
 parser.add_argument('--i42', action='store_true')
+parser.add_argument('--i43', action='store_true')
 args = parser.parse_args()
-args.i41 |= args.i42
-output = root / ('local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
+args.i41 |= args.i42 or args.i43
+output = root / ('local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
-    profile, density, length, passes = spec
-    label = f'{profile}-passes{passes}' if args.i42 else profile
+    profile, density, length, passes, storeys = spec
+    label = f'{profile}-storeys{storeys}' if args.i43 else f'{profile}-passes{passes}' if args.i42 else profile
     rows = []
     for retries in [0, 8]:
         logs = []
@@ -31,8 +33,10 @@ def measure(spec):
                        'repairReach=1', 'caveEntrances=16', 'caveExitShapes=ramp',
                        'plateauMinTop=64', 'plateauMaxPercent=10', 'plateauLevels=3']
             command += ['caveFarExits=1', 'caveDoorCorridors=1'] if args.i41 else ['caveFarExits=0']
-            if args.i42:
+            if args.i42 or args.i43:
                 command += [f'passes={passes}']
+            if args.i43:
+                command += [f'buildingStoreys={storeys}']
             command += [str(seed) for seed in range(1001, 1033)]
             result = subprocess.run(command, capture_output=True)
             (output / f'{label}-retry{retries}-run{run}.log').write_bytes(result.stdout)
@@ -48,7 +52,7 @@ def measure(spec):
         seeds = re.findall(r'level seed (\d+) used (\d+) attempts (\d+) all (true|false) edges (\d+)/(\d+)', text)
         assert len(seeds) == 32
         categories = {}
-        for category in ['doors', 'sites', 'caveEntrances', 'caveExits', 'caps', 'caveCells']:
+        for category in ['doors', 'sites', 'caveEntrances', 'caveExits', 'caps', 'caveCells', 'storeys']:
             counts = [(int(a), int(b)) for a, b in re.findall(rf'level category seed \d+ {category} (\d+)/(\d+)', text)]
             assert len(counts) == 32
             categories[category] = {'sum': [sum(a for a, _ in counts), sum(b for _, b in counts)],
@@ -94,7 +98,7 @@ def measure(spec):
                 'seedsWithDoors': sum(c[5] > 0 for c in caves),
                 'corridors': sum(c[5] for c in caves), 'invalidDoors': sum(c[6] for c in caves),
             }
-        rows.append({'profile': profile, 'passes': passes, 'retries': retries, 'identical': True,
+        rows.append({'profile': profile, 'passes': passes, 'storeys': storeys, 'retries': retries, 'identical': True,
                         'allSeeds': sum(s[3] == 'true' for s in seeds),
                         'edges': [sum(int(s[i]) for s in seeds) for i in [4, 5]],
                         'categories': categories, 'pockets': pockets, 'repairs': repairs,
@@ -106,7 +110,20 @@ def measure(spec):
                         'unrepairedSeeds': sum(line[5] == 'true' for line in repair_lines),
                         'removedPoiFraction': removed_pois / max(1, retained_pois + removed_pois)})
         rows[-1]['caveI41'] = cave_metrics
-        if args.i42 and passes:
+        if args.i43 and storeys:
+            built = [tuple(map(int, row)) for row in re.findall(
+                r'level storeys qualifying (\d+) chosen (\d+) placed (\d+) collisions (\d+) noStairs (\d+) removed (\d+) '
+                r'final (\d+) withStairs (\d+) overlaps (\d+)', text)]
+            assert len(built) == 32
+            rows[-1]['buildingStoreys'] = {
+                'shareMedian': statistics.median(b[6] / b[0] for b in built if b[0]),
+                'shares': [round(b[6] / b[0], 3) if b[0] else None for b in built],
+                'qualifying': sum(b[0] for b in built), 'chosen': sum(b[1] for b in built),
+                'placed': sum(b[2] for b in built), 'collisions': sum(b[3] for b in built),
+                'noStairs': sum(b[4] for b in built), 'removed': sum(b[5] for b in built),
+                'final': sum(b[6] for b in built), 'withStairs': sum(b[7] for b in built),
+                'overlaps': sum(b[8] for b in built)}
+        if (args.i42 or args.i43) and passes:
             cuts = [tuple(map(int, row)) for row in re.findall(
                 r'level passes count (\d+) blocked (\d+) covered (\d+) smallCaps (\d+) invalidRoutes (\d+)', text)]
             assert len(cuts) == 32
@@ -120,7 +137,8 @@ def measure(spec):
     return rows
 
 with ThreadPoolExecutor(max_workers=2) as executor:
-    specs = [(p, d, l, passes) for passes in ([0, 4] if args.i42 else [0])
+    specs = [(p, d, l, passes, storeys) for passes in ([4] if args.i43 else [0, 4] if args.i42 else [0])
+             for storeys in ([0, 1] if args.i43 else [0])
              for p, d, l in [('m06', 30, 40), ('m19', 40, 80)]]
     summary = [row for rows in executor.map(measure, specs) for row in rows]
 (output / 'summary.json').write_text(json.dumps(summary, indent=2))
@@ -134,9 +152,14 @@ if args.i41:
     passed &= all(row['caveI41']['componentExitShareMedian'] >= .8
                   and row['caveI41']['distanceMean'] >= 24 and row['caveI41']['distanceMinimum'] >= 24
                   and row['caveI41']['seedsWithDoors'] >= 26 and row['caveI41']['invalidDoors'] == 0 for row in summary)
-if args.i42:
+if args.i42 or args.i43:
     passed &= all(row['mountainPasses']['median'] >= 2
                   and all(row['mountainPasses'][key] == 0 for key in ['blocked', 'covered', 'smallCaps', 'invalidRoutes'])
                   for row in summary if row['passes'])
+if args.i43:
+    passed &= all(row['categories']['storeys']['sum'][0] == row['categories']['storeys']['sum'][1] for row in summary)
+    passed &= all(.2 <= row['buildingStoreys']['shareMedian'] <= .4
+                  and row['buildingStoreys']['withStairs'] == row['buildingStoreys']['final']
+                  and row['buildingStoreys']['overlaps'] == 0 for row in summary if row['storeys'])
 print('G5_GATE_PASS' if passed else 'G5_GATE_FAIL', flush=True)
 raise SystemExit(0 if passed else 1)

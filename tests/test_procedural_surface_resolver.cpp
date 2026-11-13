@@ -1173,7 +1173,7 @@ void mountainDialogControls(std::ostream& report)
 // Direct prepareTerrain probes alone cannot catch a GUI-only mountain enable/threshold bug.
 class MountainDialogRun final : public wxEvtHandler {
 public:
-    MountainDialogRun(TerrainGeneratorDialog& dialog, Editor& editor, size_t floors, bool requireReachable = false) : dialog_(dialog), editor_(editor), floors_(floors), requireReachable_(requireReachable),
+    MountainDialogRun(TerrainGeneratorDialog& dialog, Editor& editor, size_t floors, bool requireReachable = false, bool previewOnly = false) : dialog_(dialog), editor_(editor), floors_(floors), requireReachable_(requireReachable), previewOnly_(previewOnly),
         sourceChanged_(editor.map.hasChanged()), sourceGeneration_(editor.map.getGeneration()), sourceRevision_(editor.map.getChangeTracker().getGeneration()) {
         unchanged();
         Bind(wxEVT_TIMER, &MountainDialogRun::tick, this);
@@ -1217,6 +1217,7 @@ private:
                 command("terrain-validate");
                 check(status->GetLabel().StartsWith("Preview validated."), "GUI mountain validation refused");
                 unchanged();
+                if (previewOnly_) { phase_ = Phase::Placed; timer_.Stop(); dialog_.EndModal(wxID_CANCEL); return; }
                 phase_ = Phase::Placing;
             } else if (phase_ == Phase::Placing) {
                 phase_ = Phase::Placed;
@@ -1240,6 +1241,7 @@ private:
     Editor& editor_;
     size_t floors_;
     bool requireReachable_;
+    bool previewOnly_;
     std::string status_;
     bool sourceChanged_;
     uint64_t sourceGeneration_, sourceRevision_;
@@ -2152,6 +2154,142 @@ void caveFarExitDoorGuiProbe(std::ostream& report, bool mountainPasses = false) 
     dialog->Destroy(); editor.map.clearChanges();
 }
 
+// Iteration 43: storeys with stairs through the adapter (mask, items on both floors) and the real dialog (Place, Undo, Redo).
+void buildingStairsGuiProbe(std::ostream& report) {
+    UndoLimits limits;
+    check(g_gui.NewMap(), "I43 GUI map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    constexpr uint32_t side = 128, n = side * side;
+    const auto stairs = resolveBuildingStairsBrush("ramp");
+    check(bool(stairs), "I43 ramp stairs resolve");
+    std::vector<uint16_t> ramps, openings;
+    for (const auto& ids : stairs->items) { ramps.push_back(ids.ramp); openings.push_back(ids.opening); }
+    // Adapter: the actual blocking mask and both stairs items, with a cap sharing z - 1.
+    GenerationConfig config{{100, 100, 7, side, side}, 1001};
+    config.algorithm = GenerationAlgorithm::Surface;
+    config.surface.buildingDensity = 40; config.surface.repairReach = 1; config.surface.rockPermille = 200;
+    config.surface.plateauMinTop = 64; config.surface.plateauMaxPercent = 10; config.surface.plateauLevels = 1;
+    config.surface.buildingStoreys = true; config.surface.upperFloorPercent = 60;
+    GroundProfile p{{"grass", "dirt", "rocky ground", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
+    p.wall = "stone wall"; p.door = "Normal door";
+    p.plateauGround = "grass"; p.plateauRamp = "ramp"; p.bridgeBrush = "bridge"; p.buildingStairs = "ramp";
+    auto prepared = prepareTerrain(editor.map, config, p, {1000000, 1100000, 2000000, 8ULL << 30});
+    check(prepared && prepared->levels && prepared->plateau && prepared->plan.stairs.size() == n, "I43 adapter preparation");
+    if (!prepared || !prepared->levels || !prepared->plateau) return;
+    const auto& levels = *prepared->levels;
+    // The adapter mask keeps closed building door items blocking (unchanged since iteration 41), so the walk from the
+    // start is checked with the building door cells opened; everything else is the adapter's actual mask.
+    auto openedDoors = levels.blockingMask;
+    size_t doorCells = 0;
+    for (uint32_t i = 0; i < n; ++i) if (!prepared->plan.doors.empty() && prepared->plan.doors[i]) { openedDoors[i] = 0; ++doorCells; }
+    const auto walk = levelReachabilityOf(levels.plan, {}, openedDoors);
+    check(walk && doorCells > 0, "I43 walk with opened doors");
+    if (!walk) return;
+    const auto& storeyCount = walk->categories[size_t(LevelPoiKind::Storey)];
+    std::string unreachable;
+    for (const auto& u : walk->firstUnreachable) unreachable += std::format(" {}@{},{},{}", int(u.kind), u.x, u.y, u.z);
+    check(storeyCount.total > 0 && storeyCount.reached == storeyCount.total && walk->walkableEdges == walk->edges,
+        std::format("I43 every storey cell reachable through door and stairs: storeys {}/{} edges {}/{} first{}",
+            storeyCount.reached, storeyCount.total, walk->walkableEdges, walk->edges, unreachable));
+    size_t maskCells = 0, adapterStairs = 0;
+    for (const auto& poi : levels.plan.pois) if (poi.kind == LevelPoiKind::Storey) {
+        ++maskCells;
+        check(!levels.blockingMask[poi.at.floor * n + poi.at.cell] && levels.report.walkable[poi.at.floor * n + poi.at.cell], "I43 storey cell open in adapter mask");
+    }
+    const auto& upper = *prepared->plateau;
+    for (uint32_t i = 0; i < n; ++i) {
+        const auto ramp = std::ranges::find(ramps, prepared->plan.stairs[i]);
+        if (ramp == ramps.end()) continue;
+        ++adapterStairs;
+        const auto opening = openings[size_t(ramp - ramps.begin())];
+        check(upper.plan.plateauFloor[i] == 5 && upper.plan.items[i] == opening, "I43 opening above stairs in upper plan");
+        const Position below(100 + int(i % side), 100 + int(i / side), 7), above(below.x, below.y, 6);
+        const auto* lower = prepared->preview.getBuffer().getTile(below);
+        const auto* top = upper.preview.getBuffer().getTile(above);
+        check(lower && std::ranges::any_of(lower->items, [&](const auto& item) { return item->getID() == *ramp; }), "I43 stairs item in ground preview");
+        check(top && top->ground && top->ground->getID() == opening, "I43 opening ground in upper preview");
+        check(!levels.blockingMask[i], "I43 stairs cell walkable in adapter mask");
+    }
+    check(adapterStairs > 0, "I43 adapter placed stairs");
+
+    // Dialog: a missing stairs brush disables the option with a message; the real brush enables it.
+    auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    const auto spin = [&](const char* name, int value) {
+        auto* c = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+        check(c, std::format("I43 spin {}", name)); c->SetValue(value);
+        wxSpinEvent event(wxEVT_SPINCTRL, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+    };
+    const auto tick = [&](const char* name, bool value) {
+        auto* c = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName(name, dialog));
+        check(c, std::format("I43 check {}", name)); c->SetValue(value);
+        wxCommandEvent event(wxEVT_CHECKBOX, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+        return c;
+    };
+    auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-style", dialog));
+    check(style, "I43 style control"); style->SetSelection(1);
+    wxCommandEvent changed(wxEVT_CHOICE, style->GetId()); changed.SetEventObject(style);
+    style->GetEventHandler()->ProcessEvent(changed);
+    spin("terrain-width", side); spin("terrain-height", side); spin("terrain-building-density", 40);
+    spin("terrain-plateau-percent", 10); spin("terrain-plateau-levels", 1);
+    tick("terrain-walls", true); tick("terrain-doors", true);
+    auto* storeys = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-building-storeys", dialog));
+    auto* brush = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-building-stairs", dialog));
+    check(storeys && brush && !storeys->GetValue() && brush->GetValue() == "ramp", "I43 option defaults");
+    brush->Clear();
+    wxCommandEvent brushChanged(wxEVT_COMBOBOX, brush->GetId()); brushChanged.SetEventObject(brush);
+    brush->GetEventHandler()->ProcessEvent(brushChanged);
+    check(!storeys->IsEnabled() && !storeys->GetValue(), "Missing stairs brush must disable upper floors");
+    brush->Append("ramp"); brush->SetSelection(0);
+    brush->GetEventHandler()->ProcessEvent(brushChanged);
+    check(storeys->IsEnabled(), "Valid stairs brush must enable upper floors");
+    tick("terrain-building-storeys", true);
+    spin("terrain-upper-floor-percent", 60);
+    auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+    check(seed, "I43 seed"); seed->SetValue("1001");
+    // Dialog Preview and Validate only: closed building doors stay blocking in the dialog's validator (see above), so
+    // its Place asks about unreachable places in a modal box. The adapter result above is committed instead.
+    MountainDialogRun run(*dialog, editor, 0, false, true);
+    const int modal = dialog->ShowModal(); run.stop();
+    check(modal == wxID_CANCEL && run.placed() && run.floors() == 2 && run.status().starts_with("Reachable:"), "I43 GUI preview: " + run.failure() + run.status());
+    dialog->Destroy();
+    check(bool(DrawOperations::commitTerrainPreview(*prepared, config, p, {750000, 1536ULL << 20})), "I43 commit");
+    // Committed map: stairs below, opening above, an open arrival beside it and walls on the storey outline.
+    constexpr int sx[] = {0, 0, 1, -1}, sy[] = {-1, 1, 0, 0};
+    size_t pairs = 0, storeyWalls = 0;
+    for (uint32_t i = 0; i < n; ++i) {
+        const int x = 100 + int(i % side), y = 100 + int(i / side);
+        if (const auto* t = editor.map.getTile(Position(x, y, 6)); t && t->hasWall()) ++storeyWalls;
+        const auto* tile = editor.map.getTile(Position(x, y, 7));
+        // Mountain ramps use the same items; building stairs stand on the building floor.
+        if (!tile || !tile->ground || brushOf(tile->ground->getID()) != g_brushes.getBrush("stone floor")) continue;
+        for (const auto& item : tile->items) {
+            const auto ramp = std::ranges::find(ramps, item->getID());
+            if (ramp == ramps.end()) continue;
+            const auto shape = stairs->shapes[size_t(ramp - ramps.begin())];
+            const auto* above = editor.map.getTile(Position(x, y, 6));
+            const auto d = size_t(shape.direction);
+            const auto* arrival = editor.map.getTile(Position(x + sx[d], y + sy[d], 6));
+            check(above && above->ground && above->ground->getID() == openings[size_t(ramp - ramps.begin())], "I43 committed opening above stairs");
+            if (!above || !above->ground) continue;
+            check(arrival && arrival->ground && !arrival->ground->isBlocking() &&
+                std::ranges::none_of(arrival->items, [](const auto& it) { return it->isBlocking(); }), "I43 committed arrival walkable");
+            check(above->ground->getDefinition().hasFlag(ItemFlag::FloorChangeDown), "I43 committed opening changes floor");
+            ++pairs;
+        }
+    }
+    check(pairs > 0 && storeyWalls > 0, "I43 committed stairs pairs and storey walls");
+    std::vector<std::vector<uint32_t>> after;
+    for (int z = 4; z <= 8; ++z) after.push_back(stackImage(editor.map, 98, 98, z, side + 4, side + 4));
+    const auto actions = editor.actionQueue->getSize();
+    for (size_t i = 0; i < actions; ++i) check(editor.actionQueue->undo(), "I43 Undo");
+    check(editor.map.getTileCount() == 0, "I43 Undo restores empty map");
+    for (size_t i = 0; i < actions; ++i) check(editor.actionQueue->redo(), "I43 Redo");
+    for (int z = 4; z <= 8; ++z) check(after[size_t(z - 4)] == stackImage(editor.map, 98, 98, z, side + 4, side + 4), "I43 identical Redo");
+    report << std::format("BUILDING_STAIRS_GUI_PASS adapterStairs={} maskCells={} doorCells={} committedPairs={} storeyWalls={} undoRedo={} dialogFloors={} brush=ramp\n",
+        adapterStairs, maskCells, doorCells, pairs, storeyWalls, actions, run.floors());
+    editor.map.clearChanges();
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -2162,6 +2300,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        buildingStairsGuiProbe(report);
         caveFarExitDoorGuiProbe(report);
         caveFarExitDoorGuiProbe(report, true);
         finalMaskRepairProbe(report);
