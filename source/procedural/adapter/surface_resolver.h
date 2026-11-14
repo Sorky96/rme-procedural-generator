@@ -23,7 +23,10 @@ struct CaveExitBrush {
 };
 
 struct CaveBrushes : CaveExitBrush {
-	std::vector<uint16_t> entrances;
+	// Rock-face entrances always open to the south (`caveEntranceAllowed`), so only the doodad's first alternative is
+	// placed: in the cave entrance doodads of the RME data it is the south-facing hole (the second faces east). A floor
+	// hole is the ground brush's placement item.
+	uint16_t entrance = 0;
 	uint16_t ground = 0;
 	uint16_t wall = 0;
 };

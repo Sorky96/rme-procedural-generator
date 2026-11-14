@@ -575,7 +575,7 @@ TerrainPreparationSteps runPreparation(
                         if (!exit.distant) {
                             const auto e = grid->entrances[exit.entrance];
                             if (!plan.items[e]) continue;
-                            plan.entrances[e] = brushes->entrances[(uint64_t(e) + input.config.seed) % brushes->entrances.size()];
+                            plan.entrances[e] = brushes->entrance;
                             if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
                             else if (input.config.surface.rockBlocks && entranceGround) {
                                 // Impassable rock: the rock-face entrance stands on the profile's dirt ground (iteration 44).

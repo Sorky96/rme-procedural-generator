@@ -208,22 +208,23 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 		const auto id = hole->getPlacementItemId();
 		const auto def = g_item_definitions.get(id);
 		if (!def || !def.isGroundTile() || !def.hasFlag(ItemFlag::FloorChangeDown)) return std::unexpected(ResolveError::InvalidProfile);
-		result.entrances.push_back(id);
+		result.entrance = id;
 	} else {
 		int priorAlternative = -1;
+		size_t alternatives = 0;
 		for (int i = 0; i < entrance->getTotalVariants(); ++i) {
 			const auto variant = entrance->getVariant(i);
 			if (variant.composite || !plainCaveItem(variant.single_item)) return std::unexpected(ResolveError::InvalidProfile);
 			if (variant.alternative_index != priorAlternative) {
 				const auto* item = entrance->getRandomSingleItem(variant.alternative_index, 1);
 				if (!plainCaveItem(item)) return std::unexpected(ResolveError::InvalidProfile);
-				result.entrances.push_back(item->getID());
+				if (alternatives++ == 0) result.entrance = item->getID();
 				priorAlternative = variant.alternative_index;
 			}
 		}
-		if (result.entrances.size() != entrance->getAlternativeCount()) return std::unexpected(ResolveError::InvalidProfile);
+		if (alternatives != entrance->getAlternativeCount()) return std::unexpected(ResolveError::InvalidProfile);
 	}
-	if (result.entrances.empty() || !result.ground || !result.wall) return std::unexpected(ResolveError::InvalidProfile);
+	if (!result.entrance || !result.ground || !result.wall) return std::unexpected(ResolveError::InvalidProfile);
 	return result;
 } catch (const std::bad_alloc&) {
 	return std::unexpected(ResolveError::AllocationFailed);

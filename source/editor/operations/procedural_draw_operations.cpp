@@ -426,7 +426,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     if (!upper && hasCave(plan.profile)) {
         const auto resolved = resolveCaveBrushes(plan.profile, plan.config);
 		if (!resolved) co_return std::unexpected(PreviewError::InvalidPlan);
-		entranceIds = resolved->entrances;
+		entranceIds = {resolved->entrance};
 		for (const auto& ids : resolved->items) {
 			exitIds.push_back(ids.ramp);
 			if (ids.tail) exitIds.push_back(ids.tail);
