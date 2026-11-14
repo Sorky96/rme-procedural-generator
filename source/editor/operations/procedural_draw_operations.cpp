@@ -372,15 +372,20 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     }
 	if (cave && (!plan.decor.empty() || !plan.fires.empty() ||
         (!plan.config.surface.caveDoorCorridors && !dungeons && (!plan.walls.empty() || !plan.doors.empty())))) co_return std::unexpected(PreviewError::InvalidPlan);
+	const auto groundBrush = [](const std::string& name) {
+		const auto* brush = g_brushes.getBrush(name);
+		return brush ? brush->as<GroundBrush>() : nullptr;
+	};
+	// The cave floor's ground and wall come from their own profile fields, never from the surface brush slots.
+	const GroundBrush* caveGroundBrush = cave ? groundBrush(plan.profile.caveGround) : nullptr;
+	const GroundBrush* caveWallBrush = cave ? groundBrush(plan.profile.caveWall) : nullptr;
+	if (cave && (!caveGroundBrush || !caveWallBrush)) co_return std::unexpected(PreviewError::InvalidPlan);
 	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
 		if (plan.profile.brushes[i].empty() || plan.profile.brushes[i].size() > 256) co_return std::unexpected(PreviewError::InvalidPlan);
-        const auto* brush = g_brushes.getBrush(
-            upper && mountains ? (i == 1 ? plan.profile.plateauCliff : plan.profile.plateauGround)
-                : cave ? (i == 1 ? plan.profile.caveWall : plan.profile.caveGround)
-                       : plan.profile.brushes[i]
-        );
-        brushes[i] = brush ? brush->as<GroundBrush>() : nullptr;
+        brushes[i] = upper && mountains ? groundBrush(i == 1 ? plan.profile.plateauCliff : plan.profile.plateauGround)
+            : cave ? caveGroundBrush
+                   : groundBrush(plan.profile.brushes[i]);
 		if (!brushes[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	const bool vegetation = plan.config.vegetation && !cave;
@@ -562,7 +567,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (plan.caveFloor[i] != 1 && (plan.caveFloor[i] == 2) != adjacentFloor) co_return std::unexpected(PreviewError::InvalidPlan);
 			if (plan.items[i]) {
 				const auto def = g_item_definitions.get(plan.items[i]);
-				if (!def || def.editorData().brush != (plan.caveFloor[i] == 1 ? brushes[0] : plan.caveFloor[i] >= 3 ? dungeonFloorBrush : brushes[1]))
+				if (!def || def.editorData().brush != (plan.caveFloor[i] == 1 ? caveGroundBrush : plan.caveFloor[i] >= 3 ? dungeonFloorBrush : caveWallBrush))
 					co_return std::unexpected(PreviewError::InvalidItem);
 			}
 		}
@@ -616,6 +621,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&
 			definition.hasFlag(ItemFlag::FloorChangeDown) && std::ranges::find(entranceIds, plan.items[i]) != entranceIds.end();
         if (cave && plan.caveFloor[i] >= 3) for (const auto& variant : dungeonFloorBrush->getBorderItems()) found |= variant.id == plan.items[i];
+        if (cave && ground.editorData().brush == caveWallBrush) for (const auto& variant : caveWallBrush->getBorderItems()) found |= variant.id == plan.items[i];
 		if (!upper && hasPlateau(plan.profile)) {
             const auto* cliff = g_brushes.getBrush(plan.profile.plateauCliff)->as<GroundBrush>();
             for (const auto& v : cliff->getBorderItems()) if (v.id == plan.items[i]) found = true;
