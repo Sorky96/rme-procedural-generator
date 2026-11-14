@@ -72,6 +72,19 @@ const GroundBrush* brushOf(uint16_t id) {
 	return ground ? static_cast<const GroundBrush*>(ground.editorData().brush) : nullptr;
 }
 
+// Every item a cave entrance brush could place: each doodad alternative, or the hole ground's border items.
+std::vector<uint16_t> entranceAlternatives(const std::string& name) {
+	std::vector<uint16_t> ids;
+	const auto* brush = g_brushes.getBrush(name);
+	if (const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr) {
+		for (int alternative = 0; alternative < int(doodad->getAlternativeCount()); ++alternative)
+			if (const auto* item = doodad->getRandomSingleItem(alternative, 1)) ids.push_back(item->getID());
+	} else if (const auto* ground = brush ? brush->as<GroundBrush>() : nullptr) {
+		for (const auto& variant : ground->getBorderItems()) ids.push_back(variant.id);
+	}
+	return ids;
+}
+
 // Stable text image of the tile stacks in a rectangle, for equality checks.
 std::vector<uint32_t> stackImage(Map& map, int x0, int y0, int z, int width, int height) {
 	std::vector<uint32_t> image;
@@ -813,12 +826,24 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		const auto e = grid->entrances[exit.entrance];
 		const auto& ids = brushes->items[exit.shape];
 		const auto& shape = brushes->shapes[exit.shape];
-		entrances[e] = brushes->entrances[(uint64_t(e) + config.seed) % brushes->entrances.size()];
+		entrances[e] = brushes->entrance;
 		ramps[exit.cell] = ids.ramp;
 		if (shape.hasTail) ramps[size_t(int64_t(exit.cell) + shape.tailDx + int64_t(shape.tailDy) * side)] = ids.tail;
 	}
 	check(prepared->plan.entrances == entrances && prepared->cave->plan.exits == ramps,
 		"Cave item layers differ from exit geometry");
+	// Iteration 46 (D24): every rock-face entrance opens to the south, so it carries the brush's south-facing first
+	// alternative; no other alternative (the east-facing hole) appears anywhere.
+	const auto alternatives = entranceAlternatives(profile.caveEntrance);
+	check(std::ranges::find(alternatives, brushes->entrance) != alternatives.end(), "Entrance item is not from its brush");
+	if (style == CaveEntranceStyle::RockFace) {
+		check(alternatives.size() >= 2 && brushes->entrance == alternatives.front(), "Entrance is not the brush's first alternative");
+		for (const auto e : grid->entrances) {
+			const auto open = grid->cells[e + side];
+			check(open == SurfaceKind::Grass || open == SurfaceKind::Dirt || open == SurfaceKind::Shore || open == SurfaceKind::Path,
+				"Rock-face entrance does not open to the south");
+		}
+	}
 	for (const auto e : grid->entrances) check(caveEntranceAllowed(grid->cells, side, side, e, style), "Entrance violates style rule");
 	constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
 	for (const auto& exit : exits->exits) {
@@ -839,7 +864,8 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		otherProfile.caveEntrance = style == CaveEntranceStyle::RockFace ? "cave hole" : "cave enter";
 		const auto other = prepareTerrain(editor.map, otherConfig, otherProfile, preparation);
 		check(other && other->plan.fingerprint() != prepared->plan.fingerprint(), "Styles share fingerprint"); }
-	size_t caveCells = 0, wallCells = 0;
+	size_t caveCells = 0, wallCells = 0, wallFloorNorthOrWestOnly = 0;
+	std::map<uint16_t, size_t> wallBorders;
 	for (size_t i = 0; i < cave->cells.size(); ++i) {
 		const Position upper(100 + int(i % side), 100 + int(i / side), 7), lower(upper.x, upper.y, 8);
 		const auto* tile = prepared->cave->preview.getBuffer().getTile(lower);
@@ -854,6 +880,16 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		wallCells += wall;
 		check(bool(tile && tile->ground) == (floor || wall), "Cave Floor/wall band mismatch");
 		if (wall) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveWall), "Foreign cave wall ground");
+		// Iteration 46 (D24c): which border pieces the wall brush gives the wall band, and how many wall cells see the
+		// cave floor only from the north or west (they would need a north or west face).
+		if (wall) {
+			for (const auto& item : tile->items) ++wallBorders[item->getID()];
+			const auto floorAt = [&](int dx, int dy) {
+				return cx + dx >= 0 && cy + dy >= 0 && cx + dx < int(side) && cy + dy < int(side) &&
+					cave->cells[size_t(cy + dy) * side + size_t(cx + dx)] == CaveKind::Floor;
+			};
+			wallFloorNorthOrWestOnly += (floorAt(0, 1) || floorAt(1, 0) || floorAt(1, 1)) ? 0 : 1;
+		}
 		if (style == CaveEntranceStyle::RockFace && entrances[i]) {
 			check(prepared->plan.items[i] == plain->plan.items[i], "Rock entrance ground changed");
 		}
@@ -881,7 +917,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		for (int variant = 0; variant < exitBrush->getTotalVariants(); ++variant)
 			for (const auto& [pos, items] : *exitBrush->getVariant(variant).composite)
 				if (pos.z == -1) for (const auto& item : items) topIds.push_back(item->getID());
-		checkItem(*prepared, upper, entrances[i], brushes->entrances);
+		checkItem(*prepared, upper, entrances[i], alternatives);
 		checkItem(*prepared, upper, 0, topIds);
 		checkItem(*prepared->cave, lower, ramps[i], rampIds);
 		if (!floor && tile) {
@@ -897,7 +933,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		if (x >= 100 && y >= 100 && x < 100 + int(side) && y < 100 + int(side)) continue;
 		check(!prepared->cave->preview.getBuffer().getTile(Position(x, y, 8)), "Cave preview escaped rectangle");
 	}
-	for (const auto id : brushes->entrances) check(!Item::Create(id)->isBlocking(), "Cave entrance blocks movement in client data");
+	check(!Item::Create(brushes->entrance)->isBlocking(), "Cave entrance blocks movement in client data");
 	for (const auto& ids : brushes->items) check(!Item::Create(ids.ramp)->isBlocking(), "Cave ramp blocks movement in client data");
 	const auto beforeUpper = stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6);
 	const auto beforeLower = stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6);
@@ -1002,6 +1038,10 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	const auto occupied = prepareTerrain(emptyMap, config, profile, preparation, mask);
 	check(!occupied && std::get<PreparationInputError>(occupied.error()) == PreparationInputError::LowerFloorOccupied, "Masked occupied lower floor accepted");
 	emptyMap.clearChanges();
+	std::string borderList;
+	for (const auto& [id, count] : wallBorders) borderList += std::format("{}{}:{}", borderList.empty() ? "" : ",", id, count);
+	report << std::format("CAVE_WALL_FACES style={} wall={} wallCells={} floorOnlyNorthOrWest={} borders={}\n",
+		style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole", profile.caveWall, wallCells, wallFloorNorthOrWestOnly, borderList);
 	report << (sufficientExits ? "SURFACE_CAVE_E2E_PASS	" : "SURFACE_CAVE_E2E_FAIL	") << side << "	style=" << (style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole") << " entrances=" << grid->entrances.size() << " exits=" << exits->exits.size()
 		<< " skipped=" << exits->skipped.size() << " caveCells=" << caveCells << " wallCells=" << wallCells << " exitBrushes=" << exitBrushes.size() << '\n';
 	return sufficientExits;
@@ -1046,6 +1086,7 @@ void guiCaves(std::ostream& report) {
 		check(bool(validateTerrainTarget(*prepared, config, profile)), "GUI cave validation failed");
 		const auto brushes = resolveCaveBrushes(profile, config);
 		check(bool(brushes), "GUI cave brushes failed");
+		const auto alternatives = entranceAlternatives(profile.caveEntrance);
 		const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
 		check(bool(receipt), std::format("GUI cave commit failed {}", combination));
 		size_t entrances = 0, exits = 0;
@@ -1062,8 +1103,9 @@ void guiCaves(std::ostream& report) {
 				return count;
 			};
 			const auto entranceCount = countIds(surface, [&](uint16_t id) {
-				return std::ranges::find(brushes->entrances, id) != brushes->entrances.end();
+				return std::ranges::find(alternatives, id) != alternatives.end();
 			});
+			if (entranceCount) check(prepared->plan.entrances[i] == brushes->entrance, "GUI entrance is not the south-facing alternative");
 			const auto rampCount = countIds(lower, [&](uint16_t id) {
 				return std::ranges::any_of(brushes->items, [&](const auto& ids) { return ids.ramp == id; });
 			});
@@ -2625,6 +2667,113 @@ void m19RockGuiCase(std::ostream& report) {
     std::filesystem::remove(file);
 }
 
+// Iteration 46 (D26): the GUI report of a cave ramp without an entrance above it at (1018, 1237, 7). Real dialog, its
+// default settings plus 10 cave entrances, profiles m06 and m19 (tuning and palettes of the g4 profiles; with the
+// default settings m19's impassable rock may leave no entrance on the start land, so a case may have no ramp), the 512 x 512
+// rectangle centred on that point, surface on z 6 (cave and ramp on z 7) and on z 7, several seeds, far exits on (the
+// default) and off. On the placed map every cave ramp needs its entrance directly above, except far exits, whose
+// surface cell must be walkable; the dialog must report every place reachable.
+void d26RampCase(std::ostream& report) {
+    UndoLimits undoLimits;
+    const auto ids = loadedClientAssetIds();
+    check(bool(ids), "D26 fixture client assets");
+    struct Fixture { const char* name; SurfaceTuning tuning; DecorTuning decor; StylePalette palette; StyleDecorPalette decorPalette; };
+    const Fixture fixtures[] = {
+        {"i46-m19-fixture", SurfaceTuning{192, 300, 12, 8, 20, 8, 240, 8, 300, 6000, 8}, DecorTuning{565, 17, 369, 239, 23, 29},
+            {"grass", "dirt", "mountain", "sand", "sea"}, {"trees", "grass tufts", "small rocks"}},
+        {"i46-m06-fixture", SurfaceTuning{192, 300, 12, 8, 20, 8, 80, 8, 300, 6000, 8}, DecorTuning{613, 6, 87, 142, 8, 20},
+            {"grass", "jungle dirt", "mountain top ground", "sand", "sea"}, {"trees", "bushes", "kamienie"}}};
+    const auto directory = styleProfileDirectory();
+    const auto relative = std::filesystem::weakly_canonical(directory).lexically_relative(std::filesystem::current_path().parent_path());
+    check(!relative.empty() && *relative.begin() != "..", "D26 profile must stay in private probe directory");
+    std::filesystem::create_directories(directory);
+    const auto* exitDoodad = g_brushes.getBrush("ramp")->as<DoodadBrush>();
+    check(exitDoodad, "D26 ramp brush");
+    const auto exitBrush = resolveCaveExitBrush(*exitDoodad);
+    check(bool(exitBrush), "D26 ramp brush items");
+    const auto entranceIds = entranceAlternatives("cave enter");
+    size_t runs = 0, paired = 0, farRamps = 0;
+    for (const auto& fixture : fixtures) {
+        StyleProfile profile;
+        profile.client = ids->client; profile.otbSha256 = ids->otbSha256; profile.datSha256 = ids->datSha256;
+        profile.tuning = fixture.tuning; profile.decorTuning = fixture.decor;
+        profile.palette = fixture.palette; profile.decorPalette = fixture.decorPalette;
+        const auto encoded = serializeProfile(profile);
+        check(bool(encoded), "D26 fixture serialization");
+        const auto file = directory / (std::string(fixture.name) + ".profile");
+        check(!std::filesystem::exists(file), "D26 fixture must not overwrite a profile");
+        {std::ofstream out(file); out << *encoded; check(bool(out), "D26 profile write");}
+        for (const int z : {6, 7})
+        for (const bool farExits : {true, false})
+        for (const char* seedText : {"1729", "1001", "1002", "1003", "1004"}) {
+            const auto combination = std::format("{} z={} farExits={} seed={}", fixture.name, z, int(farExits), seedText);
+            check(g_gui.NewMap(), "D26 GUI map");
+            auto& editor = *g_gui.GetCurrentEditor();
+            auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+            const auto spin = [&](const char* name, int value) {
+                auto* c = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+                check(c, std::format("D26 spin {}", name)); c->SetValue(value);
+                wxSpinEvent event(wxEVT_SPINCTRL, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+            };
+            const auto choose = [&](const char* name, int index) {
+                auto* c = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName(name, dialog));
+                check(c && index >= 0 && index < int(c->GetCount()), std::format("D26 choice {}", name)); c->SetSelection(index);
+                wxCommandEvent event(wxEVT_CHOICE, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+            };
+            choose("terrain-style", 1);
+            auto* profiles = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-profile", dialog));
+            check(profiles, "D26 profile control");
+            choose("terrain-profile", profiles->FindString(fixture.name));
+            spin("terrain-x", 1018 - 256); spin("terrain-y", 1237 - 256); spin("terrain-z", z);
+            spin("terrain-width", 512); spin("terrain-height", 512); spin("terrain-cave-entrances", 10);
+            auto* farCheck = dynamic_cast<wxCheckBox*>(wxWindow::FindWindowByName("terrain-cave-far-exits", dialog));
+            check(farCheck && farCheck->IsEnabled() && farCheck->GetValue(), "D26 far exits on by default");
+            if (!farExits) {
+                farCheck->SetValue(false);
+                wxCommandEvent event(wxEVT_CHECKBOX, farCheck->GetId()); event.SetEventObject(farCheck); farCheck->GetEventHandler()->ProcessEvent(event);
+            }
+            auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+            check(seed, "D26 seed"); seed->SetValue(seedText);
+            MountainDialogRun run(*dialog, editor, 0, true);
+            dialog->ShowModal(); run.stop();
+            check(run.placed(), "D26 GUI case " + combination + ": " + run.failure() + " " + run.status());
+            size_t ramps = 0, withEntrance = 0, entrances = 0;
+            for (int y = 1237 - 256; y < 1237 + 256; ++y) for (int x = 1018 - 256; x < 1018 + 256; ++x) {
+                const auto* surface = editor.map.getTile(Position(x, y, z));
+                const auto* lower = editor.map.getTile(Position(x, y, z + 1));
+                const auto has = [](const Tile* tile, const auto& match) {
+                    if (!tile) return false;
+                    if (tile->ground && match(tile->ground->getID())) return true;
+                    return std::ranges::any_of(tile->items, [&](const auto& item) { return match(item->getID()); });
+                };
+                const bool entrance = has(surface, [&](uint16_t id) { return std::ranges::find(entranceIds, id) != entranceIds.end(); });
+                const bool ramp = has(lower, [&](uint16_t id) {
+                    return std::ranges::any_of(exitBrush->items, [&](const auto& items) { return items.ramp == id; });
+                });
+                entrances += entrance;
+                if (!ramp) {
+                    check(!entrance, std::format("D26 entrance without a ramp below {} at ({},{},{})", combination, x, y, z));
+                    continue;
+                }
+                ++ramps;
+                if (entrance) { ++withEntrance; continue; }
+                check(farExits, std::format("D26 ramp without an entrance above {} at ({},{},{})", combination, x, y, z + 1));
+                check(surface && surface->ground && !surface->isBlocking(),
+                    std::format("D26 far exit under a blocked or empty surface cell {} at ({},{},{})", combination, x, y, z));
+            }
+            paired += withEntrance; farRamps += ramps - withEntrance; ++runs;
+            report << std::format("D26_RAMP_CASE {} ramps={} withEntrance={} farExits={} status={}\n", combination, ramps, withEntrance,
+                ramps - withEntrance, run.status().substr(0, run.status().find('\n')));
+            dialog->Destroy();
+            editor.map.clearChanges();
+            g_gui.CloseCurrentEditor();
+        }
+        std::filesystem::remove(file);
+    }
+    check(paired > 0, "D26 placed no cave ramp in any case");
+    report << std::format("D26_RAMP_ENTRANCE_PASS runs={} pairedRamps={} farExitRamps={}\n", runs, paired, farRamps);
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -2635,6 +2784,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        d26RampCase(report);
         dungeonGuiProbe(report);
         buildingStairsGuiProbe(report);
         storeySealedRampRepair(report);
