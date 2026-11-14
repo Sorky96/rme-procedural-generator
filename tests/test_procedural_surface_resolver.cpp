@@ -2668,8 +2668,8 @@ void m19RockGuiCase(std::ostream& report) {
 }
 
 // Iteration 46 (D26): the GUI report of a cave ramp without an entrance above it at (1018, 1237, 7). Real dialog, its
-// default settings plus 10 cave entrances, profiles m06 and m19 (tuning and palettes of the g4 profiles; with the
-// default settings m19's impassable rock may leave no entrance on the start land, so a case may have no ramp), the 512 x 512
+// default settings plus 10 cave entrances, profiles m06 and m19 (tuning and palettes of the g4 profiles; one case may
+// have no ramp when m19's impassable rock leaves no entrance on the start land, but m19 as a whole must), the 512 x 512
 // rectangle centred on that point, surface on z 6 (cave and ramp on z 7) and on z 7, several seeds, far exits on (the
 // default) and off. On the placed map every cave ramp needs its entrance directly above, except far exits, whose
 // surface cell must be walkable; the dialog must report every place reachable.
@@ -2692,7 +2692,7 @@ void d26RampCase(std::ostream& report) {
     const auto exitBrush = resolveCaveExitBrush(*exitDoodad);
     check(bool(exitBrush), "D26 ramp brush items");
     const auto entranceIds = entranceAlternatives("cave enter");
-    size_t runs = 0, paired = 0, farRamps = 0;
+    size_t runs = 0, paired = 0, farRamps = 0, m19Paired = 0;
     for (const auto& fixture : fixtures) {
         StyleProfile profile;
         profile.client = ids->client; profile.otbSha256 = ids->otbSha256; profile.datSha256 = ids->datSha256;
@@ -2762,6 +2762,7 @@ void d26RampCase(std::ostream& report) {
                     std::format("D26 far exit under a blocked or empty surface cell {} at ({},{},{})", combination, x, y, z));
             }
             paired += withEntrance; farRamps += ramps - withEntrance; ++runs;
+            if (std::string_view(fixture.name) == "i46-m19-fixture") m19Paired += withEntrance;
             report << std::format("D26_RAMP_CASE {} ramps={} withEntrance={} farExits={} status={}\n", combination, ramps, withEntrance,
                 ramps - withEntrance, run.status().substr(0, run.status().find('\n')));
             dialog->Destroy();
@@ -2771,7 +2772,98 @@ void d26RampCase(std::ostream& report) {
         std::filesystem::remove(file);
     }
     check(paired > 0, "D26 placed no cave ramp in any case");
-    report << std::format("D26_RAMP_ENTRANCE_PASS runs={} pairedRamps={} farExitRamps={}\n", runs, paired, farRamps);
+    check(m19Paired > 0, "D26 placed no m19 cave ramp");
+    report << std::format("D26_RAMP_ENTRANCE_PASS runs={} pairedRamps={} m19PairedRamps={} farExitRamps={}\n", runs, paired, m19Paired, farRamps);
+}
+
+// GUI report after iteration 46: m19, x 1000, y 1000, 512 x 512, seed 1729, 10 rock-face cave entrances, everything else
+// at the dialog defaults gave no cave at all. Real dialog and Place; the placed map needs at least one entrance with
+// its ramp and cave ground on z + 1. The core counts (candidates, entrances before and after the start-land filter)
+// show where entrances go missing.
+void m19NoCavesCase(std::ostream& report) {
+    UndoLimits undoLimits;
+    const auto ids = loadedClientAssetIds();
+    check(bool(ids), "M19 caves fixture client assets");
+    StyleProfile fixture;
+    fixture.client = ids->client; fixture.otbSha256 = ids->otbSha256; fixture.datSha256 = ids->datSha256;
+    fixture.tuning = SurfaceTuning{192, 300, 12, 8, 20, 8, 240, 8, 300, 6000, 8};
+    fixture.decorTuning = DecorTuning{565, 17, 369, 239, 23, 29};
+    fixture.palette = {"grass", "dirt", "mountain", "sand", "sea"};
+    fixture.decorPalette = {"trees", "grass tufts", "small rocks"};
+    const auto encoded = serializeProfile(fixture);
+    check(bool(encoded), "M19 caves fixture serialization");
+    const auto directory = styleProfileDirectory();
+    const auto relative = std::filesystem::weakly_canonical(directory).lexically_relative(std::filesystem::current_path().parent_path());
+    check(!relative.empty() && *relative.begin() != "..", "M19 caves profile must stay in private probe directory");
+    std::filesystem::create_directories(directory);
+    const auto file = directory / "m19-caves-fixture.profile";
+    check(!std::filesystem::exists(file), "M19 caves fixture must not overwrite a profile");
+    {std::ofstream out(file); out << *encoded; check(bool(out), "M19 caves profile write");}
+    // Core view of the same surface: candidates of the relaxed rock-face rule, entrances without and with the filter.
+    SurfaceConfig core{{1000, 1000, 7, 512, 512}, 1729};
+    core.tuning = *fixture.tuning;
+    core.tuning.caveEntrances = 10; core.tuning.repairReach = 1; core.tuning.shoreSmoothing = 2;
+    const auto open = generateSurface(core, MapExtent{65001, 65001, 16}, {600000, 256u << 20, 1u << 30});
+    core.tuning.rockBlocks = true;
+    const auto closed = generateSurface(core, MapExtent{65001, 65001, 16}, {600000, 256u << 20, 1u << 30});
+    check(open && closed, "M19 caves core surface");
+    size_t candidates = 0;
+    for (uint32_t i = 0; i < open->cells.size(); ++i)
+        candidates += caveEntranceAllowed(open->cells, 512, 512, i, CaveEntranceStyle::RockFace, true);
+    check(g_gui.NewMap(), "M19 caves GUI map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    const auto spin = [&](const char* name, int value) {
+        auto* c = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+        check(c, std::format("M19 caves spin {}", name)); c->SetValue(value);
+        wxSpinEvent event(wxEVT_SPINCTRL, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+    };
+    const auto choose = [&](const char* name, int index) {
+        auto* c = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName(name, dialog));
+        check(c && index >= 0 && index < int(c->GetCount()), std::format("M19 caves choice {}", name)); c->SetSelection(index);
+        wxCommandEvent event(wxEVT_CHOICE, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+    };
+    choose("terrain-style", 1);
+    auto* profiles = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-profile", dialog));
+    check(profiles, "M19 caves profile control");
+    choose("terrain-profile", profiles->FindString("m19-caves-fixture"));
+    spin("terrain-x", 1000); spin("terrain-y", 1000); spin("terrain-width", 512); spin("terrain-height", 512);
+    spin("terrain-cave-entrances", 10);
+    auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-cave-entrance-style", dialog));
+    check(style && style->GetSelection() == 0, "M19 caves rock-face style by default");
+    auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+    check(seed && seed->GetValue() == "1729", "M19 caves default seed");
+    MountainDialogRun run(*dialog, editor, 0, true);
+    dialog->ShowModal(); run.stop();
+    check(run.placed(), "M19 caves GUI case: " + run.failure() + " " + run.status());
+    const auto entranceIds = entranceAlternatives("cave enter");
+    const auto* exitDoodad = g_brushes.getBrush("ramp")->as<DoodadBrush>();
+    check(exitDoodad, "M19 caves ramp brush");
+    const auto exitBrush = resolveCaveExitBrush(*exitDoodad);
+    check(bool(exitBrush), "M19 caves ramp items");
+    const auto* caveGround = g_brushes.getBrush("cave");
+    size_t entrances = 0, paired = 0, caveCells = 0;
+    for (int y = 1000; y < 1512; ++y) for (int x = 1000; x < 1512; ++x) {
+        const auto* surface = editor.map.getTile(Position(x, y, 7));
+        const auto* lower = editor.map.getTile(Position(x, y, 8));
+        const bool entrance = surface && std::ranges::any_of(surface->items, [&](const auto& item) {
+            return std::ranges::find(entranceIds, item->getID()) != entranceIds.end(); });
+        const bool ramp = lower && std::ranges::any_of(lower->items, [&](const auto& item) {
+            return std::ranges::any_of(exitBrush->items, [&](const auto& items) { return items.ramp == item->getID(); }); });
+        entrances += entrance;
+        paired += entrance && ramp;
+        caveCells += lower && lower->ground && brushOf(lower->ground->getID()) == caveGround;
+    }
+    std::string status = run.status();
+    std::ranges::replace(status, '\n', ' ');
+    report << std::format("M19_CAVES_GUI_CASE candidates={} coreEntrances={} startLandEntrances={} mapEntrances={} withRamp={} caveCells={} status={}\n",
+        candidates, open->entrances.size(), closed->entrances.size(), entrances, paired, caveCells, status);
+    check(entrances >= 1 && paired == entrances && caveCells > 0, "M19 caves GUI case placed no cave");
+    report << "M19_CAVES_GUI_PASS\n";
+    dialog->Destroy();
+    editor.map.clearChanges();
+    g_gui.CloseCurrentEditor();
+    std::filesystem::remove(file);
 }
 
 void run() {
@@ -2784,6 +2876,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        m19NoCavesCase(report);
         d26RampCase(report);
         dungeonGuiProbe(report);
         buildingStairsGuiProbe(report);
