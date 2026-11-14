@@ -436,6 +436,14 @@ TerrainPreparationSteps runPreparation(
                     if (!resolved) co_return fail(resolved.error());
                     stairBrush = std::move(*resolved);
                 }
+                // Walkable ground under a rock-face entrance when the rock brush is impassable: a surface brush of the profile.
+                uint16_t entranceGround = 0;
+                if (const auto* dirt = g_brushes.getBrush(profile.brushes[1]); dirt && dirt->as<GroundBrush>()) {
+                    const auto id = dirt->as<GroundBrush>()->getPlacementItemId();
+                    if (id && !g_item_definitions.get(id).hasFlag(ItemFlag::Unpassable)) entranceGround = id;
+                }
+                const bool walkableRockFace = input.config.surface.rockBlocks && entranceGround &&
+                    input.config.surface.caveEntranceStyle == CaveEntranceStyle::RockFace;
                 std::vector<BuildingDungeon> levelDungeons;
                 std::optional<DungeonBrushes> dungeonBrushes;
                 if (input.config.surface.buildingDungeons) {
@@ -496,6 +504,11 @@ TerrainPreparationSteps runPreparation(
                             if (!f && floorGrid.cells[i] == SurfaceKind::Rock) rockBlocks |= groundBlocks;
                         }
                     }
+                    // A rock-face entrance gets the walkable dirt ground below (iteration 44), not the rock ground resolved
+                    // here; marking its rock ground as blocking made every such entrance unreachable, so the repair
+                    // removed all of them together with their caves.
+                    if (walkableRockFace) for (const auto e : world->surface.entrances)
+                        if (world->surface.cells[e] == SurfaceKind::Rock && blocking[e] == 2) blocking[e] = 0;
                     if (input.config.surface.repairReach) {
                         auto repaired = repairLevelReach(*world, !profile.wall.empty(), rockBlocks, caveShapes, {},
                             input.config.surface.fordLength, !profile.bridgeBrush.empty(), blocking, stop);
@@ -522,12 +535,6 @@ TerrainPreparationSteps runPreparation(
 					auto exits = repairWorld ? std::expected<CaveExitPlan, UndergroundError>(repairWorld->exits) : placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
 					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
 						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
-                    // Walkable ground under a rock-face entrance when the rock brush is impassable: a surface brush of the profile.
-                    uint16_t entranceGround = 0;
-                    if (const auto* dirt = g_brushes.getBrush(profile.brushes[1]); dirt && dirt->as<GroundBrush>()) {
-                        const auto id = dirt->as<GroundBrush>()->getPlacementItemId();
-                        if (id && !g_item_definitions.get(id).hasFlag(ItemFlag::Unpassable)) entranceGround = id;
-                    }
                     if (!repairWorld && input.config.surface.caveFarExits) {
                         auto distant = placeFarCaveExits(*grid, *generated, *exits, brushes->shapes, input.config.seed, occupied, stop);
                         if (!distant) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
