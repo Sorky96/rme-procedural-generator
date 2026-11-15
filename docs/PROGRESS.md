@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-15 — G5: wygląd jaskiń (iteracja 47) — PASS, GUI czeka
+
+Zamiast zygzaka równoległych tuneli (wejścia łączone wierszami): drzewo najkrótszych połączeń plus 1–2 pętle z dala od innych tuneli, meandrujące tunele szerokości 2–5 ze ślepymi odnogami, nieregularne groty z szumu i automatu komórkowego. Najdłuższy prosty odcinek osi 20 (m06) i 16 (m19), mediana udziału grot 0,78, 0 par równoległych tuneli, wszystkie wejścia w jednej składowej. G5 32/32 w m06 i m19, przypadek GUI m19 bez usuniętych miejsc, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 47”.
+
 ## 2026-11-12 — G5: przełęcze w górach (iteracja 42) — PASS, GUI czeka
 
 Doliny szerokości 3 przez masywy, czapy wycięte nad pasem, pole „passes” (0–8) w zakładce „Levels”. Mediana 4 przełęczy w m06 i m19, G5 32/32 przy `passes` 0 i 4. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 42”.
