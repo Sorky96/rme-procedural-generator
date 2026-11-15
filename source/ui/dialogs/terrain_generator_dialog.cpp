@@ -639,10 +639,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	// "snowy mountain" has wall faces on every side; "mountain" only east and south (iteration 48, D24).
-	const wxString caveWall = ground_names_.Index("snowy mountain") != wxNOT_FOUND ? "snowy mountain" : "mountain";
-	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", caveWall, 0);
-	if (ground_names_.Index(caveWall) == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
+	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", "mountain", 0);
+	if (ground_names_.Index("mountain") == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
 	form->Add(cave_wall_brush_choice_, 1, wxEXPAND);
 
     form->Add(label("Far cave exits:"), 0, wxALIGN_CENTER_VERTICAL);
