@@ -428,3 +428,13 @@ Wiążące przed implementacją. Decyzja użytkownika: „jest ok, kolejne popra
 3. **D23 (część kodowa).** Sprawdzić i zapisać, które pozycje D23 są nadal prawdziwe na HEAD (druga dziura z górnego kafla rampy, wariant „cave enter”, pomiar wyjść bez `occupied`, naprawa nie zna wejść Z, wymóg pustego z + 1, Undo zostawiające jaskinię bez wejścia). Prawdziwe i mieszczące się w kodzie — naprawić z testem; ruch w grze zostaje w D23 jako niesprawdzalny bez serwera.
 4. **D22, D26, D27.** Zaktualizować opisy: D22 zamknięty (walidator, naprawa, odrzucanie, przechodność z klienta, iteracje 36–44); D26 — próba odtworzenia na HEAD przy (1018, 1237, 7) z ustawieniami domyślnymi i m19/m06 (kilka seedów, ~512×512 wokół); jeśli nie występuje, zamknięty jako nieodtwarzalny po zmianach iteracji 37–45; D27 — zgodnie z 45c (mur „brick wall”, zejście „stairs down”, kierunek północ).
 5. Bez regresji: bramka G5 (pomiar iteracji 45), determinizm, odcisk Seed 1729 100×100 = 17159159863505677800 (zmiana wariantu „cave enter” nie zmienia odcisku planu; jeśli zmienia — uzasadnić), 18/18 testów (plus nowe), `SUITE_PASS`.
+
+## Iteracja 47: wygląd jaskiń (2026-11-15)
+
+Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (m19, x 1000, y 1000, 512×512, seed 1729, 10 wejść w ścianie skały): jaskinia to zygzak równoległych tuneli. Przyczyna: `generateCave` łączy wejścia posortowane wierszami kolejno tunelem szerokości 3 z okrągłymi komorami co 24 pola.
+
+1. **Graf połączeń.** Wejścia łączone drzewem najkrótszych połączeń (MST po odległości) plus 1–2 dodatkowe krawędzie tworzące pętle (gdy wejść ≥ 4); żadnej zależności od kolejności indeksu komórki. Pomiar: zero par równoległych tuneli biegnących obok siebie przez całą szerokość obszaru; najdłuższy prosty odcinek osi tunelu ≤ 20 pól.
+2. **Tunele.** Szerokość zmienna 2–5 pól wzdłuż tunelu, meandry z szumu wyraźniejsze niż dotąd (wychylenie zależne od długości, nie ≤ 3), 0–2 krótkie ślepe odnogi na tunel.
+3. **Groty.** Nieregularne komory z szumu wygładzone automatem komórkowym (nie idealne okręgi); udział pól grot (komórek z ≥ 5 sąsiadami podłogi w promieniu 1 przy szerokości > 5) ≥ 25 % podłogi jaskini (mediana na seedach 1001–1032, bok 512, m06 i m19). Każda grota połączona z siecią.
+4. **Spójność i GUI.** Wszystkie wejścia w jednej składowej; rampy pod wejściami jak dotąd; przypadek użytkownika m19 przez adapter: 0 usuniętych miejsc, wszystkie osiągalne. Bramka G5 (pomiar iteracji 45, m06 i m19 32/32) bez regresji.
+5. Bez regresji: determinizm, 18/18 testów (plus nowe), `SUITE_PASS`. Odcisk Seed 1729 100×100 może się zmienić tylko, jeśli ten przypadek ma jaskinię — wtedy nowa wartość zapisana z uzasadnieniem.
