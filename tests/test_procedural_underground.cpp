@@ -5,13 +5,16 @@
 #include "procedural/core/level_repair.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <format>
 #include <iostream>
 #include <iterator>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace rme::procedural;
@@ -168,6 +171,131 @@ void testCave() {
 	const auto lone = generateCave(single, 3);
 	const auto loneReport = lone ? undergroundReachabilityOf(single, *lone, false) : std::unexpected(UndergroundError::InvalidGrid);
 	check(loneReport.has_value() && loneReport->caveComponents == 1 && loneReport->caveCells > 21 + 20, "cave: one entrance gets a landing and a tunnel in one component");
+}
+
+// Iteration 47 (cave shape): the joins are a minimum spanning tree plus loops and do not depend on the order of the
+// entrances; every entrance and cavern is in one component; no straight piece of an axis is longer than 20 cells;
+// caverns make at least 25 % of the floor (median).
+void testCaveShape() {
+	const auto componentOf = [](const CaveGrid& cave, uint32_t from) {
+		const auto w = cave.region.width;
+		std::vector<uint8_t> seen(cave.cells.size());
+		std::vector<uint32_t> queue {from};
+		seen[from] = 1;
+		for (size_t head = 0; head < queue.size(); ++head) {
+			const auto i = queue[head];
+			for (const auto j : {i - w, i - 1, i + 1, i + w})
+				if (j < cave.cells.size() && (j / w == i / w || j % w == i % w) && !seen[j] && cave.cells[j] == CaveKind::Floor) { seen[j] = 1; queue.push_back(j); }
+		}
+		return seen;
+	};
+	// Kruskal on the squared distances, independent of the generator's Prim.
+	const auto mstWeight = [](std::span<const uint32_t> cells, uint32_t w) {
+		std::vector<std::tuple<int64_t, size_t, size_t>> pairs;
+		for (size_t i = 0; i < cells.size(); ++i) for (size_t j = i + 1; j < cells.size(); ++j) {
+			const int64_t dx = int64_t(cells[i] % w) - int64_t(cells[j] % w), dy = int64_t(cells[i] / w) - int64_t(cells[j] / w);
+			pairs.push_back({dx * dx + dy * dy, i, j});
+		}
+		std::ranges::sort(pairs);
+		std::vector<size_t> root(cells.size());
+		for (size_t i = 0; i < root.size(); ++i) root[i] = i;
+		const auto find = [&](size_t i) { while (root[i] != i) i = root[i] = root[root[i]]; return i; };
+		double total = 0;
+		for (const auto& [d, i, j] : pairs) if (find(i) != find(j)) { root[find(i)] = find(j); total += std::sqrt(double(d)); }
+		return total;
+	};
+	const auto linkLength = [](const std::pair<uint32_t, uint32_t>& link, uint32_t w) {
+		const double dx = double(link.first % w) - double(link.second % w), dy = double(link.first / w) - double(link.second / w);
+		return std::sqrt(dx * dx + dy * dy);
+	};
+
+	// A 4 x 4 lattice of entrances: joining them in row order gives four parallel tunnels across the area.
+	SurfaceGrid lattice = grid(200, 200, SurfaceKind::Rock);
+	for (uint32_t row = 0; row < 4; ++row) for (uint32_t column = 0; column < 4; ++column)
+		lattice.entrances.push_back((30 + row * 45 + column * 3) * 200 + 25 + column * 48 + row * 2);
+	CaveLayout layout;
+	const auto cave = generateCave(lattice, 47, {}, &layout);
+	check(cave.has_value() && cave->valid(), "shape: lattice cave generated");
+	if (!cave) return;
+	auto shuffled = lattice;
+	std::ranges::reverse(shuffled.entrances);
+	std::swap(shuffled.entrances[3], shuffled.entrances[11]);
+	CaveLayout shuffledLayout;
+	const auto again = generateCave(shuffled, 47, {}, &shuffledLayout);
+	check(again && again->cells == cave->cells && again->rooms == cave->rooms && shuffledLayout.links == layout.links,
+		"shape: the order of the entrances does not change the cave");
+	const size_t n = lattice.entrances.size();
+	check(layout.loops == 2 && layout.links.size() == n - 1 + layout.loops, "shape: tree plus two loops for 16 entrances");
+	double tree = 0;
+	for (size_t k = 0; k + 1 < n && k < layout.links.size(); ++k) tree += linkLength(layout.links[k], 200);
+	check(std::abs(tree - mstWeight(lattice.entrances, 200)) < 1e-6, "shape: tree edges have the minimum spanning tree's length");
+	bool rowChained = false;
+	auto sorted = lattice.entrances;
+	std::ranges::sort(sorted);
+	for (size_t k = 0; k + 1 < sorted.size(); ++k) if (k % 4 == 3)
+		rowChained |= std::ranges::count(layout.links, std::pair(sorted[k], sorted[k + 1])) + std::ranges::count(layout.links, std::pair(sorted[k + 1], sorted[k])) > 0;
+	check(!rowChained, "shape: no join from the end of one row to the start of the next");
+	const auto seen = componentOf(*cave, lattice.entrances.front());
+	check(std::ranges::all_of(lattice.entrances, [&](uint32_t e) { return seen[e] != 0; }), "shape: all entrances in one component");
+	check(!cave->rooms.empty() && std::ranges::all_of(cave->rooms, [&](uint32_t r) { return seen[r] != 0; }), "shape: every cavern joined to the network");
+	check(std::ranges::count(cave->cells, CaveKind::Floor) == std::ranges::count(seen, uint8_t(1)), "shape: no separate floor");
+	CaveLayout reference;
+	std::stop_source cancel; cancel.request_stop();
+	const auto stopped = generateCave(lattice, 47, cancel.get_token(), &reference);
+	check(!stopped && stopped.error() == SurfaceError::Cancelled, "shape: cancellation");
+
+	// Generated surfaces: 24 seeds of 256 x 256 with 16 entrances requested.
+	std::vector<double> shares;
+	uint32_t longest = 0, branches = 0, tunnels = 0, components = 0;
+	bool border = true, widths = true;
+	for (uint64_t seed = 1; seed <= 24; ++seed) {
+		SurfaceConfig config {{100, 100, 7, 256, 256}, seed, {}};
+		config.tuning.caveEntrances = 16;
+		const auto surface = generateSurface(config, {65001, 65001, 16}, {256 * 256, 256 * 256 * 8, 256 * 256 * 96 + (1u << 20)});
+		if (!surface || surface->entrances.size() < 2) continue;
+		CaveLayout l;
+		const auto c = generateCave(*surface, seed, {}, &l);
+		check(c.has_value(), "shape: generated cave");
+		if (!c) continue;
+		const auto s = componentOf(*c, surface->entrances.front());
+		components += std::ranges::all_of(surface->entrances, [&](uint32_t e) { return s[e] != 0; });
+		for (const auto& axis : l.axes) longest = std::max(longest, longestStraightAxis(axis, 256));		branches += l.branches; tunnels += uint32_t(l.links.size());
+		check(l.branches <= 2 * l.links.size(), "shape: at most two branches per tunnel");
+		const auto floor = std::ranges::count(c->cells, CaveKind::Floor);
+		shares.push_back(double(caveCavernCells(*c)) / double(std::max<int64_t>(1, floor)));
+		for (uint32_t i = 0; i < c->cells.size(); ++i) {
+			const auto x = i % 256, y = i / 256;
+			if (c->cells[i] == CaveKind::Floor && (x < 2 || y < 2 || x > 253 || y > 253)) border = false;
+		}
+		// Width along the axis: perpendicular runs through tunnel axes cover 2..5 cells somewhere.
+		std::array<bool, 6> found {};
+		for (const auto& axis : l.axes) for (size_t k = 2; k + 2 < axis.size(); ++k) {
+			const int dx = int(axis[k + 2] % 256) - int(axis[k - 2] % 256), dy = int(axis[k + 2] / 256) - int(axis[k - 2] / 256);
+			if (dx != 0 && dy != 0) continue;
+			const int px = dy != 0, py = dx != 0;
+			int run = 1;
+			for (int m = 1; m < 8 && c->cells[(axis[k] / 256 + py * m) * 256 + axis[k] % 256 + px * m] == CaveKind::Floor; ++m) ++run;
+			for (int m = 1; m < 8 && c->cells[(axis[k] / 256 - py * m) * 256 + axis[k] % 256 - px * m] == CaveKind::Floor; ++m) ++run;
+			if (run >= 2 && run <= 5) found[size_t(run)] = true;
+		}
+		widths &= found[2] || found[3];
+	}
+	check(shares.size() >= 20, "shape: enough generated caves");
+	std::ranges::sort(shares);
+	const double median = shares.empty() ? 0 : shares[shares.size() / 2];
+	check(components == shares.size(), "shape: generated entrances in one component");
+	check(longest <= 20, std::format("shape: longest straight axis {} <= 20", longest));
+	check(median >= 0.25, std::format("shape: cavern share median {:.3f} >= 0.25", median));
+	check(branches > 0, "shape: some dead-end branches");
+	check(border, "shape: the border stays Solid");
+	check(widths, "shape: narrow tunnel parts exist");
+	// The straightness measure itself: a 30-cell row is straight; a bend every 10 cells is not.
+	std::vector<uint32_t> row, zigzag;
+	for (uint32_t x = 10; x < 40; ++x) row.push_back(50 * 100 + x);
+	for (uint32_t x = 10; x < 40; ++x) zigzag.push_back((50 + ((x / 10) % 2 ? x % 10 : 10 - x % 10) / 2) * 100 + x);
+	check(longestStraightAxis(row, 100) == 30 && longestStraightAxis(zigzag, 100) <= 20, "shape: straightness measure");
+	std::cout << std::format("CAVE_SHAPE_PASS seeds {} longestStraight {} cavernShareMedian {:.3f} branches {} tunnels {}\n",
+		shares.size(), longest, median, branches, tunnels);
 }
 
 // 40 x 20 grass with a lake x 20..22 (a full-height wall of water); Rock entrances A (10,10) on the left and B (30,10) on the right.
@@ -1123,6 +1251,7 @@ int main() {
 	testEntrances();
 	testEntranceStyles();
 	testCave();
+	testCaveShape();
 	testValidator();
 	testCrossCheck();
 	if (failures) { std::cerr << failures << " failures\n"; return 1; }
