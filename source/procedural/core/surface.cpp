@@ -936,7 +936,8 @@ std::expected<void, SurfaceError> reselectCaveEntrances(SurfaceGrid& grid, const
         if (const auto kept = keepStartLandPois(grid, stop); !kept)
             return std::unexpected(kept.error() == ReachabilityError::Cancelled ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
     }
-    return {};
+    // An island that carried an entrance before the reselection may have none now (iteration 48).
+    return normalizeSandIslands(grid, stop);
 } catch (const std::bad_alloc&) { return std::unexpected(SurfaceError::AllocationFailed); }
 
 bool SurfaceGrid::valid() const noexcept {
@@ -1358,8 +1359,13 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::erase_if(grid.entrances, [&](uint32_t entrance) { return !caveEntranceFits(grid.cells, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
 		if (config.tuning.rockBlocks) {
 			// Impassable rock splits the land: no POI where the start cannot walk (iteration 44).
-			if (const auto kept = keepStartLandPois(grid, stop); !kept)
-				return std::unexpected(kept.error() == ReachabilityError::Cancelled ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
+			const auto removed = keepStartLandPois(grid, stop);
+			if (!removed)
+				return std::unexpected(removed.error() == ReachabilityError::Cancelled ? SurfaceError::Cancelled : SurfaceError::AllocationFailed);
+			// An island kept only by a POI that is gone now is classified again (ordinary entrances, iteration 48).
+			if (*removed) {
+				if (const auto again = normalizeSandIslands(grid, stop); !again) return std::unexpected(again.error());
+			}
 		}
 		return grid;
 	} catch (const std::bad_alloc&) {
