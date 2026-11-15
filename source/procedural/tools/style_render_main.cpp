@@ -91,6 +91,54 @@ std::string caveMeasurements(const LevelWorld& world) {
         std::ranges::count(entered, uint8_t(1)), withExit, count, sum, count ? minimum : 0, c.corridors.size(), invalid);
 }
 
+// Iteration 47: cave shape. Floor and cavern cells of the final cave; the generator's layout for the final surface (the
+// same pure function): entrances outside the component of the first one, the longest straight axis piece, tunnels, loops,
+// branches, caverns, and pairs of long parallel tunnels (both spanning >= 40 % of the side along the same axis, their spans
+// overlapping by half, their mean cross coordinates < 32 apart).
+std::string caveShapeMeasurements(const LevelWorld& world, uint64_t seed) {
+    if (!world.cave) return {};
+    CaveLayout layout;
+    const auto raw = generateCave(world.surface, seed, {}, &layout);
+    if (!raw) return {};
+    const auto w = raw->region.width, h = raw->region.height;
+    uint32_t apart = 0;
+    if (!world.surface.entrances.empty()) {
+        std::vector<uint8_t> seen(raw->cells.size());
+        std::vector<uint32_t> queue {world.surface.entrances.front()};
+        seen[queue.front()] = 1;
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const auto i = queue[head];
+            for (const auto j : {i - w, i - 1, i + 1, i + w})
+                if (j < raw->cells.size() && (j / w == i / w || j % w == i % w) && !seen[j] && raw->cells[j] == CaveKind::Floor) { seen[j] = 1; queue.push_back(j); }
+        }
+        for (const auto e : world.surface.entrances) apart += !seen[e];
+    }
+    uint32_t longest = 0;
+    struct Span { bool horizontal; double low, high, cross; };
+    std::vector<Span> spans;
+    for (const auto& axis : layout.axes) {
+        longest = std::max(longest, longestStraightAxis(axis, w));
+        if (axis.empty()) continue;
+        uint32_t x0 = w, x1 = 0, y0 = h, y1 = 0; double sx = 0, sy = 0;
+        for (const auto i : axis) {
+            x0 = std::min(x0, i % w); x1 = std::max(x1, i % w); y0 = std::min(y0, i / w); y1 = std::max(y1, i / w);
+            sx += i % w; sy += i / w;
+        }
+        if (x1 - x0 >= w * 2 / 5) spans.push_back({true, double(x0), double(x1), sy / axis.size()});
+        if (y1 - y0 >= h * 2 / 5) spans.push_back({false, double(y0), double(y1), sx / axis.size()});
+    }
+    uint32_t parallel = 0;
+    for (size_t a = 0; a < spans.size(); ++a) for (size_t b = a + 1; b < spans.size(); ++b) {
+        const auto& p = spans[a]; const auto& q = spans[b];
+        const double overlap = std::min(p.high, q.high) - std::max(p.low, q.low);
+        parallel += p.horizontal == q.horizontal && overlap >= std::min(p.high - p.low, q.high - q.low) / 2 && std::abs(p.cross - q.cross) < 32;
+    }
+    const auto& c = *world.cave;
+    return std::format("level cave i47 entrances {} apart {} floor {} cavern {} longestStraight {} tunnels {} loops {} branches {} caverns {} parallelPairs {}\n",
+        world.surface.entrances.size(), apart, std::ranges::count(c.cells, CaveKind::Floor), caveCavernCells(c), longest,
+        layout.links.size(), layout.loops, layout.branches, raw->rooms.size(), parallel);
+}
+
 // Iteration 43: storey placement counts plus independent checks of the final world (after repair): every storey
 // has stairs (ground cell inside the footprint, arrival its 4-neighbour inside, both Floor below) and no footprint
 // cell lies under a cap, landing, ramp opening or pass.
@@ -249,6 +297,7 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
                 world->passes.size(),blocked,covered,small,invalid);
         }
         vegetation += caveMeasurements(*world);
+        vegetation += caveShapeMeasurements(*world, config.seed);
         const auto islands = sandIslandsOf(world->surface);
         if (!islands) return std::unexpected(ReachabilityError::InvalidGrid);
         vegetation += std::format("level islands total {} nonShoreIslands {} nonShoreCells {}\n",
@@ -592,6 +641,17 @@ int main(int argc, char** argv) {
 		if (!grid->entrances.empty()) {
 			// Iteration 27: the cave below the entrances and its reachability from the start.
 			const auto cave = generateCave(*grid, seed);
+			if (cave) {
+				// Iteration 47: the cave floor for review (rock, floor, entrance), next to the surface image.
+				constexpr PngColor caveColors[] = {{45, 45, 50}, {205, 175, 125}, {220, 40, 40}};
+				std::vector<uint8_t> floor(cave->cells.size());
+				for (size_t c = 0; c < floor.size(); ++c) floor[c] = cave->cells[c] == CaveKind::Floor;
+				for (const auto e : grid->entrances) floor[e] = 2;
+				if (const auto image = encodeIndexedPng(side, side, caveColors, floor)) {
+					std::ofstream file(outDir / std::format("{}-cave.png", seed), std::ios::binary);
+					file.write(reinterpret_cast<const char*>(image->data()), static_cast<std::streamsize>(image->size()));
+				}
+			}
 			const auto under = cave ? undergroundReachabilityOf(*grid, *cave, true) : std::unexpected(UndergroundError::InvalidGrid);
 			if (under) std::cout << std::format("under seed {}: entrances {} entrancesReached {} caveCells {} caveCellsPer64k {} components {} pockets {} reachedPermille {}", seed, under->entrances, under->entrancesReached,
 				under->caveCells, under->caveCells * 65536 / grid->cells.size(), under->caveComponents, under->pockets, under->caveCells ? under->caveReachedCells * 1000 / under->caveCells : 0);

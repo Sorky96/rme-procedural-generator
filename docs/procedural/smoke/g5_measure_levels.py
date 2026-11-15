@@ -1,7 +1,9 @@
 """G5 gate: --i41 includes cave exits/doors; --i42 also compares mountain passes=0/4;
 --i43 runs passes=4 with building storeys off and on (default 30 %);
 --i44 runs the i43 settings with storeys on and the client's rock passability per profile (--rock-blocks m19=1 ...);
---i45 runs the i44 settings with dungeons below buildings off and on (default 20 %)."""
+--i45 runs the i44 settings with dungeons below buildings off and on (default 20 %);
+--i47 adds the cave shape criteria (entrances in one component, straight axis <= 20, cavern share median >= 25 %,
+no long parallel tunnels) to the i45 run."""
 import argparse
 import json
 import re
@@ -18,15 +20,17 @@ parser.add_argument('--i42', action='store_true')
 parser.add_argument('--i43', action='store_true')
 parser.add_argument('--i44', action='store_true')
 parser.add_argument('--i45', action='store_true')
+parser.add_argument('--i47', action='store_true', help='also require the iteration 47 cave shape criteria (the line is always reported)')
 parser.add_argument('--rock-blocks', nargs='*', default=[], metavar='PROFILE=0|1')
 args = parser.parse_args()
 rock_blocks = dict(item.split('=') for item in args.rock_blocks)
+args.i45 |= args.i47
 args.i44 |= args.i45
 if args.i44 and set(rock_blocks) != {'m06', 'm19'}:
     parser.error('--i44 needs --rock-blocks m06=0|1 m19=0|1 (from M19_ROCK_GUI_CASE_PASS)')
 args.i43 |= args.i44
 args.i41 |= args.i42 or args.i43
-output = root / ('local-data/i45-measurement' if args.i45 else 'local-data/i44-measurement' if args.i44 else 'local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
+output = root / ('local-data/i47-measurement' if args.i47 else 'local-data/i45-measurement' if args.i45 else 'local-data/i44-measurement' if args.i44 else 'local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length, passes, storeys, dungeons = spec
@@ -125,6 +129,18 @@ def measure(spec):
                         'unrepairedSeeds': sum(line[5] == 'true' for line in repair_lines),
                         'removedPoiFraction': removed_pois / max(1, retained_pois + removed_pois)})
         rows[-1]['caveI41'] = cave_metrics
+        shape = [tuple(map(int, row)) for row in re.findall(
+            r'level cave i47 entrances (\d+) apart (\d+) floor (\d+) cavern (\d+) longestStraight (\d+) tunnels (\d+) '
+            r'loops (\d+) branches (\d+) caverns (\d+) parallelPairs (\d+)', text)]
+        if shape:
+            with_floor = [s for s in shape if s[2]]
+            rows[-1]['caveShape'] = {
+                'seeds': len(shape), 'seedsWithCave': len(with_floor),
+                'entrancesApart': sum(s[1] for s in shape), 'longestStraight': max(s[4] for s in shape),
+                'cavernShareMedian': statistics.median(s[3] / s[2] for s in with_floor) if with_floor else 0,
+                'cavernShareRange': [round(min(s[3] / s[2] for s in with_floor), 3), round(max(s[3] / s[2] for s in with_floor), 3)] if with_floor else [],
+                'tunnels': sum(s[5] for s in shape), 'loops': sum(s[6] for s in shape), 'branches': sum(s[7] for s in shape),
+                'caverns': sum(s[8] for s in shape), 'parallelPairs': sum(s[9] for s in shape)}
         if args.i43 and storeys:
             built = [tuple(map(int, row)) for row in re.findall(
                 r'level storeys qualifying (\d+) chosen (\d+) placed (\d+) collisions (\d+) noStairs (\d+) removed (\d+) '
@@ -198,5 +214,9 @@ if args.i45:
                   and row['buildingDungeons']['connected'] == row['buildingDungeons']['final']
                   and all(row['buildingDungeons'][key] == 0 for key in ['caveCollisions', 'overlaps', 'badDoors'])
                   for row in summary if row['dungeons'])
+if args.i47:
+    passed &= all(row.get('caveShape') and row['caveShape']['seeds'] == 32 and row['caveShape']['entrancesApart'] == 0
+                  and row['caveShape']['longestStraight'] <= 20 and row['caveShape']['cavernShareMedian'] >= .25
+                  and row['caveShape']['parallelPairs'] == 0 for row in summary)
 print('G5_GATE_PASS' if passed else 'G5_GATE_FAIL', flush=True)
 raise SystemExit(0 if passed else 1)
