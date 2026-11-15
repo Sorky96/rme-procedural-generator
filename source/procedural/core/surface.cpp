@@ -490,25 +490,38 @@ std::expected<void, SurfaceError> placeFords(std::vector<SurfaceKind>& kinds, ui
 namespace {
 
 constexpr uint64_t entranceStream = 0x656e7472616e6365ULL;  // "entrance"
+constexpr uint64_t entranceFallbackStream = 0x656e7472616e6366ULL;
+
+// Draws cells of one style until the wanted count, keeping a Chebyshev gap of 24 to every earlier entrance.
+bool drawEntrances(const std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, uint64_t wanted, uint64_t attempts,
+	StableRandom& random, CaveEntranceStyle style, bool relaxed, std::vector<uint32_t>& entrances, std::stop_token stop) {
+	for (uint64_t attempt = 0; attempt < attempts && entrances.size() < wanted; ++attempt) {
+		if (attempt % 256 == 0 && stop.stop_requested()) return false;
+		const size_t cell = size_t(random.bounded(kinds.size()));
+		if (!caveEntranceAllowed(kinds, width, height, uint32_t(cell), style, relaxed)) continue;
+		const int32_t x = int32_t(cell % width), y = int32_t(cell / width);
+		const bool free = std::ranges::none_of(entrances, [&](uint32_t other) {
+			return std::max(std::abs(int32_t(other % width) - x), std::abs(int32_t(other / width) - y)) < 24;
+		});
+		if (free) entrances.push_back(uint32_t(cell));
+	}
+	return true;
+}
 
 bool placeEntrances(const std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::vector<uint32_t>& entrances, std::stop_token stop) {
 	const uint64_t wanted = uint64_t(config.tuning.caveEntrances) * kinds.size() / 65536;
 	if (!wanted || width < 8 || height < 8) return true;
+	const auto style = config.tuning.caveEntranceStyle;
+	const bool relaxed = config.tuning.repairReach != 0;
 	StableRandom random(config.seed, entranceStream);
-	const uint64_t attemptsPerEntrance = config.tuning.repairReach && config.tuning.caveEntranceStyle == CaveEntranceStyle::RockFace ? 4000 : 400;
-	for (uint64_t attempt = 0; attempt < (wanted + 1) * attemptsPerEntrance && entrances.size() < wanted; ++attempt) {
-		if (attempt % 256 == 0 && stop.stop_requested()) return false;
-		const size_t cell = size_t(random.bounded(kinds.size()));
-		if (!caveEntranceAllowed(kinds, width, height, uint32_t(cell), config.tuning.caveEntranceStyle, config.tuning.repairReach != 0)) continue;
-		const int32_t x = int32_t(cell % width), y = int32_t(cell / width);
-		bool free = true;
-		for (const uint32_t other : entrances) {
-			if (!free) break;
-			if (std::max(std::abs(int32_t(other % width) - x), std::abs(int32_t(other / width) - y)) < 24) free = false;
-		}
-		if (free) entrances.push_back(uint32_t(cell));
-	}
-	return true;
+	const uint64_t attemptsPerEntrance = relaxed && style == CaveEntranceStyle::RockFace ? 4000 : 400;
+	if (!drawEntrances(kinds, width, height, wanted, (wanted + 1) * attemptsPerEntrance, random, style, relaxed, entrances, stop)) return false;
+	// Iteration 48: when the rock walls have too few sites, the rest become ordinary entrances off the rock (FloorHole
+	// cells), drawn from their own stream so the rock-face entrances above stay exactly as before.
+	if (style != CaveEntranceStyle::RockFace || entrances.size() >= wanted) return true;
+	StableRandom fallback(config.seed, entranceFallbackStream);
+	return drawEntrances(kinds, width, height, wanted, (wanted - entrances.size() + 1) * 400, fallback,
+		CaveEntranceStyle::FloorHole, relaxed, entrances, stop);
 }
 
 bool drawPaths(std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config, std::stop_token stop, std::vector<uint8_t>* crossings) {
@@ -907,6 +920,11 @@ bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uin
 		if (k == SurfaceKind::Lake || k == SurfaceKind::River || k == SurfaceKind::Floor) return false;
 	}
 	return true;
+}
+
+bool caveEntranceFits(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t e, CaveEntranceStyle style, bool relaxedRockFace) noexcept {
+	return caveEntranceAllowed(cells, width, height, e, style, relaxedRockFace) ||
+		(style == CaveEntranceStyle::RockFace && caveEntranceAllowed(cells, width, height, e, CaveEntranceStyle::FloorHole));
 }
 
 std::expected<void, SurfaceError> reselectCaveEntrances(SurfaceGrid& grid, const SurfaceConfig& config, std::stop_token stop) try {
@@ -1337,7 +1355,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::erase_if(grid.gaps, [&](uint32_t gap) { return grid.cells[gap] != SurfaceKind::Floor; });
 		std::erase_if(grid.sites, [&](uint32_t site) { return grid.cells[site] != SurfaceKind::Floor; });
 		std::erase_if(grid.fires, [&](uint32_t fire) { return grid.cells[fire] != SurfaceKind::Path; });
-		std::erase_if(grid.entrances, [&](uint32_t entrance) { return !caveEntranceAllowed(grid.cells, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
+		std::erase_if(grid.entrances, [&](uint32_t entrance) { return !caveEntranceFits(grid.cells, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });
 		if (config.tuning.rockBlocks) {
 			// Impassable rock splits the land: no POI where the start cannot walk (iteration 44).
 			if (const auto kept = keepStartLandPois(grid, stop); !kept)

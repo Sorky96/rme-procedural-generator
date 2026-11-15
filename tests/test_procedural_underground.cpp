@@ -76,7 +76,9 @@ void testEntrances() {
 		for (size_t a = 0; a < on->entrances.size(); ++a) {
 			const uint32_t cell = on->entrances[a];
 			const uint32_t x = cell % 200, y = cell / 200;
-			check(caveEntranceAllowed(on->cells, 200, 200, cell, style), "entrances: style geometry");
+			check(caveEntranceFits(on->cells, 200, 200, cell, style), "entrances: style geometry");
+			// Iteration 48: rock-face entrances come first, the ordinary ones only fill up the remainder.
+			if (a > 0 && on->cells[cell] == SurfaceKind::Rock) check(on->cells[on->entrances[a - 1]] == SurfaceKind::Rock, "entrances: rock face before ordinary");
 			check(x >= 3 && y >= 3 && x + 3 < 200 && y + 3 < 200, "entrances: 3 cells from the edge");
 			const auto open = [&](size_t i) { const auto k = on->cells[i]; return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore || k == SurfaceKind::Path; };
 			check(open(cell - 1) || open(cell + 1) || open(cell - 200) || open(cell + 200), "entrances: next to open ground");
@@ -87,6 +89,14 @@ void testEntrances() {
 		}
 	}
 	check(checkedSurfaces > 0, "entrances: no surface got two entrances (test setup)");
+	// Iteration 48: without rock the RockFace style falls back to ordinary entrances only.
+	SurfaceConfig noRock {{100, 100, 7, 200, 200}, 7, {}};
+	noRock.tuning.rockPermille = 0;
+	noRock.tuning.caveEntrances = 20;
+	const auto fallback = generateSurface(noRock, {65001, 65001, 16}, {200 * 200, 200 * 200 * 8, 200 * 200 * 96 + (1u << 20)});
+	check(fallback && !fallback->entrances.empty(), "entrances: RockFace without rock falls back to ordinary ones");
+	if (fallback) for (const auto e : fallback->entrances)
+		check(fallback->cells[e] != SurfaceKind::Rock && caveEntranceAllowed(fallback->cells, 200, 200, e, CaveEntranceStyle::FloorHole), "entrances: fallback is FloorHole-shaped");
 }
 
 void testEntranceStyles() {
@@ -111,6 +121,12 @@ void testEntranceStyles() {
             check(!caveEntranceAllowed(corner.cells, 11, 11, e, style, true), "repair selector still requires two rock sides");
             corner = g; corner.cells[e + 11] = SurfaceKind::Rock;
             check(!caveEntranceAllowed(corner.cells, 11, 11, e, style, true), "repair selector keeps open south exit");
+            const auto open = grid(11, 11, SurfaceKind::Grass);
+            check(!caveEntranceAllowed(open.cells, 11, 11, e, style) && caveEntranceFits(open.cells, 11, 11, e, style),
+                "RockFace keeps an ordinary fallback entrance");
+        } else {
+            check(caveEntranceFits(g.cells, 11, 11, e, style) == caveEntranceAllowed(g.cells, 11, 11, e, style),
+                "FloorHole fits only its own rule");
         }
 		uint64_t state = 1729;
 		for (int round = 0; round < 80; ++round) {

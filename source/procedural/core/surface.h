@@ -73,6 +73,9 @@ struct SandIslandReport {
 
 // Local entrance geometry including margin and water/building clearance.
 [[nodiscard]] bool caveEntranceAllowed(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t cell, CaveEntranceStyle style, bool relaxedRockFace = false) noexcept;
+// What the generator keeps for the style: RockFace also keeps the FloorHole cells it falls back to when the rock walls
+// have too few sites for the requested count (iteration 48).
+[[nodiscard]] bool caveEntranceFits(std::span<const SurfaceKind> cells, uint32_t width, uint32_t height, uint32_t cell, CaveEntranceStyle style, bool relaxedRockFace = false) noexcept;
 
 [[nodiscard]] std::expected<void, SurfaceError> reselectCaveEntrances(
     SurfaceGrid& grid, const SurfaceConfig& config, std::stop_token stop = {});
