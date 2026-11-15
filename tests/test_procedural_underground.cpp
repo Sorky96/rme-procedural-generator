@@ -246,7 +246,7 @@ void testCaveShape() {
 
 	// Generated surfaces: 24 seeds of 256 x 256 with 16 entrances requested.
 	std::vector<double> shares;
-	uint32_t longest = 0, branches = 0, tunnels = 0, components = 0;
+	uint32_t longest = 0, branches = 0, tunnels = 0, components = 0, loopCases = 0, loopSeeds = 0;
 	bool border = true, widths = true;
 	for (uint64_t seed = 1; seed <= 24; ++seed) {
 		SurfaceConfig config {{100, 100, 7, 256, 256}, seed, {}};
@@ -260,6 +260,7 @@ void testCaveShape() {
 		const auto s = componentOf(*c, surface->entrances.front());
 		components += std::ranges::all_of(surface->entrances, [&](uint32_t e) { return s[e] != 0; });
 		for (const auto& axis : l.axes) longest = std::max(longest, longestStraightAxis(axis, 256));		branches += l.branches; tunnels += uint32_t(l.links.size());
+		if (surface->entrances.size() >= 4) { ++loopCases; loopSeeds += l.loops > 0; }
 		check(l.branches <= 2 * l.links.size(), "shape: at most two branches per tunnel");
 		const auto floor = std::ranges::count(c->cells, CaveKind::Floor);
 		shares.push_back(double(caveCavernCells(*c)) / double(std::max<int64_t>(1, floor)));
@@ -287,6 +288,7 @@ void testCaveShape() {
 	check(longest <= 20, std::format("shape: longest straight axis {} <= 20", longest));
 	check(median >= 0.25, std::format("shape: cavern share median {:.3f} >= 0.25", median));
 	check(branches > 0, "shape: some dead-end branches");
+	check(loopCases > 0 && loopSeeds == loopCases, std::format("shape: loops in {}/{} caves with four entrances or more", loopSeeds, loopCases));
 	check(border, "shape: the border stays Solid");
 	check(widths, "shape: narrow tunnel parts exist");
 	// The straightness measure itself: a 30-cell row is straight; a bend every 10 cells is not.
@@ -294,8 +296,8 @@ void testCaveShape() {
 	for (uint32_t x = 10; x < 40; ++x) row.push_back(50 * 100 + x);
 	for (uint32_t x = 10; x < 40; ++x) zigzag.push_back((50 + ((x / 10) % 2 ? x % 10 : 10 - x % 10) / 2) * 100 + x);
 	check(longestStraightAxis(row, 100) == 30 && longestStraightAxis(zigzag, 100) <= 20, "shape: straightness measure");
-	std::cout << std::format("CAVE_SHAPE_PASS seeds {} longestStraight {} cavernShareMedian {:.3f} branches {} tunnels {}\n",
-		shares.size(), longest, median, branches, tunnels);
+	std::cout << std::format("CAVE_SHAPE_PASS seeds {} longestStraight {} cavernShareMedian {:.3f} branches {} tunnels {} loopSeeds {}/{}\n",
+		shares.size(), longest, median, branches, tunnels, loopSeeds, loopCases);
 }
 
 // 40 x 20 grass with a lake x 20..22 (a full-height wall of water); Rock entrances A (10,10) on the left and B (30,10) on the right.
