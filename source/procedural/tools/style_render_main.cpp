@@ -91,6 +91,20 @@ std::string caveMeasurements(const LevelWorld& world) {
         std::ranges::count(entered, uint8_t(1)), withExit, count, sum, count ? minimum : 0, c.corridors.size(), invalid);
 }
 
+// Iteration 48: entrances in a rock wall (Rock cell) and ordinary ones, and how many have a ramp right below them.
+std::string caveEntranceMeasurements(const LevelWorld& world) {
+    if (!world.cave) return {};
+    const auto& entrances = world.surface.entrances;
+    const auto rockFace = std::ranges::count_if(entrances, [&](uint32_t e) { return world.surface.cells[e] == SurfaceKind::Rock; });
+    uint32_t withRamp = 0;
+    for (size_t index = 0; index < entrances.size(); ++index)
+        withRamp += std::ranges::any_of(world.exits.exits, [&](const CaveExit& exit) {
+            return !exit.distant && exit.entrance == index && exit.cell == entrances[index];
+        });
+    return std::format("level cave i48 entrances {} rockFace {} ordinary {} withRamp {}\n",
+        entrances.size(), rockFace, entrances.size() - size_t(rockFace), withRamp);
+}
+
 // Iteration 47: cave shape. Floor and cavern cells of the final cave; the generator's layout for the final surface (the
 // same pure function): entrances outside the component of the first one, the longest straight axis piece, tunnels, loops,
 // branches, caverns, and pairs of long tunnels side by side (rule below).
@@ -302,6 +316,7 @@ std::expected<LevelPlan, ReachabilityError> offlineLevels(const SurfaceConfig& c
         }
         vegetation += caveMeasurements(*world);
         vegetation += caveShapeMeasurements(*world, config.seed);
+        vegetation += caveEntranceMeasurements(*world);
         const auto islands = sandIslandsOf(world->surface);
         if (!islands) return std::unexpected(ReachabilityError::InvalidGrid);
         vegetation += std::format("level islands total {} nonShoreIslands {} nonShoreCells {}\n",
@@ -667,7 +682,7 @@ int main(int argc, char** argv) {
 				const auto exits = cave ? placeCaveExits(*grid, *cave, ramp) : std::unexpected(UndergroundError::InvalidGrid);
 				if (!exits) { std::cerr << "cave exit placement failed\n"; return 6; }
 				size_t ruleOk = 0, exitsUnderEntrance = 0, destinationsOpen = 0, landingsFloor = 0;
-				for (const auto e : grid->entrances) ruleOk += caveEntranceAllowed(grid->cells, side, side, e, tuning.caveEntranceStyle);
+				for (const auto e : grid->entrances) ruleOk += caveEntranceFits(grid->cells, side, side, e, tuning.caveEntranceStyle);
 				constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
 				for (const auto& exit : exits->exits) {
 					const auto d = size_t(ramp[exit.shape].direction);
