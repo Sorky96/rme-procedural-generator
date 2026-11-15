@@ -13,58 +13,258 @@ namespace rme::procedural {
 
 namespace {
 
-constexpr uint64_t tunnelStream = 0x63617665745f7332ULL;   // "cavet_s2"
-constexpr uint64_t roomStream = 0x63617665725f7332ULL;     // "caver_s2"
+constexpr uint64_t tunnelStream = 0x63617665745f7333ULL;   // "cavet_s3"
+constexpr uint64_t widthStream = 0x63617665775f7333ULL;    // "cavew_s3"
+constexpr uint64_t cavernStream = 0x63617665725f7333ULL;   // "caver_s3"
 constexpr uint32_t noiseBins = 65536;
+// A joint of the tunnel axis must bend: its distance from the chord of its two neighbours is at least this many cells,
+// so no straight piece of the axis spans two segments (iteration 47: longest straight piece <= 20 cells).
+constexpr double minimumBend = 4.0;
+
+struct Point {
+	int32_t x, y;
+	bool operator==(const Point&) const = default;
+};
+
+double distanceOf(Point a, Point b) { return std::hypot(double(b.x - a.x), double(b.y - a.y)); }
+
+// Distance of m from the line through a and b (from a when a == b).
+double deviationOf(Point a, Point b, Point m) {
+	const double length = distanceOf(a, b);
+	if (length == 0) return distanceOf(a, m);
+	return std::abs(double(b.x - a.x) * (m.y - a.y) - double(b.y - a.y) * (m.x - a.x)) / length;
+}
+
+// The random stream of one tunnel, cavern or branch: the seed plus the absolute cells that define it.
+StableRandom streamOf(uint64_t seed, uint64_t stream, Point a, Point b, int32_t x0, int32_t y0) {
+	const auto word = [](int32_t value) { return uint64_t(uint16_t(value)); };
+	return StableRandom(seed, stream ^ (word(a.x + x0) << 48 | word(a.y + y0) << 32 | word(b.x + x0) << 16 | word(b.y + y0)));
+}
+
+double unit(StableRandom& random) { return double(random.bounded(10001)) / 10000.0; }
 
 struct Carver {
 	std::vector<CaveKind>& cells;
 	int32_t width, height;
 	uint64_t seed;
-	int32_t x0, y0;   // absolute origin of the area, for the noise
-    std::vector<uint32_t>* rooms = nullptr;
+	int32_t x0, y0;   // absolute origin of the area, for the noise and the random streams
+	std::vector<uint32_t>* rooms = nullptr;
+	CaveLayout* layout = nullptr;
 
+	bool inside(int32_t x, int32_t y) const { return x >= 2 && y >= 2 && x <= width - 3 && y <= height - 3; }
 	void put(int32_t x, int32_t y) {
-		if (x < 2 || y < 2 || x > width - 3 || y > height - 3) return;
-		cells[size_t(y) * size_t(width) + size_t(x)] = CaveKind::Floor;
+		if (inside(x, y)) cells[size_t(y) * size_t(width) + size_t(x)] = CaveKind::Floor;
 	}
 	void disc(int32_t cx, int32_t cy, int32_t radiusSquared) {
 		const int32_t reach = int32_t(std::sqrt(double(radiusSquared))) + 1;
 		for (int32_t dy = -reach; dy <= reach; ++dy) for (int32_t dx = -reach; dx <= reach; ++dx) if (dx * dx + dy * dy <= radiusSquared) put(cx + dx, cy + dy);
 	}
-	uint32_t noise(uint64_t stream, int32_t x, int32_t y, uint32_t step) const {
-		return surfaceValueNoise(seed, stream, uint32_t(x0 + x), uint32_t(y0 + y), step);
+	// A square of side `size` (2..5) on the axis cell; sides 4 and 5 lose their corners.
+	void stamp(int32_t x, int32_t y, int32_t size) {
+		const int32_t low = -(size - 1) / 2, high = size / 2;
+		for (int32_t dy = low; dy <= high; ++dy) for (int32_t dx = low; dx <= high; ++dx) {
+			if (size >= 4 && (dx == low || dx == high) && (dy == low || dy == high)) continue;
+			put(x + dx, y + dy);
+		}
 	}
-	// Tunnel: an axis from a to b that swings sideways (0 at both ends), 3 cells wide, with a room about every 24 cells of axis.
-	void tunnel(int32_t ax, int32_t ay, int32_t bx, int32_t by) {
-		const bool alongX = std::abs(bx - ax) >= std::abs(by - ay);
-		const int32_t major = alongX ? std::abs(bx - ax) : std::abs(by - ay);
-		if (major == 0) { disc(ax, ay, 2); return; }
-		const int32_t majorStep = (alongX ? bx - ax : by - ay) > 0 ? 1 : -1;
-		const int32_t minorDelta = alongX ? by - ay : bx - ax;
-		const int32_t amplitude = std::min<int32_t>(3, major / 6);
-		int32_t previousMinor = 0;
-		for (int32_t pos = 0; pos <= major; ++pos) {
-			const int32_t baseMinor = (alongX ? ay : ax) + (minorDelta * pos + (minorDelta >= 0 ? major / 2 : -major / 2)) / major;
-			const int32_t baseMajor = (alongX ? ax : ay) + majorStep * pos;
-			const int32_t nx = alongX ? baseMajor : baseMinor, ny = alongX ? baseMinor : baseMajor;
-			const int64_t envelope = int64_t(4) * pos * (major - pos) * 1024 / (int64_t(major) * major);
-			const int64_t swing = (int64_t(noise(tunnelStream, nx, ny, 8)) - noiseBins / 2) * 2 * amplitude * envelope / (int64_t(noiseBins) * 1024);
-			const int32_t minor = baseMinor + int32_t(swing);
-			const int32_t from = pos == 0 ? minor : previousMinor;
-			const int32_t direction = minor >= from ? 1 : -1;
-			for (int32_t m = from; m != minor + direction; m += direction) {
-				const int32_t cx = alongX ? baseMajor : m, cy = alongX ? m : baseMajor;
-				for (int32_t dy = -1; dy <= 1; ++dy) for (int32_t dx = -1; dx <= 1; ++dx) put(cx + dx, cy + dy);
+	// Tunnel width 2..5 from smooth noise along the axis, stretched so that 2 and 5 occur as well as 3 and 4.
+	int32_t widthAt(int32_t x, int32_t y) const {
+		const int64_t value = surfaceValueNoise(seed, widthStream, uint32_t(x0 + x), uint32_t(y0 + y), 7);
+		const int64_t stretched = std::clamp<int64_t>((value - noiseBins / 2) * 2 + noiseBins / 2, 0, noiseBins - 1);
+		return 2 + int32_t(stretched * 4 / noiseBins);
+	}
+	// Waypoints keep 3 cells from the edge (2 in a tiny area).
+	int32_t margin() const { return width >= 8 && height >= 8 ? 3 : 2; }
+	bool roomy(double x, double y) const {
+		return x >= margin() && y >= margin() && x <= width - 1 - margin() && y <= height - 1 - margin();
+	}
+	Point clamped(double x, double y) const {
+		return {std::clamp(int32_t(std::lround(x)), margin(), std::max(margin(), width - 1 - margin())),
+			std::clamp(int32_t(std::lround(y)), margin(), std::max(margin(), height - 1 - margin()))};
+	}
+	// The base point moved `offset` cells along (px, py), shortened in tenths until it keeps the margin, so that waypoints
+	// never pile up along the edge.
+	Point across(double bx, double by, double px, double py, double offset) const {
+		for (int tenth = 10; tenth > 0; --tenth) {
+			const double x = bx + px * offset * tenth / 10, y = by + py * offset * tenth / 10;
+			if (roomy(x, y)) return clamped(x, y);
+		}
+		return clamped(bx, by);
+	}
+
+	// Stamps the polyline through `points` and returns its axis (one cell per step, consecutive cells 8-adjacent).
+	std::vector<uint32_t> trace(std::span<const Point> points, int32_t maxWidth) {
+		std::vector<uint32_t> axis;
+		for (size_t k = 0; k + 1 < points.size(); ++k) {
+			const Point a = points[k], b = points[k + 1];
+			const int32_t steps = std::max(std::abs(b.x - a.x), std::abs(b.y - a.y));
+			for (int32_t s = axis.empty() ? 0 : 1; s <= steps; ++s) {
+				const int32_t x = steps ? a.x + int32_t(std::lround(double(b.x - a.x) * s / steps)) : a.x;
+				const int32_t y = steps ? a.y + int32_t(std::lround(double(b.y - a.y) * s / steps)) : a.y;
+				stamp(x, y, std::min(maxWidth, widthAt(x, y)));
+				axis.push_back(uint32_t(y) * uint32_t(width) + uint32_t(x));
 			}
-			previousMinor = minor;
-			if (pos % 24 == 12) {
-				const int32_t cx = alongX ? baseMajor : minor, cy = alongX ? minor : baseMajor;
-				const int32_t radius = 3 + int32_t(noise(roomStream, cx, cy, 6) % 3);
-				disc(cx, cy, radius * radius);
-                if (rooms && cx >= 2 && cy >= 2 && cx < width - 2 && cy < height - 2)
-                    rooms->push_back(uint32_t(cy * width + cx));
+		}
+		if (layout) layout->axes.push_back(axis);
+		return axis;
+	}
+
+	// Waypoints from a to b: segments of 7..10 cells around a bow whose height grows with the length (up to 28 cells),
+	// a sideways wiggle per waypoint, and every joint bent by at least minimumBend.
+	std::vector<Point> meander(Point a, Point b, StableRandom& random) const {
+		const double length = distanceOf(a, b);
+		std::vector<Point> points {a};
+		if (length < 1) return points;
+		const double segment = 7 + double(random.bounded(4));
+		const int32_t count = std::max<int32_t>(1, int32_t(std::ceil(length / segment)));
+		const double px = -double(b.y - a.y) / length, py = double(b.x - a.x) / length;
+		const double mx = (a.x + b.x) / 2.0, my = (a.y + b.y) / 2.0;
+		double bow = (random.bounded(2) ? 1.0 : -1.0) * std::min(length / 5, 28.0) * (0.5 + unit(random) / 2);
+		// Bow away from the edge when only the other side has room.
+		if (!roomy(mx + px * bow, my + py * bow) && roomy(mx - px * bow, my - py * bow)) bow = -bow;
+		const double wiggle = std::clamp(length / 10, 2.0, 6.0);
+		const auto bent = [&](Point previous, Point middle, Point next) { return deviationOf(previous, next, middle) >= minimumBend; };
+		std::vector<double> lastBase;
+		for (int32_t k = 1; k < count; ++k) {
+			const double t = double(k) / count;
+			const double offset = bow * 4 * t * (1 - t) + wiggle * (2 * unit(random) - 1);
+			const double bx = a.x + (b.x - a.x) * t, by = a.y + (b.y - a.y) * t;
+			Point chosen = across(bx, by, px, py, offset);
+			if (points.size() >= 2) {
+				// Push this waypoint sideways until the previous joint bends; keep the most bent try otherwise.
+				double best = -1;
+				for (const double shift : {0.0, 4.0, -4.0, 7.0, -7.0}) {
+					const Point candidate = across(bx, by, px, py, offset + shift);
+					const double bend = deviationOf(points[points.size() - 2], candidate, points.back());
+					if (bend > best) { best = bend; chosen = candidate; }
+					if (bent(points[points.size() - 2], points.back(), candidate)) { chosen = candidate; break; }
+				}
 			}
+			if (!(chosen == points.back())) { points.push_back(chosen); lastBase = {bx, by, offset}; }
+		}
+		// The end is fixed: bend the last joint by moving the last waypoint instead.
+		if (!lastBase.empty() && !bent(points[points.size() - 2], points.back(), b)) {
+			double best = -1;
+			for (const double shift : {4.0, -4.0, 7.0, -7.0}) {
+				const Point candidate = across(lastBase[0], lastBase[1], px, py, lastBase[2] + shift);
+				const double bend = deviationOf(points[points.size() - 2], b, candidate);
+				if (bend > best) { best = bend; points.back() = candidate; }
+				if (bend >= minimumBend) break;
+			}
+		}
+		if (!(points.back() == b)) points.push_back(b);
+		// Sideways jumps can stretch a segment: split every segment longer than 10 cells into pieces of up to 8, the new
+		// joints 2.5 cells to alternate sides of it.
+		std::vector<Point> split {points.front()};
+		for (size_t k = 1; k < points.size(); ++k) {
+			const Point from = points[k - 1], to = points[k];
+			const double piece = distanceOf(from, to);
+			if (piece > 10) {
+				const int32_t parts = int32_t(std::ceil(piece / 8));
+				const double sx = -double(to.y - from.y) / piece, sy = double(to.x - from.x) / piece;
+				double side = random.bounded(2) ? 2.5 : -2.5;
+				for (int32_t q = 1; q < parts; ++q, side = -side) {
+					const double bx = from.x + double(to.x - from.x) * q / parts, by = from.y + double(to.y - from.y) * q / parts;
+					const Point joint = roomy(bx + sx * side, by + sy * side) ? clamped(bx + sx * side, by + sy * side) : clamped(bx - sx * side, by - sy * side);
+					if (!(joint == split.back())) split.push_back(joint);
+				}
+			}
+			if (!(to == split.back())) split.push_back(to);
+		}
+		// A joint still closer than minimumBend to the chord of its neighbours moves away from it (to the
+		// side it already leans to), twice over the whole line since a move changes the neighbouring joints.
+		for (int pass = 0; pass < 2; ++pass) for (size_t k = 1; k + 1 < split.size(); ++k) {
+			const Point before = split[k - 1], joint = split[k], after = split[k + 1];
+			const double chord = distanceOf(before, after), bend = deviationOf(before, after, joint);
+			if (chord == 0 || bend >= minimumBend) continue;
+			const double cross = double(after.x - before.x) * (joint.y - before.y) - double(after.y - before.y) * (joint.x - before.x);
+			const double lean = cross < 0 ? -1.0 : 1.0, push = minimumBend + 0.5 - bend;
+			const double nx = -double(after.y - before.y) / chord * lean, ny = double(after.x - before.x) / chord * lean;
+			const Point moved = roomy(joint.x + nx * push, joint.y + ny * push) ? clamped(joint.x + nx * push, joint.y + ny * push)
+				: clamped(joint.x - nx * (push + 2 * bend), joint.y - ny * (push + 2 * bend));
+			if (!(moved == before) && !(moved == after)) split[k] = moved;
+		}
+		return split;
+	}
+
+	// An irregular cavern at the axis cell (cx, cy): an ellipse (radii 4..12, its centre up to half a radius off the axis cell)
+	// with a noisy edge, four rounds of a cellular automaton (Floor with >= 5 Floor among the 8 neighbours, or staying Floor
+	// with >= 4), then only the part connected to the axis cell.
+	void cavern(int32_t cx, int32_t cy, StableRandom& random) {
+		const int32_t rx = 4 + int32_t(random.bounded(9)), ry = 4 + int32_t(random.bounded(9));
+		const double ox = (2 * unit(random) - 1) * rx / 2, oy = (2 * unit(random) - 1) * ry / 2;
+		const int32_t reach = std::max(rx, ry) + 2 + int32_t(std::ceil(std::max(std::abs(ox), std::abs(oy)))), side = 2 * reach + 1;
+		std::vector<uint8_t> local(size_t(side) * size_t(side)), next(local.size());
+		const auto at = [side](int32_t dx, int32_t dy) { return size_t(dy) * size_t(side) + size_t(dx); };
+		for (int32_t dy = 0; dy < side; ++dy) for (int32_t dx = 0; dx < side; ++dx) {
+			const double ex = (dx - reach - ox) / rx, ey = (dy - reach - oy) / ry;
+			const double noise = double(surfaceValueNoise(seed, cavernStream, uint32_t(x0 + cx + dx - reach), uint32_t(y0 + cy + dy - reach), 3)) / noiseBins;
+			local[at(dx, dy)] = ex * ex + ey * ey + (noise - 0.5) * 0.9 < 1.0;
+		}
+		for (int round = 0; round < 4; ++round) {
+			for (int32_t dy = 0; dy < side; ++dy) for (int32_t dx = 0; dx < side; ++dx) {
+				int32_t around = 0;
+				for (int32_t ny = std::max(0, dy - 1); ny <= std::min(side - 1, dy + 1); ++ny)
+					for (int32_t nx = std::max(0, dx - 1); nx <= std::min(side - 1, dx + 1); ++nx) around += (nx != dx || ny != dy) && local[at(nx, ny)];
+				next[at(dx, dy)] = around >= 5 || (local[at(dx, dy)] && around >= 4);
+			}
+			local.swap(next);
+		}
+		for (int32_t dy = -1; dy <= 1; ++dy) for (int32_t dx = -1; dx <= 1; ++dx) local[at(reach + dx, reach + dy)] = 1;
+		std::vector<uint32_t> queue {uint32_t(at(reach, reach))};
+		local[queue.front()] = 2;
+		for (size_t head = 0; head < queue.size(); ++head) {
+			const int32_t dx = int32_t(queue[head] % uint32_t(side)), dy = int32_t(queue[head] / uint32_t(side));
+			put(cx + dx - reach, cy + dy - reach);
+			const auto visit = [&](int32_t nx, int32_t ny) {
+				if (nx < 0 || ny < 0 || nx >= side || ny >= side || local[at(nx, ny)] != 1) return;
+				local[at(nx, ny)] = 2;
+				queue.push_back(uint32_t(at(nx, ny)));
+			};
+			visit(dx - 1, dy); visit(dx + 1, dy); visit(dx, dy - 1); visit(dx, dy + 1);
+		}
+		if (rooms && inside(cx, cy)) rooms->push_back(uint32_t(cy) * uint32_t(width) + uint32_t(cx));
+	}
+
+	// A dead end of 6..14 cells leaving the axis sideways at `from`, bent once, width 2..3, with a small widening at its end.
+	void branch(const std::vector<uint32_t>& axis, size_t from, StableRandom& random) {
+		const auto pointOf = [&](uint32_t cell) { return Point {int32_t(cell % uint32_t(width)), int32_t(cell / uint32_t(width))}; };
+		const Point start = pointOf(axis[from]);
+		const Point before = pointOf(axis[from >= 3 ? from - 3 : 0]), after = pointOf(axis[std::min(axis.size() - 1, from + 3)]);
+		const double along = std::max(1.0, distanceOf(before, after));
+		const double ux = (after.x - before.x) / along, uy = (after.y - before.y) / along;
+		const double side = random.bounded(2) ? 1.0 : -1.0, length = 6 + double(random.bounded(9));
+		const double lean = (2 * unit(random) - 1) * 0.6, turn = (random.bounded(2) ? 1.0 : -1.0) * (0.4 + 0.4 * unit(random));
+		const double sx = -uy * side + ux * lean, sy = ux * side + uy * lean;
+		const Point middle = clamped(start.x + sx * length / 2, start.y + sy * length / 2);
+		const Point end = clamped(middle.x + (sx - sy * turn) * length / 2, middle.y + (sy + sx * turn) * length / 2);
+		const Point points[] = {start, middle, end};
+		trace(points, 3);
+		disc(end.x, end.y, 2);
+		if (layout) ++layout->branches;
+	}
+
+	// Tunnel from a to b (the same cells either way round): meandering axis, width 2..5, a cavern about every 36 cells of axis
+	// (at least one from 16 cells on) and, from 24 cells on, 0..2 dead-end branches.
+	void tunnel(Point a, Point b) {
+		if (std::pair(b.y, b.x) < std::pair(a.y, a.x)) std::swap(a, b);
+		StableRandom random = streamOf(seed, tunnelStream, a, b, x0, y0);
+		const auto points = meander(a, b, random);
+		if (points.size() == 1) { stamp(a.x, a.y, 3); return; }
+		const auto axis = trace(points, 5);
+		double length = 0;
+		for (size_t k = 0; k + 1 < points.size(); ++k) length += distanceOf(points[k], points[k + 1]);
+		if (length >= 16) {
+			const int32_t caverns = std::max<int32_t>(1, int32_t(length + 18) / 36);
+			for (int32_t c = 0; c < caverns; ++c) {
+				const double t = (2 * c + 1 + (unit(random) - 0.5) * 0.6) / (2.0 * caverns);
+				const auto cell = axis[std::min(axis.size() - 1, size_t(t * double(axis.size())))];
+				cavern(int32_t(cell % uint32_t(width)), int32_t(cell / uint32_t(width)), random);
+			}
+		}
+		if (length >= 24) {
+			const auto branches = random.bounded(3);
+			for (uint64_t k = 0; k < branches; ++k) branch(axis, size_t(double(axis.size()) * (0.25 + 0.5 * unit(random))), random);
 		}
 	}
 };
@@ -92,33 +292,144 @@ uint64_t CaveGrid::fingerprint() const {
 	return hash;
 }
 
-std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, uint64_t seed, std::stop_token stop) {
+std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, uint64_t seed, std::stop_token stop, CaveLayout* layout) {
 	if (!surface.valid()) return std::unexpected(SurfaceError::InvalidRegion);
 	CaveGrid cave;
 	cave.region = surface.region;
 	++cave.region.z;
+	if (layout) *layout = {};
 	try {
 		cave.cells.assign(surface.cells.size(), CaveKind::Solid);
 		const int32_t width = int32_t(surface.region.width), height = int32_t(surface.region.height);
-		Carver carver {cave.cells, width, height, seed, surface.region.x, surface.region.y, &cave.rooms};
+		if (width < 5 || height < 5) return cave;
+		Carver carver {cave.cells, width, height, seed, surface.region.x, surface.region.y, &cave.rooms, layout};
 		std::vector<uint32_t> entrances = surface.entrances;
 		std::ranges::sort(entrances);
-		for (const uint32_t entrance : entrances) carver.disc(int32_t(entrance % uint32_t(width)), int32_t(entrance / uint32_t(width)), 5);
-		for (size_t i = 0; i + 1 < entrances.size(); ++i) {
-			if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
-			carver.tunnel(int32_t(entrances[i] % uint32_t(width)), int32_t(entrances[i] / uint32_t(width)),
-				int32_t(entrances[i + 1] % uint32_t(width)), int32_t(entrances[i + 1] / uint32_t(width)));
-		}
-		if (entrances.size() == 1) {
-			const int32_t ax = int32_t(entrances[0] % uint32_t(width)), ay = int32_t(entrances[0] / uint32_t(width));
+		entrances.erase(std::unique(entrances.begin(), entrances.end()), entrances.end());
+		std::vector<Point> points;
+		for (const uint32_t entrance : entrances) points.push_back({int32_t(entrance % uint32_t(width)), int32_t(entrance / uint32_t(width))});
+		for (const auto& p : points) carver.disc(p.x, p.y, 5);
+		const size_t n = points.size();
+		const auto join = [&](size_t i, size_t j) {
+			carver.tunnel(points[i], points[j]);
+			if (layout) layout->links.push_back({entrances[i], entrances[j]});
+		};
+		if (n == 1) {
+			const auto [ax, ay] = points[0];
 			int32_t tx = ax + std::clamp(width / 2 - ax, -40, 40), ty = ay + std::clamp(height / 2 - ay, -40, 40);
 			if (tx == ax && ty == ay) tx = std::clamp(ax + 12, 2, width - 3);
-			carver.tunnel(ax, ay, std::clamp(tx, 2, width - 3), std::clamp(ty, 2, height - 3));
+			carver.tunnel(points[0], {std::clamp(tx, 2, width - 3), std::clamp(ty, 2, height - 3)});
+			return cave;
+		}
+		// Minimum spanning tree over the straight distances (Prim; ties go to the lower cell index), so the joins depend on
+		// where the entrances are, not on their order.
+		const auto squared = [&](size_t i, size_t j) {
+			const int64_t dx = points[j].x - points[i].x, dy = points[j].y - points[i].y;
+			return dx * dx + dy * dy;
+		};
+		std::vector<uint8_t> inTree(n, 0);
+		std::vector<int64_t> best(n, std::numeric_limits<int64_t>::max());
+		std::vector<size_t> parent(n, 0);
+		std::vector<std::vector<size_t>> tree(n);
+		std::vector<std::pair<size_t, size_t>> edges;
+		if (n) best[0] = 0;
+		for (size_t added = 0; added < n; ++added) {
+			size_t next = n;
+			for (size_t i = 0; i < n; ++i) if (!inTree[i] && (next == n || best[i] < best[next])) next = i;
+			inTree[next] = 1;
+			if (added) {
+				edges.push_back({parent[next], next});
+				tree[parent[next]].push_back(next);
+				tree[next].push_back(parent[next]);
+			}
+			for (size_t i = 0; i < n; ++i) if (!inTree[i] && squared(next, i) < best[i]) { best[i] = squared(next, i); parent[i] = next; }
+		}
+		for (const auto& [i, j] : edges) {
+			if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+			join(i, j);
+		}
+		// Loops (four entrances or more): one, or two from eight entrances on, of the pairs outside the tree that are no longer
+		// than 1.5 times its longest edge, preferring the largest detour along the tree compared with the direct distance.
+		if (n >= 4) {
+			std::vector<double> around(n * n, 0);
+			for (size_t source = 0; source < n; ++source) {
+				std::vector<size_t> stack {source};
+				std::vector<uint8_t> seen(n, 0);
+				seen[source] = 1;
+				while (!stack.empty()) {
+					const size_t at = stack.back();
+					stack.pop_back();
+					for (const size_t to : tree[at]) if (!seen[to]) {
+						seen[to] = 1;
+						around[source * n + to] = around[source * n + at] + std::sqrt(double(squared(at, to)));
+						stack.push_back(to);
+					}
+				}
+			}
+			double longest = 0;
+			for (const auto& [i, j] : edges) longest = std::max(longest, std::sqrt(double(squared(i, j))));
+			struct Candidate { double ratio, distance; size_t i, j; };
+			std::vector<Candidate> candidates;
+			for (size_t i = 0; i < n; ++i) for (size_t j = i + 1; j < n; ++j) {
+				const bool treeEdge = std::ranges::find(tree[i], j) != tree[i].end();
+				const double distance = std::sqrt(double(squared(i, j)));
+				if (!treeEdge && distance > 0 && distance <= 1.5 * longest) candidates.push_back({around[i * n + j] / distance, distance, i, j});
+			}
+			std::ranges::sort(candidates, [](const Candidate& a, const Candidate& b) {
+				if (a.ratio != b.ratio) return a.ratio > b.ratio;
+				if (a.distance != b.distance) return a.distance < b.distance;
+				return std::pair(a.i, a.j) < std::pair(b.i, b.j);
+			});
+			const size_t loops = std::min(candidates.size(), size_t(n >= 8 ? 2 : 1));
+			for (size_t k = 0; k < loops; ++k) {
+				if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+				join(candidates[k].i, candidates[k].j);
+				if (layout) ++layout->loops;
+			}
 		}
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}
 	return cave;
+}
+
+uint64_t caveCavernCells(const CaveGrid& cave) {
+	const int64_t w = cave.region.width, h = cave.region.height;
+	if (!cave.valid()) return 0;
+	const auto floor = [&](int64_t x, int64_t y) { return x >= 0 && y >= 0 && x < w && y < h && cave.cells[size_t(y * w + x)] == CaveKind::Floor; };
+	uint64_t count = 0;
+	for (int64_t y = 0; y < h; ++y) for (int64_t x = 0; x < w; ++x) {
+		if (!floor(x, y)) continue;
+		int neighbours = 0;
+		for (int64_t dy = -1; dy <= 1; ++dy) for (int64_t dx = -1; dx <= 1; ++dx) neighbours += (dx || dy) && floor(x + dx, y + dy);
+		if (neighbours < 5) continue;
+		// Width in tenths of a cell: the shortest Floor run through the cell along the two axes and the two diagonals.
+		int64_t narrowest = std::numeric_limits<int64_t>::max();
+		constexpr int64_t directions[4][3] = {{1, 0, 10}, {0, 1, 10}, {1, 1, 14}, {1, -1, 14}};
+		for (const auto& [dx, dy, step] : directions) {
+			int64_t run = 1;
+			for (int64_t k = 1; floor(x + dx * k, y + dy * k); ++k) ++run;
+			for (int64_t k = 1; floor(x - dx * k, y - dy * k); ++k) ++run;
+			narrowest = std::min(narrowest, run * step);
+		}
+		count += narrowest > 50;
+	}
+	return count;
+}
+
+uint32_t longestStraightAxis(std::span<const uint32_t> axis, uint32_t width) {
+	if (!width) return 0;
+	const auto pointOf = [&](size_t k) { return Point {int32_t(axis[k] % width), int32_t(axis[k] / width)}; };
+	double longest = axis.empty() ? 0 : 1;
+	for (size_t i = 0; i < axis.size(); ++i) {
+		for (size_t j = i + 1; j < axis.size(); ++j) {
+			bool straight = true;
+			for (size_t k = i + 1; k < j && straight; ++k) straight = deviationOf(pointOf(i), pointOf(j), pointOf(k)) <= 1.0;
+			if (!straight) break;
+			longest = std::max(longest, distanceOf(pointOf(i), pointOf(j)) + 1);
+		}
+	}
+	return uint32_t(std::lround(longest));
 }
 
 std::expected<uint32_t, UndergroundError> removeUnenteredCaveComponents(
@@ -331,7 +642,7 @@ std::expected<void, UndergroundError> placeFarCaveExits(
                     auto before = cave.cells;
                     const auto roomCount = cave.rooms.size();
                     Carver carver {cave.cells, int32_t(w), int32_t(h), seed, surface.region.x, surface.region.y, &cave.rooms};
-                    carver.tunnel(int32_t(from % w), int32_t(from / w), int32_t(p % w), int32_t(p / w));
+                    carver.tunnel({int32_t(from % w), int32_t(from / w)}, {int32_t(p % w), int32_t(p / w)});
                     auto extended = caveDistances(cave, sources);
                     const bool previousExitsStillFar = std::ranges::all_of(exits.exits,
                         [&](const auto& e) { return !e.distant || extended[e.cell] >= 24; });

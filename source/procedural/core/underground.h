@@ -8,6 +8,7 @@
 #include <expected>
 #include <span>
 #include <stop_token>
+#include <utility>
 #include <vector>
 
 namespace rme::procedural {
@@ -32,10 +33,30 @@ struct CaveGrid {
 	[[nodiscard]] uint64_t fingerprint() const;
 };
 
-// Landing (21 cells) around every entrance, a tunnel (3 wide, swinging axis) between consecutive entrances (by cell index) or, for one
-// entrance, towards the middle of the area (up to 40 cells), and a room every ~24 cells of axis. Cells within 1 of the area's edge stay
-// Solid. Pure function of the surface and the seed; checks stop_requested per tunnel.
-[[nodiscard]] std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, uint64_t seed, std::stop_token stop = {});
+// The shape of a generated cave, for measurement (G5 iteration 47): the axis of every tunnel and branch (cell indices,
+// consecutive cells 8-adjacent), the entrance cells joined by a tunnel (tree edges first, then loop edges), the loop and
+// branch counts. Caverns are CaveGrid::rooms.
+struct CaveLayout {
+	std::vector<std::vector<uint32_t>> axes;
+	std::vector<std::pair<uint32_t, uint32_t>> links;
+	uint32_t loops = 0, branches = 0;
+};
+
+// Landing (21 cells) around every entrance; the entrances joined by a minimum spanning tree over their distances plus one
+// loop edge (two from eight entrances on) when there are four or more; one entrance gets a tunnel towards the middle of the
+// area (up to 40 cells). Tunnels meander (segments of 7..10 cells, every joint bent, a bow growing with the length), are
+// 2..5 cells wide by noise, get an irregular cavern (noise plus cellular automaton, connected to the axis, centre recorded in
+// rooms) about every 36 cells and 0..2 dead-end branches. Cells within 1 of the area's edge stay Solid. Pure function of
+// the surface and the seed, independent of the order of the entrances; checks stop_requested per tunnel.
+[[nodiscard]] std::expected<CaveGrid, SurfaceError> generateCave(
+	const SurfaceGrid& surface, uint64_t seed, std::stop_token stop = {}, CaveLayout* layout = nullptr);
+
+// Iteration 47 measurements (G5_METRICS.md). Cavern cells: Floor with >= 5 Floor among its 8 neighbours and a width > 5
+// (the shortest Floor run through the cell along both axes and both diagonals, diagonal cells counted as 1.4).
+[[nodiscard]] uint64_t caveCavernCells(const CaveGrid& cave);
+// Longest straight piece of an axis: the largest chord length (cells, ends included) of consecutive axis cells that all lie
+// within 1 cell of that chord.
+[[nodiscard]] uint32_t longestStraightAxis(std::span<const uint32_t> axis, uint32_t width);
 
 struct UndergroundReport {
 	uint32_t entrances = 0, entrancesReached = 0;   // surface side: reached when in the start's component
