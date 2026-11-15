@@ -43,7 +43,7 @@ struct CaveLayout {
 };
 
 // Landing (21 cells) around every entrance; the entrances joined by a minimum spanning tree over their distances plus one
-// loop edge (two from eight entrances on) when there are four or more; one entrance gets a tunnel towards the middle of the
+// loop edge (two from eight entrances on) when there are four or more and a pair clear of the other tunnels exists; one entrance gets a tunnel towards the middle of the
 // area (up to 40 cells). Tunnels meander (segments of 7..10 cells, every joint bent, a bow growing with the length), are
 // 2..5 cells wide by noise, get an irregular cavern (noise plus cellular automaton, connected to the axis, centre recorded in
 // rooms) about every 36 cells and 0..2 dead-end branches. Cells within 1 of the area's edge stay Solid. Pure function of

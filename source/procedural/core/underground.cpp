@@ -28,6 +28,13 @@ struct Point {
 
 double distanceOf(Point a, Point b) { return std::hypot(double(b.x - a.x), double(b.y - a.y)); }
 
+// Distance of (x, y) from the segment a..b.
+double segmentDistance(Point a, Point b, double x, double y) {
+	const double dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+	const double t = length == 0 ? 0 : std::clamp(((x - a.x) * dx + (y - a.y) * dy) / length, 0.0, 1.0);
+	return std::hypot(a.x + dx * t - x, a.y + dy * t - y);
+}
+
 // Distance of m from the line through a and b (from a when a == b).
 double deviationOf(Point a, Point b, Point m) {
 	const double length = distanceOf(a, b);
@@ -349,7 +356,8 @@ std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, u
 			join(i, j);
 		}
 		// Loops (four entrances or more): one, or two from eight entrances on, of the pairs outside the tree that are no longer
-		// than 1.5 times its longest edge, preferring the largest detour along the tree compared with the direct distance.
+		// than 1.5 times its longest edge and clear of the planned tunnels, preferring the largest detour along the tree compared
+		// with the direct distance. Entrances that leave no clear pair (for example all in a row) get fewer loops.
 		if (n >= 4) {
 			std::vector<double> around(n * n, 0);
 			for (size_t source = 0; source < n; ++source) {
@@ -380,10 +388,37 @@ std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, u
 				if (a.distance != b.distance) return a.distance < b.distance;
 				return std::pair(a.i, a.j) < std::pair(b.i, b.j);
 			});
-			const size_t loops = std::min(candidates.size(), size_t(n >= 8 ? 2 : 1));
-			for (size_t k = 0; k < loops; ++k) {
+			// A loop must not run beside a tunnel already planned (straight lines between the entrances): it leaves each end
+			// at least 35 degrees away from the tunnels there, and its quarter, half and three-quarter points keep
+			// a fifth of its length from the other tunnels.
+			std::vector<std::pair<size_t, size_t>> planned = edges;
+			const auto clear = [&](size_t i, size_t j) {
+				const double length = std::sqrt(double(squared(i, j))), room = length / 5;
+				const auto apart = [&](size_t from, size_t to, size_t other) {
+					const double dot = double(points[to].x - points[from].x) * (points[other].x - points[from].x) +
+						double(points[to].y - points[from].y) * (points[other].y - points[from].y);
+					return dot <= 0.819 * length * std::sqrt(double(squared(from, other)));
+				};
+				for (const auto& [a, b] : planned) {
+					if (a == i || a == j || b == i || b == j) {
+						const size_t shared = a == i || b == i ? i : j, other = a == shared ? b : a;
+						if (!apart(shared, shared == i ? j : i, other)) return false;
+						continue;
+					}
+					for (const double t : {0.25, 0.5, 0.75}) {
+						const double x = points[i].x + (points[j].x - points[i].x) * t, y = points[i].y + (points[j].y - points[i].y) * t;
+						if (segmentDistance(points[a], points[b], x, y) < room) return false;
+					}
+				}
+				return true;
+			};
+			const size_t wanted = n >= 8 ? 2 : 1;
+			for (const auto& candidate : candidates) {
+				if (planned.size() - edges.size() == wanted) break;
+				if (!clear(candidate.i, candidate.j)) continue;
 				if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
-				join(candidates[k].i, candidates[k].j);
+				join(candidate.i, candidate.j);
+				planned.push_back({candidate.i, candidate.j});
 				if (layout) ++layout->loops;
 			}
 		}
