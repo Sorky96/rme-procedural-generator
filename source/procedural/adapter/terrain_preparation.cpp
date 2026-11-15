@@ -584,8 +584,9 @@ TerrainPreparationSteps runPreparation(
                             if (!plan.items[e]) continue;
                             plan.entrances[e] = brushes->entrance;
                             if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
-                            else if (input.config.surface.rockBlocks && entranceGround) {
+                            else if (input.config.surface.rockBlocks && entranceGround && grid->cells[e] == SurfaceKind::Rock) {
                                 // Impassable rock: the rock-face entrance stands on the profile's dirt ground (iteration 44).
+                                // An ordinary entrance off the rock (iteration 48) keeps its own ground under the doodad.
                                 plan.items[e] = entranceGround;
                                 if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0;
                             }
