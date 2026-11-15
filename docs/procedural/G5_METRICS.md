@@ -438,3 +438,11 @@ Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (m19, x 1000, y 
 3. **Groty.** Nieregularne komory z szumu wygładzone automatem komórkowym (nie idealne okręgi); udział pól grot (komórek z ≥ 5 sąsiadami podłogi w promieniu 1 przy szerokości > 5) ≥ 25 % podłogi jaskini (mediana na seedach 1001–1032, bok 512, m06 i m19). Każda grota połączona z siecią.
 4. **Spójność i GUI.** Wszystkie wejścia w jednej składowej; rampy pod wejściami jak dotąd; przypadek użytkownika m19 przez adapter: 0 usuniętych miejsc, wszystkie osiągalne. Bramka G5 (pomiar iteracji 45, m06 i m19 32/32) bez regresji.
 5. Bez regresji: determinizm, 18/18 testów (plus nowe), `SUITE_PASS`. Odcisk Seed 1729 100×100 może się zmienić tylko, jeśli ten przypadek ma jaskinię — wtedy nowa wartość zapisana z uzasadnieniem.
+
+## Iteracja 48: D24 — wejścia RockFace w zapasie, pędzel ściany jaskini (2026-11-15)
+
+Wiążące przed implementacją. Decyzje użytkownika: „Zwykłe wejście w zapasie”, „Inny pędzel ściany”.
+
+1. **Zapas wejść.** Przy stylu RockFace, gdy w ścianach skały brakuje miejsc na zadaną liczbę wejść, brakujące stawiane są jako zwykłe wejścia (styl dotychczasowy poza skałą). Kryterium bez zmian: mediana wejść ≥ 8 (seedy 1001–1032, bok 512, m06 i m19, ustawienia pomiaru iteracji 29 lub nowszego), przy czym wejścia w ścianie mają pierwszeństwo — ich liczba nie spada względem HEAD. Każde wejście z rampą pod spodem i w składowej jaskini.
+2. **Pędzel ściany jaskini.** Znaleźć w danych 10.98 (brushes/, materiały) pędzel ściany/góry jaskini z licami ze wszystkich stron (N, W, E, S i narożniki) i ustawić go po nazwie jako `caveWall` w profilach m06/m19 (bez ID w kodzie). Pomiar `CAVE_WALL_FACES`: udział komórek ściany widzących podłogę bez lica ≤ 5 % (był ok. 49 %). Jeśli żaden pędzel nie spełnia — raport z listą sprawdzonych i bez zmiany.
+3. Bez regresji: przypadek użytkownika m19 (x 1000, y 1000, 512×512, seed 1729, 10 wejść RockFace) przez adapter — 0 usuniętych miejsc; bramka G5 `--i47` 32/32; determinizm; odcisk Seed 1729 100×100 = 17159159863505677800; testy rdzenia; `SUITE_PASS`. D24 w TECH_DEBT.md zamknięty albo z opisaną resztą.
