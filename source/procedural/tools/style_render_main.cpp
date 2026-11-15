@@ -93,8 +93,7 @@ std::string caveMeasurements(const LevelWorld& world) {
 
 // Iteration 47: cave shape. Floor and cavern cells of the final cave; the generator's layout for the final surface (the
 // same pure function): entrances outside the component of the first one, the longest straight axis piece, tunnels, loops,
-// branches, caverns, and pairs of long parallel tunnels (both spanning >= 40 % of the side along the same axis, their spans
-// overlapping by half, their mean cross coordinates < 32 apart).
+// branches, caverns, and pairs of long tunnels side by side (rule below).
 std::string caveShapeMeasurements(const LevelWorld& world, uint64_t seed) {
     if (!world.cave) return {};
     CaveLayout layout;
@@ -114,24 +113,29 @@ std::string caveShapeMeasurements(const LevelWorld& world, uint64_t seed) {
         for (const auto e : world.surface.entrances) apart += !seen[e];
     }
     uint32_t longest = 0;
-    struct Span { bool horizontal; double low, high, cross; };
-    std::vector<Span> spans;
+    // Long tunnels: axes whose chord (first to last cell) is at least 40 % of the side.
+    struct Chord { double ax, ay, ux, uy, length; const std::vector<uint32_t>* axis; };
+    std::vector<Chord> chords;
     for (const auto& axis : layout.axes) {
         longest = std::max(longest, longestStraightAxis(axis, w));
         if (axis.empty()) continue;
-        uint32_t x0 = w, x1 = 0, y0 = h, y1 = 0; double sx = 0, sy = 0;
-        for (const auto i : axis) {
-            x0 = std::min(x0, i % w); x1 = std::max(x1, i % w); y0 = std::min(y0, i / w); y1 = std::max(y1, i / w);
-            sx += i % w; sy += i / w;
-        }
-        if (x1 - x0 >= w * 2 / 5) spans.push_back({true, double(x0), double(x1), sy / axis.size()});
-        if (y1 - y0 >= h * 2 / 5) spans.push_back({false, double(y0), double(y1), sx / axis.size()});
+        const double ax = axis.front() % w, ay = axis.front() / w, dx = double(axis.back() % w) - ax, dy = double(axis.back() / w) - ay;
+        const double length = std::hypot(dx, dy);
+        if (length >= std::min(w, h) * 2 / 5.0) chords.push_back({ax, ay, dx / length, dy / length, length, &axis});
     }
+    // A pair is side by side when the chords are within 20 degrees, at least half of the shorter tunnel's axis lies along
+    // the other chord, and those cells are on average less than 32 cells from it.
     uint32_t parallel = 0;
-    for (size_t a = 0; a < spans.size(); ++a) for (size_t b = a + 1; b < spans.size(); ++b) {
-        const auto& p = spans[a]; const auto& q = spans[b];
-        const double overlap = std::min(p.high, q.high) - std::max(p.low, q.low);
-        parallel += p.horizontal == q.horizontal && overlap >= std::min(p.high - p.low, q.high - q.low) / 2 && std::abs(p.cross - q.cross) < 32;
+    for (size_t a = 0; a < chords.size(); ++a) for (size_t b = 0; b < chords.size(); ++b) {
+        const auto& p = chords[a]; const auto& q = chords[b];
+        if (a == b || q.length > p.length || (q.length == p.length && b < a) || std::abs(p.ux * q.ux + p.uy * q.uy) < 0.94) continue;
+        double sum = 0; size_t along = 0;
+        for (const auto i : *q.axis) {
+            const double x = double(i % w) - p.ax, y = double(i / w) - p.ay, t = x * p.ux + y * p.uy;
+            if (t < 0 || t > p.length) continue;
+            sum += std::abs(x * p.uy - y * p.ux); ++along;
+        }
+        parallel += along * 2 >= q.axis->size() && sum / double(along) < 32;
     }
     const auto& c = *world.cave;
     return std::format("level cave i47 entrances {} apart {} floor {} cavern {} longestStraight {} tunnels {} loops {} branches {} caverns {} parallelPairs {}\n",
