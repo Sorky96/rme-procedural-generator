@@ -773,7 +773,7 @@ void campfires(uint32_t side, std::ostream& report) {
 }
 
 // Iteration 28: real 10.98 cave brushes, two previews, two history steps and failure rollback.
-bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
+bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report, const std::string& wallBrush) {
 	UndoLimits undoLimits;
 	check(g_gui.NewMap(), "Cave editor creation failed");
 	auto& editor = *g_gui.GetCurrentEditor();
@@ -799,7 +799,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	profile.caveEntrance = style == CaveEntranceStyle::RockFace ? "cave enter" : "cave hole";
 	profile.caveExit = "ramp";
 	profile.caveGround = "cave";
-	profile.caveWall = "mountain";
+	profile.caveWall = wallBrush;
 	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
 	check(bool(prepared), std::format("Cave preparation failed: domain {} value {}", prepared ? 0 : prepared.error().index(),
 		prepared ? 0 : std::visit([](auto error) { return int(error); }, prepared.error())));
@@ -844,7 +844,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 				"Rock-face entrance does not open to the south");
 		}
 	}
-	for (const auto e : grid->entrances) check(caveEntranceAllowed(grid->cells, side, side, e, style), "Entrance violates style rule");
+	for (const auto e : grid->entrances) check(caveEntranceFits(grid->cells, side, side, e, style), "Entrance violates style rule");
 	constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
 	for (const auto& exit : exits->exits) {
 		const auto d = size_t(brushes->shapes[exit.shape].direction);
@@ -864,7 +864,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		otherProfile.caveEntrance = style == CaveEntranceStyle::RockFace ? "cave hole" : "cave enter";
 		const auto other = prepareTerrain(editor.map, otherConfig, otherProfile, preparation);
 		check(other && other->plan.fingerprint() != prepared->plan.fingerprint(), "Styles share fingerprint"); }
-	size_t caveCells = 0, wallCells = 0, wallFloorNorthOrWestOnly = 0;
+	size_t caveCells = 0, wallCells = 0, wallFloorNorthOrWestOnly = 0, wallWithoutFace = 0;
 	std::map<uint16_t, size_t> wallBorders;
 	for (size_t i = 0; i < cave->cells.size(); ++i) {
 		const Position upper(100 + int(i % side), 100 + int(i / side), 7), lower(upper.x, upper.y, 8);
@@ -889,6 +889,9 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 					cave->cells[size_t(cy + dy) * side + size_t(cx + dx)] == CaveKind::Floor;
 			};
 			wallFloorNorthOrWestOnly += (floorAt(0, 1) || floorAt(1, 0) || floorAt(1, 1)) ? 0 : 1;
+			// Iteration 48: a wall cell sees the floor (8-neighbourhood) by definition; it has a face when the brush
+			// gave it a border piece.
+			wallWithoutFace += std::ranges::none_of(tile->items, [](const auto& item) { return item->isBorder(); });
 		}
 		if (style == CaveEntranceStyle::RockFace && entrances[i]) {
 			check(prepared->plan.items[i] == plain->plan.items[i], "Rock entrance ground changed");
@@ -1023,11 +1026,18 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		auto noRock = config; noRock.surface.rockPermille = 0;
 		noRock.surface.caveEntranceStyle = CaveEntranceStyle::RockFace;
 		auto noRockProfile = profile; noRockProfile.caveEntrance = "cave enter";
-		auto emptyCave = prepareTerrain(emptyMap, noRock, noRockProfile, preparation);
-		check(emptyCave && emptyCave->cave && emptyCave->cave->preview.getChanges().empty(), "Expected an empty cave without rocks");
+		// Iteration 48: without rock the style falls back to ordinary entrances, so the cave is not empty.
+		const auto fallback = prepareTerrain(emptyMap, noRock, noRockProfile, preparation);
+		check(fallback && fallback->cave && !fallback->cave->preview.getChanges().empty() &&
+			std::ranges::any_of(fallback->plan.entrances, [](uint16_t id) { return id != 0; }), "Expected ordinary entrances without rocks");
+		// A checkerboard mask leaves no cell with four open neighbours, so no entrance at all and an empty cave.
+		std::vector<uint8_t> checkerboard(size_t(side) * side);
+		for (size_t i = 0; i < checkerboard.size(); ++i) checkerboard[i] = uint8_t((i % side + i / side) % 2);
+		auto emptyCave = prepareTerrain(emptyMap, noRock, noRockProfile, preparation, checkerboard);
+		check(emptyCave && emptyCave->cave && emptyCave->cave->preview.getChanges().empty(), "Expected an empty cave without entrance sites");
 		auto* queue = g_gui.GetCurrentEditor()->actionQueue.get();
 		const auto before = queue->getCurrentIndex();
-		check(bool(DrawOperations::commitTerrainPreview(*emptyCave, noRock, noRockProfile, commit)), "Empty cave commit failed");
+		check(bool(DrawOperations::commitTerrainPreview(*emptyCave, noRock, noRockProfile, commit, checkerboard)), "Empty cave commit failed");
 		check(queue->getCurrentIndex() == before + 1 && queue->undo(), "Empty cave must add exactly one history step");
 		check(stackImage(emptyMap, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
 			stackImage(emptyMap, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Empty cave undo changed the map");
@@ -1040,8 +1050,10 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	emptyMap.clearChanges();
 	std::string borderList;
 	for (const auto& [id, count] : wallBorders) borderList += std::format("{}{}:{}", borderList.empty() ? "" : ",", id, count);
-	report << std::format("CAVE_WALL_FACES style={} wall={} wallCells={} floorOnlyNorthOrWest={} borders={}\n",
-		style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole", profile.caveWall, wallCells, wallFloorNorthOrWestOnly, borderList);
+	report << std::format("CAVE_WALL_FACES style={} wall={} wallCells={} floorOnlyNorthOrWest={} withoutFace={} withoutFacePermille={} borders={}\n",
+		style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole", profile.caveWall, wallCells, wallFloorNorthOrWestOnly,
+		wallWithoutFace, wallCells ? wallWithoutFace * 1000 / wallCells : 0, borderList);
+	check(wallWithoutFace * 20 <= wallCells, "More than 5 % of the cave wall cells have no face");
 	report << (sufficientExits ? "SURFACE_CAVE_E2E_PASS	" : "SURFACE_CAVE_E2E_FAIL	") << side << "	style=" << (style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole") << " entrances=" << grid->entrances.size() << " exits=" << exits->exits.size()
 		<< " skipped=" << exits->skipped.size() << " caveCells=" << caveCells << " wallCells=" << wallCells << " exitBrushes=" << exitBrushes.size() << '\n';
 	return sufficientExits;
@@ -2906,8 +2918,9 @@ void run() {
 		ruinsAndCamps(250, report);
 		campfires(250, report);
 		guiCaves(report);
-        const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report);
-		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report);
+        // Iteration 48 (D24): the dialog's cave wall brush; "mountain" left 17 % of the wall cells without a face.
+        const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report, "snowy mountain");
+		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report, "snowy mountain");
 		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
