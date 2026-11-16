@@ -93,6 +93,12 @@ std::expected<void, ReachabilityError> placeBuildingDungeons(
     Forbidden forbidden(w, h);
     forbidden.cells() = dilate(floor, w, h, caveGap - 1);
     for (size_t i = 0; i < n; ++i) forbidden.cells()[i] |= surface.cells[i] == SurfaceKind::Preserve;
+    // Cells the cave may not carve (iteration 49) take no dungeon either: walkable cells keep one cell from them, so the
+    // wall ring stays off them too.
+    if (!cave.blocked.empty()) {
+        const auto blocked = dilate(cave.blocked, w, h, 1);
+        for (size_t i = 0; i < n; ++i) forbidden.cells()[i] |= blocked[i];
+    }
     forbidden.rebuild();
     StableRandom random(seed, dungeonStream);
     auto& report = world.dungeonReport;

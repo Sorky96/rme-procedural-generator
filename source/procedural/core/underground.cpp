@@ -57,10 +57,13 @@ struct Carver {
 	int32_t x0, y0;   // absolute origin of the area, for the noise and the random streams
 	std::vector<uint32_t>* rooms = nullptr;
 	CaveLayout* layout = nullptr;
+	std::span<const uint8_t> blocked {};   // CaveGrid::blocked: cells never carved
 
 	bool inside(int32_t x, int32_t y) const { return x >= 2 && y >= 2 && x <= width - 3 && y <= height - 3; }
 	void put(int32_t x, int32_t y) {
-		if (inside(x, y)) cells[size_t(y) * size_t(width) + size_t(x)] = CaveKind::Floor;
+		if (!inside(x, y)) return;
+		const size_t i = size_t(y) * size_t(width) + size_t(x);
+		if (blocked.empty() || !blocked[i]) cells[i] = CaveKind::Floor;
 	}
 	void disc(int32_t cx, int32_t cy, int32_t radiusSquared) {
 		const int32_t reach = int32_t(std::sqrt(double(radiusSquared))) + 1;
@@ -230,7 +233,8 @@ struct Carver {
 			};
 			visit(dx - 1, dy); visit(dx + 1, dy); visit(dx, dy - 1); visit(dx, dy + 1);
 		}
-		if (rooms && inside(cx, cy)) rooms->push_back(uint32_t(cy) * uint32_t(width) + uint32_t(cx));
+		// The centre is Floor unless it is blocked (then the cavern records no room).
+		if (rooms && inside(cx, cy) && cells[size_t(cy) * size_t(width) + size_t(cx)] == CaveKind::Floor) rooms->push_back(uint32_t(cy) * uint32_t(width) + uint32_t(cx));
 	}
 
 	// A dead end of 6..14 cells leaving the axis sideways at `from`, bent once, width 2..3, with a small widening at its end.
@@ -280,7 +284,7 @@ struct Carver {
 
 bool CaveGrid::valid() const noexcept {
 	return region.x >= 0 && region.y >= 0 && region.z >= 0 && region.width > 0 && region.height > 0 &&
-		uint64_t(region.width) * region.height == cells.size() &&
+		uint64_t(region.width) * region.height == cells.size() && (blocked.empty() || blocked.size() == cells.size()) &&
 		std::ranges::all_of(cells, [](CaveKind kind) { return kind <= CaveKind::Floor; });
 }
 
@@ -299,17 +303,20 @@ uint64_t CaveGrid::fingerprint() const {
 	return hash;
 }
 
-std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, uint64_t seed, std::stop_token stop, CaveLayout* layout) {
-	if (!surface.valid()) return std::unexpected(SurfaceError::InvalidRegion);
+std::expected<CaveGrid, SurfaceError> generateCave(const SurfaceGrid& surface, uint64_t seed, std::stop_token stop, CaveLayout* layout,
+	std::span<const uint8_t> blocked) {
+	if (!surface.valid() || (!blocked.empty() && blocked.size() != surface.cells.size())) return std::unexpected(SurfaceError::InvalidRegion);
 	CaveGrid cave;
 	cave.region = surface.region;
 	++cave.region.z;
 	if (layout) *layout = {};
 	try {
 		cave.cells.assign(surface.cells.size(), CaveKind::Solid);
+		// Kept only when something is blocked, so an unblocked cave stays as before (iteration 49).
+		if (std::ranges::any_of(blocked, [](uint8_t b) { return b != 0; })) cave.blocked.assign(blocked.begin(), blocked.end());
 		const int32_t width = int32_t(surface.region.width), height = int32_t(surface.region.height);
 		if (width < 5 || height < 5) return cave;
-		Carver carver {cave.cells, width, height, seed, surface.region.x, surface.region.y, &cave.rooms, layout};
+		Carver carver {cave.cells, width, height, seed, surface.region.x, surface.region.y, &cave.rooms, layout, cave.blocked};
 		std::vector<uint32_t> entrances = surface.entrances;
 		std::ranges::sort(entrances);
 		entrances.erase(std::unique(entrances.begin(), entrances.end()), entrances.end());
@@ -676,7 +683,7 @@ std::expected<void, UndergroundError> placeFarCaveExits(
                 for (size_t s = 0; s < shapes.size(); ++s) if (fit(p, s, false)) {
                     auto before = cave.cells;
                     const auto roomCount = cave.rooms.size();
-                    Carver carver {cave.cells, int32_t(w), int32_t(h), seed, surface.region.x, surface.region.y, &cave.rooms};
+                    Carver carver {cave.cells, int32_t(w), int32_t(h), seed, surface.region.x, surface.region.y, &cave.rooms, nullptr, cave.blocked};
                     carver.tunnel({int32_t(from % w), int32_t(from / w)}, {int32_t(p % w), int32_t(p / w)});
                     auto extended = caveDistances(cave, sources);
                     const bool previousExitsStillFar = std::ranges::all_of(exits.exits,

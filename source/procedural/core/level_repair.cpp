@@ -144,7 +144,8 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,
     std::span<const ExitShape> capShapes, bool vegetation, std::stop_token stop,
-    std::span<const ExitShape> stairShapes, std::span<const ExitShape> dungeonShapes) try {
+    std::span<const ExitShape> stairShapes, std::span<const ExitShape> dungeonShapes,
+    std::span<const uint8_t> caveBlocked) try {
     if (!surface.valid()) return std::unexpected(ReachabilityError::InvalidGrid);
     LevelWorld world;
     world.surface = std::move(surface);
@@ -172,7 +173,7 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
         if (!passes) return std::unexpected(passes.error());
     }
     if (tuning.caveEntrances) {
-        auto cave = generateCave(world.surface, seed, stop);
+        auto cave = generateCave(world.surface, seed, stop, nullptr, caveBlocked);
         if (!cave) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
         // Vegetation at a ramp's surface destination is removable. Keep the
         // geometric cap reservation, and clear selected endpoints below.

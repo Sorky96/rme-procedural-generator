@@ -1072,8 +1072,11 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	const auto id = g_brushes.getBrush("grass")->as<GroundBrush>()->getPlacementItemId();
 	TerrainPlacement::placeBrushItem(*emptyMap.getOrCreateTile(Position(100, 100, 8)), id);
 	std::vector<uint8_t> mask(size_t(side) * side, 1); mask[0] = 0;
+	// Iteration 49: an occupied z + 1 tile no longer refuses the cave; the cave leaves it alone.
 	const auto occupied = prepareTerrain(emptyMap, config, profile, preparation, mask);
-	check(!occupied && std::get<PreparationInputError>(occupied.error()) == PreparationInputError::LowerFloorOccupied, "Masked occupied lower floor accepted");
+	check(occupied && occupied->cave && validateTerrainTarget(*occupied, config, profile, mask), "Masked occupied lower floor refused the cave");
+	check(std::ranges::find(occupied->cave->preview.getChanges(), Position(100, 100, 8)) == occupied->cave->preview.getChanges().end(),
+		"Cave preview changes an occupied lower tile");
 	emptyMap.clearChanges();
 	std::string borderList;
 	for (const auto& [id, count] : wallBorders) borderList += std::format("{}{}:{}", borderList.empty() ? "" : ",", id, count);

@@ -51,7 +51,6 @@ enum class PreparationInputError {
     Cancelled,
     AllocationFailed,
     InvalidParameters,
-    LowerFloorOccupied,
     NoLowerFloor,
     UpperFloorOccupied,
     NoUpperFloor

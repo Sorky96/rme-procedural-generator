@@ -82,12 +82,13 @@ struct LevelWorld {
     std::span<const ExitShape> shapes, std::stop_token stop = {});
 
 // Complete geometry before repair. Entrances reserve notches in the first cap.
-// The historical repairReach=0 producer stays separate.
+// The historical repairReach=0 producer stays separate. `caveBlocked` is generateCave's blocked mask (iteration 49).
 [[nodiscard]] std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     SurfaceGrid surface, DecorGrid decor, uint64_t seed, const SurfaceTuning& tuning,
     const DecorTuning& decorTuning, std::span<const ExitShape> caveShapes,
     std::span<const ExitShape> capShapes, bool vegetation, std::stop_token stop = {},
-    std::span<const ExitShape> stairShapes = {}, std::span<const ExitShape> dungeonShapes = {});
+    std::span<const ExitShape> stairShapes = {}, std::span<const ExitShape> dungeonShapes = {},
+    std::span<const uint8_t> caveBlocked = {});
 
 // Costs: 0 forbidden, 1 open, 3 removable blocking decor, 6 water.
 // Sources and destinations are masks. Water-run length is part of the search

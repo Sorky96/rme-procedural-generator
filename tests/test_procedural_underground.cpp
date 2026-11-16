@@ -187,6 +187,21 @@ void testCave() {
 	const auto lone = generateCave(single, 3);
 	const auto loneReport = lone ? undergroundReachabilityOf(single, *lone, false) : std::unexpected(UndergroundError::InvalidGrid);
 	check(loneReport.has_value() && loneReport->caveComponents == 1 && loneReport->caveCells > 21 + 20, "cave: one entrance gets a landing and a tunnel in one component");
+
+	// Iteration 49: blocked cells (occupied z + 1) stay Solid; an all-zero mask changes nothing.
+	const std::vector<uint8_t> zeros(surface.cells.size());
+	const auto unblocked = generateCave(surface, 7, {}, nullptr, zeros);
+	check(unblocked && unblocked->cells == cave->cells && unblocked->rooms == cave->rooms && unblocked->blocked.empty(), "cave: zero mask is no mask");
+	std::vector<uint8_t> wall(surface.cells.size());
+	for (uint32_t y = 0; y < 20; ++y) for (uint32_t x = 19; x <= 21; ++x) wall[size_t(y) * 40 + x] = 1;
+	const auto cut = generateCave(surface, 7, {}, nullptr, wall);
+	check(cut && cut->valid() && cut->blocked == wall, "cave: blocked mask kept");
+	bool solid = true;
+	for (size_t i = 0; cut && i < wall.size(); ++i) solid &= !wall[i] || cut->cells[i] == CaveKind::Solid;
+	check(solid, "cave: blocked cells stay Solid");
+	const auto cutReport = cut ? undergroundReachabilityOf(surface, *cut, false) : std::unexpected(UndergroundError::InvalidGrid);
+	check(cutReport && cutReport->caveComponents == 2 && cutReport->pockets == 0, "cave: a blocked wall splits the cave, each part entered");
+	check(!generateCave(surface, 7, {}, nullptr, std::vector<uint8_t>(3)), "cave: mask of the wrong size refused");
 }
 
 // Iteration 47 (cave shape): the joins are a minimum spanning tree plus loops and do not depend on the order of the

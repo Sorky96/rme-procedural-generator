@@ -29,6 +29,9 @@ struct CaveGrid {
 	std::vector<CaveKind> cells;
     std::vector<uint32_t> rooms;
     std::vector<CaveCorridor> corridors;
+    // Iteration 49: one byte per cell, nonzero = never carved (a tile already on the map at z + 1 and its clearance).
+    // Empty when nothing is blocked. Every later carving of this cave (far-exit tunnels) honours it.
+    std::vector<uint8_t> blocked;
 	[[nodiscard]] bool valid() const noexcept;
 	[[nodiscard]] uint64_t fingerprint() const;
 };
@@ -48,8 +51,11 @@ struct CaveLayout {
 // 2..5 cells wide by noise, get an irregular cavern (noise plus cellular automaton, connected to the axis, centre recorded in
 // rooms) about every 36 cells and 0..2 dead-end branches. Cells within 1 of the area's edge stay Solid. Pure function of
 // the surface and the seed, independent of the order of the entrances; checks stop_requested per tunnel.
+// `blocked` (empty or one byte per cell) cells stay Solid and are kept in CaveGrid::blocked; the result may then have
+// several Floor components (removeUnenteredCaveComponents drops those without an exit).
 [[nodiscard]] std::expected<CaveGrid, SurfaceError> generateCave(
-	const SurfaceGrid& surface, uint64_t seed, std::stop_token stop = {}, CaveLayout* layout = nullptr);
+	const SurfaceGrid& surface, uint64_t seed, std::stop_token stop = {}, CaveLayout* layout = nullptr,
+	std::span<const uint8_t> blocked = {});
 
 // Iteration 47 measurements (G5_METRICS.md). Cavern cells: Floor with >= 5 Floor among its 8 neighbours and a width > 5
 // (the shortest Floor run through the cell along both axes and both diagonals, diagonal cells counted as 1.4).

@@ -27,6 +27,42 @@ namespace {
 
 constexpr uint64_t maxNameBytes = 256;
 
+// Iteration 49: cells within this Chebyshev distance of an occupied z + 1 tile are never carved. Cave Floor then keeps
+// 3 cells from it, its wall ring 2 and the ring's outer borders 1, so no brush or border pass touches the tile.
+constexpr int32_t occupiedCaveClearance = 2;
+
+// The cells of the area the cave must not carve: every tile on z + 1 that is not empty or is protected (the same
+// test as the lower snapshot's protection, so nothing written there is refused later), widened by
+// occupiedCaveClearance. Empty when z + 1 is free, so the cave is generated exactly as before.
+std::vector<uint8_t> caveBlockedCells(const Map& map, const GenerationRegion& region, std::stop_token stop) {
+	const auto w = region.width, h = region.height;
+	std::vector<uint8_t> occupied;
+	for (uint32_t y = 0; y < h; ++y) {
+		if (stop.stop_requested()) return {};
+		for (uint32_t x = 0; x < w; ++x) {
+			const auto* location = map.getTileL(region.x + int(x), region.y + int(y), region.z + 1);
+			if (!location) continue;
+			const auto* tile = location->get();
+			const bool taken = location->getSpawnCount() || location->getWaypointCount() || location->getTownCount() ||
+				(location->getHouseExits() && !location->getHouseExits()->empty()) ||
+				(tile && (!emptyTerrainContent(tile) || tile->statflags));
+			if (!taken) continue;
+			if (occupied.empty()) occupied.resize(size_t(w) * h);
+			occupied[size_t(y) * w + x] = 1;
+		}
+	}
+	if (occupied.empty()) return {};
+	std::vector<uint8_t> blocked(occupied.size());
+	for (uint32_t y = 0; y < h; ++y) for (uint32_t x = 0; x < w; ++x) {
+		if (!occupied[size_t(y) * w + x]) continue;
+		const auto y0 = y >= uint32_t(occupiedCaveClearance) ? y - occupiedCaveClearance : 0u;
+		const auto x0 = x >= uint32_t(occupiedCaveClearance) ? x - occupiedCaveClearance : 0u;
+		for (auto yy = y0; yy <= std::min(h - 1, y + occupiedCaveClearance); ++yy)
+			for (auto xx = x0; xx <= std::min(w - 1, x + occupiedCaveClearance); ++xx) blocked[size_t(yy) * w + xx] = 1;
+	}
+	return blocked;
+}
+
 struct SurfaceStage {
 	SurfaceGrid grid;
 	std::optional<DecorGrid> decor;
@@ -195,7 +231,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
         return fail(PreparationInputError::InvalidProfile);
     }
     const bool storeys = config.surface.buildingStoreys;
-    // Dungeons live on the cave floor; its emptiness check below covers them.
+    // Dungeons live on the cave floor and avoid its blocked cells (occupied z + 1 tiles, iteration 49).
     const bool dungeons = config.surface.buildingDungeons;
     if (dungeons && !resolveDungeonBrushes(profile)) return fail(PreparationInputError::InvalidProfile);
     if (storeys) {
@@ -210,16 +246,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
             }
         }
     }
-    if (hasCave(profile)) {
-		if (region.z >= MAP_MAX_LAYER) return fail(PreparationInputError::NoLowerFloor);
-		for (uint32_t y = 0; y < region.height; ++y) {
-			if (stop.stop_requested()) return fail(PreparationInputError::Cancelled);
-			for (uint32_t x = 0; x < region.width; ++x) {
-				if (!emptyTerrainContent(map.getTile(Position(region.x + int(x), region.y + int(y), region.z + 1))))
-					return fail(PreparationInputError::LowerFloorOccupied);
-			}
-		}
-	}
+    // Occupied tiles on z + 1 do not refuse a cave: the cave leaves them Solid (iteration 49, caveBlockedCells).
+    if (hasCave(profile) && region.z >= MAP_MAX_LAYER) return fail(PreparationInputError::NoLowerFloor);
     if (hasPlateau(profile)) {
         if (region.z < int(config.surface.plateauLevels)) {
             return fail(PreparationInputError::NoUpperFloor);
@@ -448,6 +476,14 @@ TerrainPreparationSteps runPreparation(
                 const bool walkableRockFace = input.config.surface.rockBlocks && entranceGround &&
                     input.config.surface.caveEntranceStyle == CaveEntranceStyle::RockFace;
                 std::vector<BuildingDungeon> levelDungeons;
+                // Read here, in the same uninterrupted step that captures the lower snapshot below.
+                std::vector<uint8_t> caveBlocked;
+                if (hasCave(profile)) {
+                    caveBlocked = caveBlockedCells(map, input.config.region, stop);
+                    if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                    // The mask and its copies in the cave grids (generated, repair world, level view).
+                    if (!caveBlocked.empty() && !reserve(4 * (cellCount + kSnapshotAllocationOverhead))) co_return fail(PreparationInputError::MemoryLimit);
+                }
                 std::optional<DungeonBrushes> dungeonBrushes;
                 if (input.config.surface.buildingDungeons) {
                     auto resolved = resolveDungeonBrushes(profile);
@@ -469,7 +505,8 @@ TerrainPreparationSteps runPreparation(
                     }
                     auto world = buildLevelWorld(std::move(*grid), decor ? std::move(*decor) : DecorGrid{},
                         input.config.seed, input.config.surface, input.config.decor, caveShapes, capShapes, input.config.vegetation, stop,
-                        stairBrush.shapes, dungeonBrushes ? std::span<const ExitShape>(dungeonBrushes->stairs.shapes) : std::span<const ExitShape>{});
+                        stairBrush.shapes, dungeonBrushes ? std::span<const ExitShape>(dungeonBrushes->stairs.shapes) : std::span<const ExitShape>{},
+                        caveBlocked);
                     if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                     passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
@@ -528,7 +565,8 @@ TerrainPreparationSteps runPreparation(
 				if (hasCave(profile)) {
 					auto brushes = resolveCaveBrushes(profile, input.config);
 					if (!brushes) co_return fail(brushes.error());
-					auto generated = repairWorld ? std::expected<CaveGrid, SurfaceError>(*repairWorld->cave) : generateCave(*grid, input.config.seed, stop);
+					auto generated = repairWorld ? std::expected<CaveGrid, SurfaceError>(*repairWorld->cave) :
+						generateCave(*grid, input.config.seed, stop, nullptr, caveBlocked);
 					if (!generated) co_return fail(fromSurface(generated.error()));
 					std::vector<uint8_t> occupied;
 					if (decor) {
@@ -538,6 +576,11 @@ TerrainPreparationSteps runPreparation(
 					auto exits = repairWorld ? std::expected<CaveExitPlan, UndergroundError>(repairWorld->exits) : placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
 					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
 						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
+                    // Blocked cells can cut a tunnel: drop the parts no exit enters (buildLevelWorld does the same).
+                    if (!repairWorld && !caveBlocked.empty()) {
+                        auto removed = removeUnenteredCaveComponents(*generated, *exits, stop);
+                        if (!removed) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    }
                     if (!repairWorld && input.config.surface.caveFarExits) {
                         auto distant = placeFarCaveExits(*grid, *generated, *exits, brushes->shapes, input.config.seed, occupied, stop);
                         if (!distant) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);

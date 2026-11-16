@@ -149,8 +149,6 @@ wxString describe(PreparationInputError error) {
 			return cancelledMessage;
 		case PreparationInputError::InvalidParameters:
 			return "The surface settings are not valid.";
-		case PreparationInputError::LowerFloorOccupied:
-			return "The floor below the area is not empty: the cave needs an empty floor z+1 in the whole rectangle.";
         case PreparationInputError::UpperFloorOccupied:
             return "The floor above the area is not empty: mountain tops need an empty rectangle.";
         case PreparationInputError::NoUpperFloor:
@@ -602,7 +600,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     section("Levels");
     form->Add(label("Cave entrances:"), 0, wxALIGN_CENTER_VERTICAL);
 	cave_entrances_spin_ = spin("terrain-cave-entrances", 0, 20, 0);
-	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells in the selected style, each with a cave below (floor z+1) and a ramp back up. The floor below must be empty in the whole rectangle.");
+	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells in the selected style, each with a cave below (floor z+1) and a ramp back up. Tiles already on floor z+1 are kept: the cave goes around them.");
 	form->Add(cave_entrances_spin_, 1, wxEXPAND);
 
 	form->Add(label("Entrance style:"), 0, wxALIGN_CENTER_VERTICAL);
