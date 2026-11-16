@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-16 — G5: lądowanie pod dziurą (iteracja 48c) — PASS
+
+Pod wejściem-dziurą („cave hole”, styl FloorHole i wejścia z zapasu RockFace) jaskinia na z + 1 nie ma już rampy, tylko chodliwy grunt „dirt floor” (pędzel „cave ropespot”, w 10.98 przedmiot 384, wybierany po nazwie). Wejścia RockFace i dalekie wyjścia zachowują rampy. Krawędź dziura → lądowanie chodliwa w masce adaptera; krawędź nieistniejącej rampy usunięta z planu poziomów adaptera. Sondy: każda dziura ma „dirt floor” bez rampy, każde wejście RockFace rampę; przypadki m19 (10 i 15 wejść) 0 usuniętych miejsc. G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48c”.
+
 ## 2026-11-16 — G5: wygląd zwykłych wejść z zapasu (iteracja 48b) — PASS
 
 Zwykłe wejście z zapasu RockFace (poza skałą) nie jest już doodadem „cave enter” na trawie, tylko dziurą z pędzla „cave hole” — tym samym wyglądem co styl FloorHole. Wejścia w ścianie skały bez zmian. Nowa sonda: „cave enter” tylko przy skale, każde wejście ze zmianą piętra w dół i rampą pod spodem; przypadek m19 (seed 1729, 512 × 512) z 40 i 60 zamówionymi wejściami: 20 + 0 i 23 + 13 dziur, 0 usuniętych miejsc. G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48b”.
