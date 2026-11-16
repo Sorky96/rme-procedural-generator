@@ -826,7 +826,8 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		const auto e = grid->entrances[exit.entrance];
 		const auto& ids = brushes->items[exit.shape];
 		const auto& shape = brushes->shapes[exit.shape];
-		entrances[e] = brushes->entrance;
+		// Iteration 48b: an ordinary fallback entrance off the rock is the floor hole.
+		entrances[e] = style == CaveEntranceStyle::RockFace && grid->cells[e] != SurfaceKind::Rock && brushes->hole ? brushes->hole : brushes->entrance;
 		ramps[exit.cell] = ids.ramp;
 		if (shape.hasTail) ramps[size_t(int64_t(exit.cell) + shape.tailDx + int64_t(shape.tailDy) * side)] = ids.tail;
 	}
@@ -834,10 +835,12 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		"Cave item layers differ from exit geometry");
 	// Iteration 46 (D24): every rock-face entrance opens to the south, so it carries the brush's south-facing first
 	// alternative; no other alternative (the east-facing hole) appears anywhere.
-	const auto alternatives = entranceAlternatives(profile.caveEntrance);
+	auto alternatives = entranceAlternatives(profile.caveEntrance);
 	check(std::ranges::find(alternatives, brushes->entrance) != alternatives.end(), "Entrance item is not from its brush");
 	if (style == CaveEntranceStyle::RockFace) {
 		check(alternatives.size() >= 2 && brushes->entrance == alternatives.front(), "Entrance is not the brush's first alternative");
+		check(brushes->hole && brushOf(brushes->hole) == g_brushes.getBrush("cave hole"), "Fallback entrance is not the cave hole");
+		alternatives.push_back(brushes->hole);
 		for (const auto e : grid->entrances) {
 			const auto open = grid->cells[e + side];
 			check(open == SurfaceKind::Grass || open == SurfaceKind::Dirt || open == SurfaceKind::Shore || open == SurfaceKind::Path,
@@ -893,10 +896,10 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 			// gave it a border piece.
 			wallWithoutFace += std::ranges::none_of(tile->items, [](const auto& item) { return item->isBorder(); });
 		}
-		if (style == CaveEntranceStyle::RockFace && entrances[i]) {
+		if (style == CaveEntranceStyle::RockFace && entrances[i] && entrances[i] == brushes->entrance) {
 			check(prepared->plan.items[i] == plain->plan.items[i], "Rock entrance ground changed");
 		}
-		if (style == CaveEntranceStyle::FloorHole && entrances[i]) {
+		if (entrances[i] && (style == CaveEntranceStyle::FloorHole || entrances[i] == brushes->hole)) {
 			const auto* hole = prepared->preview.getBuffer().getTile(upper);
 			check(hole && hole->ground && hole->ground->getID() == entrances[i], "Hole ground missing");
 		}
@@ -1097,7 +1100,8 @@ void guiCaves(std::ostream& report) {
 		check(bool(validateTerrainTarget(*prepared, config, profile)), "GUI cave validation failed");
 		const auto brushes = resolveCaveBrushes(profile, config);
 		check(bool(brushes), "GUI cave brushes failed");
-		const auto alternatives = entranceAlternatives(profile.caveEntrance);
+		auto alternatives = entranceAlternatives(profile.caveEntrance);
+		if (brushes->hole) alternatives.push_back(brushes->hole); // ordinary fallback entrances (iteration 48b)
 		const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
 		check(bool(receipt), std::format("GUI cave commit failed {}", combination));
 		size_t entrances = 0, exits = 0;
@@ -1116,7 +1120,8 @@ void guiCaves(std::ostream& report) {
 			const auto entranceCount = countIds(surface, [&](uint16_t id) {
 				return std::ranges::find(alternatives, id) != alternatives.end();
 			});
-			if (entranceCount) check(prepared->plan.entrances[i] == brushes->entrance, "GUI entrance is not the south-facing alternative");
+			if (entranceCount) check(prepared->plan.entrances[i] == brushes->entrance || (brushes->hole && prepared->plan.entrances[i] == brushes->hole),
+				"GUI entrance is not the south-facing alternative");
 			const auto rampCount = countIds(lower, [&](uint16_t id) {
 				return std::ranges::any_of(brushes->items, [&](const auto& ids) { return ids.ramp == id; });
 			});
@@ -1124,7 +1129,7 @@ void guiCaves(std::ostream& report) {
 				std::format("GUI cave mismatch {} cell=({},{},{}) entrances={} ramps={} plannedEntrance={} plannedExit={}",
 					combination, upper.x, upper.y, upper.z, entranceCount, rampCount,
 					prepared->plan.entrances[i], prepared->cave->plan.exits[i]));
-			if (style == CaveEntranceStyle::FloorHole && entranceCount)
+			if ((style == CaveEntranceStyle::FloorHole || (brushes->hole && prepared->plan.entrances[i] == brushes->hole)) && entranceCount)
 				check(surface && surface->ground && surface->ground->getID() == prepared->plan.entrances[i], "GUI hole is not ground");
 			check(entranceCount == (prepared->plan.entrances[i] ? 1u : 0u), "GUI commit lost planned entrance");
 			entrances += entranceCount;
@@ -1943,7 +1948,9 @@ void levelRepairProbe(std::ostream& report) {
     for (const auto& poi : levels.plan.pois) if (poi.kind == LevelPoiKind::CaveEntrance) {
         const auto i = poi.at.cell;
         const auto* tile = editor.map.getTile(Position(100 + int(i % 128), 100 + int(i / 128), 7));
-        check(tile && std::ranges::any_of(tile->items, [&](const auto& item) { return item->getID() == prepared->plan.entrances[i]; }),
+        // An ordinary fallback entrance (iteration 48b) is the hole ground itself.
+        check(tile && ((tile->ground && tile->ground->getID() == prepared->plan.entrances[i]) ||
+            std::ranges::any_of(tile->items, [&](const auto& item) { return item->getID() == prepared->plan.entrances[i]; })),
             "Committed notch entrance item");
         for (const auto& edge : levels.plan.edges) if (edge.a == poi.at) {
             check(levels.report.walkable[edge.a.floor * 128 * 128 + edge.a.cell] &&
@@ -2678,6 +2685,43 @@ void m19RockGuiCase(std::ostream& report) {
     std::filesystem::remove(file);
 }
 
+// Iteration 48b: the look of every cave entrance on a placed map. A "cave enter" item (rock-face entrance) only stands on
+// or next to the rock brush's ground; an ordinary entrance off the rock (iteration 48 fallback) is the "cave hole" ground.
+// Each entrance carries a floor change down and has a ramp of the exit brush directly below.
+struct EntranceLook { size_t rockFace = 0, holes = 0; };
+EntranceLook checkEntranceLook(Map& map, int x0, int y0, int z, int width, int height, const Brush* rock, const CaveExitBrush& exits,
+    std::string_view label) {
+    const auto rockFaceIds = entranceAlternatives("cave enter"), holeIds = entranceAlternatives("cave hole");
+    check(!rockFaceIds.empty() && !holeIds.empty() && rock, std::format("{} entrance brushes", label));
+    const auto groundIs = [&](int x, int y, const auto& match) {
+        const auto* tile = map.getTile(Position(x, y, z));
+        return tile && tile->ground && match(tile->ground->getID());
+    };
+    EntranceLook look;
+    for (int y = y0; y < y0 + height; ++y) for (int x = x0; x < x0 + width; ++x) {
+        const auto* surface = map.getTile(Position(x, y, z));
+        if (!surface || !surface->ground) continue;
+        const bool rockFace = std::ranges::any_of(surface->items, [&](const auto& item) {
+            return std::ranges::find(rockFaceIds, item->getID()) != rockFaceIds.end(); });
+        const bool hole = std::ranges::find(holeIds, surface->ground->getID()) != holeIds.end();
+        if (!rockFace && !hole) continue;
+        const auto at = std::format("{} at ({},{},{})", label, x, y, z);
+        check(!(rockFace && hole), "Entrance with both a rock face and a hole " + at);
+        const auto isRock = [&](uint16_t id) { return brushOf(id) == rock; };
+        check(!rockFace || groundIs(x, y, isRock) || groundIs(x, y - 1, isRock) || groundIs(x - 1, y, isRock) ||
+            groundIs(x + 1, y, isRock) || groundIs(x, y + 1, isRock), "\"cave enter\" off the rock " + at);
+        const auto down = [](uint16_t id) { return g_item_definitions.get(id).hasFlag(ItemFlag::FloorChangeDown); };
+        check(down(surface->ground->getID()) || std::ranges::any_of(surface->items, [&](const auto& item) { return down(item->getID()); }),
+            "Entrance without a floor change down " + at);
+        const auto* lower = map.getTile(Position(x, y, z + 1));
+        check(lower && std::ranges::any_of(lower->items, [&](const auto& item) {
+            return std::ranges::any_of(exits.items, [&](const auto& ids) { return ids.ramp == item->getID(); }); }),
+            "Entrance without a ramp below " + at);
+        look.rockFace += rockFace; look.holes += hole;
+    }
+    return look;
+}
+
 // Iteration 46 (D26): the GUI report of a cave ramp without an entrance above it at (1018, 1237, 7). Real dialog, its
 // default settings plus 10 cave entrances, profiles m06 and m19 (tuning and palettes of the g4 profiles; one case may
 // have no ramp when m19's impassable rock leaves no entrance on the start land, but m19 as a whole must), the 512 x 512
@@ -2702,8 +2746,10 @@ void d26RampCase(std::ostream& report) {
     check(exitDoodad, "D26 ramp brush");
     const auto exitBrush = resolveCaveExitBrush(*exitDoodad);
     check(bool(exitBrush), "D26 ramp brush items");
-    const auto entranceIds = entranceAlternatives("cave enter");
+    auto entranceIds = entranceAlternatives("cave enter");
+    std::ranges::copy(entranceAlternatives("cave hole"), std::back_inserter(entranceIds));
     size_t runs = 0, paired = 0, farRamps = 0, m19Paired = 0;
+    EntranceLook looks;
     for (const auto& fixture : fixtures) {
         StyleProfile profile;
         profile.client = ids->client; profile.otbSha256 = ids->otbSha256; profile.datSha256 = ids->datSha256;
@@ -2774,8 +2820,12 @@ void d26RampCase(std::ostream& report) {
             }
             paired += withEntrance; farRamps += ramps - withEntrance; ++runs;
             if (std::string_view(fixture.name) == "i46-m19-fixture") m19Paired += withEntrance;
-            report << std::format("D26_RAMP_CASE {} ramps={} withEntrance={} farExits={} status={}\n", combination, ramps, withEntrance,
-                ramps - withEntrance, run.status().substr(0, run.status().find('\n')));
+            const auto look = checkEntranceLook(editor.map, 1018 - 256, 1237 - 256, z, 512, 512, g_brushes.getBrush(fixture.palette[2]),
+                *exitBrush, "D26 " + combination);
+            check(look.rockFace + look.holes == entrances, "D26 entrance look count " + combination);
+            looks.rockFace += look.rockFace; looks.holes += look.holes;
+            report << std::format("D26_RAMP_CASE {} ramps={} withEntrance={} farExits={} rockFace={} holes={} status={}\n", combination, ramps,
+                withEntrance, ramps - withEntrance, look.rockFace, look.holes, run.status().substr(0, run.status().find('\n')));
             dialog->Destroy();
             editor.map.clearChanges();
             g_gui.CloseCurrentEditor();
@@ -2784,7 +2834,8 @@ void d26RampCase(std::ostream& report) {
     }
     check(paired > 0, "D26 placed no cave ramp in any case");
     check(m19Paired > 0, "D26 placed no m19 cave ramp");
-    report << std::format("D26_RAMP_ENTRANCE_PASS runs={} pairedRamps={} m19PairedRamps={} farExitRamps={}\n", runs, paired, m19Paired, farRamps);
+    report << std::format("D26_RAMP_ENTRANCE_PASS runs={} pairedRamps={} m19PairedRamps={} farExitRamps={} rockFaceEntrances={} holeEntrances={}\n",
+        runs, paired, m19Paired, farRamps, looks.rockFace, looks.holes);
 }
 
 // GUI report after iteration 46: m19, x 1000, y 1000, 512 x 512, seed 1729, 10 rock-face cave entrances, everything else
@@ -2877,6 +2928,78 @@ void m19NoCavesCase(std::ostream& report) {
     std::filesystem::remove(file);
 }
 
+// Iteration 48b: the GUI report of an ordinary fallback entrance drawn as the rock-face doodad on grass. Real dialog, m19
+// fixture, x 1000, y 1000, 512 x 512, seed 1729, rock-face style, 10 entrances per 65536 cells (40 wanted, the user's
+// case) and 15 (60 wanted, more than the rock walls hold, so the ordinary fallback must appear); everything else at the
+// dialog defaults. Every entrance passes checkEntranceLook and the dialog removes no place.
+void fallbackEntranceLookCase(std::ostream& report) {
+    UndoLimits undoLimits;
+    const auto ids = loadedClientAssetIds();
+    check(bool(ids), "I48b fixture client assets");
+    StyleProfile fixture;
+    fixture.client = ids->client; fixture.otbSha256 = ids->otbSha256; fixture.datSha256 = ids->datSha256;
+    fixture.tuning = SurfaceTuning{192, 300, 12, 8, 20, 8, 240, 8, 300, 6000, 8};
+    fixture.decorTuning = DecorTuning{565, 17, 369, 239, 23, 29};
+    fixture.palette = {"grass", "dirt", "mountain", "sand", "sea"};
+    fixture.decorPalette = {"trees", "grass tufts", "small rocks"};
+    const auto encoded = serializeProfile(fixture);
+    check(bool(encoded), "I48b fixture serialization");
+    const auto directory = styleProfileDirectory();
+    const auto relative = std::filesystem::weakly_canonical(directory).lexically_relative(std::filesystem::current_path().parent_path());
+    check(!relative.empty() && *relative.begin() != "..", "I48b profile must stay in private probe directory");
+    std::filesystem::create_directories(directory);
+    const auto file = directory / "i48b-m19-fixture.profile";
+    check(!std::filesystem::exists(file), "I48b fixture must not overwrite a profile");
+    {std::ofstream out(file); out << *encoded; check(bool(out), "I48b profile write");}
+    const auto* exitDoodad = g_brushes.getBrush("ramp")->as<DoodadBrush>();
+    check(exitDoodad, "I48b ramp brush");
+    const auto exitBrush = resolveCaveExitBrush(*exitDoodad);
+    check(bool(exitBrush), "I48b ramp items");
+    EntranceLook total;
+    for (const int perArea : {10, 15}) {
+        check(g_gui.NewMap(), "I48b GUI map");
+        auto& editor = *g_gui.GetCurrentEditor();
+        auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+        const auto spin = [&](const char* name, int value) {
+            auto* c = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
+            check(c, std::format("I48b spin {}", name)); c->SetValue(value);
+            wxSpinEvent event(wxEVT_SPINCTRL, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+        };
+        const auto choose = [&](const char* name, int index) {
+            auto* c = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName(name, dialog));
+            check(c && index >= 0 && index < int(c->GetCount()), std::format("I48b choice {}", name)); c->SetSelection(index);
+            wxCommandEvent event(wxEVT_CHOICE, c->GetId()); event.SetEventObject(c); c->GetEventHandler()->ProcessEvent(event);
+        };
+        choose("terrain-style", 1);
+        auto* profiles = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-profile", dialog));
+        check(profiles, "I48b profile control");
+        choose("terrain-profile", profiles->FindString("i48b-m19-fixture"));
+        spin("terrain-x", 1000); spin("terrain-y", 1000); spin("terrain-width", 512); spin("terrain-height", 512);
+        spin("terrain-cave-entrances", perArea);
+        auto* style = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-cave-entrance-style", dialog));
+        check(style && style->GetSelection() == 0, "I48b rock-face style by default");
+        auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
+        check(seed, "I48b seed"); seed->SetValue("1729");
+        MountainDialogRun run(*dialog, editor, 0, true);
+        dialog->ShowModal(); run.stop();
+        const auto label = std::format("I48b entrances={}", perArea);
+        check(run.placed(), label + ": " + run.failure() + " " + run.status());
+        std::string status = run.status();
+        std::ranges::replace(status, '\n', ' ');
+        check(status.find("removed places: 0.") != std::string::npos, label + " removed places: " + status);
+        const auto look = checkEntranceLook(editor.map, 1000, 1000, 7, 512, 512, g_brushes.getBrush("mountain"), *exitBrush, label);
+        check(look.rockFace > 0, label + " placed no rock-face entrance");
+        if (perArea == 15) check(look.holes > 0, label + " placed no ordinary fallback entrance");
+        total.rockFace += look.rockFace; total.holes += look.holes;
+        report << std::format("FALLBACK_ENTRANCE_LOOK_CASE {} rockFace={} holes={} status={}\n", label, look.rockFace, look.holes, status);
+        dialog->Destroy();
+        editor.map.clearChanges();
+        g_gui.CloseCurrentEditor();
+    }
+    std::filesystem::remove(file);
+    report << std::format("FALLBACK_ENTRANCE_LOOK_PASS rockFace={} holes={}\n", total.rockFace, total.holes);
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -2888,6 +3011,7 @@ void run() {
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
         m19NoCavesCase(report);
+        fallbackEntranceLookCase(report);
         d26RampCase(report);
         dungeonGuiProbe(report);
         buildingStairsGuiProbe(report);
