@@ -3034,6 +3034,113 @@ void fallbackEntranceLookCase(std::ostream& report) {
     report << std::format("FALLBACK_ENTRANCE_LOOK_PASS rockFace={} holes={}\n", total.rockFace, total.holes);
 }
 
+// Iteration 49 (D23): a cave under a z + 1 that is already partly built on, and Place as one history step. m19 tuning,
+// x 1000, y 1000, 512 x 512, seed 1729, 10 entrances, empty map except a 128 x 128 block of ground (grass, every
+// seventh tile dirt) in the middle of z + 1. The cave is created, the block stays byte-identical through Place, Undo and
+// Redo, every placed entrance has its cave ground below outside the block and the level report reaches everything; one
+// Undo restores both floors as before Place, one Redo restores both as after.
+void occupiedLowerFloorCase(std::ostream& report) {
+    UndoLimits undoLimits;
+    constexpr int x0 = 1000, y0 = 1000, side = 512, bx = 1192, by = 1192, block = 128;
+    GenerationConfig config{{x0, y0, 7, side, side}, 1729};
+    config.algorithm = GenerationAlgorithm::Surface;
+    config.surface = SurfaceTuning{192, 300, 12, 8, 20, 8, 240, 8, 300, 6000, 8};
+    config.surface.caveEntrances = 10; config.surface.repairReach = 1; config.surface.shoreSmoothing = 2;
+    config.surface.rockBlocks = true; config.surface.caveEntranceStyle = CaveEntranceStyle::RockFace;
+    GroundProfile profile{{"grass", "dirt", "mountain", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+    profile.caveEntrance = "cave enter"; profile.caveExit = "ramp"; profile.caveGround = "cave"; profile.caveWall = "mountain";
+    constexpr PreparationBudget preparation{1000000, 1100000, 2000000, 8ULL << 30};
+    constexpr TerrainCommitBudget commit{2000000, 8ULL << 30};
+    const auto entrancesOf = [](const PreparedTerrain& prepared) {
+        return size_t(std::ranges::count_if(prepared.plan.entrances, [](uint16_t id) { return id != 0; }));
+    };
+    const auto caveCellsOf = [&](const PreparedTerrain& prepared) {
+        size_t cells = 0;
+        for (const auto& position : prepared.cave->preview.getChanges()) {
+            const auto* tile = prepared.cave->preview.getBuffer().getTile(position);
+            cells += tile && tile->ground && brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveGround);
+        }
+        return cells;
+    };
+    // Reference on an empty map: what the same request gives without the block.
+    check(g_gui.NewMap(), "I49 reference map");
+    size_t freeEntrances = 0, freeCave = 0, freeInBlock = 0;
+    std::vector<uint16_t> freeEntranceItems;
+    {
+        auto& editor = *g_gui.GetCurrentEditor();
+        const auto free = prepareTerrain(editor.map, config, profile, preparation);
+        check(free && free->cave, "I49 reference preparation");
+        freeEntrances = entrancesOf(*free);
+        freeEntranceItems = free->plan.entrances;
+        freeCave = caveCellsOf(*free);
+        for (const auto& position : free->cave->preview.getChanges())
+            freeInBlock += position.x >= bx && position.y >= by && position.x < bx + block && position.y < by + block;
+    }
+    g_gui.CloseCurrentEditor();
+    check(freeInBlock > 0, "I49 the reference cave must reach the block area, or the block tests nothing");
+    check(g_gui.NewMap(), "I49 occupied map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    const auto grass = g_brushes.getBrush("grass")->as<GroundBrush>()->getPlacementItemId();
+    const auto dirt = g_brushes.getBrush("dirt")->as<GroundBrush>()->getPlacementItemId();
+    for (int y = by; y < by + block; ++y) for (int x = bx; x < bx + block; ++x)
+        TerrainPlacement::placeBrushItem(*editor.map.getOrCreateTile(Position(x, y, 8)), (x + y) % 7 ? grass : dirt);
+    const auto blockImage = [&] { return stackImage(editor.map, bx, by, 8, block, block); };
+    const auto blockBefore = blockImage();
+    const auto image = [&](int z) { return stackImage(editor.map, x0 - 3, y0 - 3, z, side + 6, side + 6); };
+    const auto beforeUpper = image(7), beforeLower = image(8);
+    const auto prior = editor.actionQueue->getSize();
+    auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+    check(bool(prepared), prepared ? "" : std::format("I49 occupied z + 1 refused: domain {} value {}", prepared.error().index(),
+        std::visit([](auto error) { return int(error); }, prepared.error())));
+    check(prepared->cave && prepared->levels, "I49 cave or level report missing");
+    const auto entrances = entrancesOf(*prepared), caveCells = caveCellsOf(*prepared);
+    check(entrances > 0 && caveCells > 0, "I49 no cave under a partly occupied z + 1");
+    const auto inBlock = [&](const Position& p) { return p.x >= bx && p.y >= by && p.x < bx + block && p.y < by + block; };
+    check(std::ranges::none_of(prepared->cave->preview.getChanges(), inBlock), "I49 cave preview changes an occupied tile");
+    // An entrance is lost only where its landing would reach into the block's clearance: within 4 cells of the block.
+    check(freeEntranceItems.size() == prepared->plan.entrances.size(), "I49 entrance layers differ in size");
+    size_t dropped = 0, added = 0;
+    for (size_t i = 0; i < freeEntranceItems.size(); ++i) {
+        const int x = x0 + int(i % side), y = y0 + int(i / side);
+        if (freeEntranceItems[i] && !prepared->plan.entrances[i]) {
+            ++dropped;
+            check(x >= bx - 4 && y >= by - 4 && x < bx + block + 4 && y < by + block + 4, "I49 entrance lost away from the block");
+        }
+        added += !freeEntranceItems[i] && prepared->plan.entrances[i];
+    }
+    size_t nearBlock = 0;
+    for (const auto& position : prepared->cave->preview.getChanges())
+        nearBlock += position.x >= bx - 4 && position.y >= by - 4 && position.x < bx + block + 4 && position.y < by + block + 4;
+    const auto& levels = *prepared->levels;
+    check(levels.report.allReached() && levels.report.walkableEdges == levels.report.edges && !levels.repair.unrepaired,
+        "I49 cave or entrances not reachable");
+    for (size_t i = 0; i < prepared->plan.entrances.size(); ++i) {
+        if (!prepared->plan.entrances[i]) continue;
+        const Position below(x0 + int(i % side), y0 + int(i / side), 8);
+        const auto* tile = prepared->cave->preview.getBuffer().getTile(below);
+        check(!inBlock(below) && tile && tile->ground, "I49 entrance without cave ground below");
+        check(levels.report.reached[i], "I49 entrance not reached");
+    }
+    check(bool(DrawOperations::commitTerrainPreview(*prepared, config, profile, commit)), "I49 Place failed");
+    check(editor.actionQueue->getSize() == prior + 1, "I49 Place is not one history step");
+    check(blockImage() == blockBefore, "I49 Place changed the occupied block");
+    for (const auto* unit : {&*prepared, prepared->cave.get()}) for (const auto& position : unit->preview.getChanges())
+        check(snapshotTilesEqual(editor.map.getTile(position), unit->preview.getBuffer().getTile(position)), "I49 map differs from preview");
+    const auto afterUpper = image(7), afterLower = image(8);
+    check(editor.actionQueue->undo(), "I49 Undo refused");
+    check(image(7) == beforeUpper && image(8) == beforeLower && !editor.actionQueue->canUndo(), "I49 one Undo did not restore both floors");
+    check(editor.actionQueue->redo(), "I49 Redo refused");
+    check(image(7) == afterUpper && image(8) == afterLower && !editor.actionQueue->canRedo(), "I49 one Redo did not restore both floors");
+    check(blockImage() == blockBefore, "I49 Undo/Redo changed the occupied block");
+    report << std::format("OCCUPIED_Z1_CAVE_CASE block={}x{} freeEntrances={} freeCaveCells={} freeCaveInBlock={} entrances={} caveCells={} "
+        "droppedNearBlock={} added={} nearBlock={} repairs={} removedPois={} removedCaveComponents={} undoSteps=1\n", block, block, freeEntrances,
+        freeCave, freeInBlock, entrances, caveCells, dropped, added, nearBlock, levels.repair.repairs, levels.repair.removedPois,
+        levels.repair.removedCaveComponents);
+    report << "OCCUPIED_Z1_CAVE_PASS\n";
+    editor.map.clearChanges();
+    g_gui.CloseCurrentEditor();
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -3044,6 +3151,7 @@ void run() {
 		wxString error;
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
+        occupiedLowerFloorCase(report);
         m19NoCavesCase(report);
         fallbackEntranceLookCase(report);
         d26RampCase(report);

@@ -112,6 +112,7 @@ if args.probes:
             ok &= 'D26_RAMP_ENTRANCE_PASS' in report.get('report', '')
             ok &= 'M19_CAVES_GUI_PASS' in report.get('report', '')
             ok &= 'FALLBACK_ENTRANCE_LOOK_PASS' in report.get('report', '')
+            ok &= 'OCCUPIED_Z1_CAVE_PASS' in report.get('report', '')
         print(f'probe --{mode:<8} {"PASS" if ok else "FAIL"} (exit_code={report.get("exit_code")}, '
               f'input_assets_unchanged={report.get("input_assets_unchanged")}, SetFocus warnings={len(stderr_lines) - len(foreign)}, other stderr={len(foreign)})')
         if not ok:
