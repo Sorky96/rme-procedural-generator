@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-16 — G5: wygląd zwykłych wejść z zapasu (iteracja 48b) — PASS
+
+Zwykłe wejście z zapasu RockFace (poza skałą) nie jest już doodadem „cave enter” na trawie, tylko dziurą z pędzla „cave hole” — tym samym wyglądem co styl FloorHole. Wejścia w ścianie skały bez zmian. Nowa sonda: „cave enter” tylko przy skale, każde wejście ze zmianą piętra w dół i rampą pod spodem; przypadek m19 (seed 1729, 512 × 512) z 40 i 60 zamówionymi wejściami: 20 + 0 i 23 + 13 dziur, 0 usuniętych miejsc. G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48b”.
+
 ## 2026-11-15 — G5: D24, zwykłe wejścia w zapasie (iteracja 48) — część 1 PASS, pędzel ściany bez zmiany
 
 Styl RockFace dobiera zwykłe wejścia poza skałą, gdy w ścianach brakuje miejsc; wejścia w ścianie bez zmian względem HEAD (m06 599, m19 586), mediana wejść 64 (m06) i 44,5 (m19), każde z rampą i w jednej składowej jaskini. Pędzel ściany z licami ze wszystkich stron w 10.98 to tylko „snowy/icy mountain” — ich nieprzechodnie obramowanie zewnętrzne blokowało jaskinię w przypadku GUI m19, więc zostaje „mountain”. G5 32/32 w m06 i m19, przypadek GUI m19 bez usuniętych miejsc, odcisk Seed 1729 bez zmian. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48”.
