@@ -428,12 +428,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		if (!found) co_return std::unexpected(PreviewError::InvalidPlan);
     }
     std::vector<uint16_t> entranceIds, exitIds;
-    uint16_t fallbackHole = 0;
+    uint16_t fallbackHole = 0, caveLanding = 0;
     if (!upper && hasCave(plan.profile)) {
         const auto resolved = resolveCaveBrushes(plan.profile, plan.config);
 		if (!resolved) co_return std::unexpected(PreviewError::InvalidPlan);
 		entranceIds = {resolved->entrance};
 		fallbackHole = resolved->hole;
+		if (cave) caveLanding = resolved->landing;
 		if (fallbackHole) entranceIds.push_back(fallbackHole);
 		for (const auto& ids : resolved->items) {
 			exitIds.push_back(ids.ramp);
@@ -568,7 +569,9 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 					adjacentFloor |= plan.caveFloor[size_t(cy + dy) * r.width + size_t(cx + dx)] == 1;
 			}
 			if (plan.caveFloor[i] != 1 && (plan.caveFloor[i] == 2) != adjacentFloor) co_return std::unexpected(PreviewError::InvalidPlan);
-			if (plan.items[i]) {
+			// The walkable ground under a hole (iteration 48c) is a cave Floor cell without a ramp.
+			const bool landing = caveLanding && plan.items[i] == caveLanding && plan.caveFloor[i] == 1 && !plan.exits[i];
+			if (plan.items[i] && !landing) {
 				const auto def = g_item_definitions.get(plan.items[i]);
 				if (!def || def.editorData().brush != (plan.caveFloor[i] == 1 ? caveGroundBrush : plan.caveFloor[i] >= 3 ? dungeonFloorBrush : caveWallBrush))
 					co_return std::unexpected(PreviewError::InvalidItem);
@@ -624,6 +627,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&
 			definition.hasFlag(ItemFlag::FloorChangeDown) && std::ranges::find(entranceIds, plan.items[i]) != entranceIds.end();
         if (cave && plan.caveFloor[i] >= 3) for (const auto& variant : dungeonFloorBrush->getBorderItems()) found |= variant.id == plan.items[i];
+        if (cave && caveLanding && plan.items[i] == caveLanding && plan.caveFloor[i] == 1 && !plan.exits[i]) found = true;
         if (cave && ground.editorData().brush == caveWallBrush) for (const auto& variant : caveWallBrush->getBorderItems()) found |= variant.id == plan.items[i];
 		if (!upper && hasPlateau(plan.profile)) {
             const auto* cliff = g_brushes.getBrush(plan.profile.plateauCliff)->as<GroundBrush>();

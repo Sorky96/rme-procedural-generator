@@ -29,6 +29,9 @@ struct CaveBrushes : CaveExitBrush {
 	uint16_t entrance = 0;
 	// Rock-face style only: the floor hole of an ordinary entrance off the rock (iteration 48b), 0 without that brush.
 	uint16_t hole = 0;
+	// Walkable ground on z + 1 under a hole (either style), in place of the ramp (iteration 48c): the "cave ropespot"
+	// ground brush's placement item ("dirt floor" in 10.98). 0 without that brush; holes then keep their ramp.
+	uint16_t landing = 0;
 	uint16_t ground = 0;
 	uint16_t wall = 0;
 };

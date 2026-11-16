@@ -32,6 +32,7 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 };
 constexpr uint64_t maxDecorChance = 100000;
 constexpr std::string_view fallbackHoleBrush = "cave hole";
+constexpr std::string_view holeLandingBrush = "cave ropespot";
 
 bool plainCaveItem(const Item* item, bool allowGround = false) {
 	const auto def = item ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
@@ -211,6 +212,17 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 		const auto def = g_item_definitions.get(id);
 		return def && def.isGroundTile() && def.hasFlag(ItemFlag::FloorChangeDown) ? id : 0;
 	};
+	// Iteration 48c: a plain walkable ground without any floor change; data without the brush keeps the ramp under holes.
+	const auto* landingBrush = g_brushes.getBrush(std::string(holeLandingBrush));
+	if (const auto* landing = landingBrush ? landingBrush->as<GroundBrush>() : nullptr; landing && validGround(landing)) {
+		const auto id = landing->getPlacementItemId();
+		const auto def = g_item_definitions.get(id);
+		if (def && def.isGroundTile() && !def.hasFlag(ItemFlag::Unpassable) &&
+			std::ranges::none_of(std::array{ItemFlag::FloorChange, ItemFlag::FloorChangeDown, ItemFlag::FloorChangeNorth,
+				ItemFlag::FloorChangeSouth, ItemFlag::FloorChangeEast, ItemFlag::FloorChangeWest},
+				[&](ItemFlag flag) { return def.hasFlag(flag); }))
+			result.landing = id;
+	}
 	if (floorHole) {
 		result.entrance = holeItem(*hole);
 		if (!result.entrance) return std::unexpected(ResolveError::InvalidProfile);

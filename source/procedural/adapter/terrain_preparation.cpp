@@ -425,6 +425,9 @@ TerrainPreparationSteps runPreparation(
                 std::optional<CaveGrid> levelCave;
                 CaveExitPlan levelExits;
                 std::vector<ExitShape> levelShapes;
+                // Iteration 48c: the ramp edge (cave cell under a hole, its surface destination) of every hole with walkable
+                // ground below instead of a ramp.
+                std::vector<LevelEdge> holeLandings;
                 std::vector<PlateauGrid> levelCaps;
                 std::optional<LevelWorld> repairWorld;
                 LevelRepairReport repairReport;
@@ -579,15 +582,22 @@ TerrainPreparationSteps runPreparation(
 						const auto& shape = brushes->shapes[exit.shape];
 						const auto tail = size_t(int64_t(p) + shape.tailDx + int64_t(shape.tailDy) * grid->region.width);
 						if (shape.hasTail && !lowerPlan.items[tail]) continue;
+                        constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
+                        const auto d = size_t(shape.direction);
+                        const auto arrival = size_t(int64_t(p) + dx[d] + int64_t(dy[d]) * grid->region.width);
+                        bool hole = false;
                         if (!exit.distant) {
                             const auto e = grid->entrances[exit.entrance];
                             if (!plan.items[e]) continue;
                             plan.entrances[e] = brushes->entrance;
-                            if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) plan.items[e] = plan.entrances[e];
-                            else if (grid->cells[e] != SurfaceKind::Rock && brushes->hole) {
+                            if (input.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole) {
+                                plan.items[e] = plan.entrances[e];
+                                hole = true;
+                            } else if (grid->cells[e] != SurfaceKind::Rock && brushes->hole) {
                                 // An ordinary entrance off the rock (iteration 48) is a floor hole, not the rock-face doodad
                                 // standing on grass (iteration 48b).
                                 plan.items[e] = plan.entrances[e] = brushes->hole;
+                                hole = true;
                             } else if (input.config.surface.rockBlocks && entranceGround && grid->cells[e] == SurfaceKind::Rock) {
                                 // Impassable rock: the rock-face entrance stands on the profile's dirt ground (iteration 44).
                                 plan.items[e] = entranceGround;
@@ -595,11 +605,12 @@ TerrainPreparationSteps runPreparation(
                             }
                             if (!plan.decor.empty()) plan.decor[e] = 0;
                         }
-                        if (exit.distant && !plan.decor.empty()) {
-                            constexpr int dx[] = {0, 0, 1, -1}, dy[] = {-1, 1, 0, 0};
-                            const auto d = size_t(shape.direction);
-                            const auto arrival = size_t(int64_t(p) + dx[d] + int64_t(dy[d]) * grid->region.width);
-                            plan.decor[arrival] = 0;
+                        if (exit.distant && !plan.decor.empty()) plan.decor[arrival] = 0;
+                        if (hole && brushes->landing && lowerPlan.caveFloor[p] == 1) {
+                            // Under a hole the cave has walkable ground, not a ramp (iteration 48c).
+                            lowerPlan.items[p] = brushes->landing;
+                            holeLandings.push_back({{1, uint32_t(p)}, {0, uint32_t(arrival)}});
+                            continue;
                         }
 						lowerPlan.exits[p] = ids.ramp;
 						if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
@@ -720,6 +731,8 @@ TerrainPreparationSteps runPreparation(
                                 }
                             }
                         }
+                        // The surface cell a hole's ramp would lead to stays reserved, so the caps stay as with the ramp.
+                        for (const auto& landing : holeLandings) occupied[landing.b.cell] = 1;
                     }
                     auto work = [surface = repairWorld ? *grid : std::move(*grid), config = input.config, shapes = brushes.shapes,
                                  occupied = std::move(occupied)](std::stop_token token) mutable {
@@ -944,6 +957,10 @@ TerrainPreparationSteps runPreparation(
                     levelCave ? &*levelCave : nullptr, levelExits, levelShapes, levelCaps, {}, stop, levelStoreys, levelDungeons);
                 if (!semantic) co_return fail(semantic.error() == ReachabilityError::Cancelled ?
                     PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                // A hole with walkable ground below has no ramp up: only its own edge hole -> landing remains (iteration 48c).
+                std::erase_if(semantic->edges, [&](const LevelEdge& edge) {
+                    return std::ranges::any_of(holeLandings, [&](const LevelEdge& landing) { return edge.a == landing.a && edge.b == landing.b; });
+                });
                 levels = std::make_unique<PreparedTerrain::Levels>();
                 levels->repair = repairReport;
                 levels->passes = std::move(passes);
