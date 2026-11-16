@@ -428,10 +428,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		if (!found) co_return std::unexpected(PreviewError::InvalidPlan);
     }
     std::vector<uint16_t> entranceIds, exitIds;
+    uint16_t fallbackHole = 0;
     if (!upper && hasCave(plan.profile)) {
         const auto resolved = resolveCaveBrushes(plan.profile, plan.config);
 		if (!resolved) co_return std::unexpected(PreviewError::InvalidPlan);
 		entranceIds = {resolved->entrance};
+		fallbackHole = resolved->hole;
+		if (fallbackHole) entranceIds.push_back(fallbackHole);
 		for (const auto& ids : resolved->items) {
 			exitIds.push_back(ids.ramp);
 			if (ids.tail) exitIds.push_back(ids.tail);
@@ -617,7 +620,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}
 		const bool groundHole = !cave && (plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole ||
-			std::ranges::find(dungeonOpenings, plan.items[i]) != dungeonOpenings.end()) &&
+			(fallbackHole && plan.items[i] == fallbackHole) || std::ranges::find(dungeonOpenings, plan.items[i]) != dungeonOpenings.end()) &&
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&
 			definition.hasFlag(ItemFlag::FloorChangeDown) && std::ranges::find(entranceIds, plan.items[i]) != entranceIds.end();
         if (cave && plan.caveFloor[i] >= 3) for (const auto& variant : dungeonFloorBrush->getBorderItems()) found |= variant.id == plan.items[i];

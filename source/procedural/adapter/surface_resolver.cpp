@@ -13,6 +13,7 @@
 #include <limits>
 #include <new>
 #include <ranges>
+#include <string_view>
 #include <typeinfo>
 #include <wx/thread.h>
 
@@ -30,6 +31,7 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
 };
 constexpr uint64_t maxDecorChance = 100000;
+constexpr std::string_view fallbackHoleBrush = "cave hole";
 
 bool plainCaveItem(const Item* item, bool allowGround = false) {
 	const auto def = item ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
@@ -204,12 +206,19 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 	auto exitBrush = resolveCaveExitBrush(*exit);
 	if (!exitBrush) return std::unexpected(exitBrush.error());
 	static_cast<CaveExitBrush&>(result) = std::move(*exitBrush);
-	if (floorHole) {
-		const auto id = hole->getPlacementItemId();
+	const auto holeItem = [](const GroundBrush& brush) -> uint16_t {
+		const auto id = brush.getPlacementItemId();
 		const auto def = g_item_definitions.get(id);
-		if (!def || !def.isGroundTile() || !def.hasFlag(ItemFlag::FloorChangeDown)) return std::unexpected(ResolveError::InvalidProfile);
-		result.entrance = id;
+		return def && def.isGroundTile() && def.hasFlag(ItemFlag::FloorChangeDown) ? id : 0;
+	};
+	if (floorHole) {
+		result.entrance = holeItem(*hole);
+		if (!result.entrance) return std::unexpected(ResolveError::InvalidProfile);
 	} else {
+		// The ordinary entrances a rock-face style falls back to off the rock (iteration 48) look like the floor-hole style
+		// (iteration 48b): the dialog's floor-hole brush. Data without it keeps the rock-face doodad there.
+		const auto* fallback = g_brushes.getBrush(std::string(fallbackHoleBrush));
+		if (const auto* ground = fallback ? fallback->as<GroundBrush>() : nullptr; ground && validGround(ground)) result.hole = holeItem(*ground);
 		int priorAlternative = -1;
 		size_t alternatives = 0;
 		for (int i = 0; i < entrance->getTotalVariants(); ++i) {

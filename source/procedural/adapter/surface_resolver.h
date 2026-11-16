@@ -27,6 +27,8 @@ struct CaveBrushes : CaveExitBrush {
 	// placed: in the cave entrance doodads of the RME data it is the south-facing hole (the second faces east). A floor
 	// hole is the ground brush's placement item.
 	uint16_t entrance = 0;
+	// Rock-face style only: the floor hole of an ordinary entrance off the rock (iteration 48b), 0 without that brush.
+	uint16_t hole = 0;
 	uint16_t ground = 0;
 	uint16_t wall = 0;
 };
