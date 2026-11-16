@@ -85,6 +85,16 @@ std::vector<uint16_t> entranceAlternatives(const std::string& name) {
 	return ids;
 }
 
+// Iteration 48c: the walkable ground under a hole, the "cave ropespot" brush's "dirt floor".
+uint16_t holeLandingItem() {
+	const auto* brush = g_brushes.getBrush("cave ropespot");
+	const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+	const auto id = ground ? ground->getPlacementItemId() : uint16_t(0);
+	check(id && g_item_definitions.get(id).name() == "dirt floor" && g_item_definitions.get(id).isGroundTile(),
+		"I48c \"cave ropespot\" places a \"dirt floor\" ground");
+	return id;
+}
+
 // Stable text image of the tile stacks in a rectangle, for equality checks.
 std::vector<uint32_t> stackImage(Map& map, int x0, int y0, int z, int width, int height) {
 	std::vector<uint32_t> image;
@@ -822,12 +832,16 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	check(bool(exits), "Cave exit planning failed");
 	const bool sufficientExits = exits->exits.size() >= 2;
 	std::vector<uint16_t> entrances(grid->cells.size(), 0), ramps(entrances);
+	const auto landing = holeLandingItem();
+	check(brushes->landing == landing, "Hole landing is not the cave ropespot's dirt floor");
 	for (const auto& exit : exits->exits) {
 		const auto e = grid->entrances[exit.entrance];
 		const auto& ids = brushes->items[exit.shape];
 		const auto& shape = brushes->shapes[exit.shape];
 		// Iteration 48b: an ordinary fallback entrance off the rock is the floor hole.
 		entrances[e] = style == CaveEntranceStyle::RockFace && grid->cells[e] != SurfaceKind::Rock && brushes->hole ? brushes->hole : brushes->entrance;
+		// Iteration 48c: a hole has the dirt floor below, no ramp.
+		if (style == CaveEntranceStyle::FloorHole || entrances[e] == brushes->hole) continue;
 		ramps[exit.cell] = ids.ramp;
 		if (shape.hasTail) ramps[size_t(int64_t(exit.cell) + shape.tailDx + int64_t(shape.tailDy) * side)] = ids.tail;
 	}
@@ -899,11 +913,23 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		if (style == CaveEntranceStyle::RockFace && entrances[i] && entrances[i] == brushes->entrance) {
 			check(prepared->plan.items[i] == plain->plan.items[i], "Rock entrance ground changed");
 		}
-		if (entrances[i] && (style == CaveEntranceStyle::FloorHole || entrances[i] == brushes->hole)) {
+		const bool holeAbove = entrances[i] && (style == CaveEntranceStyle::FloorHole || entrances[i] == brushes->hole);
+		if (holeAbove) {
 			const auto* hole = prepared->preview.getBuffer().getTile(upper);
 			check(hole && hole->ground && hole->ground->getID() == entrances[i], "Hole ground missing");
+			// Iteration 48c: the dirt floor below, walkable in the adapter mask and the validator, with the Z edge hole -> landing.
+			check(tile && tile->ground && tile->ground->getID() == landing && !tile->isBlocking(), "Hole without dirt floor below");
+			if (prepared->levels) {
+				const auto n = cave->cells.size();
+				const auto& levels = *prepared->levels;
+				check(!levels.blockingMask[i] && !levels.blockingMask[n + i] && levels.report.walkable[i] && levels.report.walkable[n + i],
+					"Hole or its landing blocked in the adapter mask");
+				check(std::ranges::any_of(levels.plan.edges, [&](const LevelEdge& edge) {
+					return edge.a == LevelCell{0, uint32_t(i)} && edge.b == LevelCell{1, uint32_t(i)}; }), "Hole without its Z edge to the landing");
+				check(!levels.report.reached[i] || levels.report.reached[n + i], "Landing under a reached hole not reached");
+			}
 		}
-		if (floor) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveGround), "Foreign cave ground");
+		if (floor && !holeAbove) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveGround), "Foreign cave ground");
 		const auto checkItem = [&](const PreparedTerrain& unit, const Position& position, uint16_t expected, std::span<const uint16_t> allowed) {
 			const auto* here = unit.preview.getBuffer().getTile(position);
 			size_t found = 0;
@@ -1102,6 +1128,7 @@ void guiCaves(std::ostream& report) {
 		check(bool(brushes), "GUI cave brushes failed");
 		auto alternatives = entranceAlternatives(profile.caveEntrance);
 		if (brushes->hole) alternatives.push_back(brushes->hole); // ordinary fallback entrances (iteration 48b)
+		const auto landing = holeLandingItem();
 		const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
 		check(bool(receipt), std::format("GUI cave commit failed {}", combination));
 		size_t entrances = 0, exits = 0;
@@ -1125,7 +1152,11 @@ void guiCaves(std::ostream& report) {
 			const auto rampCount = countIds(lower, [&](uint16_t id) {
 				return std::ranges::any_of(brushes->items, [&](const auto& ids) { return ids.ramp == id; });
 			});
-			check(entranceCount == rampCount && entranceCount <= 1,
+			// Iteration 48c: a hole has the dirt floor below instead of a ramp.
+			const bool holeAbove = entranceCount && (style == CaveEntranceStyle::FloorHole || prepared->plan.entrances[i] == brushes->hole);
+			if (holeAbove) check(lower && lower->ground && lower->ground->getID() == landing && !lower->isBlocking(),
+				std::format("GUI hole without dirt floor below {} cell=({},{},{})", combination, upper.x, upper.y, upper.z));
+			check((holeAbove ? rampCount == 0 : entranceCount == rampCount) && entranceCount <= 1,
 				std::format("GUI cave mismatch {} cell=({},{},{}) entrances={} ramps={} plannedEntrance={} plannedExit={}",
 					combination, upper.x, upper.y, upper.z, entranceCount, rampCount,
 					prepared->plan.entrances[i], prepared->cave->plan.exits[i]));
@@ -1133,7 +1164,7 @@ void guiCaves(std::ostream& report) {
 				check(surface && surface->ground && surface->ground->getID() == prepared->plan.entrances[i], "GUI hole is not ground");
 			check(entranceCount == (prepared->plan.entrances[i] ? 1u : 0u), "GUI commit lost planned entrance");
 			entrances += entranceCount;
-			exits += rampCount;
+			exits += rampCount + (holeAbove ? 1 : 0); // a ramp or the dirt floor under a hole
 		}
         const bool noCaveFloor = std::ranges::none_of(prepared->cave->plan.caveFloor, [](auto kind) { return kind == 1; });
 		check((entrances > 0 && exits > 0) || (prepared->levels && noCaveFloor &&
@@ -2687,12 +2718,14 @@ void m19RockGuiCase(std::ostream& report) {
 
 // Iteration 48b: the look of every cave entrance on a placed map. A "cave enter" item (rock-face entrance) only stands on
 // or next to the rock brush's ground; an ordinary entrance off the rock (iteration 48 fallback) is the "cave hole" ground.
-// Each entrance carries a floor change down and has a ramp of the exit brush directly below.
+// Each entrance carries a floor change down. A rock-face entrance has a ramp of the exit brush directly below; a hole
+// has the walkable "dirt floor" of the "cave ropespot" brush below and no ramp (iteration 48c).
 struct EntranceLook { size_t rockFace = 0, holes = 0; };
 EntranceLook checkEntranceLook(Map& map, int x0, int y0, int z, int width, int height, const Brush* rock, const CaveExitBrush& exits,
     std::string_view label) {
     const auto rockFaceIds = entranceAlternatives("cave enter"), holeIds = entranceAlternatives("cave hole");
     check(!rockFaceIds.empty() && !holeIds.empty() && rock, std::format("{} entrance brushes", label));
+    const auto landing = holeLandingItem();
     const auto groundIs = [&](int x, int y, const auto& match) {
         const auto* tile = map.getTile(Position(x, y, z));
         return tile && tile->ground && match(tile->ground->getID());
@@ -2714,9 +2747,14 @@ EntranceLook checkEntranceLook(Map& map, int x0, int y0, int z, int width, int h
         check(down(surface->ground->getID()) || std::ranges::any_of(surface->items, [&](const auto& item) { return down(item->getID()); }),
             "Entrance without a floor change down " + at);
         const auto* lower = map.getTile(Position(x, y, z + 1));
-        check(lower && std::ranges::any_of(lower->items, [&](const auto& item) {
-            return std::ranges::any_of(exits.items, [&](const auto& ids) { return ids.ramp == item->getID(); }); }),
-            "Entrance without a ramp below " + at);
+        const bool ramp = lower && std::ranges::any_of(lower->items, [&](const auto& item) {
+            return std::ranges::any_of(exits.items, [&](const auto& ids) { return ids.ramp == item->getID(); }); });
+        if (rockFace) check(ramp, "Rock-face entrance without a ramp below " + at);
+        if (hole) {
+            check(!ramp, "Hole with a ramp below " + at);
+            check(lower && lower->ground && lower->ground->getID() == landing && !lower->isBlocking(),
+                "Hole without walkable dirt floor below " + at);
+        }
         look.rockFace += rockFace; look.holes += hole;
     }
     return look;
@@ -2747,7 +2785,8 @@ void d26RampCase(std::ostream& report) {
     const auto exitBrush = resolveCaveExitBrush(*exitDoodad);
     check(bool(exitBrush), "D26 ramp brush items");
     auto entranceIds = entranceAlternatives("cave enter");
-    std::ranges::copy(entranceAlternatives("cave hole"), std::back_inserter(entranceIds));
+    const auto holeIds = entranceAlternatives("cave hole");
+    std::ranges::copy(holeIds, std::back_inserter(entranceIds));
     size_t runs = 0, paired = 0, farRamps = 0, m19Paired = 0;
     EntranceLook looks;
     for (const auto& fixture : fixtures) {
@@ -2804,14 +2843,17 @@ void d26RampCase(std::ostream& report) {
                     return std::ranges::any_of(tile->items, [&](const auto& item) { return match(item->getID()); });
                 };
                 const bool entrance = has(surface, [&](uint16_t id) { return std::ranges::find(entranceIds, id) != entranceIds.end(); });
+                const bool hole = surface && surface->ground && std::ranges::find(holeIds, surface->ground->getID()) != holeIds.end();
                 const bool ramp = has(lower, [&](uint16_t id) {
                     return std::ranges::any_of(exitBrush->items, [&](const auto& items) { return items.ramp == id; });
                 });
                 entrances += entrance;
                 if (!ramp) {
-                    check(!entrance, std::format("D26 entrance without a ramp below {} at ({},{},{})", combination, x, y, z));
+                    // A hole has the dirt floor below instead (iteration 48c; checkEntranceLook checks it).
+                    check(!entrance || hole, std::format("D26 rock-face entrance without a ramp below {} at ({},{},{})", combination, x, y, z));
                     continue;
                 }
+                check(!hole, std::format("D26 hole with a ramp below {} at ({},{},{})", combination, x, y, z));
                 ++ramps;
                 if (entrance) { ++withEntrance; continue; }
                 check(farExits, std::format("D26 ramp without an entrance above {} at ({},{},{})", combination, x, y, z + 1));
