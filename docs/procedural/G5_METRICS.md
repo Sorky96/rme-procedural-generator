@@ -454,3 +454,11 @@ Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (np. x 1073, y 1
 1. Wejście z zapasu nie używa przedmiotu lica skały. Wygląda tak jak wejście stylu niebędącego RockFace (np. dziura w ziemi / schody w dół z gruntem lub obrzeżem pasującym do terenu, wybierane po nazwie z danych 10.98, bez ID w kodzie). Najpierw sprawdzić, jakie style wejść już istnieją i użyć istniejącego wyglądu.
 2. Sonda (np. rozszerzenie `D26_RAMP_ENTRANCE_PASS` lub nowy znacznik): żadne wejście poza komórką przylegającą do skały nie ma przedmiotu „cave enter”; każde ma przejście w dół (floorchange) i rampę pod spodem.
 3. Bez regresji: wejścia RockFace bez zmian, przypadek m19 użytkownika 0 usuniętych miejsc, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`.
+
+## Iteracja 48c: lądowanie pod dziurą (2026-11-16)
+
+Wiążące przed implementacją. Uwaga użytkownika: „Pod hole zamiast stair powinny być dirt floor - 384”.
+
+1. Pod wejściem typu dziura („cave hole”, w tym wejścia z zapasu RockFace i styl dziury) na z + 1 nie ma rampy/schodów; leży chodliwy grunt „dirt floor” (w 10.98 przedmiot 384), wybierany po nazwie z danych (pędzel lub przedmiot RAW wskazany nazwą w profilu/stałej), bez ID w kodzie. Wejścia RockFace i dalekie wyjścia z rampą bez zmian.
+2. Krawędź Z dziura → pole pod nią chodliwa w masce adaptera i walidatorze (pole lądowania osiągalne w jaskini). Sonda: każde wejście-dziura ma pod sobą „dirt floor” bez rampy; każde wejście RockFace nadal ma rampę.
+3. Bez regresji: przypadki m19 użytkownika (10 i 15 wejść) 0 usuniętych miejsc, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`.
