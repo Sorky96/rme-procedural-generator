@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-16 — G5: D23, jaskinia przy zajętym z + 1 i jeden krok Undo (iteracja 49) — PASS
+
+Jaskinia nie wymaga już pustego z + 1: kafle już leżące na mapie (i pas 2 pól wokół nich) są dla generatora jaskiń lite i zostają nietknięte; wejście bez wolnego lądowania nie powstaje, odcięte części jaskini są usuwane. Place to jeden krok historii dla wszystkich pięter (powierzchnia, jaskinia, góry): jedno Undo przywraca mapę sprzed Place, jedno Redo całość; para kroków w `ActionQueue` usunięta. Sonda z blokiem 128 × 128 na z + 1 (m19, seed 1729): 18 z 20 wejść (2 utracone przy bloku), blok bajtowo nietknięty, wszystko osiągalne. Przypadki m19 użytkownika bez zmian, G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 49”.
+
 ## 2026-11-16 — G5: lądowanie pod dziurą (iteracja 48c) — PASS
 
 Pod wejściem-dziurą („cave hole”, styl FloorHole i wejścia z zapasu RockFace) jaskinia na z + 1 nie ma już rampy, tylko chodliwy grunt „dirt floor” (pędzel „cave ropespot”, w 10.98 przedmiot 384, wybierany po nazwie). Wejścia RockFace i dalekie wyjścia zachowują rampy. Krawędź dziura → lądowanie chodliwa w masce adaptera; krawędź nieistniejącej rampy usunięta z planu poziomów adaptera. Sondy: każda dziura ma „dirt floor” bez rampy, każde wejście RockFace rampę; przypadki m19 (10 i 15 wejść) 0 usuniętych miejsc. G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48c”.
