@@ -462,3 +462,11 @@ Wiążące przed implementacją. Uwaga użytkownika: „Pod hole zamiast stair p
 1. Pod wejściem typu dziura („cave hole”, w tym wejścia z zapasu RockFace i styl dziury) na z + 1 nie ma rampy/schodów; leży chodliwy grunt „dirt floor” (w 10.98 przedmiot 384), wybierany po nazwie z danych (pędzel lub przedmiot RAW wskazany nazwą w profilu/stałej), bez ID w kodzie. Wejścia RockFace i dalekie wyjścia z rampą bez zmian.
 2. Krawędź Z dziura → pole pod nią chodliwa w masce adaptera i walidatorze (pole lądowania osiągalne w jaskini). Sonda: każde wejście-dziura ma pod sobą „dirt floor” bez rampy; każde wejście RockFace nadal ma rampę.
 3. Bez regresji: przypadki m19 użytkownika (10 i 15 wejść) 0 usuniętych miejsc, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`.
+
+## Iteracja 49: D23 — jaskinia przy zajętym z + 1, jeden krok Undo (2026-11-16)
+
+Wiążące przed implementacją. Decyzje użytkownika: „Omijaj zajęte”, „Jeden krok”.
+
+1. **Zajęte z + 1.** Jaskinia nie wymaga pustego prostokąta na z + 1: kafle już zajęte na mapie (dowolny grunt lub przedmiot) są dla generatora jaskini lite (nie drążone, nienadpisywane). Wejście/dziura/rampa powstaje tylko nad wolnym polem jaskini; wejścia bez wolnego lądowania nie powstają (lub przenoszone przez istniejący mechanizm wyboru). Spójność: wszystkie postawione wejścia w składowej jaskini, osiągalne. Test: mapa z zajętym fragmentem z + 1 (np. pas lub prostokąt pośrodku) → jaskinia powstaje, zajęte kafle bajtowo nietknięte, 0 usuniętych miejsc lub tylko wejścia nad zajętymi polami.
+2. **Jeden krok Undo.** Place z jaskinią to jedna akcja w historii: jedno Undo przywraca stan sprzed Place (powierzchnia i z + 1), jedno Redo przywraca całość. Sonda sprawdza: po 1 Undo mapa identyczna jak przed, po 1 Redo identyczna jak po Place. Bez zmiany innych operacji edytora.
+3. Bez regresji: przypadki m19 użytkownika (10 i 15 wejść, pusta mapa) bez zmiany wyników, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`. D23 w TECH_DEBT.md zaktualizowany (zostaje tylko test w grze i pamięć pól zakładki, jeśli nie sprawdzone).
