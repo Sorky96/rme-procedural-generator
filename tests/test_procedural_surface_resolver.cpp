@@ -1417,7 +1417,7 @@ void guiMountainPercentage(std::ostream& report) {
         check(!wxWindow::FindWindowByName("terrain-plateau-min-top", dialog), "Obsolete mountain cell-count input remains");
         auto* levels = wxWindow::FindWindowByName("terrain-plateau-levels", dialog);
         check(area->IsEnabled() && levels && levels->IsEnabled() == (percent > 0), "GUI mountain percentage control state");
-        check(editor.actionQueue->getSize() == caps.size()+1, "GUI mountain history floor count");
+        check(editor.actionQueue->getSize() == 1, "GUI mountain Place is not one history step");
         const auto* grass = g_brushes.getBrush(model.plateauGround)->as<GroundBrush>();
         const auto* cliff = g_brushes.getBrush(model.plateauCliff)->as<GroundBrush>();
         const auto hasItem = [](const Tile* tile, uint16_t id) {
@@ -1722,7 +1722,7 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     check(aloneEditor.actionQueue->redo(), "Standalone plateau redo");
     aloneEditor.map.clearChanges();
     report << std::format(
-        "{}\tgrass={}\topening={}\trampItems={}\tdecor={}\tsteps={}\n",
+        "{}\tgrass={}\topening={}\trampItems={}\tdecor={}\tfloors={}\n",
         levels == 1 ? "SURFACE_PLATEAU_E2E_PASS" : "SURFACE_PLATEAU_LEVELS_E2E_PASS", top, landing, ramps, decor, history.size()
     );
 }
@@ -1992,7 +1992,7 @@ void levelRepairProbe(std::ostream& report) {
     check(editor.map.getTileCount() == 0, "Notch Undo must restore empty map");
     check(editor.actionQueue->redo(), "Notch Redo");
     for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(floorImage(levels.plan.floors[f].z) == after[f], "Notch Redo payload");
-    report << std::format("LEVEL_ENTRANCE_NOTCH_E2E_PASS notches={} entrances={} undoRedo={}\n", notches, entranceEdges, after.size());
+    report << std::format("LEVEL_ENTRANCE_NOTCH_E2E_PASS notches={} entrances={} floors={}\n", notches, entranceEdges, after.size());
     check(bankBorders > 0, "Water coastline borders disappeared beside the crossings");
     report << std::format("LEVEL_REPAIR_E2E_PASS bridges={} removedDecor={} axes=2 waterBorderItems={} bankBorderItems={} undoRedo=4 sandFords=2 integratedFloors={} repairs={} removedCaps={} removedPois={} unrepaired={}\n",
         bridges, removed, waterBorders, bankBorders, levels.plan.floors.size(), r.repairs, r.removedCaps, r.removedPois, r.unrepaired);
