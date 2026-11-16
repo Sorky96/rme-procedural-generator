@@ -446,3 +446,11 @@ Wiążące przed implementacją. Decyzje użytkownika: „Zwykłe wejście w zap
 1. **Zapas wejść.** Przy stylu RockFace, gdy w ścianach skały brakuje miejsc na zadaną liczbę wejść, brakujące stawiane są jako zwykłe wejścia (styl dotychczasowy poza skałą). Kryterium bez zmian: mediana wejść ≥ 8 (seedy 1001–1032, bok 512, m06 i m19, ustawienia pomiaru iteracji 29 lub nowszego), przy czym wejścia w ścianie mają pierwszeństwo — ich liczba nie spada względem HEAD. Każde wejście z rampą pod spodem i w składowej jaskini.
 2. **Pędzel ściany jaskini.** Znaleźć w danych 10.98 (brushes/, materiały) pędzel ściany/góry jaskini z licami ze wszystkich stron (N, W, E, S i narożniki) i ustawić go po nazwie jako `caveWall` w profilach m06/m19 (bez ID w kodzie). Pomiar `CAVE_WALL_FACES`: udział komórek ściany widzących podłogę bez lica ≤ 5 % (był ok. 49 %). Jeśli żaden pędzel nie spełnia — raport z listą sprawdzonych i bez zmiany.
 3. Bez regresji: przypadek użytkownika m19 (x 1000, y 1000, 512×512, seed 1729, 10 wejść RockFace) przez adapter — 0 usuniętych miejsc; bramka G5 `--i47` 32/32; determinizm; odcisk Seed 1729 100×100 = 17159159863505677800; testy rdzenia; `SUITE_PASS`. D24 w TECH_DEBT.md zamknięty albo z opisaną resztą.
+
+## Iteracja 48b: wygląd zwykłych wejść z zapasu (2026-11-16)
+
+Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (np. x 1073, y 1243, z 7): zwykłe wejście z zapasu RockFace to doodad „cave enter” (lico skały) postawiony na trawie — wygląda, jakby wisiało w powietrzu.
+
+1. Wejście z zapasu nie używa przedmiotu lica skały. Wygląda tak jak wejście stylu niebędącego RockFace (np. dziura w ziemi / schody w dół z gruntem lub obrzeżem pasującym do terenu, wybierane po nazwie z danych 10.98, bez ID w kodzie). Najpierw sprawdzić, jakie style wejść już istnieją i użyć istniejącego wyglądu.
+2. Sonda (np. rozszerzenie `D26_RAMP_ENTRANCE_PASS` lub nowy znacznik): żadne wejście poza komórką przylegającą do skały nie ma przedmiotu „cave enter”; każde ma przejście w dół (floorchange) i rampę pod spodem.
+3. Bez regresji: wejścia RockFace bez zmian, przypadek m19 użytkownika 0 usuniętych miejsc, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`.
