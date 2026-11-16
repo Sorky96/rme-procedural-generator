@@ -99,9 +99,10 @@ void capacity(std::ostream& report) {
     };
     checkPayload();
     const auto after = editor.map.getTileCount();
-    for (size_t i = 0; i < units.size(); ++i) check(editor.actionQueue->undo(), "Capacity Undo");
+    // Iteration 49: every floor of one Place is one history step.
+    check(editor.actionQueue->getSize() == 1 && editor.actionQueue->undo(), "Capacity Place is not one Undo step");
     check(editor.map.getTileCount() == 0, "Capacity Undo did not restore empty source");
-    for (size_t i = 0; i < units.size(); ++i) check(editor.actionQueue->redo(), "Capacity Redo");
+    check(editor.actionQueue->redo(), "Capacity Redo");
     check(editor.map.getTileCount() == after, "Capacity Redo tile count");
     checkPayload();
     editor.actionQueue->clear();

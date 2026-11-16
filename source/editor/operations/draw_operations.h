@@ -41,10 +41,11 @@ private:
 	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitTerrainUnits(
 		Editor& editor, const rme::procedural::PreparedTerrain& prepared,
 		rme::procedural::TerrainCommitBudget budget, std::stop_token stop);
+	// `units` are the floors of `prepared` with changes; they are committed as one history step.
 	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitValidatedTerrain(
 		Editor& editor, const rme::procedural::PreparedTerrain& prepared,
-		rme::procedural::TerrainCommitBudget budget, std::stop_token stop,
-		const rme::procedural::PreparedTerrain* retained = nullptr);
+		std::span<const rme::procedural::PreparedTerrain* const> units,
+		rme::procedural::TerrainCommitBudget budget, std::stop_token stop);
 };
 
 #endif

@@ -735,7 +735,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	stone_brush_choice_ = brushChoice("terrain-stone-brush", "small rocks", true);
 	form->Add(stone_brush_choice_, 1, wxEXPAND);
 	host = this;
-    auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; each generated floor adds one Undo step.");
+    auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; Place adds one Undo step for all generated floors.");
     helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	helper->Wrap(Theme::Grid(64));
 

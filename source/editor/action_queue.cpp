@@ -209,42 +209,12 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	if (configuredMemory <= 0 || configuredCount <= 0) return false;
 	const uint64_t limit = uint64_t(configuredMemory) * 1024 * 1024;
 	if (incoming > limit) return false;
-	if (terrainPair) {
-		if (terrainPairCount >= terrainPairLimit || current != terrainPairStart + terrainPairCount) return false;
-		// Admission only: redo and the oldest steps before the pair are dropped by finishTerrainPair(true), so a refused
-		// pair leaves the earlier history untouched. The pair itself is never trimmed.
-		size_t retained = memory_size;
-		for (size_t index = current; index < actions.size(); ++index) {
-			const auto bytes = actions[index]->memsize();
-			if (bytes > retained) return false;
-			retained -= bytes;
-		}
-		size_t first = 0;
-		while (first < terrainPairStart && (retained > limit - incoming || current - first >= size_t(configuredCount))) {
-			const auto bytes = actions[first++]->memsize();
-			if (bytes > retained) return false;
-			retained -= bytes;
-		}
-		if (retained > limit - incoming || current - first >= size_t(configuredCount)) return false;
-	}
 	TerrainTransition transition(applyingTerrain);
 	// Roll back newly reserved map structure if any subsequent allocation/refusal fails.
 	BaseMap::TileReservation locations(editor.map, positions);
 	g_minimap.PrepareInvalidationSlot(editor.map);
 	if (stop.stop_requested() || !batch->canApply()) return false;
 	if (!batch->batch.front()->prepareExactSelection()) return false;
-	if (terrainPair) {
-		// Retain all prior history, including redo, until every floor has succeeded.
-		// Insertion is the last allocation; rollback needs only noexcept swaps and erasure.
-		auto slot = actions.emplace(actions.begin() + current, nullptr);
-		batch->commit();
-		++terrainPairCount;
-		*slot = std::move(batch);
-		memory_size += incoming;
-		++current;
-		locations.commit();
-		return true;
-	}
 	size_t retained = memory_size;
 	for (size_t index = current; index < actions.size(); ++index) {
 		const auto bytes = actions[index]->memsize();
@@ -274,47 +244,6 @@ bool ActionQueue::commitTerrainBatch(std::unique_ptr<BatchAction> batch,
 	// Script listeners may start a subsequent undoable edit only after the guard is released.
 	emitTerrainHistoryChange();
 	return true;
-}
-
-bool ActionQueue::beginTerrainPair(size_t steps) noexcept {
-	if (applyingTerrain || terrainPair || !steps) return false;
-	terrainPairLimit = steps;
-	terrainPair = true;
-	terrainPairStart = current;
-	terrainPairCount = 0;
-	return true;
-}
-
-void ActionQueue::finishTerrainPair(bool success) noexcept {
-	ASSERT(terrainPair && current == terrainPairStart + terrainPairCount);
-	TerrainTransition transition(applyingTerrain);
-	if (!success) {
-		while (terrainPairCount) {
-			ASSERT(current && actions[current - 1]->getType() == ACTION_GENERATE_TERRAIN);
-			auto& batch = actions[current - 1];
-			batch->undo(); // exact prepared tile/selection swaps; no allocation or observers
-			memory_size -= batch->memsize();
-			actions.erase(actions.begin() + --current);
-			--terrainPairCount;
-		}
-	} else {
-		for (size_t i = current; i < actions.size(); ++i) memory_size -= actions[i]->memsize();
-		actions.erase(actions.begin() + current, actions.end());
-		// Same limits as a single terrain step, applied to the steps before the pair (admission already checked they suffice).
-		const uint64_t limit = uint64_t(std::max(0, g_settings.getInteger(Config::UNDO_MEM_SIZE))) * 1024 * 1024;
-		const auto count = size_t(std::max(0, g_settings.getInteger(Config::UNDO_SIZE)));
-		while (current > terrainPairCount && (memory_size > limit || current > count)) {
-			memory_size -= actions.front()->memsize();
-			actions.pop_front();
-			--current;
-		}
-	}
-	terrainPair = false;
-	terrainPairCount = 0;
-	terrainPairLimit = 0;
-	if (success) notifyTerrainTransition();
-	transition.release();
-	if (success) emitTerrainHistoryChange();
 }
 
 bool ActionQueue::undo() {

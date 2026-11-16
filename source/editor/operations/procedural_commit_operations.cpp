@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <array>
 #include <new>
+#include <span>
+#include <vector>
 
 namespace {
 using namespace rme::procedural;
@@ -47,44 +49,19 @@ DrawOperations::commitTerrainUnits(Editor& editor, const PreparedTerrain& prepar
         units[count++] = prepared.cave.get();
     }
     units[count++] = &prepared;
-    if (count == 1) {
-        return commitValidatedTerrain(editor, prepared, budget, stop);
-    }
-    if (!editor.actionQueue || !editor.actionQueue->beginTerrainPair(count)) {
-        return failure(TerrainCommitFailure::BusyHistory);
-    }
-    uint64_t changes = 0, bytes = 0;
-    Result result = failure(TerrainCommitFailure::MemoryLimit);
-    for (size_t i = 0; i < count; ++i) {
-        result = commitValidatedTerrain(editor, *units[i], budget, stop, &prepared);
-        if (!result) {
-            editor.actionQueue->finishTerrainPair(false);
-            return result;
-        }
-        changes += result->changes;
-        bytes += result->transitionBytes;
-        if (result->transitionBytes > budget.maxBytes || result->changes > budget.maxChanges) {
-            editor.actionQueue->finishTerrainPair(false);
-            return failure(TerrainCommitFailure::MemoryLimit);
-        }
-        budget.maxBytes -= result->transitionBytes;
-        budget.maxChanges -= result->changes;
-    }
-    result->totalBytes += bytes - result->transitionBytes;
-    result->changes = changes;
-    result->transitionBytes = bytes;
-    editor.actionQueue->finishTerrainPair(true);
-    return result;
+    // All floors of one Place are one history step (iteration 49): one Undo restores every floor.
+    return commitValidatedTerrain(editor, prepared, std::span(units.data(), count), budget, stop);
 }
 
 std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError>
 DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& prepared,
-	TerrainCommitBudget budget, std::stop_token stop, const PreparedTerrain* retained) {
+	std::span<const PreparedTerrain* const> units, TerrainCommitBudget budget, std::stop_token stop) {
 	if (!editor.actionQueue || editor.actionQueue->isApplyingTerrain()) return failure(TerrainCommitFailure::BusyHistory);
 	if (LuaAPI::isTransactionActive()) return failure(TerrainCommitFailure::ActiveLuaTransaction);
 	if (stop.stop_requested()) return failure(TerrainCommitFailure::Cancelled);
-	const std::span<const Position> positions = prepared.preview.getChanges();
-	if (!budget.maxChanges || positions.size() > budget.maxChanges) return failure(TerrainCommitFailure::ChangeLimit);
+	uint64_t changeCount = 0;
+	for (const auto* unit : units) changeCount += unit->preview.getChanges().size();
+	if (!budget.maxChanges || changeCount > budget.maxChanges) return failure(TerrainCommitFailure::ChangeLimit);
 	// One subtract-only uint64 budget. The preparation is still owned by the caller throughout.
 	uint64_t used = 0;
 	if (!budget.maxBytes) return failure(TerrainCommitFailure::MemoryLimit);
@@ -151,64 +128,73 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 		if (used > budget.maxBytes) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		return {};
 	};
-	if (const auto result = recount(recount, retained ? *retained : prepared); !result) return failure(result.error());
+	if (const auto result = recount(recount, prepared); !result) return failure(result.error());
 	const auto preparationBytes = used;
 	const auto beforeSelection = used;
-	if (!charge(uint64_t(editor.selection.size()) + positions.size(), 3 * sizeof(Tile*)) ||
+	if (!charge(uint64_t(editor.selection.size()) + changeCount, 3 * sizeof(Tile*)) ||
 		!charge(kSnapshotAllocationOverhead)) return failure(TerrainCommitFailure::MemoryLimit);
 	const auto selectionBytes = used - beforeSelection;
-	const auto& region = prepared.snapshot.input.config.region;
-	const uint64_t right = uint64_t(region.x) + region.width - 1;
-	const uint64_t bottom = uint64_t(region.y) + region.height - 1;
-	const uint64_t cells = (right / 64 - uint64_t(region.x) / 64 + 1) *
-		(bottom / 64 - uint64_t(region.y) / 64 + 1);
-	const uint64_t nodes = (right / 4 - uint64_t(region.x) / 4 + 1) *
-		(bottom / 4 - uint64_t(region.y) / 4 + 1);
 	// Include both old/new grid vector storage at growth, reservation records, history bookkeeping,
 	// copies of new tiles and ownership of displaced tiles. Container/allocator assumptions match
 	// snapshot_memory; these policy estimates are not an allocator cap or RSS measurement.
 	if (!charge(64 * 1024 + sizeof(Action) + sizeof(BatchAction) + 256 + 8 * kSnapshotAllocationOverhead) ||
-		!charge(positions.size(), sizeof(Change) + 3 * sizeof(std::unique_ptr<Change>) +
+		!charge(changeCount, sizeof(Position) + sizeof(Change) + 3 * sizeof(std::unique_ptr<Change>) +
 			BaseMap::TileReservation::entryBytes() + kSnapshotAllocationOverhead) ||
-		!charge(cells, sizeof(SpatialHashGrid::GridCell) + kSnapshotAllocationOverhead) ||
-		!charge(nodes, sizeof(MapNode) + sizeof(Floor) + 2 * kSnapshotAllocationOverhead) ||
-		!charge(uint64_t(editor.map.getGrid().cellCount()) + cells, 3 * sizeof(SpatialHashGrid::CellEntry)) ||
 		!charge(uint64_t(editor.actionQueue->getSize()) + 1, 3 * sizeof(std::unique_ptr<BatchAction>))) {
 		return failure(TerrainCommitFailure::MemoryLimit);
 	}
-	for (const auto& position : positions) {
-		if (stop.stop_requested()) return failure(TerrainCommitFailure::Cancelled);
-		for (const auto* tile : std::array<const Tile*,2> {prepared.preview.getBuffer().getTile(position), editor.map.getTile(position)}) {
-			if (!tile) continue;
-			const auto estimate = estimateSnapshotTileMemory(*tile, budget.maxBytes - used, stop);
-			if (!estimate) return failure(estimate.error() == SnapshotMemoryError::Cancelled ?
-				TerrainCommitFailure::Cancelled : TerrainCommitFailure::MemoryLimit);
-			if (!charge(estimate->bytes)) return failure(TerrainCommitFailure::MemoryLimit);
+	for (const auto* unit : units) {
+		// Grid cells and nodes are charged per floor: an upper bound when floors share them.
+		const auto& region = unit->snapshot.input.config.region;
+		const uint64_t right = uint64_t(region.x) + region.width - 1;
+		const uint64_t bottom = uint64_t(region.y) + region.height - 1;
+		const uint64_t cells = (right / 64 - uint64_t(region.x) / 64 + 1) *
+			(bottom / 64 - uint64_t(region.y) / 64 + 1);
+		const uint64_t nodes = (right / 4 - uint64_t(region.x) / 4 + 1) *
+			(bottom / 4 - uint64_t(region.y) / 4 + 1);
+		if (!charge(cells, sizeof(SpatialHashGrid::GridCell) + kSnapshotAllocationOverhead) ||
+			!charge(nodes, sizeof(MapNode) + sizeof(Floor) + 2 * kSnapshotAllocationOverhead) ||
+			!charge(uint64_t(editor.map.getGrid().cellCount()) + cells, 3 * sizeof(SpatialHashGrid::CellEntry))) {
+			return failure(TerrainCommitFailure::MemoryLimit);
+		}
+		for (const auto& position : unit->preview.getChanges()) {
+			if (stop.stop_requested()) return failure(TerrainCommitFailure::Cancelled);
+			for (const auto* tile : std::array<const Tile*,2> {unit->preview.getBuffer().getTile(position), editor.map.getTile(position)}) {
+				if (!tile) continue;
+				const auto estimate = estimateSnapshotTileMemory(*tile, budget.maxBytes - used, stop);
+				if (!estimate) return failure(estimate.error() == SnapshotMemoryError::Cancelled ?
+					TerrainCommitFailure::Cancelled : TerrainCommitFailure::MemoryLimit);
+				if (!charge(estimate->bytes)) return failure(TerrainCommitFailure::MemoryLimit);
+			}
 		}
 	}
 	const auto transitionBytes = used - preparationBytes;
 	// The existing queue's cached batch memory field is uint32_t. Fail closed before it can wrap.
 	if (transitionBytes > UINT32_MAX) return failure(TerrainCommitFailure::MemoryLimit);
-	if (positions.empty()) return TerrainCommitReceipt {0, transitionBytes, used, prepared.preview.getFingerprint()};
+	if (!changeCount) return TerrainCommitReceipt {0, transitionBytes, used, prepared.preview.getFingerprint()};
 	try {
+		std::vector<Position> positions;
+		positions.reserve(changeCount);
 		auto action = editor.actionQueue->createAction(ACTION_GENERATE_TERRAIN);
-		action->changes.reserve(positions.size());
+		action->changes.reserve(changeCount);
 		action->preparedMemory = size_t(transitionBytes) - sizeof(BatchAction) - 3 * sizeof(Action*);
 		action->preparedSelectionBytes = size_t(selectionBytes);
-		for (const auto& position : positions) {
+		for (const auto* unit : units) for (const auto& position : unit->preview.getChanges()) {
 			if (stop.stop_requested()) return failure(TerrainCommitFailure::Cancelled);
 			// currentFingerprint() already checked non-null tiles and strictly ordered unique,
-			// valid positions. No yield or user callback runs between that check and these copies.
-			const auto* previewTile = prepared.preview.getBuffer().getTile(position);
+			// valid positions. Floors differ in z, so positions stay unique across units.
+			// No yield or user callback runs between that check and these copies.
+			const auto* previewTile = unit->preview.getBuffer().getTile(position);
 			ASSERT(previewTile);
 			// Standalone deep copies own their location until the final noexcept exchange.
 			// Keep concrete flags, subtypes, order and minimap values exactly as previewed.
 			action->addChange(std::make_unique<Change>(previewTile->deepCopy(), position));
+			positions.push_back(position);
 		}
 		auto batch = editor.actionQueue->createBatch(ACTION_GENERATE_TERRAIN);
 		batch->setLabel("Generate Terrain");
 		batch->addAction(std::move(action));
-		const TerrainCommitReceipt receipt {positions.size(), transitionBytes, used, prepared.preview.getFingerprint()};
+		const TerrainCommitReceipt receipt {changeCount, transitionBytes, used, prepared.preview.getFingerprint()};
 		if (!editor.actionQueue->commitTerrainBatch(std::move(batch), positions, stop)) {
 			return failure(stop.stop_requested() ? TerrainCommitFailure::Cancelled : TerrainCommitFailure::HistoryRefused);
 		}

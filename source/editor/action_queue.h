@@ -68,12 +68,6 @@ public:
 
 private:
 	bool applyingTerrain = false;
-	bool terrainPair = false;
-	size_t terrainPairStart = 0;
-	size_t terrainPairLimit = 0;
-	size_t terrainPairCount = 0;
-	bool beginTerrainPair(size_t steps = 2) noexcept;
-	void finishTerrainPair(bool success) noexcept;
 	// Prepared terrain only: reserve before apply, never merge, notify after publication.
 	bool commitTerrainBatch(std::unique_ptr<BatchAction> batch, std::span<const Position> positions, std::stop_token stop);
 	void notifyTerrainTransition(bool selectionCountChanged = false) noexcept;

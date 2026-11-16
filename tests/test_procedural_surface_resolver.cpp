@@ -782,7 +782,7 @@ void campfires(uint32_t side, std::ostream& report) {
 	report << "SURFACE_FIRES_E2E_PASS" << '\t' << side << '\t' << "fires=" << plannedFires << '\n';
 }
 
-// Iteration 28: real 10.98 cave brushes, two previews, two history steps and failure rollback.
+// Iteration 28: real 10.98 cave brushes, two previews; one history step for both (iteration 49) and a whole refusal.
 bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	UndoLimits undoLimits;
 	check(g_gui.NewMap(), "Cave editor creation failed");
@@ -979,17 +979,16 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		check(!validateTerrainTarget(*prepared, config, profile), "Tampered lower plan passed target validation");
 		prepared->cave->plan.exits[cell] = saved; }
 	const auto prior = editor.actionQueue->getCurrentIndex(), size = editor.actionQueue->getSize();
-	// A one-step history limit admits the provisional cave, then deterministically refuses surface.
-	g_settings.setInteger(Config::UNDO_SIZE, 1);
-	const auto refused = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
-	g_settings.setInteger(Config::UNDO_SIZE, 1000);
-	check(!refused && std::holds_alternative<TerrainCommitFailure>(refused.error()) &&
-		std::get<TerrainCommitFailure>(refused.error()) == TerrainCommitFailure::HistoryRefused, "Step-two failure not exercised");
-	check(editor.actionQueue->getCurrentIndex() == prior && editor.actionQueue->getSize() == size && !editor.actionQueue->canRedo(), "Rollback left generator history/redo");
+	// A change budget one short of both floors refuses the whole Place: nothing of either floor reaches map or history.
+	{ auto limited = commit; limited.maxChanges = prepared->preview.getChanges().size() + prepared->cave->preview.getChanges().size() - 1;
+		const auto refused = DrawOperations::commitTerrainPreview(*prepared, config, profile, limited);
+		check(!refused && std::holds_alternative<TerrainCommitFailure>(refused.error()) &&
+			std::get<TerrainCommitFailure>(refused.error()) == TerrainCommitFailure::ChangeLimit, "Joint commit change limit not exercised"); }
+	check(editor.actionQueue->getCurrentIndex() == prior && editor.actionQueue->getSize() == size && !editor.actionQueue->canRedo(), "Refusal left generator history/redo");
 	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
-		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Rollback changed map tiles");
-	check(bool(validateTerrainTarget(*prepared, config, profile)), "Rollback invalidated original preparation");
-	// A history already at its step limit: the pair must drop the oldest steps, not refuse.
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Refusal changed map tiles");
+	check(bool(validateTerrainTarget(*prepared, config, profile)), "Refusal invalidated original preparation");
+	// A history already at its step limit: the Place must drop the oldest step, not refuse.
 	const auto atLimit = int(editor.actionQueue->getSize());
 	check(atLimit >= 2, "Cave probe needs earlier history steps");
 	g_settings.setInteger(Config::UNDO_SIZE, atLimit);
@@ -1002,15 +1001,14 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		check(snapshotTilesEqual(editor.map.getTile(position), unit->preview.getBuffer().getTile(position)), "Map differs from preview");
 	const auto afterUpper = stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6);
 	const auto afterLower = stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6);
-	check(editor.actionQueue->undo(), "Surface Undo refused");
+	// Iteration 49: surface and cave are one history step.
+	check(editor.actionQueue->undo(), "Place Undo refused");
 	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
-		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == afterLower, "First Undo did not leave cave alone");
-	check(editor.actionQueue->undo(), "Cave Undo refused");
-	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == beforeUpper &&
-		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "Second Undo did not restore both floors");
-	check(editor.actionQueue->redo() && editor.actionQueue->redo(), "Cave Redo refused");
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == beforeLower, "One Undo did not restore both floors");
+	check(editor.actionQueue->getCurrentIndex() == size_t(atLimit) - 1, "Place took more than one history step");
+	check(editor.actionQueue->redo() && !editor.actionQueue->canRedo(), "Place Redo refused or left a step");
 	check(stackImage(editor.map, 97, 97, 7, int(side) + 6, int(side) + 6) == afterUpper &&
-		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == afterLower, "Redo did not restore both floors");
+		stackImage(editor.map, 97, 97, 8, int(side) + 6, int(side) + 6) == afterLower, "One Redo did not restore both floors");
 	editor.map.clearChanges();
 	// Fresh map for fail-closed input tests, including an occupied cell outside a sparse mask.
 	check(g_gui.NewMap(), "Cave refusal editor failed");
@@ -1458,9 +1456,9 @@ void guiMountainPercentage(std::ostream& report) {
             check(!editor.map.getTile(x,y,z), "Zero GUI percentage generated an upper floor");
         std::vector<std::vector<uint32_t>> payloads;
         for (int z = 4; z <= 7; ++z) payloads.push_back(stackImage(editor.map,100,100,z,side,side));
-        for (size_t i = 0; i <= caps.size(); ++i) check(editor.actionQueue->undo(), "GUI mountain Undo");
+        check(editor.actionQueue->getSize() == 1 && editor.actionQueue->undo(), "GUI mountain Place is not one Undo step");
         check(editor.map.getTileCount() == 0, "GUI mountain Undo left tiles");
-        for (size_t i = 0; i <= caps.size(); ++i) check(editor.actionQueue->redo(), "GUI mountain Redo");
+        check(editor.actionQueue->redo(), "GUI mountain Redo");
         for (int z = 4; z <= 7; ++z) check(stackImage(editor.map,100,100,z,side,side) == payloads[size_t(z-4)], "GUI mountain Redo payload changed");
         editor.map.clearChanges();
         dialog->Destroy();
@@ -1635,18 +1633,21 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
         before[z - 4] = stackImage(editor.map, 97, 97, z, side + 6, side + 6);
     }
     auto prior = editor.actionQueue->getCurrentIndex();
-    g_settings.setInteger(Config::UNDO_SIZE, int(history.size() - 1));
-    auto refused = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
-    g_settings.setInteger(Config::UNDO_SIZE, 1000);
-    check(!refused, "Plateau last-step failure not triggered");
-    check(editor.actionQueue->getCurrentIndex() == prior, "Plateau rollback history");
+    // A change budget one short of all floors refuses the whole Place (iteration 49: one history step).
+    auto limited = commit;
+    limited.maxChanges = 0;
+    for (const auto* unit : allUnits) limited.maxChanges += unit->preview.getChanges().size();
+    --limited.maxChanges;
+    auto refused = DrawOperations::commitTerrainPreview(*prepared, config, profile, limited);
+    check(!refused, "Plateau joint refusal not triggered");
+    check(editor.actionQueue->getCurrentIndex() == prior, "Plateau refusal history");
     for (int z = 4; z <= 8; ++z) {
-        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 4], "Plateau rollback map");
+        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 4], "Plateau refusal map");
     }
-    check(bool(validateTerrainTarget(*prepared, config, profile)), "Plateau rollback source");
+    check(bool(validateTerrainTarget(*prepared, config, profile)), "Plateau refusal source");
     auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
     check(bool(receipt), "Plateau commit");
-    check(editor.actionQueue->getCurrentIndex() == prior + history.size(), "Plateau history steps");
+    check(editor.actionQueue->getCurrentIndex() == prior + 1, "Plateau Place is not one history step");
     for (const auto* unit : allUnits) {
         for (const auto& pos : unit->preview.getChanges()) {
             check(
@@ -1657,19 +1658,14 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     for (int z = 4; z <= 8; ++z) {
         after[z - 4] = stackImage(editor.map, 97, 97, z, side + 6, side + 6);
     }
-    for (auto it = history.rbegin(); it != history.rend(); ++it) {
-        const int z = *it;
-        check(editor.actionQueue->undo(), "Plateau undo");
-        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 4], "Plateau undo floor");
-    }
-    for (int z : history) {
-        check(editor.actionQueue->redo(), "Plateau redo");
-        check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == after[z - 4], "Plateau redo floor");
-    }
-    check(editor.actionQueue->undo() && editor.actionQueue->undo(), "Leave only upper floor for occupied refusal");
-    if (levels > 1) {
-        check(editor.actionQueue->undo(), "Leave z-2 occupied and z-1 empty");
-    }
+    check(editor.actionQueue->undo(), "Plateau undo");
+    for (int z = 4; z <= 8; ++z) check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == before[z - 4], "Plateau undo floor");
+    check(editor.actionQueue->redo() && !editor.actionQueue->canRedo(), "Plateau redo");
+    for (int z = 4; z <= 8; ++z) check(stackImage(editor.map, 97, 97, z, side + 6, side + 6) == after[z - 4], "Plateau redo floor");
+    // Occupy only the highest mountain floor (z - 2 with more levels, so z - 1 stays empty) for the refusal below.
+    check(editor.actionQueue->undo(), "Plateau undo before occupied refusal");
+    const auto grassId = g_brushes.getBrush("grass")->as<GroundBrush>()->getPlacementItemId();
+    TerrainPlacement::placeBrushItem(*editor.map.getOrCreateTile(Position(150, 150, levels > 1 ? 5 : 6)), grassId);
     auto occupied = prepareTerrain(editor.map, config, profile, preparation);
     check(
         !occupied && std::holds_alternative<PreparationInputError>(occupied.error())
@@ -1718,13 +1714,9 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
     auto& aloneEditor = *g_gui.GetCurrentEditor();
     const auto aloneBefore = aloneEditor.actionQueue->getCurrentIndex();
     check(bool(DrawOperations::commitTerrainPreview(*alone, aloneConfig, aloneProfile, commit)), "Standalone plateau commit");
-    check(aloneEditor.actionQueue->getCurrentIndex() == aloneBefore + levels + 1, "Standalone plateau history count");
-    for (uint32_t i = 0; i <= levels; ++i) {
-        check(aloneEditor.actionQueue->undo(), "Standalone plateau undo");
-    }
-    for (uint32_t i = 0; i <= levels; ++i) {
-        check(aloneEditor.actionQueue->redo(), "Standalone plateau redo");
-    }
+    check(aloneEditor.actionQueue->getCurrentIndex() == aloneBefore + 1, "Standalone plateau history count");
+    check(aloneEditor.actionQueue->undo() && aloneEditor.map.getTileCount() == 0, "Standalone plateau undo");
+    check(aloneEditor.actionQueue->redo(), "Standalone plateau redo");
     aloneEditor.map.clearChanges();
     report << std::format(
         "{}\tgrass={}\topening={}\trampItems={}\tdecor={}\tsteps={}\n",
@@ -1993,9 +1985,9 @@ void levelRepairProbe(std::ostream& report) {
     const auto floorImage = [&](int z) { return stackImage(editor.map, 98, 98, z, 132, 132); };
     std::vector<decltype(floorImage(7))> after;
     for (const auto& floor : levels.plan.floors) after.push_back(floorImage(floor.z));
-    for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(editor.actionQueue->undo(), "Notch Undo");
+    check(editor.actionQueue->getSize() == 1 && editor.actionQueue->undo(), "Notch Place is not one Undo step");
     check(editor.map.getTileCount() == 0, "Notch Undo must restore empty map");
-    for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(editor.actionQueue->redo(), "Notch Redo");
+    check(editor.actionQueue->redo(), "Notch Redo");
     for (size_t f = 0; f < levels.plan.floors.size(); ++f) check(floorImage(levels.plan.floors[f].z) == after[f], "Notch Redo payload");
     report << std::format("LEVEL_ENTRANCE_NOTCH_E2E_PASS notches={} entrances={} undoRedo={}\n", notches, entranceEdges, after.size());
     check(bankBorders > 0, "Water coastline borders disappeared beside the crossings");
@@ -2029,7 +2021,6 @@ void finalMaskRepairProbe(std::ostream& report) {
     for (const bool regression : {true, false}) {
         check(g_gui.NewMap(), "Final-mask GUI map");
         auto& editor = *g_gui.GetCurrentEditor();
-        size_t expectedActions = 0;
         if (regression) {
             GenerationConfig config{{1000, 1000, 7, 300, 300}, 1212};
             config.algorithm = GenerationAlgorithm::Surface; config.vegetation = true;
@@ -2048,13 +2039,11 @@ void finalMaskRepairProbe(std::ostream& report) {
             std::string last;
             for (uint64_t candidate = 1212; candidate < 1244 && !found; ++candidate) {
                 config.seed = candidate;
-                expectedActions = 0;
                 auto prepared = prepareTerrain(editor.map, config, p, {1000000, 1100000, 2000000, 8ULL << 30});
                 check(prepared && prepared->levels && !prepared->levels->repair.unrepaired, "Final-mask repaired fixture");
                 std::vector<const PreparedTerrain*> units{&*prepared};
                 if (prepared->cave) units.push_back(prepared->cave.get());
                 for (auto* cap = prepared->plateau.get(); cap; cap = cap->plateau.get()) units.push_back(cap);
-                for (const auto* unit : units) expectedActions += !unit->preview.getChanges().empty();
                 std::vector<uint8_t> rawMask(units.size() * 90000);
                 size_t clearedBorders = 0;
                 for (size_t f = 0; f < units.size(); ++f) {
@@ -2120,7 +2109,7 @@ void finalMaskRepairProbe(std::ostream& report) {
         std::vector<std::vector<uint32_t>> after;
         for (int z = 4; z <= 8; ++z) after.push_back(stackImage(editor.map, x, x, z, side, side));
         const auto actions = editor.actionQueue->getSize();
-        check(expectedActions ? actions == expectedActions : actions > 0 && actions <= run.floors(), "Final repair must not add Undo actions");
+        check(actions == 1, "Final repair must not add Undo actions; Place is one Undo step");
         for (size_t f = 0; f < actions; ++f) check(editor.actionQueue->undo(), "Final-mask Undo");
         check(editor.map.getTileCount() == 0, "Final-mask Undo restores empty map");
         for (size_t f = 0; f < actions; ++f) check(editor.actionQueue->redo(), "Final-mask Redo");
