@@ -144,6 +144,8 @@ private:
 	wxArrayString doodad_names_;
 	wxArrayString wall_names_;
 	wxArrayString cave_exit_names_;
+	// Cave wall choices: the wall brushes first, then the ground brushes (iteration 50).
+	wxArrayString cave_wall_names_;
 	wxComboBox* tree_brush_choice_ = nullptr;
 	wxComboBox* bush_brush_choice_ = nullptr;
 	wxComboBox* stone_brush_choice_ = nullptr;

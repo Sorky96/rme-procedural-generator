@@ -348,9 +348,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			}
 		}
 	}
-	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes, 3 cave exit (ramp) brushes.
+	cave_wall_names_ = wall_names_;
+	for (const auto& name : ground_names_) cave_wall_names_.Add(name);
+	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes, 3 cave exit (ramp) brushes, 4 cave wall (wall and ground) brushes.
 	const auto brushChoice = [&](const wxString& name, const wxString& preferred, int listKind) {
-		const wxArrayString& names = listKind == 3 ? cave_exit_names_ : listKind == 2 ? wall_names_ : listKind == 1 ? doodad_names_ : ground_names_;
+		const wxArrayString& names = listKind == 4 ? cave_wall_names_ : listKind == 3 ? cave_exit_names_ : listKind == 2 ? wall_names_ :
+			listKind == 1 ? doodad_names_ : ground_names_;
 		// Only the preferred (or first) entry exists until the list is first opened: filling
 		// thousands of entries into eight lists made opening the dialog slow.
 		wxString initial = names.Index(preferred) != wxNOT_FOUND ? preferred : (names.IsEmpty() ? wxString() : names[0]);
@@ -637,8 +640,12 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", "mountain", 0);
-	if (ground_names_.Index("mountain") == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
+	// Iteration 50: the natural rock wall brush, aligned on every side of the floor; the "mountain" ground (faces only
+	// towards the east and south) when the client lacks it.
+	const wxString caveWall = wall_names_.Index("rocky wall") != wxNOT_FOUND ? "rocky wall" : "mountain";
+	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", caveWall, 4);
+	cave_wall_brush_choice_->SetToolTip("Wall brush drawn on cave ground around the cave floor, or a ground brush for the whole wall band.");
+	if (cave_wall_names_.Index(caveWall) == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
 	form->Add(cave_wall_brush_choice_, 1, wxEXPAND);
 
     form->Add(label("Far cave exits:"), 0, wxALIGN_CENTER_VERTICAL);
