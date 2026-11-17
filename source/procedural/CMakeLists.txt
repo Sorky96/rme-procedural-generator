@@ -1,5 +1,6 @@
 add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp core/similarity.cpp core/reference_split.cpp core/style_profile.cpp core/style_fit.cpp core/doodad_class.cpp core/decor_context.cpp core/style_profile_set.cpp core/water_shape.cpp core/scale_stats.cpp core/settlement_stats.cpp core/reachability.cpp core/level_repair.cpp core/mountain_pass.cpp core/building_storey.cpp core/building_dungeon.cpp core/region_graph.cpp core/underground.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
+target_sources(rme_procedural_core PRIVATE core/candidate_score.cpp)
 target_include_directories(rme_procedural_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(rme PRIVATE rme_procedural_core)
 target_sources(rme PRIVATE adapter/generation_input.cpp adapter/generation_input.h)
@@ -121,3 +122,10 @@ add_test(NAME test_procedural_region_graph COMMAND test_procedural_region_graph)
 add_executable(test_procedural_underground ${PROJECT_SOURCE_DIR}/tests/test_procedural_underground.cpp)
 target_link_libraries(test_procedural_underground PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_underground COMMAND test_procedural_underground)
+
+add_executable(test_procedural_candidate_score ${PROJECT_SOURCE_DIR}/tests/test_procedural_candidate_score.cpp)
+target_link_libraries(test_procedural_candidate_score PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_candidate_score COMMAND test_procedural_candidate_score)
+
+add_executable(candidate_rank ${CMAKE_CURRENT_SOURCE_DIR}/tools/candidate_rank_main.cpp)
+target_link_libraries(candidate_rank PRIVATE rme_procedural_core)
