@@ -39,8 +39,11 @@ std::vector<CandidateBand> readBands(const char* path) {
     }
     CandidateMetrics dummy;
     dummy.fill(1);
-    if (!scoreCandidateMetrics(dummy, bands, false, 0)) throw std::runtime_error("invalid bands (empty, duplicate, nonpositive reference or invalid bounds)");
+    if (!scoreCandidateMetrics(dummy, bands, false, 0)) throw std::runtime_error("invalid bands (empty, duplicate, negative unsigned reference or invalid bounds)");
     std::ranges::sort(bands, {}, &CandidateBand::metric);
+    if (bands.size() != candidateRankingMetricCount) throw std::runtime_error("ranking requires all 26 I51 metrics");
+    for (size_t i = 0; i < bands.size(); ++i)
+        if (bands[i].metric != i) throw std::runtime_error("ranking requires exactly the frozen I51 metric set");
     return bands;
 }
 
@@ -54,7 +57,7 @@ void usage() {
         "Bands: g6-ranking-bands/1 then metric reference lowerHundredths upperHundredths.\n"
         "Relative band [0.67*ref,1.5*ref]: lowerHundredths=67*ref, upperHundredths=150*ref.\n"
         "--g5-levels uses the existing I47 geometry settings, no retry. Offline conservative blocking only.\n"
-        "Output is deterministic TSV; NA is unavailable, score-error refuses a winner for that user seed.\n"
+        "All 26 I51 bands are required. NA is definitional, with a capped ln(64) penalty.\n"
         "Metrics:\n";
     for (const auto name : candidateMetricNames) std::cout << name << '\n';
 }

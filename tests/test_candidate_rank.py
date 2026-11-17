@@ -3,6 +3,7 @@
 All fixtures are synthetic. No local-data, client assets or private maps are needed.
 """
 import csv
+import importlib.util
 import io
 import subprocess
 import sys
@@ -22,7 +23,8 @@ def main():
     lines += ['tuning\t24\t60\t12\t3\t20\t3\t80\t8\t300\t6000\t0']
     profile.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     band = scratch / 'synthetic.bands'
-    band.write_text('g6-ranking-bands/1\nscale.E4 100 6700 15000\n', encoding='utf-8')
+    frozen = (Path(__file__).resolve().parents[1] / 'docs/procedural/g6-bands-v1/m06.bands').read_text(encoding='utf-8')
+    band.write_text(frozen, encoding='utf-8')
 
     def run(*options, code=0, side='100', first='1729', last='1729'):
         result = subprocess.run([str(exe), str(profile), side, first, last, *options], capture_output=True)
@@ -42,6 +44,16 @@ def main():
     assert len(four) == 4 and len({row['seed'] for row in four}) == 4
     ranking = run('--bands', str(band), '--count', '16', side='128', first='1001', last='1002')
     assert ranking == run('--bands', str(band), '--count', '16', side='128', first='1001', last='1002')
+    spec = importlib.util.spec_from_file_location('matrix', Path(__file__).resolve().parents[1] / 'docs/procedural/smoke/g6_measure_candidates.py')
+    matrix = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(matrix)
+    blocks = [run('--bands', str(band), '--count', '16', side='128', first=seed, last=seed) for seed in ('1001', '1002')]
+    assert matrix.merge_reports(blocks) == ranking  # Partitioning never changes bytes or ordering.
+    try:
+        matrix.merge_reports([blocks[0], blocks[1].replace(b'count=16', b'count=15', 1)])
+        raise AssertionError('inconsistent block header accepted')
+    except RuntimeError:
+        pass
     records = rows(ranking)
     assert len(records) == 32
     for seed in ('1001', '1002'):
@@ -58,15 +70,19 @@ def main():
     run(side='1025', code=2)
     run(first='2', last='1', code=2)
     run('--count', '1', first=str(2**64 - 1), last=str(2**64 - 1))
-    band.write_text('g6-ranking-bands/1\nscale.E4 0 0 0\n', encoding='utf-8')
+    band.write_text(frozen.replace('channels.L 384 25728 57600', 'channels.L -1 0 0'), encoding='utf-8')
     run('--bands', str(band), code=2)
     band.write_text('g6-ranking-bands/1\nscale.E4 100 6700 15000\nscale.E4 100 6700 15000\n', encoding='utf-8')
     run('--bands', str(band), code=2)
     band.write_text('g6-ranking-bands/1\nmade.up 100 6700 15000\n', encoding='utf-8')
     run('--bands', str(band), code=2)
+    band.write_text(frozen + 'scale.E4 100 6700 15000\n', encoding='utf-8')
+    run('--bands', str(band), code=2)
     band.write_text('g6-ranking-bands/1\npaths.W 100 6700 15000\n', encoding='utf-8')
-    missing = run('--bands', str(band), '--count', '1', code=4)
-    assert b'score-error:' in missing and b'winner\t' not in missing
+    run('--bands', str(band), '--count', '1', code=2)  # Missing 25 columns is a policy error.
+    band.write_text(frozen, encoding='utf-8')
+    missing = run('--bands', str(band), '--count', '1')
+    assert rows(missing)[0]['paths.W'] == 'NA' and b'winner\t' in missing
     level = run('--count', '1', '--g5-levels', '--rock-blocks', '1', side='128')
     assert len(rows(level)) == 1
     print('CANDIDATE_RANK_CLI_PASS (synthetic; ranking, repeatability, N=1 fingerprint, bounds, refusals, levels)')

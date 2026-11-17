@@ -37,21 +37,27 @@ std::expected<CandidateScore, CandidateScoreError> scoreCandidateMetrics(
     // Canonical metric order makes the rounded sum independent of the order of band records.
     std::array<const CandidateBand*, candidateMetricNames.size()> ordered {};
     for (const auto& band : bands) {
-        if (band.metric >= metrics.size() || used[band.metric] || band.lowerHundredths < 0 ||
+        if (band.metric >= metrics.size() || used[band.metric] ||
             band.upperHundredths < band.lowerHundredths) return std::unexpected(CandidateScoreError::InvalidBands);
-        if (band.reference <= 0) return std::unexpected(CandidateScoreError::NonPositiveReference);
+        if (!candidateSignedMetric(band.metric) && (band.reference < 0 || band.lowerHundredths < 0))
+            return std::unexpected(CandidateScoreError::InvalidBands);
         used[band.metric] = true;
         ordered[band.metric] = &band;
     }
     for (const auto* band : ordered) {
         if (!band) continue;
         const auto& value = metrics[band->metric];
-        if (!value) return std::unexpected(CandidateScoreError::MissingMetric);
-        if (*value < 0) return std::unexpected(CandidateScoreError::NegativeMetric);
+        const double cap = std::log(64.0);
+        if (!value) { distance += cap; continue; }
+        const bool signedMetric = candidateSignedMetric(band->metric);
+        if (*value < 0 && !signedMetric) return std::unexpected(CandidateScoreError::NegativeMetric);
         // Measured metrics fit int32; avoid overflow even for synthetic caller input.
-        if (*value > INT64_MAX / 100) return std::unexpected(CandidateScoreError::InvalidBands);
+        if (*value > INT64_MAX / 100 || *value < INT64_MIN / 100) return std::unexpected(CandidateScoreError::InvalidBands);
         result.inBand += *value * 100 >= band->lowerHundredths && *value * 100 <= band->upperHundredths;
-        distance += std::abs(std::log(*value == 0 ? 1.0 / 64 : double(*value) / double(band->reference)));
+        const double contribution = signedMetric ? std::abs(std::asinh(double(*value)) - std::asinh(double(band->reference))) :
+            band->reference == 0 ? std::log1p(double(*value)) :
+            *value == 0 ? cap : std::abs(std::log(double(*value) / double(band->reference)));
+        distance += std::min(cap, contribution);
     }
     result.distance = std::llround(distance * 1000);
     return result;
@@ -66,20 +72,20 @@ std::expected<CandidateMetrics, CandidateScoreError> candidateMetricsOf(const Su
     const auto paths = pathShapesOf(grid, stop);
     if (!water || !channels || !paths) return std::unexpected(stop.stop_requested() ? CandidateScoreError::Cancelled : CandidateScoreError::MeasurementFailed);
     const auto river = summarizeRivers(water->rivers);
-    if (river.count) { result[0] = river.tortuosityPermille; result[1] = river.straightPermille; result[2] = river.widthMilli; }
+    if (river.count) { result[27] = river.tortuosityPermille; result[28] = river.straightPermille; result[29] = river.widthMilli; }
     const auto channel = summarizeChannels(*channels);
-    result[3] = channel.lengthPer64k;
-    if (channel.count) { result[4] = channel.widthMilli; result[5] = channel.branchesPer100Milli; result[6] = channel.connectedPermille; }
+    result[0] = channel.lengthPer64k;
+    if (channel.count) { result[1] = channel.widthMilli; result[2] = channel.branchesPer100Milli; result[3] = channel.connectedPermille; }
     const auto lag = lagExcessPermille(lagStatsOf(grid));
-    for (size_t i = 0; i < lag.size(); ++i) result[7 + i] = lag[i];
+    for (size_t i = 0; i < lag.size(); ++i) result[i == 0 ? 26 : i + 3] = lag[i];
     const auto patch = summarizePatches(patchStatsOf(grid));
     for (size_t i = 0; i < 4; ++i) {
-        if (patch.rockComposition) result[10 + i] = (*patch.rockComposition)[i];
-        if (patch.dirtComposition) result[14 + i] = (*patch.dirtComposition)[i];
+        if (patch.rockComposition) result[12 + i] = (*patch.rockComposition)[i];
+        if (patch.dirtComposition) result[16 + i] = (*patch.dirtComposition)[i];
     }
     const auto path = summarizeChannels(*paths);
-    result[18] = path.lengthPer64k;
-    if (path.count) { result[19] = path.widthMilli; result[20] = path.branchesPer100Milli; }
+    result[20] = path.lengthPer64k;
+    if (path.count) { result[21] = path.widthMilli; result[30] = path.branchesPer100Milli; }
     uint64_t adjacent = 0, near = 0;
     const auto w = grid.region.width, h = grid.region.height;
     // Same scan order as g5_shape_table/style_render, including its early exit on the first nearby rock.
@@ -95,19 +101,19 @@ std::expected<CandidateMetrics, CandidateScoreError> candidateMetricsOf(const Su
         }
         adjacent += next; near += found;
     }
-    if (paths->maskCells) { result[21] = adjacent * 1000 / paths->maskCells; result[22] = near * 1000 / paths->maskCells; }
+    if (paths->maskCells) { result[31] = adjacent * 1000 / paths->maskCells; result[32] = near * 1000 / paths->maskCells; }
     const auto buildings = floorBuildingsOf(grid);
     const auto build = summarizeBuildings(buildings);
-    result[23] = build.per64k;
+    result[22] = build.per64k;
     if (build.count) {
-        result[24] = build.longMedian; result[25] = build.shortMedian;
+        result[23] = build.longMedian; result[24] = build.shortMedian;
         std::vector<uint32_t> outlines;
         for (const auto& b : buildings.buildings) outlines.push_back(2 * (b.longSide + b.shortSide) - 4);
         std::ranges::sort(outlines);
-        result[26] = outlines[outlines.size() / 2];
+        result[25] = outlines[outlines.size() / 2]; // Same G4 measurement as g5_shape_table/style_render.
     }
-    result[27] = patch.boundary; result[28] = patch.compact; result[29] = patch.beach;
-    result[30] = patch.rockBoundary; result[31] = patch.rockCompact; result[32] = patch.rockDustShare;
+    result[6] = patch.boundary; result[7] = patch.compact; result[8] = patch.beach;
+    result[9] = patch.rockBoundary; result[10] = patch.rockCompact; result[11] = patch.rockDustShare;
     if (stop.stop_requested()) return std::unexpected(CandidateScoreError::Cancelled);
     return result;
 } catch (const std::bad_alloc&) { return std::unexpected(CandidateScoreError::AllocationFailed); }

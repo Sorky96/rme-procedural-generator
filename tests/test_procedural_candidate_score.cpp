@@ -54,11 +54,11 @@ void refusals() {
     CandidateBand band {0, 1, 67, 150};
     require(!scoreCandidateMetrics(metrics, {}, false, 0), "empty policy refused");
     band.reference = 0;
-    require(scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0).error() == CandidateScoreError::NonPositiveReference, "zero reference gap");
+    require(scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0)->distance == 693, "zero ref: ln(2)");
     band.reference = 1; metrics[0].reset();
-    require(scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0).error() == CandidateScoreError::MissingMetric, "NA gap");
+    require(scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0) == CandidateScore{false, 0, 4159, 0}, "NA keeps denominator and penalty");
     metrics[0] = -1;
-    require(scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0).error() == CandidateScoreError::NegativeMetric, "negative lag gap");
+    require(scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0).error() == CandidateScoreError::NegativeMetric, "negative unsigned metric refused");
     std::array duplicate {band, band};
     require(!scoreCandidateMetrics(metrics, duplicate, false, 0), "duplicate weights refused");
     band.metric = candidateMetricNames.size();
@@ -82,6 +82,41 @@ void hardConditions() {
     }
     repair.unrepaired = true; require(candidateHardFail(true, reach, repair), "unrepaired result");
 }
+void bindingDistances() {
+    const auto score = [](size_t metric, std::optional<int64_t> value, int64_t ref, int64_t lo, int64_t hi) {
+        CandidateMetrics metrics {}; metrics[metric] = value;
+        const CandidateBand band {metric, ref, lo, hi};
+        const auto result = scoreCandidateMetrics(metrics, std::span(&band, 1), false, 0);
+        require(bool(result), "binding distance score");
+        return *result;
+    };
+    // Independently tabulated: asinh(1)=0.8813735870; asinh(-1)=-0.8813735870.
+    require(score(4, -1, 1, -100, 100).distance == 1763, "signed crosses zero");
+    require(score(4, -1, 0, -100, 100).distance == 881, "signed zero reference");
+    require(score(4, -1, -1, -100, 100).inBand == 1, "signed raw inclusive band");
+    require(score(0, 63, 0, 0, 6300).distance == 4159, "zero reference ln(64)");
+    require(score(0, 0, 0, 0, 0).distance == 0, "zero reference and value coincide");
+    require(score(0, 1000000, 1, 0, 100).distance == 4159, "upper ratio capped");
+    require(score(0, 1, 1000000, 0, 100).distance == 4159, "lower ratio capped");
+    require(score(4, -1000, 1000, 0, 150000).distance == 4159, "signed capped");
+    require(score(0, 67, 100, 6701, 15000).inBand == 0, "exact hundredths not truncated");
+    require(score(11, 35, 15, 0, 3500).inBand == 1 && score(11, 36, 15, 0, 3500).inBand == 0, "U20 inclusive");
+    require(score(12, 83, 33, 0, 8300).inBand == 1 && score(12, 84, 33, 0, 8300).inBand == 0, "A50 inclusive");
+    CandidateMetrics full {};
+    std::array<CandidateBand, candidateRankingMetricCount> bands;
+    for (size_t i = 0; i < bands.size(); ++i) bands[i] = {i, 0, 0, 100};
+    const auto allNa = scoreCandidateMetrics(full, bands, false, 0);
+    require(allNa && allNa->inBand == 0 && allNa->distance == 108131, "26 * ln64, one rounding");
+    full.fill(1);
+    const auto allOne = scoreCandidateMetrics(full, bands, false, 0);
+    // 24*ln(2) + 2*asinh(1) = 18.3982795075 (native u=1 in both transforms).
+    require(allOne && allOne->inBand == 26 && allOne->distance == 18398, "26 frozen positions include both signed excesses");
+    // No paths/buildings: length/density 0, widths/sides/outline N/A. Small patches stay N/A.
+    SurfaceGrid grid; grid.region = {0, 0, 7, 10, 10}; grid.cells.assign(100, SurfaceKind::Grass);
+    const auto metrics = candidateMetricsOf(grid);
+    require(metrics && (*metrics)[0] == 0 && (*metrics)[20] == 0 && (*metrics)[22] == 0 &&
+        !(*metrics)[1] && !(*metrics)[21] && !(*metrics)[23] && !(*metrics)[25] && !(*metrics)[6] && (*metrics)[5] == 0, "G4 N/A thresholds and zero excess without pairs");
+}
 void seedAndFingerprint() {
     require(candidateSeed(0, 1) == 0xe220a8397b1dcdafULL, "SplitMix64 golden vector");
     for (const auto seed : {0ULL, 1729ULL, UINT64_MAX}) {
@@ -101,11 +136,11 @@ void seedAndFingerprint() {
     const auto one = candidateMetricsOf(*zero), two = candidateMetricsOf(*zero);
     require(one && two && *one == *two && zero->fingerprint() == before, "pure repeatable measurement");
     const auto excess = lagExcessPermille(lagStatsOf(*zero));
-    require((*one)[7] == excess[0] && (*one)[8] == excess[1] && (*one)[9] == excess[2], "shared scale metric units");
+    require((*one)[26] == excess[0] && (*one)[4] == excess[1] && (*one)[5] == excess[2], "shared scale metric units");
     const auto water = waterShapesOf(*zero);
     require(bool(water), "water stats");
     const auto river = summarizeRivers(water->rivers);
-    if (river.count) require((*one)[0] == river.tortuosityPermille && (*one)[2] == river.widthMilli, "shared river metric units");
+    if (river.count) require((*one)[27] == river.tortuosityPermille && (*one)[29] == river.widthMilli, "shared river metric units");
     auto plan = levelPlanOf(*zero, true, false, nullptr, {}, {}, {});
     require(bool(plan), "level plan");
     auto reach = levelReachabilityOf(*plan, {});
@@ -121,7 +156,7 @@ void seedAndFingerprint() {
 }
 } // namespace
 int main() try {
-    handCounted(); refusals(); hardConditions(); seedAndFingerprint();
+    handCounted(); refusals(); bindingDistances(); hardConditions(); seedAndFingerprint();
     std::cout << "CANDIDATE_SCORE_PASS\n";
     return 0;
 } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
