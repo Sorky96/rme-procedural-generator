@@ -783,7 +783,8 @@ void campfires(uint32_t side, std::ostream& report) {
 }
 
 // Iteration 28: real 10.98 cave brushes, two previews; one history step for both (iteration 49) and a whole refusal.
-bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
+// Iteration 50: caveWall is a ground brush ("mountain") or a wall brush drawn over cave ground on the wall band.
+bool caves(uint32_t side, CaveEntranceStyle style, const std::string& caveWall, std::ostream& report) {
 	UndoLimits undoLimits;
 	check(g_gui.NewMap(), "Cave editor creation failed");
 	auto& editor = *g_gui.GetCurrentEditor();
@@ -809,7 +810,8 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	profile.caveEntrance = style == CaveEntranceStyle::RockFace ? "cave enter" : "cave hole";
 	profile.caveExit = "ramp";
 	profile.caveGround = "cave";
-	profile.caveWall = "mountain";
+	profile.caveWall = caveWall;
+	const auto* wallPieces = g_brushes.getBrush(caveWall)->as<WallBrush>();
 	auto prepared = prepareTerrain(editor.map, config, profile, preparation);
 	check(bool(prepared), std::format("Cave preparation failed: domain {} value {}", prepared ? 0 : prepared.error().index(),
 		prepared ? 0 : std::visit([](auto error) { return int(error); }, prepared.error())));
@@ -896,7 +898,12 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 		const bool wall = !floor && adjacent;
 		wallCells += wall;
 		check(bool(tile && tile->ground) == (floor || wall), "Cave Floor/wall band mismatch");
-		if (wall) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(profile.caveWall), "Foreign cave wall ground");
+		if (wall) check(brushOf(tile->ground->getID()) == g_brushes.getBrush(wallPieces ? profile.caveGround : profile.caveWall), "Foreign cave wall ground");
+		// Iteration 50: blocking from the client items on the tile, as the adapter's level mask computes it.
+		const bool blocking = tile && ((tile->ground && tile->ground->isBlocking()) ||
+			std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); }));
+		if (floor) check(!blocking, "Blocking item on a cave floor cell");
+		if (prepared->levels) check(bool(prepared->levels->blockingMask[cave->cells.size() + i]) == blocking, "Adapter cave mask differs from the client items");
 		// Iteration 46 (D24c): which border pieces the wall brush gives the wall band, and how many wall cells see the
 		// cave floor only from the north or west (they would need a north or west face).
 		if (wall) {
@@ -907,8 +914,15 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 			};
 			wallFloorNorthOrWestOnly += (floorAt(0, 1) || floorAt(1, 0) || floorAt(1, 1)) ? 0 : 1;
 			// Iteration 48: a wall cell sees the floor (8-neighbourhood) by definition; it has a face when the brush
-			// gave it a border piece.
-			wallWithoutFace += std::ranges::none_of(tile->items, [](const auto& item) { return item->isBorder(); });
+			// gave it a border piece. Iteration 50: with a wall brush, when it carries an aligned piece of that brush.
+			if (wallPieces) {
+				const auto pieceOf = [&](const auto& item) { return item->isWall() && item->getWallBrush() == wallPieces; };
+				wallWithoutFace += std::ranges::none_of(tile->items, pieceOf);
+				check(std::ranges::all_of(tile->items, [&](const auto& item) { return !item->isWall() || pieceOf(item); }), "Foreign wall piece on the cave wall band");
+				check(blocking, "Cave wall band cell does not block");
+			} else {
+				wallWithoutFace += std::ranges::none_of(tile->items, [](const auto& item) { return item->isBorder(); });
+			}
 		}
 		if (style == CaveEntranceStyle::RockFace && entrances[i] && entrances[i] == brushes->entrance) {
 			check(prepared->plan.items[i] == plain->plan.items[i], "Rock entrance ground changed");
@@ -958,7 +972,8 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 			for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx)
 				if (x + dx >= 0 && y + dy >= 0 && x + dx < int(side) && y + dy < int(side))
 					adjacent |= cave->cells[size_t(y + dy) * side + size_t(x + dx)] == CaveKind::Floor;
-			check((adjacent || !tile->ground) && std::ranges::all_of(tile->items, [](const auto& item) { return item->isBorder(); }), "Nonadjacent Solid cell changed");
+			check((adjacent || !tile->ground) && std::ranges::all_of(tile->items, [&](const auto& item) {
+				return item->isBorder() || (adjacent && wallPieces && item->isWall() && item->getWallBrush() == wallPieces); }), "Nonadjacent Solid cell changed");
 		}
 	}
 	for (int y = 97; y < 103 + int(side); ++y) for (int x = 97; x < 103 + int(side); ++x) {
@@ -1080,6 +1095,7 @@ bool caves(uint32_t side, CaveEntranceStyle style, std::ostream& report) {
 	emptyMap.clearChanges();
 	std::string borderList;
 	for (const auto& [id, count] : wallBorders) borderList += std::format("{}{}:{}", borderList.empty() ? "" : ",", id, count);
+	if (wallPieces) check(wallCells && wallWithoutFace * 20 <= wallCells, "Wall-brush cave wall: more than 5 % of the wall band without a piece");
 	report << std::format("CAVE_WALL_FACES style={} wall={} wallCells={} floorOnlyNorthOrWest={} withoutFace={} withoutFacePermille={} borders={}\n",
 		style == CaveEntranceStyle::RockFace ? "rockface" : "floorhole", profile.caveWall, wallCells, wallFloorNorthOrWestOnly,
 		wallWithoutFace, wallCells ? wallWithoutFace * 1000 / wallCells : 0, borderList);
@@ -2752,6 +2768,44 @@ EntranceLook checkEntranceLook(Map& map, int x0, int y0, int z, int width, int h
     return look;
 }
 
+// Iteration 50: the cave wall on a placed cave floor (z), read from the map alone. A floor tile has "cave" ground (or the
+// dirt floor under a hole) and no wall item; every other cell in its 8-neighbourhood is the wall band and needs a visible
+// wall piece (CAVE_WALL_FACES). No floor tile may block movement in the client items, and every band tile with a piece
+// must block.
+struct CaveWallLook { size_t band = 0, withoutPiece = 0, foreignPiece = 0, blockedFloor = 0, passableWall = 0; };
+CaveWallLook caveWallLook(const Map& map, int x0, int y0, int z, int width, int height, const WallBrush* wall) {
+    const auto* caveGround = g_brushes.getBrush("cave");
+    const auto landing = holeLandingItem();
+    const auto blocks = [](const Tile* tile) {
+        return tile && ((tile->ground && tile->ground->isBlocking()) ||
+            std::ranges::any_of(tile->items, [](const auto& item) { return item->isBlocking(); }));
+    };
+    const auto hasWall = [](const Tile* tile) {
+        return tile && std::ranges::any_of(tile->items, [](const auto& item) { return item->isWall(); });
+    };
+    const auto isFloor = [&](const Tile* tile) {
+        return tile && tile->ground && !hasWall(tile) && (brushOf(tile->ground->getID()) == caveGround || tile->ground->getID() == landing);
+    };
+    CaveWallLook look;
+    std::vector<uint8_t> seen(size_t(width + 2) * size_t(height + 2));
+    for (int y = y0; y < y0 + height; ++y) for (int x = x0; x < x0 + width; ++x) {
+        const auto* tile = map.getTile(Position(x, y, z));
+        if (!isFloor(tile)) continue;
+        look.blockedFloor += blocks(tile);
+        for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+            const auto* other = map.getTile(Position(x + dx, y + dy, z));
+            auto& visited = seen[size_t(y + dy - y0 + 1) * size_t(width + 2) + size_t(x + dx - x0 + 1)];
+            if (isFloor(other) || visited) continue;
+            visited = 1;
+            ++look.band;
+            if (!hasWall(other)) { ++look.withoutPiece; continue; }
+            look.foreignPiece += std::ranges::none_of(other->items, [&](const auto& item) { return item->isWall() && item->getWallBrush() == wall; });
+            look.passableWall += !blocks(other);
+        }
+    }
+    return look;
+}
+
 // Iteration 46 (D26): the GUI report of a cave ramp without an entrance above it at (1018, 1237, 7). Real dialog, its
 // default settings plus 10 cave entrances, profiles m06 and m19 (tuning and palettes of the g4 profiles; one case may
 // have no ramp when m19's impassable rock leaves no entrance on the start land, but m19 as a whole must), the 512 x 512
@@ -2948,13 +3002,23 @@ void m19NoCavesCase(std::ostream& report) {
             return std::ranges::any_of(exitBrush->items, [&](const auto& items) { return items.ramp == item->getID(); }); });
         entrances += entrance;
         paired += entrance && ramp;
-        caveCells += lower && lower->ground && brushOf(lower->ground->getID()) == caveGround;
+        // Floor only: the wall band carries cave ground under its wall pieces (iteration 50).
+        caveCells += lower && lower->ground && brushOf(lower->ground->getID()) == caveGround &&
+            std::ranges::none_of(lower->items, [](const auto& item) { return item->isWall(); });
     }
     std::string status = run.status();
     std::ranges::replace(status, '\n', ' ');
-    report << std::format("M19_CAVES_GUI_CASE candidates={} coreEntrances={} startLandEntrances={} mapEntrances={} withRamp={} caveCells={} status={}\n",
-        candidates, open->entrances.size(), closed->entrances.size(), entrances, paired, caveCells, status);
+    // Iteration 50: the dialog's default cave wall is the "rocky wall" wall brush.
+    auto* wallChoice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-cave-wall-brush", dialog));
+    check(wallChoice && wallChoice->GetValue() == "rocky wall", "M19 caves default cave wall brush");
+    const auto walls = caveWallLook(editor.map, 1000, 1000, 8, 512, 512, g_brushes.getBrush("rocky wall")->as<WallBrush>());
+    report << std::format("M19_CAVES_GUI_CASE candidates={} coreEntrances={} startLandEntrances={} mapEntrances={} withRamp={} caveCells={} "
+        "wallBand={} withoutPiece={} foreignPiece={} blockedFloor={} passableWall={} status={}\n",
+        candidates, open->entrances.size(), closed->entrances.size(), entrances, paired, caveCells,
+        walls.band, walls.withoutPiece, walls.foreignPiece, walls.blockedFloor, walls.passableWall, status);
     check(entrances >= 1 && paired == entrances && caveCells > 0, "M19 caves GUI case placed no cave");
+    check(walls.band > 0 && walls.withoutPiece * 20 <= walls.band && !walls.foreignPiece && !walls.blockedFloor && !walls.passableWall,
+        "M19 caves GUI case cave wall look");
     report << "M19_CAVES_GUI_PASS\n";
     dialog->Destroy();
     editor.map.clearChanges();
@@ -3025,7 +3089,11 @@ void fallbackEntranceLookCase(std::ostream& report) {
         check(look.rockFace > 0, label + " placed no rock-face entrance");
         if (perArea == 15) check(look.holes > 0, label + " placed no ordinary fallback entrance");
         total.rockFace += look.rockFace; total.holes += look.holes;
-        report << std::format("FALLBACK_ENTRANCE_LOOK_CASE {} rockFace={} holes={} status={}\n", label, look.rockFace, look.holes, status);
+        const auto walls = caveWallLook(editor.map, 1000, 1000, 8, 512, 512, g_brushes.getBrush("rocky wall")->as<WallBrush>());
+        check(walls.band > 0 && walls.withoutPiece * 20 <= walls.band && !walls.foreignPiece && !walls.blockedFloor && !walls.passableWall,
+            label + " cave wall look");
+        report << std::format("FALLBACK_ENTRANCE_LOOK_CASE {} rockFace={} holes={} wallBand={} withoutPiece={} blockedFloor={} status={}\n",
+            label, look.rockFace, look.holes, walls.band, walls.withoutPiece, walls.blockedFloor, status);
         dialog->Destroy();
         editor.map.clearChanges();
         g_gui.CloseCurrentEditor();
@@ -3048,7 +3116,7 @@ void occupiedLowerFloorCase(std::ostream& report) {
     config.surface.caveEntrances = 10; config.surface.repairReach = 1; config.surface.shoreSmoothing = 2;
     config.surface.rockBlocks = true; config.surface.caveEntranceStyle = CaveEntranceStyle::RockFace;
     GroundProfile profile{{"grass", "dirt", "mountain", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
-    profile.caveEntrance = "cave enter"; profile.caveExit = "ramp"; profile.caveGround = "cave"; profile.caveWall = "mountain";
+    profile.caveEntrance = "cave enter"; profile.caveExit = "ramp"; profile.caveGround = "cave"; profile.caveWall = "rocky wall";
     constexpr PreparationBudget preparation{1000000, 1100000, 2000000, 8ULL << 30};
     constexpr TerrainCommitBudget commit{2000000, 8ULL << 30};
     const auto entrancesOf = [](const PreparedTerrain& prepared) {
@@ -3124,6 +3192,9 @@ void occupiedLowerFloorCase(std::ostream& report) {
     check(bool(DrawOperations::commitTerrainPreview(*prepared, config, profile, commit)), "I49 Place failed");
     check(editor.actionQueue->getSize() == prior + 1, "I49 Place is not one history step");
     check(blockImage() == blockBefore, "I49 Place changed the occupied block");
+    const auto walls = caveWallLook(editor.map, x0, y0, 8, side, side, g_brushes.getBrush(profile.caveWall)->as<WallBrush>());
+    check(walls.band > 0 && walls.withoutPiece * 20 <= walls.band && !walls.foreignPiece && !walls.blockedFloor && !walls.passableWall,
+        "I49 cave wall look");
     for (const auto* unit : {&*prepared, prepared->cave.get()}) for (const auto& position : unit->preview.getChanges())
         check(snapshotTilesEqual(editor.map.getTile(position), unit->preview.getBuffer().getTile(position)), "I49 map differs from preview");
     const auto afterUpper = image(7), afterLower = image(8);
@@ -3133,9 +3204,9 @@ void occupiedLowerFloorCase(std::ostream& report) {
     check(image(7) == afterUpper && image(8) == afterLower && !editor.actionQueue->canRedo(), "I49 one Redo did not restore both floors");
     check(blockImage() == blockBefore, "I49 Undo/Redo changed the occupied block");
     report << std::format("OCCUPIED_Z1_CAVE_CASE block={}x{} freeEntrances={} freeCaveCells={} freeCaveInBlock={} entrances={} caveCells={} "
-        "droppedNearBlock={} added={} nearBlock={} repairs={} removedPois={} removedCaveComponents={} undoSteps=1\n", block, block, freeEntrances,
-        freeCave, freeInBlock, entrances, caveCells, dropped, added, nearBlock, levels.repair.repairs, levels.repair.removedPois,
-        levels.repair.removedCaveComponents);
+        "droppedNearBlock={} added={} nearBlock={} repairs={} removedPois={} removedCaveComponents={} wallBand={} withoutPiece={} undoSteps=1\n",
+        block, block, freeEntrances, freeCave, freeInBlock, entrances, caveCells, dropped, added, nearBlock, levels.repair.repairs,
+        levels.repair.removedPois, levels.repair.removedCaveComponents, walls.band, walls.withoutPiece);
     report << "OCCUPIED_Z1_CAVE_PASS\n";
     editor.map.clearChanges();
     g_gui.CloseCurrentEditor();
@@ -3183,8 +3254,12 @@ void run() {
 		ruinsAndCamps(250, report);
 		campfires(250, report);
 		guiCaves(report);
-        const bool rockCaves = caves(256, CaveEntranceStyle::RockFace, report);
-		const bool holeCaves = caves(256, CaveEntranceStyle::FloorHole, report);
+        // Iteration 50: both wall-brush candidates measured; the ground-brush wall stays supported.
+        bool rockCaves = true, holeCaves = true;
+        for (const std::string wall : {"rocky wall", "rock wall", "mountain"}) {
+            rockCaves &= caves(256, CaveEntranceStyle::RockFace, wall, report);
+            holeCaves &= caves(256, CaveEntranceStyle::FloorHole, wall, report);
+        }
 		fords(250, 1729, report);
 		nextToTerrain(100, 1, false, report);
 		nextToTerrain(100, 1, true, report);
