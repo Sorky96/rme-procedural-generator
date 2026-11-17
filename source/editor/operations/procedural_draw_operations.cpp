@@ -370,15 +370,18 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
         }
         dungeonOpenings.push_back(resolved->descent);
     }
+	// Iteration 50: a wall-brush cave wall puts its pieces on cave ground over the wall band.
+	const WallBrush* caveWallPieces = cave ? caveWallBrushOf(plan.profile) : nullptr;
 	if (cave && (!plan.decor.empty() || !plan.fires.empty() ||
-        (!plan.config.surface.caveDoorCorridors && !dungeons && (!plan.walls.empty() || !plan.doors.empty())))) co_return std::unexpected(PreviewError::InvalidPlan);
+        (!plan.config.surface.caveDoorCorridors && !dungeons && ((!plan.walls.empty() && !caveWallPieces) ||
+            std::ranges::any_of(plan.doors, [](uint8_t door) { return door != 0; }))))) co_return std::unexpected(PreviewError::InvalidPlan);
 	const auto groundBrush = [](const std::string& name) {
 		const auto* brush = g_brushes.getBrush(name);
 		return brush ? brush->as<GroundBrush>() : nullptr;
 	};
 	// The cave floor's ground and wall come from their own profile fields, never from the surface brush slots.
 	const GroundBrush* caveGroundBrush = cave ? groundBrush(plan.profile.caveGround) : nullptr;
-	const GroundBrush* caveWallBrush = cave ? groundBrush(plan.profile.caveWall) : nullptr;
+	const GroundBrush* caveWallBrush = !cave ? nullptr : caveWallPieces ? caveGroundBrush : groundBrush(plan.profile.caveWall);
 	if (cave && (!caveGroundBrush || !caveWallBrush)) co_return std::unexpected(PreviewError::InvalidPlan);
 	std::array<const GroundBrush*, GroundProfile::surfaceWithFloorCount> brushes {};
 	for (size_t i = 0; i < plan.profile.count; ++i) {
@@ -491,6 +494,12 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     if (((!upper && ((!cave && !wallName.empty()) || caveDoors)) || storeyWalls) && !addWallBrush(wallName))
         co_return std::unexpected(PreviewError::InvalidPlan);
     if (dungeonWalls && !addWallBrush(plan.profile.dungeonWall)) co_return std::unexpected(PreviewError::InvalidPlan);
+    std::vector<uint16_t> caveWallIds;
+    if (caveWallPieces) {
+        if (!addWallBrush(plan.profile.caveWall)) co_return std::unexpected(PreviewError::InvalidPlan);
+        const_cast<WallBrush*>(caveWallPieces)->getRelatedItems(caveWallIds);
+        std::ranges::sort(caveWallIds);
+    }
     if (wallBrush) {
 		if (plan.walls.size() != plan.items.size() || plan.profile.count != GroundProfile::surfaceWithFloorCount) co_return std::unexpected(PreviewError::InvalidPlan);
 		std::ranges::sort(wallIds);
@@ -569,6 +578,14 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 					adjacentFloor |= plan.caveFloor[size_t(cy + dy) * r.width + size_t(cx + dx)] == 1;
 			}
 			if (plan.caveFloor[i] != 1 && (plan.caveFloor[i] == 2) != adjacentFloor) co_return std::unexpected(PreviewError::InvalidPlan);
+			// A wall-brush cave wall: a piece on every placed wall band cell (a corridor door's wall brush may take a band
+			// cell over), and none on a cave floor cell other than a corridor door.
+			if (caveWallPieces) {
+				const bool piece = !plan.walls.empty() && plan.walls[i] && std::ranges::binary_search(caveWallIds, plan.walls[i]);
+				if ((plan.caveFloor[i] == 2 && plan.items[i] && !plan.walls[i]) ||
+					(piece && plan.caveFloor[i] == 1 && (plan.doors.empty() || !plan.doors[i])))
+					co_return std::unexpected(PreviewError::InvalidPlan);
+			}
 			// The walkable ground under a hole (iteration 48c) is a cave Floor cell without a ramp.
 			const bool landing = caveLanding && plan.items[i] == caveLanding && plan.caveFloor[i] == 1 && !plan.exits[i];
 			if (plan.items[i] && !landing) {

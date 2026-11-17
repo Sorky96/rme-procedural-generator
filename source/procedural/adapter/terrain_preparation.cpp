@@ -315,7 +315,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		return fail(PreparationInputError::MemoryLimit);
 	}
 	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
-        + (config.surface.caveDoorCorridors || dungeons ? cellCount * 3 : 0) + (storeys ? cellCount * 2 : 0);
+        + (config.surface.caveDoorCorridors || dungeons ? cellCount * 3 : hasCave(profile) && caveWallBrushOf(profile) ? cellCount * 2 : 0)
+        + (storeys ? cellCount * 2 : 0);
 
 	const uint64_t outputBytes = layout->outputBytes;
 	if (outputBytes > std::numeric_limits<uint64_t>::max() - kSnapshotAllocationOverhead) {
@@ -607,6 +608,9 @@ TerrainPreparationSteps runPreparation(
 					lowerPlan.caveFloor.resize(cellCount);
 					lowerPlan.exits.assign(cellCount, 0);
 					plan.entrances.assign(cellCount, 0);
+                    // Iteration 50: a wall-brush cave wall stands on cave ground on every wall band cell; RME's wall
+                    // logic in the preview aligns the pieces, so the band shows a wall towards the floor on every side.
+                    if (brushes->wallPiece) { lowerPlan.walls.assign(cellCount, 0); lowerPlan.doors.assign(cellCount, 0); }
 					for (size_t i = 0; i < cellCount; ++i) {
 						const bool floor = generated->cells[i] == CaveKind::Floor;
 						bool wall = false;
@@ -616,7 +620,10 @@ TerrainPreparationSteps runPreparation(
 								wall |= generated->cells[size_t(y + dy) * grid->region.width + size_t(x + dx)] == CaveKind::Floor;
 						}
 						lowerPlan.caveFloor[i] = floor ? 1 : wall ? 2 : 0;
-						if ((floor || wall) && lowerSnapshot->input.mask[i] && !lowerSnapshot->input.protection[i]) lowerPlan.items[i] = floor ? brushes->ground : brushes->wall;
+						if ((floor || wall) && lowerSnapshot->input.mask[i] && !lowerSnapshot->input.protection[i]) {
+							lowerPlan.items[i] = floor ? brushes->ground : brushes->wall;
+							if (wall && brushes->wallPiece) lowerPlan.walls[i] = brushes->wallPiece;
+						}
 					}
 					for (const auto& exit : exits->exits) {
                         const auto p = exit.cell;
@@ -661,7 +668,7 @@ TerrainPreparationSteps runPreparation(
                     if (input.config.surface.caveDoorCorridors) {
                         auto door = resolveCaveDoorBrush(profile.caveDoor);
                         if (!door) co_return fail(door.error());
-                        lowerPlan.walls.assign(cellCount, 0); lowerPlan.doors.assign(cellCount, 0);
+                        if (lowerPlan.walls.empty()) { lowerPlan.walls.assign(cellCount, 0); lowerPlan.doors.assign(cellCount, 0); }
                         for (const auto& c : generated->corridors) {
                             const auto side = c.horizontal ? grid->region.width : 1u;
                             for (auto i : {c.door - side, c.door, c.door + side}) lowerPlan.walls[i] = door->wall;

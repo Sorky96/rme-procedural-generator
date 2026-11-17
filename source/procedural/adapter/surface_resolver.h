@@ -8,6 +8,7 @@
 #include "procedural/core/underground.h"
 
 class DoodadBrush;
+class WallBrush;
 
 namespace rme::procedural {
 
@@ -33,7 +34,12 @@ struct CaveBrushes : CaveExitBrush {
 	// ground brush's placement item ("dirt floor" in 10.98). 0 without that brush; holes then keep their ramp.
 	uint16_t landing = 0;
 	uint16_t ground = 0;
+	// Ground on the wall band around the floor: the wall ground brush's placement item, or the cave ground when the cave
+	// wall is a wall brush (iteration 50).
 	uint16_t wall = 0;
+	// Iteration 50: the wall brush's placement piece on every wall band cell, aligned later by RME's wall logic; 0 for a
+	// ground-brush cave wall.
+	uint16_t wallPiece = 0;
 };
 
 [[nodiscard]] bool hasPlateau(const GroundProfile& profile) noexcept;
@@ -58,6 +64,9 @@ struct DungeonBrushes {
 std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundProfile& profile);
 
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
+// Iteration 50: the cave wall may name a wall brush, drawn over cave ground, instead of a ground brush. Returns that
+// brush; null for a ground brush, a wall decoration brush or an unknown name. GUI thread.
+[[nodiscard]] const WallBrush* caveWallBrushOf(const GroundProfile& profile);
 [[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
 // Translates a ramp-like doodad (every alternate a composite: a floor-change tile, a tile on the floor
 // above and at most one tail tile) into exit shapes in alternate order. GUI thread, client loaded.

@@ -141,6 +141,13 @@ bool hasCave(const GroundProfile& profile) noexcept {
 	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }
 
+const WallBrush* caveWallBrushOf(const GroundProfile& profile) {
+	if (profile.caveWall.empty() || profile.caveWall.size() > 256) return nullptr;
+	const auto* brush = g_brushes.getBrush(profile.caveWall);
+	const auto* wall = brush ? brush->as<WallBrush>() : nullptr;
+	return wall && !wall->is<WallDecorationBrush>() ? wall : nullptr;
+}
+
 std::expected<CaveDoorBrush, ResolveError> resolveCaveDoorBrush(std::string_view name) {
     if (!wxIsMainThread()) return std::unexpected(ResolveError::WrongThread);
     if (!g_version.IsVersionLoaded()) return std::unexpected(ResolveError::NoClient);
@@ -181,10 +188,11 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 	const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
 	const auto* wallBrush = g_brushes.getBrush(profile.caveWall);
 	const auto* wall = wallBrush ? wallBrush->as<GroundBrush>() : nullptr;
+	const auto* wallPieces = caveWallBrushOf(profile);
 	const auto* entranceBrush = g_brushes.getBrush(profile.caveEntrance);
 	const auto* hole = entranceBrush ? entranceBrush->as<GroundBrush>() : nullptr;
 	const bool floorHole = config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole;
-	if (!exit || !ground || !wall || (floorHole ? !hole : !entrance)) return std::unexpected(ResolveError::InvalidProfile);
+	if (!exit || !ground || !(wall || wallPieces) || (floorHole ? !hole : !entrance)) return std::unexpected(ResolveError::InvalidProfile);
 	CaveBrushes result;
 	const auto validGround = [](const GroundBrush* ground) {
 		if (!ground || ground->getTotalChance() <= 0 || ground->getBorderItems().empty()) return false;
@@ -200,9 +208,23 @@ std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile&
 		if (previous != ground->getTotalChance()) return false;
 		return true;
 	};
-	if (!validGround(ground) || !validGround(wall) || (floorHole && !validGround(hole))) return std::unexpected(ResolveError::InvalidProfile);
+	if (!validGround(ground) || (wall && !validGround(wall)) || (floorHole && !validGround(hole))) return std::unexpected(ResolveError::InvalidProfile);
 	result.ground = ground->getPlacementItemId();
-	result.wall = wall->getPlacementItemId();
+	result.wall = wall ? wall->getPlacementItemId() : result.ground;
+	if (wallPieces) {
+		// Iteration 50: every piece the wall logic may align to must be a real, impassable non-ground client item, so the
+		// wall band blocks exactly like the cave's semantic plan expects and nothing walkable stands in for a wall.
+		size_t pieces = 0;
+		for (int alignment = 0; alignment < WallBrushItems::WALL_ALIGNMENT_COUNT; ++alignment)
+			for (const auto& piece : wallPieces->items.getWallNode(alignment).items) {
+				const auto def = g_item_definitions.get(piece.id);
+				if (!def || !def.clientId() || def.isMetaItem() || def.isGroundTile() || !def.hasFlag(ItemFlag::Unpassable))
+					return std::unexpected(ResolveError::InvalidProfile);
+				++pieces;
+			}
+		result.wallPiece = wallPieces->getPlacementItemId();
+		if (!pieces || !result.wallPiece) return std::unexpected(ResolveError::InvalidProfile);
+	}
 	if (!floorHole && entrance->getAlternativeCount() > 256) return std::unexpected(ResolveError::InvalidProfile);
 	auto exitBrush = resolveCaveExitBrush(*exit);
 	if (!exitBrush) return std::unexpected(exitBrush.error());
