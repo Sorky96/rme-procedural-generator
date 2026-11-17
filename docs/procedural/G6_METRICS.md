@@ -37,6 +37,15 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### Korekta holdoutu — decyzja użytkownika 2026-11-17
+
+Przed pomiarem rankingu i holdoutu użytkownik zaakceptował korektę podziału:
+niezależny holdout G6 obejmuje M01, M05 oraz rodzinę zimową M11+M18.
+M12–M17 raportujemy osobno jako dane pokrewne M19 według G4_SPLIT.md;
+nie wchodzą do zaliczenia progu holdout z kryterium 3 I51. Ta korekta
+zastępuje wcześniejsze określenie M12–M17 jako rodziny spoza M19.
+Nie zmienia progu ≥70% ani wymogu osobnego wyniku dla obu profili.
+
 - **I52:** N kandydatów w oknie generatora (domyślnie 4, maks. 16), wybór najlepszego, galeria; jedno Undo na Place.
 - **I53:** test memoryzacji: odcisk wyniku wobec referencji (`similarity.*`) jako warunek twardy.
 - **I54:** feedback Approve/Reject/Adjust, lokalna historia, wersjonowane profile z rollbackiem.
