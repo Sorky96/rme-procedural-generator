@@ -37,6 +37,76 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I51 — uzupełnienie wiążące przed implementacją i pomiarem (2026-11-17)
+
+Poniższe reguły zastępują wcześniejsze niedookreślone wybory metryk,
+odległości i przypisania holdoutu. Zapis po częściowej implementacji b828824,
+ale przed pomiarem rankingu i holdoutu; wcześniejsza macierz mierzyła tylko
+powtarzalność, bez pasm. Nie zmieniamy generatora ani progu zaliczenia.
+
+Stały zestaw 26 metryk dla obu profili. B(r)=[0,67r;1,50r],
+A50(r)=[max(0,r−50);r+50], U20(r)=[0;r+20]; granice inkluzywne,
+przechowywane dokładnie w setnych jednostki.
+
+| Metryki w kolejności | Referencje m06 | Referencje m19 | Pasmo |
+| --- | --- | --- | --- |
+| channels.L,W,B,C | 384;2898;41134;614 | 302;4337;38913;865 | B |
+| scale.E16,E64 | 394;233 | 425;197 | B |
+| patch.D,F,P | 421;749;5638 | 451;625;5656 | B |
+| patch.RB,RF,RS | 333;167;36 | 121;862;15 | B, poza m19 RS: U20 |
+| trans.R0,R1,R2,R3 | 33;938;24;4 | 99;502;251;147 | A50 gdy r<50, inaczej B |
+| trans.D0,D1,D2,D3 | 951;32;12;4 | 728;155;27;88 | A50 gdy r<50, inaczej B |
+| paths.L,W | 70;3642 | 78;4606 | B |
+| build.per64k,long,short | 31;9;7 | 37;9;7 | B |
+| outline.median | 30 | 24 | B |
+
+Źródła: G4_GATE_STATUS, tabele kanałów (129–134), skali (143), ziemi/plaży
+(162), szlaków (209–212), przejść (263), budynków (281–284);
+G4_METRICS: skała (186), obrys (295), reguły pasm (107,123,142,148,178,214,243,285).
+P oznacza poprawione P′. Przejścia R0..R3=RD/RG/RS/RW, D0..D3=DG/DR/DS/DW.
+E4 jest kontrolą; paths.B wyłączono historycznie jako artefakt (I9d).
+rockadj/rocknear nie mają pasm referencyjnych obu profili. rivers.T/S/W
+nie otrzymały takich pasm, późniejszy pomiar kanałów obejmuje sieci szerzej.
+Wszystkie osiem przejść pozostaje aktywne. Pozostałe metryki raportujemy
+diagnostycznie, bez dodatkowych głosów w rankingu.
+
+**N/A i odległość.** Każdy kandydat ma 26 pozycji; nie zmieniamy mianownika
+ani zestawu zależnie od kandydata. Brak kolumny, błędna liczba lub awaria
+pomiaru unieważnia przebieg. Definicyjne N/A nie jest błędem technicznym.
+Brak kanałów/szlaków daje długość 0, brak budynków gęstość 0; szerokości,
+boki i obrys bez obiektów pozostają N/A. Zachowujemy progi liczebności G4.
+N/A przy znanej referencji: 0 punktów inBand i wkład C=ln(64).
+Ujemne excessy są poprawnymi pomiarami. Pasma stosujemy do wartości surowych.
+Dla metryk nieujemnych i ref>0: d=min(C,abs(ln(value/ref))), zero daje C.
+Dla ref=0: d=min(C,ln(1+value/u)), u=1 natywna jednostka.
+Dla signed excessów: d=min(C,abs(asinh(value/u)−asinh(ref/u))), u=1‰.
+distance=round(1000·suma d), jedno zaokrąglenie po sumie w kolejności tabeli.
+To jawne rozszerzenie wcześniejszej definicji, obejmujące ograniczenie kary
+i transformację excessów; nie deklaracja zachowania obecnego kodu.
+Porządek: hardFail rosnąco, inBand malejąco, distance rosnąco, indeks rosnąco.
+
+**Holdout.** Każdy profil porównujemy ze wszystkimi mapami M01,M05,M11,M18,
+bez wyboru bliższego stylu. Odległość per mapa = średnia 26 wkładów.
+Referencyjne N/A wnosi stałe C dla wszystkich kandydatów; raport pokazuje
+przyczyny i liczbę pozycji różnicujących. Mapa bez żadnej takiej pozycji
+blokuje ocenę. Zima = średnia M11/M18; wynik główny = średnia trzech rodzin
+M01, M05, zima (po 1/3). M12–M17: wyłącznie osobny raport rodziny M19.
+Mediana 16 kandydatów to średnia pozycji 8 i 9. Sukces pary wymaga hardFail=0
+i odległości zwycięzcy ściśle poniżej mediany. Remis przegrywa; nie usuwamy
+hardFail, N/A ani seedów z mianownika. Próg: co najmniej 23/32 dla każdego
+profilu. Baseline losowy liczymy dokładnie jako udział kandydatów spełniających
+ten sam warunek w każdym seedzie, następnie średnią po seedach.
+Raport zawiera wyniki per mapa, rodzina i wynik główny, również porażki.
+
+Macierz: seedy 1001–1032, N=16, bok 512, dwa identyczne przebiegi;
+m06 pathLength/buildingDensity=40/30, m19=80/40, rockBlocks=0/1,
+geometria --g5-levels. Kandydat 0 zachowuje seed użytkownika.
+Testy obejmują nowe reguły odległości, N/A vs błąd, granice pasm,
+agregację rodzin, medianę parzystą, remisy i dokładny baseline losowy.
+Mapy holdout analizowano wcześniej w G4: jest to ocena poza wybranymi
+rodzinami, nie całkowicie nietknięty zbiór badawczy. Zamrażamy listę
+zaakceptowaną przez użytkownika, nie dobieramy jej ponownie po wynikach.
+
 ### Korekta holdoutu — decyzja użytkownika 2026-11-17
 
 Przed pomiarem rankingu i holdoutu użytkownik zaakceptował korektę podziału:
