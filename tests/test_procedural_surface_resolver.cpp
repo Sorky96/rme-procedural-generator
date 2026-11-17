@@ -2983,6 +2983,11 @@ void m19NoCavesCase(std::ostream& report) {
     check(style && style->GetSelection() == 0, "M19 caves rock-face style by default");
     auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
     check(seed && seed->GetValue() == "1729", "M19 caves default seed");
+    // The dialog defaults to the "mountain" cave wall; this case checks the optional "rocky wall" wall brush.
+    // The read-only list holds only the default until it is opened, so the entry is appended first.
+    auto* wallChoice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-cave-wall-brush", dialog));
+    check(wallChoice && wallChoice->GetValue() == "mountain", "M19 caves default cave wall brush");
+    wallChoice->Append("rocky wall"); wallChoice->SetStringSelection("rocky wall");
     MountainDialogRun run(*dialog, editor, 0, true);
     dialog->ShowModal(); run.stop();
     check(run.placed(), "M19 caves GUI case: " + run.failure() + " " + run.status());
@@ -3008,9 +3013,6 @@ void m19NoCavesCase(std::ostream& report) {
     }
     std::string status = run.status();
     std::ranges::replace(status, '\n', ' ');
-    // Iteration 50: the dialog's default cave wall is the "rocky wall" wall brush.
-    auto* wallChoice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-cave-wall-brush", dialog));
-    check(wallChoice && wallChoice->GetValue() == "rocky wall", "M19 caves default cave wall brush");
     const auto walls = caveWallLook(editor.map, 1000, 1000, 8, 512, 512, g_brushes.getBrush("rocky wall")->as<WallBrush>());
     report << std::format("M19_CAVES_GUI_CASE candidates={} coreEntrances={} startLandEntrances={} mapEntrances={} withRamp={} caveCells={} "
         "wallBand={} withoutPiece={} foreignPiece={} blockedFloor={} passableWall={} status={}\n",
@@ -3078,6 +3080,8 @@ void fallbackEntranceLookCase(std::ostream& report) {
         check(style && style->GetSelection() == 0, "I48b rock-face style by default");
         auto* seed = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName("terrain-seed", dialog));
         check(seed, "I48b seed"); seed->SetValue("1729");
+        auto* wallChoice = dynamic_cast<wxComboBox*>(wxWindow::FindWindowByName("terrain-cave-wall-brush", dialog));
+        check(wallChoice, "I48b cave wall brush"); wallChoice->Append("rocky wall"); wallChoice->SetStringSelection("rocky wall");
         MountainDialogRun run(*dialog, editor, 0, true);
         dialog->ShowModal(); run.stop();
         const auto label = std::format("I48b entrances={}", perArea);

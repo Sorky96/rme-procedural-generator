@@ -642,7 +642,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	// Iteration 50: the natural rock wall brush, aligned on every side of the floor; the "mountain" ground (faces only
 	// towards the east and south) when the client lacks it.
-	const wxString caveWall = wall_names_.Index("rocky wall") != wxNOT_FOUND ? "rocky wall" : "mountain";
+	const wxString caveWall = "mountain";
 	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", caveWall, 4);
 	cave_wall_brush_choice_->SetToolTip("Wall brush drawn on cave ground around the cave floor, or a ground brush for the whole wall band.");
 	if (cave_wall_names_.Index(caveWall) == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
