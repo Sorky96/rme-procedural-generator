@@ -470,3 +470,12 @@ Wiążące przed implementacją. Decyzje użytkownika: „Omijaj zajęte”, „
 1. **Zajęte z + 1.** Jaskinia nie wymaga pustego prostokąta na z + 1: kafle już zajęte na mapie (dowolny grunt lub przedmiot) są dla generatora jaskini lite (nie drążone, nienadpisywane). Wejście/dziura/rampa powstaje tylko nad wolnym polem jaskini; wejścia bez wolnego lądowania nie powstają (lub przenoszone przez istniejący mechanizm wyboru). Spójność: wszystkie postawione wejścia w składowej jaskini, osiągalne. Test: mapa z zajętym fragmentem z + 1 (np. pas lub prostokąt pośrodku) → jaskinia powstaje, zajęte kafle bajtowo nietknięte, 0 usuniętych miejsc lub tylko wejścia nad zajętymi polami.
 2. **Jeden krok Undo.** Place z jaskinią to jedna akcja w historii: jedno Undo przywraca stan sprzed Place (powierzchnia i z + 1), jedno Redo przywraca całość. Sonda sprawdza: po 1 Undo mapa identyczna jak przed, po 1 Redo identyczna jak po Place. Bez zmiany innych operacji edytora.
 3. Bez regresji: przypadki m19 użytkownika (10 i 15 wejść, pusta mapa) bez zmiany wyników, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`. D23 w TECH_DEBT.md zaktualizowany (zostaje tylko test w grze i pamięć pól zakładki, jeśli nie sprawdzone).
+
+## Iteracja 50: D24 — ściany jaskini pędzlem muru skalnego (2026-11-17)
+
+Wiążące przed implementacją. Decyzja użytkownika: wariant 1 (pędzel muru skalnego zamiast „mountain”).
+
+1. Ściany jaskini stawiane pędzlem typu mur (wall brush) z danych 10.98 wybieranym po nazwie (kandydaci: „rock wall”, „rocky wall”; wybór uzasadniony w raporcie), na gruncie jaskini, bez ID w kodzie. Pole „Cave wall” w oknie przyjmuje pędzle muru (i nadal gruntowe dla zgodności) — domyślnie wybrany mur skalny.
+2. **Lica.** `CAVE_WALL_FACES`: udział komórek muru stykających się z podłogą jaskini bez widocznego lica/segmentu ≤ 5 % (był ok. 48 %); mur widoczny z każdej strony (N, W, E, S, narożniki).
+3. **Przechodność.** Mur nie wchodzi na pola podłogi jaskini (żadne pole podłogi nie dostaje blokującego przedmiotu); maska adaptera z klienta zgodna z mapą; przypadki m19 użytkownika (10 i 15 wejść, pusty i zajęty z + 1) — 0 usuniętych miejsc, wszystkie wejścia z rampą/dirt floor jak w 48c.
+4. Bez regresji: bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, jedno Undo, `SUITE_PASS`. D24 w TECH_DEBT.md zamknięty lub z opisaną resztą.
