@@ -1,5 +1,9 @@
 # Procedural World Generator — postęp
 
+## 2026-11-17 — G5: D24, ściany jaskini pędzlem muru skalnego (iteracja 50) — PASS
+
+Ściana jaskini może być pędzlem muru: na każdym polu pasa wokół podłogi leży grunt jaskini z elementem muru, a logika murów RME dobiera ułożenie, więc mur jest widoczny od każdej strony (także od północy i zachodu, czego brakowało przy „mountain”). Okno ma w polu „Cave wall brush” pędzle muru i gruntu; domyślnie „rocky wall” (naturalna skała, pędzel bez powiązań z innymi murami). `CAVE_WALL_FACES` 0 % pól pasa bez elementu (było 17 % bez lica, 48 % bez lica północnego lub zachodniego przy „mountain”); podłoga bez blokujących przedmiotów, maska adaptera zgodna z mapą. Przypadki m19 użytkownika (10 i 15 wejść, puste i zajęte z + 1) — 0 usuniętych miejsc, rampy i „dirt floor” jak w 48c. G5 32/32, odcisk Seed 1729 bez zmian, jedno Undo, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 50”.
+
 ## 2026-11-16 — G5: D23, jaskinia przy zajętym z + 1 i jeden krok Undo (iteracja 49) — PASS
 
 Jaskinia nie wymaga już pustego z + 1: kafle już leżące na mapie (i pas 2 pól wokół nich) są dla generatora jaskiń lite i zostają nietknięte; wejście bez wolnego lądowania nie powstaje, odcięte części jaskini są usuwane. Place to jeden krok historii dla wszystkich pięter (powierzchnia, jaskinia, góry): jedno Undo przywraca mapę sprzed Place, jedno Redo całość; para kroków w `ActionQueue` usunięta. Sonda z blokiem 128 × 128 na z + 1 (m19, seed 1729): 18 z 20 wejść (2 utracone przy bloku), blok bajtowo nietknięty, wszystko osiągalne. Przypadki m19 użytkownika bez zmian, G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 49”.
