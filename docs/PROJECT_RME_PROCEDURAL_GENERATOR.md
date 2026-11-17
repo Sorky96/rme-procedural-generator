@@ -506,8 +506,8 @@ W `docs/PROGRESS.md` trzymaj aktualny stan. Poniżej szablon startowy, nie rapor
 | 2 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 (PR #3, `794b068`) | [G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md) | D5, D6 | G3 |
 | 3 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 (PR #4, `33b5c88`) | G3_GATE_STATUS.md | D8 (resztki), D9–D11 | G4 |
 | 4 | W TOKU, bramka G4 NIE spełniona | 2026-11-08 (gałąź `feature/procedural-g4-style-learning`, bez PR) | [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), [G4_COMPARE.md](procedural/G4_COMPARE.md) | brak poprawy na mapach niewidzianych, wąskie dane (caves, swamp), D9 | Cechy D9 (struktury wielkoskalowe, góry, szlaki), więcej map |
-| 5 | W TOKU, bramka G5 PASS (osiągalność) | 2026-11-12 (gałąź `feature/procedural-g5-settlements`, `d67ee6e`, bez PR) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) | przełęcze, wyjścia jaskini na drugim końcu, korytarze z drzwiami, podziemia, ocena GUI | wyjścia jaskini i korytarze |
-| 6 | TODO | - | - | - | Po G5 |
+| 5 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-17 (gałąź `feature/procedural-g5-settlements`, bez PR) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) | D23 (test w grze), D24 (lica ścian „mountain”, wygląd w grze) | G6 |
+| 6 | DO ROZPOCZĘCIA | - | - | - | ranking kandydatów, feedback |
 | 7 | TODO | - | - | - | Po G6 |
 | 8 | TODO | - | - | - | Po G7 |
 | 9 | TODO | - | - | - | Po G8 |

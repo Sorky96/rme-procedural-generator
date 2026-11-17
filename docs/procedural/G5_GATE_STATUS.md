@@ -571,3 +571,7 @@ Kryteria: [G5_METRICS.md](G5_METRICS.md), „Iteracja 50”, bez zmian. Gałąź
 ### Iteracja 50 — korekta po GUI (2026-11-17)
 
 Użytkownik: „Rocky wall wygląda okropnie, lepiej wyglądało po staremu”. Domyślna ściana jaskini w oknie wraca do „mountain” (commit 02bf1bc); „rocky wall”/„rock wall” zostają do wyboru w polu „Cave wall brush”. Sondy wybierają „rocky wall” jawnie, żeby nadal sprawdzać ścieżkę pędzla muru. Brak lic N/W przy „mountain” zostaje w D24 jako zaakceptowany wygląd. SUITE_PASS (z sondami).
+
+## Zamknięcie G5 (2026-11-17)
+
+Decyzja użytkownika: „Tak, zamykamy”. G5 ZAMKNIĘTE Z DŁUGIEM (D23, D24). Ostatni stan: build OK, SUITE_PASS z sondami, bramka `--i47` 32/32 m06/m19, odcisk Seed 1729 100×100 = 17159159863505677800.

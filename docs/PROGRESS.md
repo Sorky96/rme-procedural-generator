@@ -48,7 +48,7 @@ Wyjście dalekie w 100 % jaskiń z wejściem (≥ 24 pola od wejścia); opcjonal
 | Niedostępne wyspy tylko z piasku | zrobione | iteracja 40 |
 | Ruch w grze, oryginalny RME, inne klienty niż 10.98 | niesprawdzone | D23 |
 
-Do pełnego zamknięcia FAZY 5 brakuje (stan po iteracji 42): przeglądu GUI gór, przełęczy, jaskiń, ruin i obozów przez użytkownika; lochy i schody w budynkach odłożone jako D27.
+**FAZA 5 zamknięta z długiem 2026-11-17** (decyzja użytkownika, iteracje 37–50, HEAD gałęzi `feature/procedural-g5-settlements`): bramka G5 PASS (m06, m19 32/32), GUI zaakceptowane przez użytkownika. Dług: D23 (ruch w grze), D24 (brak lic N/W przy domyślnym „mountain”, „rocky wall” opcjonalny; wygląd w grze). Następna: FAZA 6.
 
 ## 2026-11-12 — G5: niedostępne wyspy tylko z piasku (iteracja 40) — PASS
 
