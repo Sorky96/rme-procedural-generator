@@ -82,10 +82,65 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(
 				cells[i] = DecorKind::Stone;
 			}
 		}
+		for (const auto e : grid.entrances) cells[e] = DecorKind::None;
 		return DecorGrid { grid.region, std::move(cells) };
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(SurfaceError::AllocationFailed);
 	}
 }
+
+std::expected<uint32_t, SurfaceError> preserveDecorationConnectivity(
+    DecorGrid& decor, std::span<const uint8_t> open, std::array<bool, decorKindCount> blockingClasses,
+    std::span<uint8_t> mask, std::stop_token stop) try {
+    if (!decor.valid() || open.size() != decor.cells.size() || (!mask.empty() && mask.size() != open.size()))
+        return std::unexpected(SurfaceError::InvalidRegion);
+    const auto w = decor.region.width, h = decor.region.height;
+    std::vector<uint8_t> walkable(open.begin(), open.end());
+    if (!mask.empty()) for (size_t i = 0; i < mask.size(); ++i) {
+        if (mask[i] > 2) return std::unexpected(SurfaceError::InvalidParameters);
+        if (mask[i] == 2) walkable[i] = 0;
+    }
+    std::vector<uint32_t> seen(open.size()), queue;
+    const auto neighbours = [&](uint32_t i, auto visit) {
+        if (i >= w) visit(i - w);
+        if (i % w) visit(i - 1);
+        if (i % w + 1 < w) visit(i + 1);
+        if (i / w + 1 < h) visit(i + w);
+    };
+    uint32_t removed = 0;
+    for (uint32_t i = 0; i < open.size(); ++i) {
+        if (stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+        const auto kind = size_t(decor.cells[i]);
+        const bool blocks = mask.empty() ? kind && blockingClasses[kind - 1] : mask[i] == 1;
+        if (!walkable[i] || !blocks) continue;
+        std::array<uint32_t, 4> adjacent {};
+        size_t count = 0;
+        neighbours(i, [&](uint32_t j) { if (walkable[j]) adjacent[count++] = j; });
+        walkable[i] = 0;
+        bool splits = false;
+        if (count > 1) {
+            // All neighbours shared a component through i. Its removal splits
+            // exactly when they cannot all reach one another without i.
+            queue.clear(); queue.push_back(adjacent[0]); seen[adjacent[0]] = i + 1;
+            size_t remaining = count - 1;
+            for (size_t head = 0; head < queue.size() && remaining; ++head) {
+                if (head % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
+                neighbours(queue[head], [&](uint32_t j) {
+                    if (!walkable[j] || seen[j] == i + 1) return;
+                    seen[j] = i + 1; queue.push_back(j);
+                    for (size_t a = 1; a < count; ++a) if (j == adjacent[a]) --remaining;
+                });
+            }
+            splits = remaining != 0;
+        }
+        if (splits) {
+            walkable[i] = 1;
+            decor.cells[i] = DecorKind::None;
+            if (!mask.empty()) mask[i] = 0;
+            ++removed;
+        }
+    }
+    return removed;
+} catch (const std::bad_alloc&) { return std::unexpected(SurfaceError::AllocationFailed); }
 
 } // namespace rme::procedural

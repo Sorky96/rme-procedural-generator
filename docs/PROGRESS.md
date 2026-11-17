@@ -1,5 +1,183 @@
 # Procedural World Generator — postęp
 
+## 2026-11-17 — G5: D24, ściany jaskini pędzlem muru skalnego (iteracja 50) — PASS
+
+Ściana jaskini może być pędzlem muru: na każdym polu pasa wokół podłogi leży grunt jaskini z elementem muru, a logika murów RME dobiera ułożenie, więc mur jest widoczny od każdej strony (także od północy i zachodu, czego brakowało przy „mountain”). Okno ma w polu „Cave wall brush” pędzle muru i gruntu; domyślnie „rocky wall” (naturalna skała, pędzel bez powiązań z innymi murami). `CAVE_WALL_FACES` 0 % pól pasa bez elementu (było 17 % bez lica, 48 % bez lica północnego lub zachodniego przy „mountain”); podłoga bez blokujących przedmiotów, maska adaptera zgodna z mapą. Przypadki m19 użytkownika (10 i 15 wejść, puste i zajęte z + 1) — 0 usuniętych miejsc, rampy i „dirt floor” jak w 48c. G5 32/32, odcisk Seed 1729 bez zmian, jedno Undo, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 50”.
+
+## 2026-11-16 — G5: D23, jaskinia przy zajętym z + 1 i jeden krok Undo (iteracja 49) — PASS
+
+Jaskinia nie wymaga już pustego z + 1: kafle już leżące na mapie (i pas 2 pól wokół nich) są dla generatora jaskiń lite i zostają nietknięte; wejście bez wolnego lądowania nie powstaje, odcięte części jaskini są usuwane. Place to jeden krok historii dla wszystkich pięter (powierzchnia, jaskinia, góry): jedno Undo przywraca mapę sprzed Place, jedno Redo całość; para kroków w `ActionQueue` usunięta. Sonda z blokiem 128 × 128 na z + 1 (m19, seed 1729): 18 z 20 wejść (2 utracone przy bloku), blok bajtowo nietknięty, wszystko osiągalne. Przypadki m19 użytkownika bez zmian, G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 49”.
+
+## 2026-11-16 — G5: lądowanie pod dziurą (iteracja 48c) — PASS
+
+Pod wejściem-dziurą („cave hole”, styl FloorHole i wejścia z zapasu RockFace) jaskinia na z + 1 nie ma już rampy, tylko chodliwy grunt „dirt floor” (pędzel „cave ropespot”, w 10.98 przedmiot 384, wybierany po nazwie). Wejścia RockFace i dalekie wyjścia zachowują rampy. Krawędź dziura → lądowanie chodliwa w masce adaptera; krawędź nieistniejącej rampy usunięta z planu poziomów adaptera. Sondy: każda dziura ma „dirt floor” bez rampy, każde wejście RockFace rampę; przypadki m19 (10 i 15 wejść) 0 usuniętych miejsc. G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48c”.
+
+## 2026-11-16 — G5: wygląd zwykłych wejść z zapasu (iteracja 48b) — PASS
+
+Zwykłe wejście z zapasu RockFace (poza skałą) nie jest już doodadem „cave enter” na trawie, tylko dziurą z pędzla „cave hole” — tym samym wyglądem co styl FloorHole. Wejścia w ścianie skały bez zmian. Nowa sonda: „cave enter” tylko przy skale, każde wejście ze zmianą piętra w dół i rampą pod spodem; przypadek m19 (seed 1729, 512 × 512) z 40 i 60 zamówionymi wejściami: 20 + 0 i 23 + 13 dziur, 0 usuniętych miejsc. G5 32/32, odcisk Seed 1729 bez zmian, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48b”.
+
+## 2026-11-15 — G5: D24, zwykłe wejścia w zapasie (iteracja 48) — część 1 PASS, pędzel ściany bez zmiany
+
+Styl RockFace dobiera zwykłe wejścia poza skałą, gdy w ścianach brakuje miejsc; wejścia w ścianie bez zmian względem HEAD (m06 599, m19 586), mediana wejść 64 (m06) i 44,5 (m19), każde z rampą i w jednej składowej jaskini. Pędzel ściany z licami ze wszystkich stron w 10.98 to tylko „snowy/icy mountain” — ich nieprzechodnie obramowanie zewnętrzne blokowało jaskinię w przypadku GUI m19, więc zostaje „mountain”. G5 32/32 w m06 i m19, przypadek GUI m19 bez usuniętych miejsc, odcisk Seed 1729 bez zmian. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 48”.
+
+## 2026-11-15 — G5: wygląd jaskiń (iteracja 47) — PASS, GUI czeka
+
+Zamiast zygzaka równoległych tuneli (wejścia łączone wierszami): drzewo najkrótszych połączeń plus 1–2 pętle z dala od innych tuneli, meandrujące tunele szerokości 2–5 ze ślepymi odnogami, nieregularne groty z szumu i automatu komórkowego. Najdłuższy prosty odcinek osi 20 (m06) i 16 (m19), mediana udziału grot 0,78, 0 par równoległych tuneli, wszystkie wejścia w jednej składowej. G5 32/32 w m06 i m19, przypadek GUI m19 bez usuniętych miejsc, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 47”.
+
+## 2026-11-12 — G5: przełęcze w górach (iteracja 42) — PASS, GUI czeka
+
+Doliny szerokości 3 przez masywy, czapy wycięte nad pasem, pole „passes” (0–8) w zakładce „Levels”. Mediana 4 przełęczy w m06 i m19, G5 32/32 przy `passes` 0 i 4. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 42”.
+
+## 2026-11-12 — G5: wyjścia jaskini na drugim końcu, korytarze z drzwiami (iteracja 41) — PASS, GUI czeka
+
+Wyjście dalekie w 100 % jaskiń z wejściem (≥ 24 pola od wejścia); opcjonalne korytarze z drzwiami (`stone wall`). G5 bez regresji, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 41”.
+
+## 2026-11-12 — G5: stan FAZY 5 po iteracjach 37–40
+
+| Kryterium FAZY 5 | Stan | Dowód |
+|---|---|---|
+| Bramka G5: z ustalonego startu osiągalne POI, wejścia/wyjścia Z, brak krytycznych odcięć | **PASS** (m06 i m19, 32/32 seedów, iteracje 39–40) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) |
+| Walidator, naprawa, odrzucanie seedów, mosty | zrobione (iteracje 36–39), D22 zamknięty w zakresie pomiaru | iteracje 36–39 |
+| Graf regionów, brody, mosty | zrobione | iteracje 14b, 24, 37 |
+| Przełęcze w górach | zrobione 2026-11-12, GUI niesprawdzone | iteracja 42 |
+| Góry wielopiętrowe (z − 1..z − 3), rampy | zrobione, wygląd w GUI niesprawdzony | iteracje 32–34, 38 |
+| Jaskinia z + 1 z wejściami i wyjściem rampą pod wejściem | zrobione (mediana wejść 18,5 / 33) | iteracje 27–31, 38–39 |
+| Wyjścia jaskini na drugim końcu, korytarze z drzwiami | zrobione 2026-11-12, GUI niesprawdzone | iteracja 41 |
+| Lochy / struktury podziemne, schody w budynkach | dług D27 | [TECH_DEBT.md](procedural/TECH_DEBT.md) |
+| Osady, ruiny, obozowiska z kontrolą kolizji | zrobione; ruiny i obozy bez oceny w GUI | iteracje 12, 25–26 |
+| Niedostępne wyspy tylko z piasku | zrobione | iteracja 40 |
+| Ruch w grze, oryginalny RME, inne klienty niż 10.98 | niesprawdzone | D23 |
+
+**FAZA 5 zamknięta z długiem 2026-11-17** (decyzja użytkownika, iteracje 37–50, HEAD gałęzi `feature/procedural-g5-settlements`): bramka G5 PASS (m06, m19 32/32), GUI zaakceptowane przez użytkownika. Dług: D23 (ruch w grze), D24 (brak lic N/W przy domyślnym „mountain”, „rocky wall” opcjonalny; wygląd w grze). Następna: FAZA 6.
+
+## 2026-11-12 — G5: niedostępne wyspy tylko z piasku (iteracja 40) — PASS
+
+Wyspy bez połączenia z lądem i bez POI dostają sam Shore; 0 komórek innych niż piasek w m06 (15 wysp) i m19 (8 wysp). Bez regresji, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 40”.
+
+## 2026-11-12 — G5: naprawa na końcowej masce, więcej wejść do jaskiń (iteracja 39) — G5_GATE_PASS
+
+Naprawa ponawiana po autoborderze na faktycznych przedmiotach (bloker: border „shallow water”). Mediana wejść 18,5 (m06) i 33 (m19). 32/32 seedów w obu profilach, SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 39”.
+
+## 2026-11-12 — G5: roślinność czap bez dzielenia, wejścia przed czapami (iteracja 38) — FAIL tylko na liczbie wejść
+
+32/32 seedów osiągalnych w obu profilach; mediana wejść 2 i 3 (wymagane ≥ 8). SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 38”.
+
+## 2026-11-12 — G5: naprawa wielopiętrowa i mosty (iteracja 37) — bramka FAIL dla m19
+
+`repairLevelReach` i mosty z pędzla „bridge”. m06 32/32, m19 1/32 (7/32 z ponawianiem). SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 37”.
+
+## 2026-11-12 — G5: walidator przez wszystkie piętra (iteracja 36) — walidator PASS, bramka G5 FAIL
+
+Walidator osiągalności pięciu pięter w rdzeniu, adapterze i oknie (linia stanu, ostrzeżenie, ponawianie seedów). Bramka G5: 0 z 32 seedów z pełną osiągalnością w obu profilach; przyczyny: roślinność blokująca, zbocza gór, wejścia jaskini na zboczu. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 36”.
+
+## 2026-11-11 — G5: góry na własnym zboczu (iteracja 34) — PASS, GUI czeka
+
+Czapa z − 1 na całym polu skały, zbocze „mountain” pod każdym wyższym piętrem, trawa do krawędzi, rampy przy zboczu z otwarciem na górze, roślinność jak na powierzchni. Na podstawie analizy 20 map referencyjnych. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 34”.
+
+## 2026-11-10 — G5: góry do trzech pięter bez ścian, limit w % (iteracja 33) — PASS, GUI czeka
+
+Piętra z − 1..z − 3 z trawą do krawędzi i roślinnością, rampy między piętrami, korytarze lądowisk, limit procentowy obszaru na każdym piętrze. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 33”.
+
+## 2026-11-10 — G5: płaskowyż na górach (iteracja 32) — PASS, GUI czeka
+
+Piętro z − 1 nad dużymi polami skały: trawa z roślinnością, krawędź z gruntu górskiego, rampy z powierzchni. Zakładka „Levels”. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 32”.
+
+## 2026-11-10 — G5: jaskinia bez budynków; brak wejścia nad rampą nieodtworzony (iteracja 31) — PARTIAL
+
+Zakładka „Underground” działa bez budynków i obozów. Brak wejścia nad rampą z testu GUI nie powtórzył się w 64 kombinacjach sondy (4660 par); przyczyna nieznana. SUITE_PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 31”.
+
+## 2026-11-10 — G5: rampa wyjścia pod wejściem, bez czarnej dziury przed wejściem (iteracja 30)
+
+Wyjście z jaskini stoi teraz na dole dokładnie pod wejściem i prowadzi na pole przed nim; na powierzchni nie powstaje grunt „stairs” (czarna dziura). Wszystkie wejścia dostają wyjście (100 % w obu profilach i stylach). 18 testów rdzenia i obie sondy PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 30”.
+
+## 2026-11-10 — G5: ściany jaskini, wejście w ścianie skały albo dziura, wyjścia poza skałą (iteracja 29) — PARTIAL
+
+Jaskinia na z + 1 dostaje pas gruntu ściany („mountain”) wokół podłogi. Wejście w dwóch stylach do wyboru w oknie: w południowej ścianie skały („cave enter”) albo dziura w trawie lub ziemi („cave hole”). Wyjście rampą nie stoi już na skale. Styl dziury: 16 wejść na 16 zamówionych; styl ściany: mediana 3 (m06) i 6 (m19), poniżej kryterium 8. 18 testów rdzenia i obie sondy PASS. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 29”.
+
+## 2026-11-09 — G5: wejścia Z, jaskinia i wyjście rampą na mapie (iteracja 28) — PARTIAL
+
+Generator rysuje jaskinię na piętrze z + 1, przedmiot wejścia („cave enter”) na powierzchni i rampę w górę przy lądowisku każdego wejścia; wejście bez miejsca na rampę jest pomijane. Commit to dwa kroki historii (jaskinia, potem powierzchnia), błąd drugiego cofa pierwszy; zajęte piętro z + 1 = odmowa. Wyjście ma 100 % wejść w obu profilach (32 seedy, bez roślinności). Nowa zakładka okna „Underground”. 18 testów rdzenia i obie sondy G1 PASS. Do sprawdzenia przez użytkownika: wygląd i pola w GUI; chodzenie w grze nie sprawdzone. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 28”.
+
+## 2026-11-09 — G5: wejścia Z i prosta jaskinia, rdzeń (iteracja 27) — PARTIAL
+
+`caveEntrances` (wejścia na brzegu skały), `generateCave` (jaskinia na z + 1: lądowiska, tunele, sale), `undergroundReachabilityOf` (osiągalność przez Z, kieszenie). W 32 z 32 seedów jaskinia ma jedną składową i 0 kieszeni, wszystkie wejścia osiągnięte z startu. 18 testów rdzenia i obie sondy G1 PASS. Nic nie jest jeszcze rysowane: adapter (przedmiot wejścia, pędzel gruntu jaskini, Preview i Undo dla dwóch pięter, okno) to iteracja 28. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 27”.
+
+## 2026-11-09 — G5: ognisko w obozowisku (iteracja 26) — PARTIAL
+
+Obozowisko ma ognisko w środku polany (pędzel doodad z pola „Campfire brush”, warstwa planu `fires`, niezależna od roślinności) i większą polanę (dysk 61 komórek, namiot 3×3 obok). Sonda `--surface` sprawdza mechanizm z zamiennikiem pędzla (klient 10.98 w repo nie ma pędzla „campfire”); 17 testów rdzenia PASS, wszystkie miejsca osiągnięte w 32 z 32 seedów, w m19 w niektórych seedach tylko 12 z 24 obozowisk. Wygląd i prawdziwe ognisko czekają na użytkownika. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 26”.
+
+## 2026-11-09 — G5: ruiny i obozowiska (iteracja 25) — PARTIAL
+
+`ruinPercent` (ruina = budynek bez drzwi z lukami w murze) i `campCount` (polana z otwartym namiotem), `SurfaceGrid::gaps` i `sites`, luki przechodnie w walidatorze, resolver pomija ścianę na lukach, pola „Ruins (%)” i „Camps” w zakładce Buildings. Ruiny ≈ 29 % budynków, 24 obozowiska na mapę, wszystkie miejsca osiągnięte w 32 z 32 seedów po naprawie; sonda `--surface` z Commit, Undo, Redo i bez ściany na lukach PASS; 17 testów rdzenia PASS. Wygląd w GUI czeka na użytkownika. [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 25”.
+
+## 2026-11-09 — G5: graf regionów (iteracja 24) — PARTIAL
+
+`buildRegionGraph`: regiony (Land, Rock, Water, ≥ 16 komórek), krawędzie sąsiedztwa z wagą i węzły POI (start, wejścia, wyjścia) z odległością trasy od startu; tylko rdzeń i `style_render`, bez GUI. Test ręczny 14×6 i 17 testów rdzenia oraz obie sondy G1 PASS; w 32 z 32 seedów wszystkie POI mają trasę, graf sąsiedztwa jest spójny. Od tej iteracji kryteria i wyniki G5 są w [G5_METRICS.md](procedural/G5_METRICS.md) i [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md).
+
+## 2026-11-09 — G5: naprawa osiągalności i odrzucanie seedów (iteracja 23) — PARTIAL
+
+`repairReach` (pole „Repair unreachable places”, domyślnie zaznaczone) łączy brodem każdą składową z drzwiami lub wyjściem, której nie osiąga się z startu; `generateReachableSurface` odrzuca seedy, w których POI nie da się osiągnąć. Wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 48 z naprawą (28 i 29 bez) i przy 0 z naprawą. 16 testów rdzenia i obie sondy G1 PASS. Wygląd brodów z naprawy (do 256 komórek) czeka na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 23”.
+
+## 2026-11-09 — G5: POI i ustalony start w walidatorze (iteracja 22) — PARTIAL
+
+`poiReachabilityOf`: start najbliższy środkowi obszaru, wejścia (drzwi) i wyjścia (po jednym na bok); osiągalność z startu. Wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 256 (m06 i m19), 19 i 20 z 32 przy 0, 28 i 29 z 32 przy 48. Testy ręczne i porównanie z niezależną implementacją 160 z 160; 16 testów rdzenia i obie sondy G1 PASS. Zakres: powierzchnia jednego piętra, bez podłączenia do okna. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 22”.
+
+## 2026-11-09 — okno generatora w zakładkach (iteracja 21) — wdrożone, czeka na ocenę użytkownika
+
+Okno „Generate Terrain” miało jedną kolumnę ok. 35 pól, która nie mieściła się na 1080p (uciety „Bush brush”, status nakładał się na pola). Pola są teraz w zakładkach Area, Terrain, Paths, Buildings i Vegetation; zachowanie bez zmian. `rme` buduje się, 16 testów rdzenia i obie sondy G1 PASS; układu nie sprawdzałem w GUI. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 21”.
+
+## 2026-11-09 — G5: schodki granicy piasek / trawa (iteracja 20) — PARTIAL
+
+Dodano `shoreRadius` (okno wygładzania do 17×17). Kryterium −25 % narożników NIE spełnione (promień 5: −10 %, +2 s generowania), bo narożniki to schodki siatki kafli proporcjonalne do długości granicy, nie osobne występy; pojedyncze występy 1×5 filtr usuwa (test). W oknie „Smooth beaches” zostaje przy promieniu 3. 16 testów rdzenia i obie sondy G1 PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 20”.
+
+## 2026-11-09 — G5: wąskie języki piasku między wodą (iteracja 19) — PARTIAL
+
+Po czterech zrzutach z GUI: pasy i półwyspy piasku 1–2 kafle szerokości między jeziorem a rzeką (rzeka tnie plażę) są usuwane przy „Smooth beaches” (`spit` 10 → 0 na 65 536 komórek). Brzeg piasek / trawa ma obramowanie na zatwierdzonej mapie (1760 z 1760), więc przyczyna była geometryczna. Koszt: kilka więcej odciętych budynków (brody to naprawiają). Prostokątne wcięcia trawy w piasek (schodki 90°) nie są rozwiązane. 16 testów rdzenia i obie sondy G1 PASS. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 19”.
+
+## 2026-11-09 — G5: wygładzenie brzegu piasek / trawa (iteracja 18) — PARTIAL
+
+Pole „Smooth beaches” (domyślnie zaznaczone, 2 przejścia filtra większościowego 7×7 w zasięgu 9 od jeziora). Długość granicy piasek / trawa −22 %, drobne nierówności 2× mniej, ilość piasku bez zmian; kryterium 5× NIE spełnione, a reguła zapisana z góry (5×5) nie wygładzała wcale, więc użyłem silniejszej po pomiarze (odchylenie opisane). 16 testów rdzenia i obie sondy G1 PASS. Wygląd ocenia użytkownik. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 18”.
+
+## 2026-11-09 — G5: szlaki dochodzą do celu i przechodzą przez rzekę (iteracja 17) — PARTIAL
+
+Po uwagach z GUI: znaleziony błąd z 12h (końce `reachEnds` połączone na krzyż; widoczny dopiero przy długich szlakach jako proste ukośne linie i pętle), poprawiony; szlaki dochodzą do prawdziwego celu przy `rockPasses`. Przy `fordLength` > 0 szlaki przechodzą przez rzeki piaszczystym brodem. Miara „czubków” okazała się zawodna (kryteria 1 i 2 z zapisu NIE spełnione), oceniam po renderach i użytkowniku; 16 testów rdzenia i obie sondy G1 PASS. Poszarpane brzegi piasku i trawy czekają na osobną diagnozę. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 17”.
+
+## 2026-11-09 — G5: cele szlaków przez skałę (iteracja 16) — PARTIAL
+
+Przy `rockPasses` szlak szuka teraz startu i celu po przeciwnych stronach pasma skały (3–30 komórek). Szlaki przecinające skałę są w 10 z 32 seedów (było 3 i 8), kryterium 24 z 32 NIE spełnione; po fakcie przy koszcie skały 0 jest 21 i 27 z 32. Odkrycie: generator rysuje tylko 1–2 trasy na mapę 512×512 przy `pathLength` 40. L bez regresji, 16 testów rdzenia i obie sondy G1 PASS. Wygląd w GUI nie sprawdzony. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 16”.
+
+## 2026-11-09 — G5: szlaki przez skałę, „przełęcze” część 1 (iteracja 15) — PARTIAL
+
+Skała z pędzla „rocky ground” jest przechodnia (19 z 4983 kafli blokuje), więc przełęcz nie jest potrzebą osiągalności. Dodano `rockPasses` (szlaki mogą przechodzić przez pasma skały) i pole „Rock passes” w oknie. Kryterium „przecinające szlaki w ≥ 75 % seedów” NIE spełnione (3 i 8 z 32; nawet przy darmowej skale 13 i 22 z 32), bo szlaki łączą losowe punkty i rzadko muszą przejść przez skałę. 16 testów rdzenia i obie sondy G1 PASS. Opcja „skała blokująca + przełęcze” czeka. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 15”.
+
+## 2026-11-09 — G5: naturalniejszy kształt brodu (iteracja 14d) — PARTIAL
+
+Po decyzji użytkownika („wolę naturalny wygląd”) dłuższe brody (≥ 8 komórek wody) mają wychyloną oś (do 4 komórek) i zmienną szerokość 3/5; krótsze bez zmian. Testy właściwości na szerokiej wodzie, sonda na zatwierdzonej mapie (443 kafle brodu, 0 blokujących, 7 kieszeni połączonych), liczby seedów z zamkniętymi budynkami bez zmian, 16 testów rdzenia i obie sondy G1 PASS. „Naturalny” ocenia użytkownik. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14d”.
+
+## 2026-11-09 — G5: rozszerzone końce brodu (iteracja 14c) — PARTIAL
+
+Po uwadze użytkownika (bród zbyt wąski na początku i końcu) końce brodu mają teraz piaszczysty „wlot” o promieniu 3; styk z lądem rośnie z 2 do 4–7 kafli. Sonda sprawdza flagi blokowania i łączność na zatwierdzonej mapie (0 blokujących, kieszenie połączone), liczby seedów z zamkniętymi budynkami bez zmian, 16 testów rdzenia i obie sondy G1 PASS. Wygląd i chodzenie w grze czekają na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14c”.
+
+## 2026-11-09 — G5: brody z piasku zamiast ze szlaku (iteracja 14b) — PARTIAL
+
+Uwaga użytkownika („tym mostem nie da się przejść”) trafna: brod z kafli Path dostawał blokującą krawędź `shallow water` (5 z 6 kafli w sondzie). Brody mają teraz rodzaj Shore (piasek), sonda sprawdza flagę blokowania kafli po Commit (0 z 6), limit zasięgu wzrósł z 64 do 256 (przy 256: 0 z 32 seedów z zamkniętymi budynkami w m06 i m19). 16 testów rdzenia i obie sondy G1 PASS. Wygląd i chodzenie w grze czekają na użytkownika. [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14b”.
+
+## 2026-11-09 — G5: brody przez wodę (iteracja 14) — PARTIAL
+
+Rdzeń ma `SurfaceTuning::fordLength` i `placeFords` (Path przez rzekę lub jezioro łączący odcięte składowe), okno generatora pole „Ford length”. 16 testów rdzenia i obie sondy G1 PASS (nowy `SURFACE_FORDS_E2E_PASS`). Kryterium z zapisu (≥ 90 % seedów bez zamkniętych budynków) NIE spełnione dla {8, 16, 32}: przy 32 zamknięte budynki ma 5 z 32 seedów (było 10); po fakcie 48 daje 2 z 32. Wygląd brodów czeka na ocenę użytkownika. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14”.
+
+## 2026-11-09 — G5: walidator osiągalności powierzchni (iteracja 13) — PARTIAL
+
+Rdzeń ma `reachabilityOf` (składowe 4-spójne, kieszenie, budynki zamknięte); 16 testów rdzenia i obie sondy G1 PASS, w tym test krzyżowy z union-find (160 z 160). Pomiar na seedach 1001–1032: największa składowa mediana 993,5 ‰, ale **10 z 32 seedów ma budynki poza największą składową** (rzeki dzielą ląd; drzwi nigdy nie są zablokowane), więc kryterium „zamknięte = 0 w ≥ 90 % seedów” NIE jest spełnione. Walidator nie jest jeszcze podłączony do okna generatora; naprawa/mosty/odrzucanie seedów to następna iteracja. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 13”.
+
+## 2026-11-09 — G5 część 1: adapter drzwi (iteracja 12e) — PARTIAL
+
+Drzwi trafiają do planu i podglądu przez `DoorBrush` (profil: rodzaj drzwi, plan: flagi komórek, okno: „Doors” i „Door kind”); sonda `--surface` z Commit/Undo/Redo PASS (6 i 38 drzwi), 15 testów rdzenia PASS. Poprawka: kontrola odcisku podglądu przyjmuje teraz klasę `Door` (bez ID domu). GUI czeka na użytkownika. Szczegóły: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12e”.
+
+## 2026-11-09 — G5 część 1: osady (iteracja 12), kryterium NIE spełnione — PARTIAL
+
+Porządek (D20, D21): `g5_run_suite.py` (15 testów rdzenia + obie sondy G1 jednym poleceniem) i `g5_shape_table.py` (tabele kształtu, dwa przebiegi bajtowo identyczne) w repo; parametry kształtu m06/m19 zostają ręczne (decyzja w D20). Pomiar 12a w 19 referencjach (`g5_reference_settlements.py`): skupiska (odstęp najbliższego sąsiada 4, ok. 2,8 budynku na skupisko), budynki przy szlaku 6–8 razy częściej niż przeciętny kafel, brak związku z wodą, drzwi zwrócone ku szlakowi o 20–26 punktów procentowych częściej niż przypadek. Rdzeń: skupiska, jedne drzwi na budynek i trasy do drzwi; kryteria zapisane z góry **nie spełnione** (4–5 z 8 cech, próg 75 %) także po jednej zmianie stałej (12d). Szlaki są przy tym 4× dłuższe niż w referencji. Adapter (pędzel drzwi RME), okno generatora i GUI: **nie zrobione**. Szczegóły i czego nie zweryfikowano: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”. Gałąź `feature/procedural-g5-settlements` (od gałęzi PR #5), commity lokalne, bez push i PR.
+
 ## 2026-11-08 — G4: ściany budynków (iteracja 11c) — PARTIAL
 
 Na prośbę użytkownika podłogi budynków dostały ściany (bez drzwi): warstwa przedmiotów ścian w planie (`GroundPlan::walls`, `GroundProfile::wall`), walidacja w resolverze i podglądzie, wyrównanie elementów istniejącym `WallBrush::doWalls`, pola w oknie generatora. Mediana komórek obrysu w paśmie referencji (28 vs 30 / 24). Regresja G1 `--commit` PASS. Użytkownik potwierdził w GUI: budynki wyglądają jak realne, Preview/Validate/Place/Undo/Redo bez problemu. **Niezweryfikowane: e2e sondą na rzeczywistym kliencie (sonda G1 bez ścian).** [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).

@@ -5,6 +5,8 @@
 #include "procedural/adapter/preparation_steps.h"
 #include "procedural/adapter/ground_resolver.h"
 #include "procedural/adapter/terrain_preview.h"
+#include "procedural/core/reachability.h"
+#include "procedural/core/level_repair.h"
 
 #include <cstdint>
 #include <expected>
@@ -40,8 +42,18 @@ struct PreparationMemory {
 };
 
 enum class PreparationInputError {
-	WrongThread, NoClient, InvalidProfile, MemoryLimit, ContextLimit,
-	ChangeLimit, Cancelled, AllocationFailed, InvalidParameters
+    WrongThread,
+    NoClient,
+    InvalidProfile,
+    MemoryLimit,
+    ContextLimit,
+    ChangeLimit,
+    Cancelled,
+    AllocationFailed,
+    InvalidParameters,
+    NoLowerFloor,
+    UpperFloorOccupied,
+    NoUpperFloor
 };
 
 // Stage failures are forwarded unchanged so callers see the exact module cause.
@@ -53,6 +65,16 @@ struct PreparedTerrain {
 	GroundPlan plan;
 	TerrainPreview preview;
 	PreparationMemory memory;
+	std::unique_ptr<PreparedTerrain> cave;
+    std::unique_ptr<PreparedTerrain> plateau;
+	struct Levels {
+		LevelPlan plan;
+		std::vector<uint8_t> blockingMask;
+		LevelReachabilityReport report;
+        LevelRepairReport repair;
+        std::vector<MountainPass> passes;
+	};
+	std::unique_ptr<Levels> levels;
 };
 
 // Captures, generates, resolves and builds the DrawOperations preview for one region in a single
@@ -66,7 +88,8 @@ struct PreparedTerrain {
 // standard-container assumptions as estimateSnapshotTileMemory (vector capacity == size on copy,
 // fixed per-allocation overhead, std::string capacity rounding bounded by 2*(length+1)). They are
 // not a heap or RSS limit. Outside the budget: the source map, the borrowed config/profile/mask,
-// loaded client assets and brushes, UI/renderer/C-runtime allocations, allocator overhead beyond
+// loaded client assets and brushes, UI/renderer/C-runtime allocations (including worker thread
+// runtime and stack reservation), allocator overhead beyond
 // the stated allowances, and any future commit/Undo.
 std::expected<PreparedTerrain, PreparationError> prepareTerrain(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,
@@ -74,6 +97,9 @@ std::expected<PreparedTerrain, PreparationError> prepareTerrain(
 
 // GUI-only staged variant. Keep map, request and mask alive while advancing; discard the
 // continuation if the target disappears. No event dispatch occurs inside advance().
+// Surface semantics/decoration and mountain geometry run on owned workers with plain inputs; all map/brush
+// access remains on the GUI thread. Destroying the continuation requests stop and joins the worker.
+// The additional owned mask is charged to the preparation budget. The synchronous API uses no worker.
 using TerrainPreparationSteps = PreparationSteps<std::expected<PreparedTerrain, PreparationError>>;
 std::expected<TerrainPreparationSteps, PreparationError> prepareTerrainSteps(
 	const Map& map, const GenerationConfig& config, const GroundProfile& profile,

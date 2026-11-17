@@ -4,6 +4,7 @@
 
 #include "app/main.h"
 #include "ui/dialogs/terrain_generator_dialog.h"
+#include "ui/dialogs/terrain_generator_limits.h"
 
 #include "app/managers/version_manager.h"
 #include "app/settings.h"
@@ -18,6 +19,8 @@
 #include "live/live_manager.h"
 #include "lua/lua_api.h"
 #include "map/map.h"
+#include "procedural/adapter/door_types.h"
+#include "procedural/adapter/surface_resolver.h"
 #include "procedural/adapter/terrain_commit.h"
 #include "procedural/adapter/terrain_target.h"
 #include "rendering/drawers/tiles/tile_color_calculator.h"
@@ -42,6 +45,7 @@
 #include <wx/combobox.h>
 #include <wx/dcclient.h>
 #include <wx/image.h>
+#include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -53,17 +57,17 @@ namespace {
 
 using namespace rme::procedural;
 
-constexpr uint64_t MiB = 1024ULL * 1024ULL;
-constexpr int maxSide = 500;
-constexpr PreparationBudget preparationBudget { 250000, 254016, 250000, 512 * MiB };
-constexpr SelectionMaskBudget selectionBudget { 250000, 1 * MiB };
-constexpr TerrainCommitBudget commitBudget { 250000, 768 * MiB };
+using namespace rme::ui::terrain_generator;
+constexpr uint32_t mountainMinTopCells = 64;
 // Native bitmap conversion allowance on top of the RGB image (32-bit DIB plus headers). Policy estimate.
 constexpr uint64_t bitmapOverheadBytes = 64 * 1024;
 
 const wxString staleMessage = "Map, selection or client data changed. Generate a new preview.";
 const wxString memoryMessage = "Not enough memory for this preview. Nothing was changed; try a smaller area.";
-const wxString tooLargeMessage = "This area is too large. Use at most 500 x 500 tiles with up to 250,000 changes.";
+const wxString tooLargeMessage = wxstr(std::format(
+    "This area is too large. Use at most {} x {} tiles with up to {} changed tiles across all generated floors.",
+    maxSide, maxSide, maxChanges
+));
 const wxString cancelledMessage = "The operation was cancelled. Nothing was changed.";
 const wxString noClientMessage = "No client is loaded. Load the client for this map first.";
 const wxString busyMessage = "Finish the current selection or edit first, then try again.";
@@ -145,6 +149,12 @@ wxString describe(PreparationInputError error) {
 			return cancelledMessage;
 		case PreparationInputError::InvalidParameters:
 			return "The surface settings are not valid.";
+        case PreparationInputError::UpperFloorOccupied:
+            return "The floor above the area is not empty: mountain tops need an empty rectangle.";
+        case PreparationInputError::NoUpperFloor:
+            return "The requested mountain levels extend above z=0; reduce Mountain levels or choose a lower surface floor.";
+        case PreparationInputError::NoLowerFloor:
+			return "There is no floor below this one for a cave.";
 		case PreparationInputError::AllocationFailed:
 			return memoryMessage;
 	}
@@ -291,21 +301,22 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	const int margin = Theme::Grid(4);
 	const wxColour fieldBackground = Theme::Get(Theme::Role::Background);
 	const wxColour fieldText = Theme::Get(Theme::Role::Text);
+	wxWindow* host = this;  // parent of the controls created next: the dialog, or the page of the current tab
 
-	const auto label = [this](const wxString& text) {
-		auto* control = newd wxStaticText(this, wxID_ANY, text);
+	const auto label = [&host](const wxString& text) {
+		auto* control = newd wxStaticText(host, wxID_ANY, text);
 		control->SetForegroundColour(Theme::Get(Theme::Role::Text));
 		return control;
 	};
 	const auto spin = [&](const wxString& name, int min, int max, int value) {
-		auto* control = newd wxSpinCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(Theme::Grid(24), -1), wxSP_ARROW_KEYS, min, max, value);
+		auto* control = newd wxSpinCtrl(host, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(Theme::Grid(24), -1), wxSP_ARROW_KEYS, min, max, value);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
 		return control;
 	};
 	const auto text = [&](const wxString& name, const wxString& value) {
-		auto* control = newd wxTextCtrl(this, wxID_ANY, value);
+		auto* control = newd wxTextCtrl(host, wxID_ANY, value);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
@@ -315,7 +326,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	// A read-only list of the brushes the loaded client offers, so a name can only be picked.
 	// Ground brushes feed the terrain fields, doodad brushes the vegetation fields.
 	{
-		std::string previousGround, previousDoodad;
+		std::string previousGround, previousDoodad, previousExit;
 		for (const auto& [brushName, brush] : g_brushes.getMap()) {
 			if (brushName.empty()) continue;
 			if (brush->is<GroundBrush>()) {
@@ -325,6 +336,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			} else if (brush->is<WallBrush>() && !brush->is<WallDecorationBrush>()) {
 				wall_names_.Add(wxstr(brushName));
 			} else if (const auto* doodad = brush->as<DoodadBrush>()) {
+				// Cave exits are composites (ramps), so they get their own list with the resolver's own check.
+				if (brushName != previousExit && resolveCaveExitBrush(*doodad)) {
+					previousExit = brushName;
+					cave_exit_names_.Add(wxstr(brushName));
+				}
 				// The resolver only places single items of variation 0.
 				if (brushName == previousDoodad || !doodad->hasSingleObjects(0)) continue;
 				previousDoodad = brushName;
@@ -332,13 +348,16 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			}
 		}
 	}
-	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes.
+	cave_wall_names_ = wall_names_;
+	for (const auto& name : ground_names_) cave_wall_names_.Add(name);
+	// listKind: 0 ground brushes, 1 doodad brushes, 2 wall brushes, 3 cave exit (ramp) brushes, 4 cave wall (wall and ground) brushes.
 	const auto brushChoice = [&](const wxString& name, const wxString& preferred, int listKind) {
-		const wxArrayString& names = listKind == 2 ? wall_names_ : listKind == 1 ? doodad_names_ : ground_names_;
+		const wxArrayString& names = listKind == 4 ? cave_wall_names_ : listKind == 3 ? cave_exit_names_ : listKind == 2 ? wall_names_ :
+			listKind == 1 ? doodad_names_ : ground_names_;
 		// Only the preferred (or first) entry exists until the list is first opened: filling
 		// thousands of entries into eight lists made opening the dialog slow.
 		wxString initial = names.Index(preferred) != wxNOT_FOUND ? preferred : (names.IsEmpty() ? wxString() : names[0]);
-		auto* control = newd wxComboBox(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxCB_READONLY);
+		auto* control = newd wxComboBox(host, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0, nullptr, wxCB_READONLY);
 		control->SetName(name);
 		control->SetBackgroundColour(fieldBackground);
 		control->SetForegroundColour(fieldText);
@@ -346,13 +365,15 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 			control->Append(initial);
 			control->SetSelection(0);
 		}
-		control->Bind(wxEVT_COMBOBOX_DROPDOWN, [control, &names](wxCommandEvent& event) {
+		control->Bind(wxEVT_COMBOBOX_DROPDOWN, [this, control, &names](wxCommandEvent& event) {
 			event.Skip();
-			if (control->GetCount() > 1 || names.size() < 2) return;
+			const auto& activeNames = control == cave_entrance_brush_choice_ && cave_entrance_style_choice_->GetSelection() == 1 ? ground_names_ : names;
+			if (control->GetCount() > 1 || activeNames.size() < 2) return;
 			const wxString current = control->GetValue();
 			control->Freeze();
 			control->Clear();
-			control->Append(names);
+			control->Append(activeNames);
+            if (control == bridge_brush_choice_) control->Insert(wxEmptyString, 0);
 			control->SetStringSelection(current);
 			control->Thaw();
 		});
@@ -360,11 +381,25 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	};
 
 	// Inputs, in tab order.
-	auto* form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
-	form->AddGrowableCol(1, 1);
+	auto* sections = newd wxNotebook(this, wxID_ANY);
+	sections->SetName("terrain-sections");
+	sections->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
+	wxFlexGridSizer* form = nullptr;
+	const auto section = [&](const wxString& title) {
+		auto* page = newd wxPanel(sections, wxID_ANY);
+		page->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
+		host = page;
+		form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
+		form->AddGrowableCol(1, 1);
+		auto* box = newd wxBoxSizer(wxVERTICAL);
+		box->Add(form, 0, wxEXPAND | wxALL, margin);
+		page->SetSizer(box);
+		sections->AddPage(page, title);
+	};
+	section("Area");
 
 	form->Add(label("&Area:"), 0, wxALIGN_CENTER_VERTICAL);
-	scope_choice_ = newd wxChoice(this, wxID_ANY);
+	scope_choice_ = newd wxChoice(host, wxID_ANY);
 	scope_choice_->SetName("terrain-scope");
 	scope_choice_->Append("Empty rectangle");
 	scope_choice_->Append("Current selection");
@@ -399,7 +434,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("&Seed:"), 0, wxALIGN_CENTER_VERTICAL);
 	seed_text_ = text("terrain-seed", "1729");
 	form->Add(seed_text_, 1, wxEXPAND);
+    form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
+    retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
+    retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
+    form->Add(retry_spin_, 1, wxEXPAND);
+    retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 
+	section("Terrain");
 	form->Add(label("&Grass weight:"), 0, wxALIGN_CENTER_VERTICAL);
 	grass_weight_spin_ = spin("terrain-grass-weight", 0, 1000, 3);
 	form->Add(grass_weight_spin_, 1, wxEXPAND);
@@ -425,7 +467,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(water_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Terrain &style:"), 0, wxALIGN_CENTER_VERTICAL);
-	style_choice_ = newd wxChoice(this, wxID_ANY);
+	style_choice_ = newd wxChoice(host, wxID_ANY);
 	style_choice_->SetName("terrain-style");
 	style_choice_->Append("Classic (random mix)");
 	style_choice_->Append("Natural surface (lakes, rivers, rock)");
@@ -433,7 +475,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(style_choice_, 1, wxEXPAND);
 
 	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
-	profile_choice_ = newd wxChoice(this, wxID_ANY);
+	profile_choice_ = newd wxChoice(host, wxID_ANY);
 	profile_choice_->SetName("terrain-profile");
 	profile_choice_->Append("Built-in (manual settings)");
 	profile_choice_->SetSelection(0);
@@ -448,18 +490,54 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
 	form->Add(shore_brush_choice_, 1, wxEXPAND);
 
+	form->Add(label("Smooth &beaches:"), 0, wxALIGN_CENTER_VERTICAL);
+	smooth_beaches_check_ = newd wxCheckBox(host, wxID_ANY, "Round the sand edge near lakes");
+	smooth_beaches_check_->SetName("terrain-smooth-beaches");
+	smooth_beaches_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	smooth_beaches_check_->SetValue(true);
+	smooth_beaches_check_->SetToolTip("Removes single sand cells, notches and checkerboard corners along the beaches of lakes.");
+	form->Add(smooth_beaches_check_, 1, wxEXPAND);
+
+	section("Paths");
 	form->Add(label("Pat&h length:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_length_spin_ = spin("terrain-path-length", 0, 400, 0);
 	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
 	form->Add(path_length_spin_, 1, wxEXPAND);
 
+	form->Add(label("&Ford length:"), 0, wxALIGN_CENTER_VERTICAL);
+	ford_length_spin_ = spin("terrain-ford-length", 0, 256, 0);
+	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a sand crossing up to this many water tiles wide. 0 = no fords. Uses the shore brush.");
+	form->Add(ford_length_spin_, 1, wxEXPAND);
+
+	form->Add(label("&Repair:"), 0, wxALIGN_CENTER_VERTICAL);
+	repair_check_ = newd wxCheckBox(host, wxID_ANY, "Repair unreachable places");
+	repair_check_->SetName("terrain-repair");
+	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	repair_check_->SetValue(true);
+	repair_check_->SetToolTip("Repairs access across all floors, including blockers found after autobordering. Clears blocking vegetation and borders on open ground, and bridges water up to Ford length. Shares a total limit of 64 repairs.");
+	form->Add(repair_check_, 1, wxEXPAND);
+
+    form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    bridge_brush_choice_ = brushChoice("terrain-bridge-brush", "bridge", 2);
+    if (wall_names_.Index("bridge") == wxNOT_FOUND) { bridge_brush_choice_->Clear(); bridge_brush_choice_->Append(wxEmptyString); bridge_brush_choice_->SetSelection(0); }
+    bridge_brush_choice_->SetToolTip("Walkable bridge ground from a wall brush. Empty uses sand fords. Used by reachability repair.");
+    form->Add(bridge_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Rock &passes:"), 0, wxALIGN_CENTER_VERTICAL);
+	rock_passes_check_ = newd wxCheckBox(host, wxID_ANY, "Paths may cross bands of rock");
+	rock_passes_check_->SetName("terrain-rock-passes");
+	rock_passes_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	rock_passes_check_->SetToolTip("Paths take the narrowest way through a rock band instead of going around it. Needs a path length above 0.");
+	form->Add(rock_passes_check_, 1, wxEXPAND);
+
 	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
 	form->Add(path_brush_choice_, 1, wxEXPAND);
 
+	section("Buildings");
 	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
 	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
-	building_density_spin_->SetToolTip("Building foundations (floor rectangles, no walls) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
+	building_density_spin_->SetToolTip("Building foundations (floor rectangles, optional walls and doors) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
 	form->Add(building_density_spin_, 1, wxEXPAND);
 
 	form->Add(label("Floor brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -467,7 +545,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(floor_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("&Walls:"), 0, wxALIGN_CENTER_VERTICAL);
-	walls_check_ = newd wxCheckBox(this, wxID_ANY, "Add walls around the buildings");
+	walls_check_ = newd wxCheckBox(host, wxID_ANY, "Add walls around the buildings");
 	walls_check_->SetName("terrain-walls");
 	walls_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	form->Add(walls_check_, 1, wxEXPAND);
@@ -476,8 +554,176 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	wall_brush_choice_ = brushChoice("terrain-wall-brush", "stone wall", 2);
 	form->Add(wall_brush_choice_, 1, wxEXPAND);
 
+	form->Add(label("&Doors:"), 0, wxALIGN_CENTER_VERTICAL);
+	doors_check_ = newd wxCheckBox(host, wxID_ANY, "One door per building, with a trail to it");
+	doors_check_->SetName("terrain-doors");
+	doors_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	doors_check_->SetToolTip("Replaces one wall piece of every building with a door facing the nearest trail. The wall brush must have doors of the chosen kind.");
+	form->Add(doors_check_, 1, wxEXPAND);
+
+	form->Add(label("Door &kind:"), 0, wxALIGN_CENTER_VERTICAL);
+	door_type_choice_ = newd wxChoice(host, wxID_ANY);
+	door_type_choice_->SetName("terrain-door-type");
+	for (const auto& kind : doorKinds) door_type_choice_->Append(wxString::FromUTF8(kind.first.data(), kind.first.size()));
+	door_type_choice_->SetSelection(0);
+	form->Add(door_type_choice_, 1, wxEXPAND);
+
+	form->Add(label("Ruins (%):"), 0, wxALIGN_CENTER_VERTICAL);
+	ruin_percent_spin_ = spin("terrain-ruin-percent", 0, 100, 0);
+	ruin_percent_spin_->SetToolTip("Share of the buildings that become ruins: no door and gaps in the wall. 0 = none. Needs buildings.");
+	form->Add(ruin_percent_spin_, 1, wxEXPAND);
+
+    form->Add(label("Upper floors:"), 0, wxALIGN_CENTER_VERTICAL);
+    building_storeys_check_ = newd wxCheckBox(host, wxID_ANY, "Floor z-1 with stairs in some buildings");
+    building_storeys_check_->SetName("terrain-building-storeys");
+    building_storeys_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    building_storeys_check_->SetToolTip("Buildings with a door and at least 16 interior cells may get a walled floor above them, reached by stairs inside. The floor z-1 must be empty in the whole rectangle.");
+    form->Add(building_storeys_check_, 1, wxEXPAND);
+    form->Add(label("Upper floor share (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    upper_floor_percent_spin_ = spin("terrain-upper-floor-percent", 0, 100, 30);
+    form->Add(upper_floor_percent_spin_, 1, wxEXPAND);
+    form->Add(label("Stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    building_stairs_choice_ = brushChoice("terrain-building-stairs", "ramp", 3);
+    form->Add(building_stairs_choice_, 1, wxEXPAND);
+    form->AddSpacer(0);
+    building_storeys_hint_ = label("");
+    form->Add(building_storeys_hint_, 1, wxEXPAND);
+
+	form->Add(label("Camps:"), 0, wxALIGN_CENTER_VERTICAL);
+	camp_count_spin_ = spin("terrain-camp-count", 0, 50, 0);
+	camp_count_spin_->SetToolTip("Clearings with an open tent floor per 65536 map cells. 0 = none. Uses the path and floor brushes.");
+	form->Add(camp_count_spin_, 1, wxEXPAND);
+
+	form->Add(label("Camp&fire brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	campfire_brush_choice_ = brushChoice("terrain-campfire-brush", "campfire", 1);
+	campfire_brush_choice_->SetToolTip("Doodad brush for the fire in the middle of every camp. Empty when the loaded client has no brush named campfire: pick another doodad brush to get a fire.");
+	if (doodad_names_.Index("campfire") == wxNOT_FOUND) campfire_brush_choice_->Clear();
+	form->Add(campfire_brush_choice_, 1, wxEXPAND);
+
+    section("Levels");
+    form->Add(label("Cave entrances:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_entrances_spin_ = spin("terrain-cave-entrances", 0, 20, 0);
+	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells in the selected style, each with a cave below (floor z+1) and a ramp back up. Tiles already on floor z+1 are kept: the cave goes around them.");
+	form->Add(cave_entrances_spin_, 1, wxEXPAND);
+
+	form->Add(label("Entrance style:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_entrance_style_choice_ = newd wxChoice(host, wxID_ANY);
+	cave_entrance_style_choice_->SetName("terrain-cave-entrance-style");
+	cave_entrance_style_choice_->SetBackgroundColour(fieldBackground);
+	cave_entrance_style_choice_->SetForegroundColour(fieldText);
+	cave_entrance_style_choice_->Append("Rock face");
+	cave_entrance_style_choice_->Append("Floor hole");
+	cave_entrance_style_choice_->SetSelection(0);
+	form->Add(cave_entrance_style_choice_, 1, wxEXPAND);
+	form->Add(label("Z entrance brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_entrance_brush_choice_ = brushChoice("terrain-cave-entrance-brush", "cave enter", 1);
+	if (doodad_names_.Index("cave enter") == wxNOT_FOUND) cave_entrance_brush_choice_->Clear();
+	cave_entrance_style_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) {
+		const bool hole = cave_entrance_style_choice_->GetSelection() == 1;
+		const auto& names = hole ? ground_names_ : doodad_names_;
+		const wxString preferred = hole ? "cave hole" : "cave enter";
+		cave_entrance_brush_choice_->Clear();
+		if (names.Index(preferred) != wxNOT_FOUND) { cave_entrance_brush_choice_->Append(preferred); cave_entrance_brush_choice_->SetSelection(0); }
+		OnInputChanged(event);
+	});
+	form->Add(cave_entrance_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Cave exit brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_exit_brush_choice_ = brushChoice("terrain-cave-exit-brush", "ramp", 3);
+	cave_exit_brush_choice_->SetToolTip("Ramp-like doodad brushes only: every variant a floor-change tile, a tile on the floor above and at most one tail tile.");
+	if (cave_exit_names_.Index("ramp") == wxNOT_FOUND) cave_exit_brush_choice_->Clear();
+	form->Add(cave_exit_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Cave ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	cave_ground_brush_choice_ = brushChoice("terrain-cave-ground-brush", "cave", 0);
+	if (ground_names_.Index("cave") == wxNOT_FOUND) cave_ground_brush_choice_->Clear();
+	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
+
+	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
+	// Iteration 50: the natural rock wall brush, aligned on every side of the floor; the "mountain" ground (faces only
+	// towards the east and south) when the client lacks it.
+	const wxString caveWall = "mountain";
+	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", caveWall, 4);
+	cave_wall_brush_choice_->SetToolTip("Wall brush drawn on cave ground around the cave floor, or a ground brush for the whole wall band.");
+	if (cave_wall_names_.Index(caveWall) == wxNOT_FOUND) cave_wall_brush_choice_->Clear();
+	form->Add(cave_wall_brush_choice_, 1, wxEXPAND);
+
+    form->Add(label("Far cave exits:"), 0, wxALIGN_CENTER_VERTICAL);
+    cave_far_exits_check_ = newd wxCheckBox(host, wxID_ANY, "Exit at the other end of each cave");
+    cave_far_exits_check_->SetName("terrain-cave-far-exits");
+    cave_far_exits_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    cave_far_exits_check_->SetValue(true);
+    cave_far_exits_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(cave_far_exits_check_, 1, wxEXPAND);
+    form->Add(label("Cave door brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    cave_door_brush_choice_ = brushChoice("terrain-cave-door-brush", "stone wall", 2);
+    form->Add(cave_door_brush_choice_, 1, wxEXPAND);
+    form->Add(label("Cave corridors:"), 0, wxALIGN_CENTER_VERTICAL);
+    cave_door_corridors_check_ = newd wxCheckBox(host, wxID_ANY, "Narrow corridors with closed, unlocked doors");
+    cave_door_corridors_check_->SetName("terrain-cave-door-corridors");
+    cave_door_corridors_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    cave_door_corridors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    cave_door_brush_choice_->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    cave_door_brush_choice_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(cave_door_corridors_check_, 1, wxEXPAND);
+    form->AddSpacer(0);
+    cave_door_hint_ = label("");
+    form->Add(cave_door_hint_, 1, wxEXPAND);
+
+    form->Add(label("Dungeons:"), 0, wxALIGN_CENTER_VERTICAL);
+    building_dungeons_check_ = newd wxCheckBox(host, wxID_ANY, "Dungeon z+1 below some buildings");
+    building_dungeons_check_->SetName("terrain-building-dungeons");
+    building_dungeons_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    building_dungeons_check_->SetToolTip("Buildings with a door and at least 16 interior cells may get walled rooms on the cave floor, "
+        "joined by corridors with closed doors and reached by stairs down inside. Needs cave entrances and buildings with walls and doors.");
+    form->Add(building_dungeons_check_, 1, wxEXPAND);
+    form->Add(label("Dungeon share (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_percent_spin_ = spin("terrain-dungeon-percent", 0, 100, 20);
+    form->Add(dungeon_percent_spin_, 1, wxEXPAND);
+    form->Add(label("Dungeon floor brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_floor_choice_ = brushChoice("terrain-dungeon-floor", "dark tiled stone floor", 0);
+    form->Add(dungeon_floor_choice_, 1, wxEXPAND);
+    form->Add(label("Dungeon wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_wall_choice_ = brushChoice("terrain-dungeon-wall", "brick wall", 2);
+    form->Add(dungeon_wall_choice_, 1, wxEXPAND);
+    form->Add(label("Dungeon stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_stairs_choice_ = brushChoice("terrain-dungeon-stairs", "ramp", 3);
+    form->Add(dungeon_stairs_choice_, 1, wxEXPAND);
+    form->Add(label("Dungeon stairs down:"), 0, wxALIGN_CENTER_VERTICAL);
+    dungeon_descent_choice_ = brushChoice("terrain-dungeon-descent", "stairs down", 0);
+    dungeon_descent_choice_->SetToolTip("Ground brush whose floor-change-down ground is the stairs down inside the building, facing north like the stairs up below it.");
+    form->Add(dungeon_descent_choice_, 1, wxEXPAND);
+    form->AddSpacer(0);
+    building_dungeons_hint_ = label("");
+    form->Add(building_dungeons_hint_, 1, wxEXPAND);
+
+    form->Add(label("Mountain area z-1 (%):"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_percent_spin_ = spin("terrain-plateau-percent", 0, 100, 10);
+    plateau_percent_spin_->SetToolTip(
+        "Maximum cap area as a percentage of the whole generated rectangle. 0 disables mountains. "
+        "Whole rock components are selected; components exceeding the remaining limit are skipped. "
+        "Each higher cap uses the same percentage of the cap below it."
+    );
+    form->Add(plateau_percent_spin_, 1, wxEXPAND);
+    form->Add(label("Mountain passes:"), 0, wxALIGN_CENTER_VERTICAL);
+    mountain_passes_spin_ = spin("terrain-mountain-passes", 0, 8, 0);
+    form->Add(mountain_passes_spin_, 1, wxEXPAND);
+    form->Add(label("Plateau ground brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_ground_choice_ = brushChoice("terrain-plateau-ground", "grass", 0);
+    form->Add(plateau_ground_choice_, 1, wxEXPAND);
+    form->Add(label("Plateau cliff brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_cliff_choice_ = brushChoice("terrain-plateau-cliff", "mountain", 0);
+    form->Add(plateau_cliff_choice_, 1, wxEXPAND);
+    form->Add(label("Mountain levels:"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_levels_spin_ = spin("terrain-plateau-levels", 1, 3, 1);
+    form->Add(plateau_levels_spin_, 1, wxEXPAND);
+    form->Add(label("Plateau ramp brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    plateau_ramp_choice_ = brushChoice("terrain-plateau-ramp", "ramp", 3);
+    form->Add(plateau_ramp_choice_, 1, wxEXPAND);
+
+    section("Vegetation");
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
-	vegetation_check_ = newd wxCheckBox(this, wxID_ANY, "Add trees, bushes and stones");
+	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
 	vegetation_check_->SetName("terrain-vegetation");
 	vegetation_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
 	form->Add(vegetation_check_, 1, wxEXPAND);
@@ -493,15 +739,16 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Stone brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	stone_brush_choice_ = brushChoice("terrain-stone-brush", "small rocks", true);
 	form->Add(stone_brush_choice_, 1, wxEXPAND);
-	auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; placing adds one Undo step.");
-	helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
+	host = this;
+    auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; Place adds one Undo step for all generated floors.");
+    helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	helper->Wrap(Theme::Grid(64));
 
 	client_label_ = label(wxEmptyString);
 	client_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 
 	auto* left = newd wxBoxSizer(wxVERTICAL);
-	left->Add(form, 0, wxEXPAND);
+	left->Add(sections, 1, wxEXPAND);
 	left->AddSpacer(Theme::Grid(3));
 	left->Add(helper, 0, wxEXPAND);
 	left->AddSpacer(gap);
@@ -525,6 +772,24 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	region_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 	region_label_->SetMinSize(wxSize(Theme::Grid(60), Theme::Grid(8)));
 	right->Add(region_label_, 0, wxEXPAND | wxBOTTOM, gap);
+	preview_floor_label_ = label("Preview floor:");
+	preview_floor_choice_ = newd wxChoice(this, wxID_ANY);
+	preview_floor_choice_->Append("Surface");
+	preview_floor_choice_->Append("Cave below");
+    preview_floor_choice_->Append("Plateau z-1");
+    preview_floor_choice_->Append("Plateau z-2");
+    preview_floor_choice_->Append("Plateau z-3");
+    preview_floor_choice_->SetSelection(0);
+	preview_floor_choice_->SetName("terrain-preview-floor");
+	preview_floor_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+		if (!prepared_) return;
+		if (!BuildPreviewBitmap()) { ReleasePreview(); SetStatus(memoryMessage, true); }
+		preview_panel_->Refresh();
+	});
+	right->Add(preview_floor_label_, 0, wxBOTTOM, gap);
+	right->Add(preview_floor_choice_, 0, wxEXPAND | wxBOTTOM, gap);
+	preview_floor_label_->Hide();
+	preview_floor_choice_->Hide();
 	right->Add(preview_panel_, 1, wxEXPAND);
 
 	auto* body = newd wxBoxSizer(wxHORIZONTAL);
@@ -578,19 +843,33 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	CentreOnParent();
 
 	// Every input change releases the owned preview.
-	for (wxSpinCtrl* control : { x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_, path_length_spin_, building_density_spin_ }) {
-		control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    for (wxSpinCtrl* control :
+         {x_spin_, y_spin_, z_spin_, width_spin_, height_spin_, grass_weight_spin_, dirt_weight_spin_, water_weight_spin_,
+          path_length_spin_, ford_length_spin_, building_density_spin_, ruin_percent_spin_, camp_count_spin_, cave_entrances_spin_,
+           plateau_levels_spin_, plateau_percent_spin_, mountain_passes_spin_, upper_floor_percent_spin_, dungeon_percent_spin_}) {
+        control->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
 		control->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-	}
-	seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-	for (wxComboBox* control : { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_, floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) {
-		control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
-	}
-	scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+    }
+    seed_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    for (wxComboBox* control :
+         {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_, path_brush_choice_,
+          floor_brush_choice_, wall_brush_choice_, tree_brush_choice_, bush_brush_choice_, stone_brush_choice_, cave_entrance_brush_choice_,
+          cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_, plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_, bridge_brush_choice_, building_stairs_choice_,
+          dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_, dungeon_descent_choice_}) {
+        control->Bind(wxEVT_COMBOBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    }
+    scope_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	style_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	profile_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnProfileChosen, this);
 	vegetation_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
 	walls_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	doors_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    building_storeys_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+    building_dungeons_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	rock_passes_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	smooth_beaches_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	repair_check_->Bind(wxEVT_CHECKBOX, &TerrainGeneratorDialog::OnInputChanged, this);
+	door_type_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
 	preview_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPreview, this);
 	validate_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnValidate, this);
 	place_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPlace, this);
@@ -716,6 +995,9 @@ void TerrainGeneratorDialog::ReleasePreview() {
 	prepared_.reset();
 	selection_.reset();
 	preview_bitmap_ = wxNullBitmap;
+	preview_floor_choice_->SetSelection(0);
+	preview_floor_choice_->Hide();
+	preview_floor_label_->Hide();
 	validate_button_->Disable();
 	place_button_->Disable();
 	preview_panel_->Refresh();
@@ -723,14 +1005,79 @@ void TerrainGeneratorDialog::ReleasePreview() {
 
 void TerrainGeneratorDialog::UpdateControlStates() {
 	const bool natural = NaturalSurface();
-	for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
+    preview_floor_choice_->Show(prepared_ && (prepared_->cave || prepared_->plateau));
+    preview_floor_label_->Show(prepared_ && (prepared_->cave || prepared_->plateau));
+    const auto selectedFloor = preview_floor_choice_->GetStringSelection();
+    preview_floor_choice_->Clear();
+    preview_floor_choice_->Append("Surface");
+    if (prepared_ && prepared_->cave) {
+        preview_floor_choice_->Append("Cave below");
+    }
+    if (prepared_) {
+        int level = 1;
+        for (auto* p = prepared_->plateau.get(); p; p = p->plateau.get(), ++level) {
+            preview_floor_choice_->Append(wxstr(p->plan.config.surface.plateauMinTop ? std::format("Plateau z-{}", level) : std::format("Upper floor z-{}", level)));
+        }
+    }
+    const int prior = preview_floor_choice_->FindString(selectedFloor);
+    preview_floor_choice_->SetSelection(prior == wxNOT_FOUND ? 0 : prior);
+    plateau_percent_spin_->Enable(natural);
+    mountain_passes_spin_->Enable(natural);
+    plateau_levels_spin_->Enable(natural && plateau_percent_spin_->GetValue() > 0);
+    for (auto* c : {plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
+        c->Enable(natural && plateau_percent_spin_->GetValue() > 0);
+    }
+    for (wxSpinCtrl* control : { grass_weight_spin_, dirt_weight_spin_, water_weight_spin_ }) control->Enable(!natural);
 	for (wxComboBox* control : { rock_brush_choice_, shore_brush_choice_ }) control->Enable(natural);
 	path_length_spin_->Enable(natural);
 	building_density_spin_->Enable(natural);
-	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0));
-	floor_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0);
+	ruin_percent_spin_->Enable(natural && building_density_spin_->GetValue() > 0);
+	camp_count_spin_->Enable(natural);
+	campfire_brush_choice_->Enable(natural && camp_count_spin_->GetValue() > 0);
+	const bool caveProfile = natural;
+	cave_entrances_spin_->Enable(caveProfile);
+	cave_entrance_style_choice_->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
+	for (wxComboBox* control : { cave_entrance_brush_choice_, cave_exit_brush_choice_, cave_ground_brush_choice_, cave_wall_brush_choice_ }) control->Enable(caveProfile && cave_entrances_spin_->GetValue() > 0);
+	ford_length_spin_->Enable(natural);
+	rock_passes_check_->Enable(natural && path_length_spin_->GetValue() > 0);
+	smooth_beaches_check_->Enable(natural);
+	repair_check_->Enable(natural);
+    bridge_brush_choice_->Enable(natural && repair_check_->GetValue());
+    retry_spin_->Enable(natural);
+	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
+	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
+    const bool caves = natural && cave_entrances_spin_->GetValue() > 0;
+    cave_far_exits_check_->Enable(caves);
+    cave_door_brush_choice_->Enable(caves);
+    const bool doorAvailable = bool(rme::procedural::resolveCaveDoorBrush(std::string(cave_door_brush_choice_->GetValue().utf8_str())));
+    cave_door_corridors_check_->Enable(caves && doorAvailable);
+    if (!doorAvailable) cave_door_corridors_check_->SetValue(false);
+    cave_door_hint_->SetLabel(doorAvailable ? wxString{} : wxString("Choose a wall brush with closed, unlocked normal doors to enable corridors."));
 	walls_check_->Enable(natural && building_density_spin_->GetValue() > 0);
 	wall_brush_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
+	doors_check_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue());
+	door_type_choice_->Enable(natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue() && doors_check_->GetValue());
+    const bool walledBuildings = natural && building_density_spin_->GetValue() > 0 && walls_check_->GetValue();
+    const bool stairsAvailable = bool(rme::procedural::resolveBuildingStairsBrush(std::string(building_stairs_choice_->GetValue().utf8_str())));
+    building_stairs_choice_->Enable(walledBuildings);
+    building_storeys_check_->Enable(walledBuildings && stairsAvailable);
+    if (!stairsAvailable) building_storeys_check_->SetValue(false);
+    upper_floor_percent_spin_->Enable(walledBuildings && stairsAvailable && building_storeys_check_->GetValue());
+    building_storeys_hint_->SetLabel(stairsAvailable ? wxString{} : wxString("Choose a stairs brush with a floor-change item and an upper part to enable upper floors."));
+    // Dungeons (iteration 45) are drawn on the cave floor below doored, walled buildings.
+    const bool dungeonPlaces = caves && walledBuildings && doors_check_->GetValue();
+    rme::procedural::GroundProfile dungeonProfile;
+    dungeonProfile.dungeonFloor = std::string(dungeon_floor_choice_->GetValue().utf8_str());
+    dungeonProfile.dungeonWall = std::string(dungeon_wall_choice_->GetValue().utf8_str());
+    dungeonProfile.dungeonStairs = std::string(dungeon_stairs_choice_->GetValue().utf8_str());
+    dungeonProfile.dungeonDescent = std::string(dungeon_descent_choice_->GetValue().utf8_str());
+    const bool dungeonBrushes = bool(rme::procedural::resolveDungeonBrushes(dungeonProfile));
+    for (auto* control : {dungeon_floor_choice_, dungeon_wall_choice_, dungeon_stairs_choice_, dungeon_descent_choice_}) control->Enable(dungeonPlaces);
+    building_dungeons_check_->Enable(dungeonPlaces && dungeonBrushes);
+    if (!dungeonBrushes) building_dungeons_check_->SetValue(false);
+    dungeon_percent_spin_->Enable(dungeonPlaces && dungeonBrushes && building_dungeons_check_->GetValue());
+    building_dungeons_hint_->SetLabel(!dungeonBrushes ? wxString("Choose a floor brush, a wall brush with closed, unlocked normal doors and a stairs brush with an upper part and a stairs-down brush with a floor-change-down ground to enable dungeons.")
+        : !dungeonPlaces ? wxString("Dungeons need cave entrances and buildings with walls and doors.") : wxString{});
 	vegetation_check_->Enable(natural);
 	profile_choice_->Enable(natural);
 	for (wxComboBox* control : { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ }) control->Enable(natural && vegetation_check_->GetValue());
@@ -803,6 +1150,13 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
+		config.surface.ruinPercent = config.surface.buildingDensity ? uint32_t(ruin_percent_spin_->GetValue()) : 0;
+		config.surface.campCount = uint32_t(camp_count_spin_->GetValue());
+		config.surface.fordLength = uint32_t(ford_length_spin_->GetValue());
+		config.surface.rockPasses = rock_passes_check_->GetValue() && config.surface.pathLength > 0 ? 1 : 0;
+		config.surface.shoreSmoothing = smooth_beaches_check_->GetValue() ? 2 : 0;
+		config.surface.repairReach = repair_check_->GetValue() ? 1 : 0;
+        if (config.surface.repairReach) request.profile.bridgeBrush = std::string(bridge_brush_choice_->GetValue().utf8_str());
 	} else {
 		config.grassWeight = uint32_t(grass_weight_spin_->GetValue());
 		config.dirtWeight = uint32_t(dirt_weight_spin_->GetValue());
@@ -818,7 +1172,19 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	wxComboBox* const classicFields[] = { grass_brush_choice_, dirt_brush_choice_, water_brush_choice_ };
 	wxComboBox* const surfaceFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_, water_brush_choice_ };
 	wxComboBox* const* brushFields = natural ? surfaceFields : classicFields;
-	const bool withFloors = natural && config.surface.buildingDensity > 0;
+	config.surface.caveEntrances = natural ? uint32_t(cave_entrances_spin_->GetValue()) : 0;
+	const bool withFloors = natural && (config.surface.buildingDensity > 0 || config.surface.campCount > 0 || config.surface.caveEntrances > 0);
+    config.surface.plateauLevels = uint32_t(plateau_levels_spin_->GetValue());
+    config.surface.plateauMaxPercent = natural ? uint32_t(plateau_percent_spin_->GetValue()) : 0;
+    config.surface.passes = natural ? uint32_t(mountain_passes_spin_->GetValue()) : 0;
+    // Keep the component-size filter internal; the dialog enables mountains by area percentage.
+    config.surface.plateauMinTop = config.surface.plateauMaxPercent ? mountainMinTopCells : 0;
+    if (config.surface.plateauMinTop) {
+        request.profile.plateauCliff = std::string(plateau_cliff_choice_->GetValue().utf8_str());
+        request.profile.plateauGround = std::string(plateau_ground_choice_->GetValue().utf8_str());
+        request.profile.plateauRamp = std::string(plateau_ramp_choice_->GetValue().utf8_str());
+    }
+    config.surface.caveEntranceStyle = cave_entrance_style_choice_->GetSelection() == 1 ? CaveEntranceStyle::FloorHole : CaveEntranceStyle::RockFace;
 	const bool withPaths = natural && config.surface.pathLength > 0;
 	request.profile.count = !natural ? GroundProfile::groundRollCount : withFloors ? GroundProfile::surfaceWithFloorCount :
 		withPaths ? GroundProfile::surfaceWithPathCount : GroundProfile::surfaceCount;
@@ -826,6 +1192,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	if (withPaths || withFloors) brushFields = surfaceWithFloorFields;
 	for (size_t i = 0; i < request.profile.count; ++i) {
 		request.profile.brushes[i] = std::string(brushFields[i]->GetValue().utf8_str());
+        if (i == 6 && config.surface.passes && request.profile.brushes[i].empty())
+            request.profile.brushes[i] = request.profile.brushes[1];
 		if (request.profile.brushes[i].empty()) {
 			SetStatus("Choose a ground brush for every terrain field.", true);
 			brushFields[i]->SetFocus();
@@ -833,13 +1201,39 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 	}
 
-	if (withFloors && walls_check_->GetValue()) {
+	if (withFloors && config.surface.buildingDensity > 0 && walls_check_->GetValue()) {
 		request.profile.wall = std::string(wall_brush_choice_->GetValue().utf8_str());
 		if (request.profile.wall.empty()) {
 			SetStatus("Choose a wall brush or untick Walls.", true);
 			wall_brush_choice_->SetFocus();
 			return std::nullopt;
 		}
+		if (doors_check_->GetValue()) {
+			const wxString kind = door_type_choice_->GetStringSelection();
+			request.profile.door = std::string(kind.utf8_str());
+		}
+        config.surface.buildingStoreys = building_storeys_check_->IsEnabled() && building_storeys_check_->GetValue();
+        config.surface.upperFloorPercent = uint32_t(upper_floor_percent_spin_->GetValue());
+        if (config.surface.buildingStoreys) request.profile.buildingStairs = std::string(building_stairs_choice_->GetValue().utf8_str());
+	}
+
+	if (withFloors && config.surface.campCount > 0) request.profile.campfire = std::string(campfire_brush_choice_->GetValue().utf8_str());
+	if (withFloors && config.surface.caveEntrances > 0) {
+		request.profile.caveEntrance = std::string(cave_entrance_brush_choice_->GetValue().utf8_str());
+		request.profile.caveExit = std::string(cave_exit_brush_choice_->GetValue().utf8_str());
+		request.profile.caveGround = std::string(cave_ground_brush_choice_->GetValue().utf8_str());
+		request.profile.caveWall = std::string(cave_wall_brush_choice_->GetValue().utf8_str());
+        config.surface.caveFarExits = cave_far_exits_check_->GetValue();
+        config.surface.caveDoorCorridors = cave_door_corridors_check_->IsEnabled() && cave_door_corridors_check_->GetValue();
+        if (config.surface.caveDoorCorridors) request.profile.caveDoor = std::string(cave_door_brush_choice_->GetValue().utf8_str());
+        config.surface.buildingDungeons = building_dungeons_check_->IsEnabled() && building_dungeons_check_->GetValue() && !request.profile.door.empty();
+        config.surface.dungeonPercent = uint32_t(dungeon_percent_spin_->GetValue());
+        if (config.surface.buildingDungeons) {
+            request.profile.dungeonFloor = std::string(dungeon_floor_choice_->GetValue().utf8_str());
+            request.profile.dungeonWall = std::string(dungeon_wall_choice_->GetValue().utf8_str());
+            request.profile.dungeonStairs = std::string(dungeon_stairs_choice_->GetValue().utf8_str());
+            request.profile.dungeonDescent = std::string(dungeon_descent_choice_->GetValue().utf8_str());
+        }
 	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();
@@ -921,7 +1315,7 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 				return;
 			}
 			if (captured->region.width > uint32_t(maxSide) || captured->region.height > uint32_t(maxSide)) {
-				SetStatus("The selection is too large. Select an area of at most 500 x 500 tiles.", true);
+				SetStatus(wxstr(std::format("The selection is too large. Select an area of at most {} x {} tiles.", maxSide, maxSide)), true);
 				return;
 			}
 			selection_ = std::move(*captured);
@@ -934,7 +1328,10 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 		}
 		const std::span<const uint8_t> mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
 
-		pending_request_ = std::move(*request);
+		preview_attempt_ = 1;
+        preview_first_seed_ = request->config.seed;
+        preview_fallback_ = false;
+        pending_request_ = std::move(*request);
 		auto steps = prepareTerrainSteps(editor->map, pending_request_->config,
 			pending_request_->profile, preparationBudget, mask);
 		if (!steps) {
@@ -996,6 +1393,28 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 			return;
 		}
 
+        if (result->levels && !result->levels->report.allReached() && !preview_fallback_) {
+            const auto limit = uint32_t(std::max(1, retry_spin_->GetValue()));
+            if (preview_attempt_ < limit || (preview_attempt_ > 1 && request->config.seed != preview_first_seed_)) {
+                if (preview_attempt_ < limit) {
+                    request->config.seed = preview_first_seed_ + preview_attempt_++;
+                } else {
+                    request->config.seed = preview_first_seed_;
+                    preview_fallback_ = true;
+                }
+                pending_request_ = std::move(*request);
+                const auto mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
+                auto steps = prepareTerrainSteps(CurrentTarget()->map, pending_request_->config,
+                    pending_request_->profile, preparationBudget, mask);
+                if (!steps) { ReleasePreview(); SetStatus(describe(steps.error()), true); return; }
+                preview_steps_.emplace(std::move(*steps));
+                UpdateControlStates();
+                SetStatus(wxstr(std::format("Checking seed {} (attempt {}).", pending_request_->config.seed, preview_attempt_)), false);
+                SchedulePreviewTick();
+                return;
+            }
+        }
+        seed_text_->ChangeValue(wxstr(std::format("{}", request->config.seed)));
 		// Fresh target and source validation before the result is retained or displayed.
 		const auto target = selection_ ?
 			validateSelectedTerrainTarget(*result, *selection_, request->config, request->profile) :
@@ -1021,12 +1440,39 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 
 		const auto& region = prepared_->snapshot.input.config.region;
 		const uint64_t imageBytes = uint64_t(region.width) * region.height * 7 + bitmapOverheadBytes;
-		SetStatus(wxstr(std::format("Preview ready: {} tiles will change in a {} x {} area at floor {} (seed {}). "
-			"Estimated memory: {} for the preview and image; placing may use up to {}.",
-			prepared_->preview.getChanges().size(), region.width, region.height, region.z,
+        uint64_t changedTiles = prepared_->preview.getChanges().size();
+        uint64_t floors = 1;
+        if (prepared_->cave) {
+            changedTiles += prepared_->cave->preview.getChanges().size();
+            ++floors;
+        }
+        for (auto* upper = prepared_->plateau.get(); upper; upper = upper->plateau.get()) {
+            changedTiles += upper->preview.getChanges().size();
+            ++floors;
+        }
+		SetStatus(wxstr(std::format("Preview ready: {} tiles across {} floors will change in a {} x {} area (seed {}). "
+			"Estimated preparation memory: {}. Commit memory limit: {}.",
+			changedTiles, floors, region.width, region.height,
 			prepared_->snapshot.input.config.seed,
 			formatMiB(prepared_->memory.totalBytes + imageBytes + (selection_ ? selection_->estimatedBytes : 0)),
 			formatMiB(commitBudget.maxBytes))), false);
+        if (prepared_->levels) {
+            const auto& report = prepared_->levels->report;
+            uint64_t reached = 0, total = 0;
+            for (const auto& c : report.categories) { reached += c.reached; total += c.total; }
+            auto text = std::format("Reachable: {}/{} places on {} floors. Seed {}, {} attempts.",
+                reached, total, report.pockets.size(), prepared_->plan.config.seed, preview_attempt_);
+            if (prepared_->plan.config.surface.repairReach) {
+                const auto& repair = prepared_->levels->repair;
+                text += std::format(" Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.{}",
+                    repair.repairs, repair.bridges, repair.removedCaps, repair.removedPois, repair.unrepaired ? " Unrepaired." : "");
+            }
+            if (!report.firstUnreachable.empty()) {
+                const auto& p = report.firstUnreachable.front();
+                text += std::format(" Unreachable: {} places (first: {}, {}, {}).", total - reached, p.x, p.y, p.z);
+            }
+            SetStatus(wxstr(text), !report.allReached());
+        }
 	} catch (const std::bad_alloc&) {
 		ReleasePreview();
 		SetStatus(memoryMessage, true);
@@ -1036,10 +1482,21 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
 }
 
 bool TerrainGeneratorDialog::BuildPreviewBitmap() {
-	const auto& snapshot = prepared_->snapshot;
+    const auto* selected = &*prepared_;
+    const int floor = preview_floor_choice_->GetSelection();
+    if (floor == 1 && prepared_->cave) {
+        selected = prepared_->cave.get();
+    } else {
+        const int level = floor - (prepared_->cave ? 1 : 0);
+        for (int k = 0; k < level && selected->plateau; ++k) {
+            selected = selected->plateau.get();
+        }
+    }
+    const auto& unit = *selected;
+    const auto& snapshot = unit.snapshot;
 	const auto& region = snapshot.input.config.region;
 	const auto& context = snapshot.context;
-	const BaseMap& buffer = prepared_->preview.getBuffer();
+	const BaseMap& buffer = unit.preview.getBuffer();
 	const wxColour empty = Theme::Get(Theme::Role::Background);
 
 	wxImage image(int(region.width), int(region.height), false);
@@ -1114,13 +1571,16 @@ void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
 		UpdateControlStates();
 		return;
 	}
+    if (prepared_->levels && !prepared_->levels->report.allReached() &&
+        wxMessageBox("Some places cannot be reached from the start. Place this terrain anyway?",
+            "Unreachable places", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES) return;
 	// The commit validates again and copies the owned diff; it never regenerates or reborders.
 	const auto receipt = selection_ ?
 		DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :
 		DrawOperations::commitTerrainPreview(*prepared_, request->config, request->profile, commitBudget);
 	if (receipt) {
-		spdlog::info("Terrain generator: placed {} tiles as one undo step", prepared_->preview.getChanges().size());
-		EndModal(wxID_OK);
+        spdlog::info("Terrain generator: placed {} tiles", receipt->changes);
+        EndModal(wxID_OK);
 		return;
 	}
 	const wxString message = describe(receipt.error());

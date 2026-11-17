@@ -326,3 +326,337 @@ Zakres, model i kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRI
 **Naprawa.** Kolejność pól przywrócona (pierwsze jedenaście jak w profilu, potem `pathLength`, `buildingDensity`), parser przypisuje pola po nazwach. Wszystkie 14 testów rdzenia PASS.
 
 **Powtórzenie pomiarów z poprawnym wczytywaniem profilu (seedy 1001–1032, bok 512, v10):** szlaki 9d: m06 L 53 / W 4 381 (poprzednio 55,5 / 4 434), m19 L 89 / W 4 618 (91 / 4 655), „szlak przy skale” średnia 8,2 / 16,9 ‰ (8,2 / 16,7): bez zmian w pasmach; przejścia 10c: **m06 7 z 8** (poprzednio 8 z 8: DW 55 wobec 4 wypadło o 5 ‰ poza pasmo ±50 ‰, bo rzeki z meandrem częściej stykają się z ziemią), m19 2 z 8 (bez zmian); budynki 11b: bez zmian (30 / 9 / 7, 40 / 9 / 7), udziały m06 0,8, m19 1,7 punktu procentowego. Kryteria iteracji 10 dla m06 (8 z 8) podane wcześniej były liczone bez meandru; poprawna wartość to 7 z 8.
+
+## Iteracja 12a — osady: skupiska, szlaki i drzwi w referencjach (2026-11-09): PARTIAL, pomiar opisowy
+
+Definicje, stałe i pasma zapisane przed implementacją i pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12”, commit `46b7024`; potwierdzone grepem przed implementacją). Kod: `settlement_stats` (rdzeń; test z ręcznie policzonymi wartościami PASS, commit `ff142e6`), wyjście sondy `settlements-surface.txt`, jedno polecenie `docs/procedural/smoke/g5_reference_settlements.py`. Wszystkie 19 map (kopie w `local-data/`, runner hashuje źródło przed i po), piętra z 0..7, klient 10.98, mapowanie `accepted-10.98-v3`. Dwa przebiegi M06 dały bajtowo identyczny plik (`cmp`); pozostałe mapy raz.
+
+| Mapa | budynków | G | Kn (×1000) | Ks | Ki ‰ | Kb ‰ | Bp / Cp ‰ | Bv / Cv ‰ | Dh ‰ | Dn | Db ‰ | Dp / Dp0 ‰ (\|S\|) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- |
+| M06 | 1 313 | 4 | 11 167 | 1 | 265 | 661 | 93 / 14 | 287 / 316 | 512 | 2 | 231 | 855 / 594 (69) |
+| M19 | 582 | 4 | 11 955 | 1 | 189 | 714 | 209 / 25 | 245 / 268 | 613 | 4 | 563 | 750 / 546 (76) |
+| M01 | 47 | 4 | 34 204 | 2 | 148 | 765 | 0 / 0 | 319 / 169 | 0 | N/A | N/A | N/A (0) |
+| M05, M11, M12, M15 | 13, 1, 2, 5 | N/A (< 30 budynków) | | | | | | | | | | |
+| pozostałe 12 | 0 | N/A | | | | | | | | | | |
+
+Kwalifikują się trzy mapy (≥ 30 budynków): M06, M19, M01. M01 to według 11a raczej płoty (0 drzwi, 0 kafli szlaku wg listy 9a), więc dla skupisk i odstępów jest dowodem pomocniczym, a nie wzorcem osady. Cechy drzwi i orientacji dają tylko M06 i M19.
+
+**Co z tego wynika (opisowo, bez oceny generatora).**
+- **Skupiska.** Najbliższy sąsiad leży typowo w odstępie 4 kafli (M06, M19, M01), a 66–71 % budynków (M06, M19) należy do skupisk ≥ 3; samotnych jest 19–27 %. Skupisk jest ok. 11–12 na 65 536 kafli wobec 31–37 budynków na 65 536, więc średnio ok. 3 budynki na skupisko, ale mediana skupiska to 1 (wiele pojedynczych, kilka dużych). Losowe rozmieszczenie z 11b, o gęstości 30–40 na 65 536, daje pewnie znacznie mniej bliskich sąsiadów; to jest do zmierzenia w 12c, nie zakładam.
+- **Szlak.** Budynki leżą przy szlaku 6,6× (M06: 93 vs 14 ‰) i 8,4× (M19: 209 vs 25 ‰) częściej niż przeciętny kafel lądu. Relacja jest wyraźna, choć bezwzględnie tylko co 11. (M06) i co 5. (M19) budynek ma kafel szlaku w odległości ≤ 3: szlaki w sensie listy 9a to jedynie część dróg.
+- **Woda.** Brak związku: Bv ≤ Cv w M06 (287 vs 316) i M19 (245 vs 268); M01 (319 vs 169) jest jedyną mapą z większym Bv, ale to płoty. Wniosek: generator nie potrzebuje modelu „budynek blisko wody”, wystarczy, że budynek nie stoi na wodzie (już zapewnione marginesem na Grass/Dirt).
+- **Drzwi.** Drzwi ma 51 % (M06) i 61 % (M19) budynków, mediana kafli Door to 2 i 4, a tylko 23 % i 56 % kafli Door leży na krawędzi obwiedni. Czyli „drzwi” w referencji to często wiele kafli (okna-drzwi, bramy, drzwi wewnętrzne); założenie „jedno wejście na budynek” to **celowa idealizacja** (odstępstwo zapisane z góry), nie odwzorowanie referencji.
+- **Orientacja drzwi względem szlaku.** Wśród budynków z drzwiami brzegowymi i szlakiem w pobliżu (|S| = 69 w M06, 76 w M19) strona z drzwiami jest stroną ze szlakiem w 855 ‰ i 750 ‰ przypadków, wobec 594 ‰ i 546 ‰ przy losowej stronie: drzwi zwracają się ku szlakowi o 26 i 20 punktów procentowych częściej niż przypadek. Niepewność próby (jedna mapa, n ≈ 70): ok. ±40 ‰ (1 odchylenie standardowe z rozkładu dwumianowego), więc kierunek jest wiarygodny, wielkość nie.
+
+**Czego NIE zweryfikowano.**
+- Niezależności: wszystko pochodzi z M06 i M19 (D17), M01 jest tylko pomocnicza; brak trzeciej mapy z domami, więc nie ma odrębnej walidacji.
+- Rozrzutu między mapami (jedna wartość na mapę; podano tylko niepewność dwumianową dla Dp).
+- Szlaków spoza listy 9a (ubita ziemia, trawa wydeptana), a więc rzeczywistej liczby budynków przy drogach: Bp jest dolnym oszacowaniem.
+- Czy „budynek” to dom: Wall/Door w referencji obejmuje płoty, bramy i murki (D19); odległości 3, 8 i 12 są stałymi z góry, nie badano czułości na nie.
+- Piętra > 7, wnętrz, dachów, mostów.
+- Pomiaru generatora: baseline generatora w tych miarach (12c) nie był jeszcze liczony; projekt 12b nie został napisany.
+
+## Iteracja 12b–12d — skupiska, drzwi i szlaki do drzwi w rdzeniu (2026-11-09): PARTIAL, kryterium NIE spełnione
+
+Zakres od użytkownika: drzwi + szlaki do drzwi + skupiska. Model, stałe i kryteria zapisane przed implementacją i przed każdym pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12”: definicje `46b7024`, model 12b `7bccd95`, wynik 12c i zapis 12d `99c60d7`; zapisy sprawdzone grepem). Zaimplementowano w rdzeniu (commit `49e6737`): budynki w skupiskach (kotwice losowe, reszta dołączana w odstępie 3–6 kafli do już postawionego), jedne drzwi na budynek (`SurfaceGrid::doors`, środek strony zwróconej ku najbliższemu szlakowi w ≤ 60, inaczej strona losowa), schodek Path przed drzwiami i trasa do najbliższego szlaku (wspólny `PathRouter` wyodrębniony z `drawPaths`). Adapter (pędzel drzwi RME, plan, podgląd, okno generatora) **nie jest zrobiony**.
+
+**Pomiar generatora (seedy 1001–1032, bok 512, profile v10; ustawienia m06 pathLength 40 / buildingDensity 30, m19 80 / 40; mediana; dwa przebiegi bajtowo identyczne).**
+
+| Cecha | ref m06 | 12b (30 % kotwic) | 12d (60 %) | ref m19 | 12b | 12d |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| G (odstęp) | 4 | 4 ✓ | 4 ✓ | 4 | 4 ✓ | 4 ✓ |
+| Kn (×1000) | 11 167 | 5 875 ✗ | 9 375 ✓ | 11 955 | 4 750 ✗ | 7 500 ✗ (pasmo od 8 010) |
+| Ks | 1 | 2 ✗ | 2 ✗ | 1 | 3 ✗ | 2 ✗ |
+| Ki ‰ | 265 | 62 ✗ | 150 ✗ | 189 | 37 ✗ | 72 ✗ |
+| Kb ‰ | 661 | 850 ✗ | 741 ✗ (Δ 80) | 714 | 928 ✗ | 875 ✗ |
+| Bp − Cp (kierunek) | +79 | +924 ✓ | +910 ✓ | +184 | +908 ✓ | +896 ✓ |
+| Bv − Cv (kierunek) | −29 | −130 ✓ | −127 ✓ | −23 | −98 ✓ | −86 ✓ |
+| Dp − Dp0 (kierunek) | +261 | +503 ✓ | +527 ✓ | +204 | +495 ✓ | +509 ✓ |
+| **cechy zaliczone** | | 4 z 8 | **5 z 8** | | 4 z 8 | **4 z 8** |
+
+**Wynik: kryterium (≥ 75 % ocenianych cech) NIE spełnione ani w 12b, ani po zmianie 12d, w obu profilach.** Stałych dalej nie dobierałem (zapis z góry). Zmiana 12d (kotwice 60 %) poprawiła Kn i Ki, nie przywróciła Ki ani Ks; w stanie obecnym w kodzie jest 60 % (bliższe referencji niż 30 %), co jest odnotowane jako decyzja po zmianie modelu.
+
+**Co jest spełnione z założeń.** Dokładnie jedne drzwi na budynek, drzwi na obrysie, schodek Path, odstęp ≥ 3, drzwi znikają, gdy komórka przestała być Floor po masce (test `settlements`); `buildingDensity` 0 bez zmian: pinned odcisk Seed 1729 i PNG `pathLength` 80 / `buildingDensity` 0 dla 4 seedów **bajt w bajt** identyczne z rdzeniem sprzed zmian (porównanie dwóch binariów); 15 testów rdzenia PASS (`g5_run_suite.py --probes`: obie sondy G1 PASS po przebudowaniu `rme`).
+
+**Zmiany wyników (świadome).** Dla `buildingDensity` > 0: inne rozmieszczenie budynków, Path przed drzwiami i trasy; w sondzie `--surface` liczba komórek ściany dla 100×100 zmieniła się z 150 na 164 (250×250: 1 038 bez zmiany); odcisk `SURFACE_RESOLVER_SIZE` (bez budynków) bez zmiany. Test `buildings` rozluźniony: oprócz Floor dozwolone Path (Grass/Dirt/Shore → Path).
+
+**Odchylenia, których NIE oceniano kryterium.** (1) **Szlaki:** długość (L na 65 536) rośnie z 53 / 89 (9d) do 299 / 344 przy włączonych budynkach (ref 70 / 78), bo każdy budynek dostaje trasę do najbliższej sieci; pasma 9b nie dotyczą już tej konfiguracji. Do rozstrzygnięcia: mniej tras (np. tylko do kafla Path w ≤ 25, albo wspólne trasy klastra) albo `pathLength` 0. (2) **Bp = 1000 z konstrukcji** (schodek), więc ta cecha ma tylko kierunek. (3) Dn = 1 i Db = 1000 są idealizacją (ref 2–4 i 23–56 %).
+
+**Czego NIE zweryfikowano.** Adaptera i GUI (pędzel drzwi przez `DoorBrush`, Preview/Validate/Place/Undo/Redo z drzwiami i schodkami, wygląd osad); „bez dojścia” (odsetek budynków, których schodek nie łączy się z siecią) nie liczony; czułości na stałe 3–6, 12, 60; niezależnych map (D17); wpływu na udziały rodzajów (Path rośnie); wydajności; zachowania przy masce i chronionych komórkach poza testem `settlements`.
+
+## Iteracja 12e — adapter drzwi (2026-11-09): PARTIAL, sondy PASS, GUI czeka na użytkownika
+
+Zakres i kontrole zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12e”, commit `c0f7883`; zapis sprawdzony grepem). Zaimplementowano (commit `c96a238`): `GroundProfile::door` (rodzaj z zamkniętej listy: Normal door, Locked door, Magic door, Quest door, Normal door (alt), Archway; mapowanie na `DoorType` w `door_types.h`, bez identyfikatorów przedmiotów), `GroundPlan::doors` (flaga na komórce obrysu; w odcisku planu tylko przy drzwiach), walidacja w resolverze, przygotowaniu i podglądzie, nałożenie `DoorBrush::draw` po `WallBrush::doWalls` (odmowa `InvalidItem`, gdy pędzel ściany nie ma takich drzwi dla ułożenia), pola „Doors” i „Door kind” w oknie generatora (aktywne przy włączonych ścianach).
+
+**Znaleziona i naprawiona przeszkoda.** RME zamienia element drzwi w obiekt klasy `Door`; kontrola odcisku podglądu (`hashItem`) przyjmowała wyłącznie klasę `Item` i odrzucała podgląd (`PreviewError::InvalidItem`). Dopuszczono `Door` bez przypisanego ID drzwi domu; nic innego nie zostało poluzowane.
+
+**Wyniki.** Nowy przypadek sondy `--surface` (`SURFACE_DOORS_E2E_PASS`): 100×100 6 drzwi (6 budynków), 250×250 38 drzwi (38 budynków); po Commit dokładnie jeden element drzwi na zaplanowaną komórkę i żaden poza nią, jedna pozycja historii, po Undo zero drzwi i liczba kafli jak przed, po Redo ponownie komplet. Odmowy: drzwi bez pędzla ściany, nieznany rodzaj. Odcisk planu z drzwiami różni się od planu bez drzwi, grunt i ściany planu identyczne. `g5_run_suite.py --probes`: 15 z 15 testów rdzenia, obie sondy PASS na przebudowanym `rme` (ostrzeżeń `SetFocus` w `--surface` jest teraz 11 zamiast 9: przybyły dwa przypadki z `NewMap`; tylko ten znany rodzaj stderr).
+
+**Czego NIE zweryfikowano.** Okna generatora w RME (nowe pola, wygląd, kierunek drzwi względem szlaku, Preview/Validate/Place/Undo/Redo z drzwiami na kliencie użytkownika) czeka na ocenę użytkownika; sonda używa pędzla `stone wall` i „Normal door”; dla innych pędzli ścian i rodzajów drzwi podgląd może odmówić (brak drzwi danego rodzaju w pędzlu); ID drzwi domu nie są przypisywane; trasy do drzwi pozostają ok. 4× dłuższe niż w referencji (patrz 12d).
+
+## Iteracja 12f — strona drzwi ku najbliższemu budynkowi (2026-11-09): wdrożona po uwadze użytkownika, czeka na jego ocenę
+
+Reguła zapisana przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12f”). Pomiar po zmianie (seedy 1001–1032, bok 512, v10; dwa przebiegi bajtowo identyczne): G, Kn, Ks, Ki, Kb **bez zmian** względem 12d (rozmieszczenie budynków nie zależy od drzwi), Dp 1000 (jak dotąd), długość szlaków L 303 / 337 (było 299 / 344). Kryterium 12c nadal nie spełnione (5 z 8 w m06, 4 z 8 w m19). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme` (sonda drzwi: 6 i 38). **Nie zweryfikowano:** testem jednostkowym, że drzwi sąsiednich budynków bez szlaku są zwrócone ku sobie (zapisane w ocenie, ale nie napisane); poprawy na rzeczywistym zrzucie (ocena użytkownika).
+
+**Ocena użytkownika po 12f (2026-11-09, GUI, dwa zrzuty, Undo/Redo i Validate działają):** drzwi i szlaki do drzwi uznane za w porządku, użytkownik chce iść dalej. Moje uwagi z tych zrzutów (nie zmierzone): budynek bez szlaku w zasięgu ma tylko krótki schodek bez trasy (zrzut 1 u dołu, zrzut 2 przy prawym budynku); drzwi lewego budynku na zrzucie 2 zwracają się ku odległemu szlaku (zasięg 60), a nie ku sąsiadowi 25 kafli obok; długie szlaki 9d kończą się zaokrąglonym „blobem” w środku lądu; szlaki zajmują dużo powierzchni (L ok. 4× referencji, 12d). Ocena ogólna użytkownika ma pierwszeństwo przed metryką kryterium 12c (nadal niespełnionego); rozbieżność odnotowana.
+
+## Iteracja 12g — krótsze szlaki do drzwi (2026-11-09): L w paśmie przy `pathLength` 0; cena: ok. 2/3 budynków bez trasy
+
+Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12g”; grep potwierdził). Nowa stała `doorTrailReach`: trasa od schodka tylko do kafla Path w ≤ R od środka budynku. Wynik pomiaru wariantów (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi bajtowo identyczne):
+
+| R | L m06 (ref 70, pasmo 47–105) | L m19 (ref 78, 52–117) | bez dojścia m06 / m19 (‰) |
+| --- | ---: | ---: | ---: |
+| 16 | 20,5 | 25,5 | 696 / 672 |
+| **24 (wybrane wg reguły)** | **48** | **72,5** | 671 / 637 |
+| 36 | 116 ✗ | 151 ✗ | 629 / 597 |
+| poprzednio (60) | ok. 300 | ok. 340 | n/d |
+
+Wybór R = 24 (największy spełniający L ≤ 1,5·ref w obu profilach). G, Kn, Ks, Ki, Kb, Bp i Dp bez zmian względem 12d/12f (rozmieszczenie to samo). **Przy domyślnych ustawieniach profilu** (`pathLength` 40 / 80 jak w GUI-owych sugestiach) L wynosi 108 / 177, bo dochodzą losowe długie szlaki 9d; wynik m06 jest tuż nad pasmem, m19 powyżej.
+**Koszt:** „bez dojścia” (schodek bez trasy do innych drzwi) to ok. 64–67 % budynków; w referencjach tylko 9–21 % budynków ma szlak w pobliżu (Bp 93 / 209 ‰), więc odsetek jest tej samej klasy, ale wynika z krótkiego zasięgu, a nie z modelu referencji. 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`. **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika, ma pierwszeństwo); innych `doorTrailReach` poza trzema z zapisu; `style_render` ma teraz wiersz `access` (odsetek bez dojścia) liczony tylko, gdy są drzwi.
+
+## Iteracja 12h — szlaki do drzwi mają dokądś prowadzić (2026-11-09): kikuty usunięte, L poza pasmem w m19; czeka na ocenę użytkownika
+
+Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12h”; grep potwierdził). Zmiany: (1) trasy do drzwi stemplowane aż do schodka i celu (`reachEnds`; długie szlaki 9d bez zmian), (2) schodek tylko przy celu w zasięgu albo przy późniejszym partnerze w zasięgu; drzwi samotnego budynku wychodzą prosto na grunt; strona drzwi ku partnerowi.
+
+Pomiar (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi bajtowo identyczne):
+
+| `doorTrailReach` | L m06 (≤ 105) | L m19 (≤ 117) | kikuty m06 / m19 (‰) | drzwi bez schodka m06 / m19 (‰) |
+| --- | ---: | ---: | ---: | ---: |
+| 24 | 174 ✗ | 277 ✗ | 25 / 18 | 104 / 43 |
+| **16 (wybrane wg reguły, bo 24 nie spełnia)** | **96 ✓** | **174 ✗** | **33 / 31** | 208 / 103 |
+
+Kryterium (a) L: **niespełnione w m19** (174 wobec ≤ 117), spełnione w m06; kryterium (b) kikuty ≤ 100 ‰: **spełnione** (było ok. 650 ‰ „izolowanych” w 12g). G, Kn, Ki, Kb, Dp bez zmian; Bp 791 / 897 ‰ (nie 1000, bo samotne budynki nie mają schodka). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; test `settlements` zmieniony świadomie: schodek przed drzwiami nie jest już wymagany (dla boku ≥ 250 wymagany co najmniej jeden). **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika ma pierwszeństwo); zasięgów innych niż 16 i 24; „dokądś prowadzi” poza metryką kikutów (trasa dwóch sąsiadów może być łamana lub szeroka).
+
+**Ocena użytkownika po 12h (2026-11-09, zrzuty z GUI, dwa obszary, `rme` po 12h): „wygląda lepiej”.** Szlaki łączą drzwi sąsiednich budynków i nie widać kikutów. To potwierdza kierunek wizualnie, ale jest to ocena ogólna (bez liczb), a metryka L w m19 pozostaje poza zapisanym pasmem (174 wobec ≤ 117) – rozbieżność metryka/wzrok odnotowana; wzrok ma pierwszeństwo. Nadal otwarte: kryterium 12c jako całość niespełnione, brak badania wrażliwości stałych (60 %, 3–6, 60, 12, 16/24).
+
+## Iteracja 13 — walidator osiągalności powierzchni (2026-11-09): PARTIAL, kryterium budynków NIE spełnione
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 13”, commit `645ce8e`; grep potwierdził). Zaimplementowano `reachabilityOf(SurfaceGrid, walls)` (`source/procedural/core/reachability.{h,cpp}`): mierzy, niczego nie zmienia, bez naprawy i odrzucania seedów.
+
+**Testy.** Nowy `test_procedural_reachability`: układy policzone ręcznie (jezioro dzieli ląd 20 + 25; budynek bez drzwi zamknięty, z drzwiami osiągalny, bez ścian osiągalny; drzwi do wody; Preserve; błędy i `stop_token`) oraz porównanie z niezależną implementacją (union-find) na 80 losowych siatkach 16×16 w trybie ze ścianami i bez: 160 z 160 zgodnych, dwa przebiegi identyczne. 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; odcisk Seed 1729 bez zmian (test `surface`). Pamięć robocza: 9 B/komórkę (etykiety 4 + kolejka 4 + flaga 1), **kryterium z zapisu (≤ 8) było zbyt ciasne**: to odchylenie, wartość jest oszacowaniem, nie pomiarem.
+
+**Pomiar** (seedy 1001–1032, bok 512, profile v10, ściany i drzwi, mediana [min..max], dwa przebiegi bajtowo identyczne; `g5_shape_table.py`, wiersz `reach`):
+
+| | m06 (`pathLength` 40, 30 budynków/64k) | m19 (80, 40) |
+| --- | ---: | ---: |
+| komórek przechodnich | 177 340 | 177 084 |
+| największa składowa (‰) | 993,5 [647..999] | 993,5 [651..1000] |
+| poza największą na 65 536 kafli | 266 [4..15 759] | 264 [0..15 495] |
+| kieszenie ≥ 16 | 2 [1..9] | 2,5 [0..9] |
+| budynki zamknięte / budynki | 0 [0..52] / 120 | 0 [0..77] / 160 |
+| seedy z zamkniętym > 0 | **10 z 32** | **10 z 32** |
+
+Z `pathLength` 0 liczby są prawie takie same (np. m06 zamknięte [0..50], m19 [0..84]).
+
+**Kryterium 4 (zamknięte = 0 w ≥ 90 % seedów): NIE spełnione** (22 z 32 = 69 % seedów bez zamkniętych). Diagnostyka dopisana po pomiarze (post hoc, wiersz `doorBlocked` w `style_render`, nie z zapisu kryteriów): **żadne drzwi nie są zablokowane** (0 z 32 seedów); zamknięte budynki leżą na lądzie odciętym od największej składowej przez rzekę lub jezioro (seedy z największą składową 647–989 ‰). Zamknięcie wynika więc z podziału lądu, nie z błędu drzwi; naprawa wymaga mostów, brodów albo odrzucenia seedu (następna iteracja).
+
+**Nie zweryfikowano:** przechodności Rock i Shore na kliencie (założona, D22); „POI osiągalne” i „ustalony start” (nie istnieją w generatorze, N/A); pięter i przejść Z; adaptera i GUI (walidator nie jest jeszcze wywoływany z okna generatora ani z sondy RME, tylko z `style_render`); stanu dla `buildingDensity` 0 poza testem odcisku; wydajności walidatora (nie mierzono).
+
+## Iteracja 14 — brody przez wodę (2026-11-09): PARTIAL, kryterium NIE spełnione dla wartości z zapisu (32), spełnione post hoc od 48
+
+Kryteria i reguła wyboru wartości zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14”, commit `15d5f66`; grep potwierdził). Zaimplementowano `SurfaceTuning::fordLength` (dopisane na końcu struktury, 0..64, 0 = wyłączone), `placeFords` w rdzeniu (BFS przez River i Lake, Path na trasie i wodzie obok, składowe liczone przez `walkableLabelsOf`), pole „Ford length” w oknie generatora (profil musi mieć siódmy pędzel szlaku), odcisk konfiguracji planu z `fordLength` tylko gdy ustawione.
+
+**Testy.** `test_procedural_reachability` rozszerzony ręcznie policzonymi układami: rzeka 3 szerokości (zasięg 2: bez zmian; zasięg 3: 6 komórek Path, rzeka 18, jedna składowa 142), kieszeń 12 komórek bez brodu, jezioro 4 szerokości (zasięg 3: bez zmian; 4: 8 komórek Path), determinizm, drugi przebieg bez zmian. 16 testów rdzenia PASS, odcisk Seed 1729 bez zmian. Sonda `--surface`: nowy przypadek `SURFACE_FORDS_E2E_PASS` (bok 250, pierwszy seed od 1729 z brodem: 6 komórek Path wyłącznie na wodzie, Preview, Validate, Commit jako jeden krok, Undo, Redo, odcisk planu się zmienia); sonda `--commit` PASS; `rme` przebudowany.
+
+**Pomiar** (seedy 1001–1032, bok 512, profile v10, ściany i drzwi, ustawienia jak w iteracji 13; seedy z zamkniętymi budynkami / suma zamkniętych; mediana komórek brodów):
+
+| `fordLength` | m06 seedy / suma | m19 seedy / suma | największa składowa, min (‰) | komórki brodów (mediana, max) |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 10 / 121 | 10 / 159 | 647 / 651 | 0 |
+| 8 | 9 / 69 | 9 / 82 | 733 / 730 | 8, 42 |
+| 16 | 9 / 69 | 9 / 82 | 733 / 731 | 14, 122 |
+| **32 (wybór wg reguły)** | **5 / 24** | **5 / 31** | 919 / 919 | 36, 307 |
+
+Kryterium (≥ 29 z 32 seedów bez zamkniętych, czyli ≤ 3 z zamkniętymi, w obu profilach): **NIE spełnione dla żadnej wartości z zapisanego zestawu {8, 16, 32}**; zgodnie z regułą wybór to 32 z werdyktem NIE spełnione (5 z 32 seedów, 69 → 84 % bez zamkniętych). **Pomiar dodatkowy po fakcie (nie z zapisu):** 48 → 2 z 32 seedów (m06 i m19; po 2 zamknięte budynki łącznie), 64 → 1 / 2 z 32; te wartości spełniałyby kryterium, ale nie były w zapisanym zestawie, więc nie zmieniają werdyktu; komórki brodów przy 48–64: max 330–373 na 262 144 kafli. Dwa przebiegi bajtowo identyczne (`g5_shape_table.py --extra fordLength=32`).
+
+**Wniosek.** Brody wystarczają, gdy woda nie jest szersza niż zasięg; pozostałe zamknięte budynki leżą za wodą szerszą niż 32 komórki. Domyślnie w oknie 0 (wyłączone); wartość do ręcznej oceny: 48.
+
+**Nie zweryfikowano:** wyglądu brodów w GUI (ocena użytkownika ma pierwszeństwo); czy kafel Path na wodzie jest przechodni w grze (zależy od pędzla szlaku, D22); mostów z osobnym przedmiotem (poza zakresem); wpływu masek i ochrony (Preserve może zerwać bród); wydajności brodów (nie mierzono; w sweepie 32 seedów generowanie z brodami trwało 6–7 s wobec 4 s bez, ale to dwa wywołania generatora na seed w `style_render`); `test_universal_rotator` nie linkuje się przy pełnym `ninja` (inny cel, nie ruszany, nie badany).
+
+## Iteracja 14b — brody z piasku, limit 256 (2026-11-09): PARTIAL, po uwadze użytkownika; kryteria 1–4 spełnione, wygląd i chodzenie w grze nie zweryfikowane
+
+Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14b”, commit `95a3971`; grep potwierdził). **Błąd iteracji 14 (uwaga użytkownika: „tym mostem nie da się przejść”):** kryteria sprawdzały łączność w modelu, a nie kafle po zatwierdzeniu. Pomiar w sondzie pokazał 5 z 6 kafli brodu blokujących: grunt `cobbled pavement`, brzeg `sand` i blokujący element `shallow water` (id 4648), krawędź wody nałożona przez obramowanie, bo pędzel szlaku ma niższy priorytet niż woda. Wynik z iteracji 14 (Path na wodzie) uznaję za **niewłaściwy**; liczby seedów z tej iteracji dotyczą modelu, nie chodzenia.
+
+**Zmiana.** Kafle brodu mają rodzaj Shore (piasek, ten sam pędzel i obramowanie co plaże); brody nie wymagają już siódmego pędzla (adapter i okno wracają do wymagania pędzla szlaku tylko przy `pathLength`); limit `fordLength` 64 → 256 (walidacja i pole okna; 64 było moim arbitralnym wyborem, nie wynikało z pomiaru).
+
+**Kryterium 1 (sonda `--surface`): spełnione.** Po Commit 0 z 6 kafli brodu blokujących, wszystkie mają grunt (nowa asercja `FORD_TILES`, właściwość blokowania z danych klienta 10.98). **Kryterium 2: spełnione**, liczby identyczne jak w 14 (seedy z zamkniętymi z 32: m06 / m19 przy 8: 9 / 9; 16: 9 / 9; 32: 5 / 5; 48: 2 / 2; 64: 1 / 2). **Kryterium 3 (raport):** `fordLength` 256 → 0 z 32 seedów z zamkniętymi budynkami w obu profilach (suma 0), komórki brodów max 621 / 627 na 262 144 kafli; czas `style_render` 6,4 s (m06) i 7,0 s (m19), taki sam jak przy 32 (6,4 / 6,9 s) i 64. **Kryterium 4: spełnione:** 16 testów rdzenia (testy brodów przestawione na Shore, liczby bez zmian), obie sondy G1 PASS, odcisk Seed 1729 bez zmian.
+
+**Nie zweryfikowano:** wyglądu brodu w GUI (piaszczysta ławica, nie most); chodzenia w grze (asercja dotyczy flagi blokowania z danych klienta, nie ruchu; sąsiednie kafle wody dostają krawędzie piasku); jak szeroki bród jest sensowny (przy 256 możliwe są bardzo długie ławice przez morze, zakres do oceny użytkownika); masek i ochrony (Preserve może przerwać bród); mostów z osobnym przedmiotem.
+
+## Iteracja 14c — rozszerzone końce brodu (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd i chodzenie w grze czekają na użytkownika
+
+Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14c”, commit `5091210`; grep potwierdził). Zmiana: przy `fordLength` > 0 woda w odległości Czebyszewa ≤ 3 od pierwszej i ostatniej komórki trasy brodu staje się piaskiem (`fordMouthRadius`); środek bez zmian.
+
+**Co wiadomo o uwadze użytkownika.** Nowa asercja sondy (na zatwierdzonych kaflach, bok 250, `lakePermille` 250, `fordLength` 256): 0 kafli brodu i 0 lądowych kafli obok niego z flagą blokowania, 3 kieszenie połączone brodem w modelu są połączone także na mapie (ruch 4-sąsiedzki). Według flag klienta bród był więc przechodni już w 14b; skargę odczytałem jako zbyt wąski styk z lądem (rożek brzegu) i to poprawiłem. Jeśli użytkownik sprawdzał chodzenie w grze, przyczyny nie znam.
+
+**Kryterium 1 i 2 (testy ręczne): spełnione.** Rzeka 3 szerokości (20×8): bród 12 komórek piasku (było 6), styk 4 + 4 (było 2 + 2), jedna składowa 148. Siatka 20×16 (trasa w środku): 30 komórek piasku, styk 7 po stronie szerokiego lądu i 4 po stronie wąskiego lądu (ograniczony lądem, nie brodem). Jezioro 4 szerokości zasięg 4: 16 komórek piasku. **Kryterium 3:** sonda `--surface` PASS (180 kafli brodu, 0 blokujących, 0 niepołączonych). **Kryterium 4: spełnione:** seedy z zamkniętymi budynkami identyczne jak w 14b (zasięg 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 z 32), komórki brodów rosną (mediana zasięg 48: 182, max 624; zasięg 256: mediana 256–272, max 930), czas bez zmian (6,4–7,6 s), dwa przebiegi bajtowo identyczne; 16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian.
+
+**Nie zweryfikowano:** wyglądu (większe piaszczyste łaty na końcach mogą wyglądać nienaturalnie; promień 3 to mój wybór); chodzenia w grze; czy styk 4–7 kafli wystarcza w ocenie użytkownika; masek i ochrony; mostów z przedmiotem.
+
+## Iteracja 14d — naturalniejszy kształt brodu (2026-11-09): PARTIAL, kryteria 1–4 spełnione, „naturalny” czeka na ocenę użytkownika
+
+Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14d”, commit `776a3f7`; grep potwierdził). Zmiana (tylko trasy ≥ 8 komórek wody; krótsze jak w 14c): oś brodu z poprzecznym wychyleniem do 4 komórek (0 na końcach, szum z ziarna i bezwzględnych współrzędnych), szerokość 3 lub 5 zmienna co ok. 8 komórek, wlot promienia 3 na końcach, zabezpieczenie: jeśli oś nie łączy końców po komórkach przechodnich, dodawana jest prosta trasa. `placeFords` dostaje ziarno i początek obszaru (`FordShape`).
+
+**Kryterium 1: spełnione** (testy ręczne 14c bez zmian). **Kryterium 2: spełnione** (test na wodzie 64×24, trasa 48 komórek): jedna składowa po brodzie; to samo ziarno daje ten sam bród, inne ziarno inny kształt; tylko woda zamieniona w piasek; w środkowej jednej trzeciej każda kolumna ma od 3 do 9 komórek piasku; średni rząd piasku zmienia się o ≥ 2 rzędy (kształt nie jest prostą linią). **Kryterium 3: spełnione:** sonda `--surface` z większymi jeziorami (`lakePermille` 450, 443 kafli brodu, 7 kieszeni): 0 blokujących kafli brodu i obok niego, wszystkie kieszenie połączone na zatwierdzonej mapie. **Kryterium 4: spełnione:** seedy z zamkniętymi budynkami identyczne jak w 14c (zasięg 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 z 32); komórki brodów: mediana przy zasięgu 48 180, przy 256 287–306, max 1059; czas generowania bez zmian (6,4–7,0 s); dwa przebiegi bajtowo identyczne; 16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian.
+
+**Nie zweryfikowano:** czy bród wygląda naturalnie (ocenia użytkownik; stałe 4, 8, 40 000, szerokość 3/5 to moje wybory); ile brodów w sondzie i w pomiarze miało trasę ≥ 8 komórek i ile razy zadziałało zabezpieczenie z prostą trasą (nie liczyłem); chodzenia w grze (sonda sprawdza flagi blokowania); masek i ochrony; mostów z przedmiotem.
+
+**Ocena użytkownika po 14d (2026-11-09, GUI): „Tak, jest dobrze”.** Naturalny kształt brodu potwierdzony wzrokowo (ocena ogólna, bez liczb; chodzenia w grze nie sprawdzano). Nadal otwarte: mosty z przedmiotem, przełęcze, graf regionów i POI, odrzucanie seedów, brody dla masek i ochrony.
+
+## Pomiar przed przełęczami (2026-11-09): w tym profilu skała jest przechodnia
+
+Sonda `--surface` (bok 250, `lakePermille` 450, profil `grass/dirt/rocky ground/sand/sea`, klient 10.98) liczy flagę blokowania kafli po Commit według rodzaju komórki (wiersz `KIND_BLOCKING`): **Rock 19 z 4983 blokujących (0,4 %)**, Shore 0 z 7705, Grass 116 z 17 293 (0,7 %); przykład kafla Rock: grunt `gravel` z elementami `rocks`, `grass`. Wniosek: skała z pędzla „rocky ground” **nie jest przeszkodą**, więc „przełęcz” nie rozwiązuje żadnego odcięcia osiągalności (model D22 dla Rock, Shore i Grass potwierdzony na tym profilu, z wyjątkiem pojedynczych kafli; przyczyna 19 + 116 blokujących kafli nie zbadana). Przełęcz mogłaby być tylko trasą szlaku przez skałę (dziś `PathRouter` nie przechodzi przez Rock) albo wymagałaby, żeby skała blokowała (ściany górskie, poza zakresem generatora).
+
+## Iteracja 15 — szlaki przez skałę (2026-11-09): PARTIAL, kryterium 2 NIE spełnione
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 15”, commit `eae361d`; grep potwierdził). Zaimplementowano `SurfaceTuning::rockPasses` (0/1, dopisane na końcu struktury, nie jest częścią profilu stylu): przy 1 `PathRouter` może wchodzić na komórki Rock za dodatkowe 40 (stała `passCrossCost`), komórki Rock pod trasą i obramowaniem stają się Path; pole „Rock passes” w oknie generatora (aktywne przy „Path length” > 0); odcisk konfiguracji planu z `rockPasses` tylko gdy ustawione; `style_render` ma wiersz `cut` (komórki Path z Rock w odległości ≤ 3 po obu stronach w jednej osi, na 65 536).
+
+**Kryterium 1: spełnione** (`rockPasses` 0: 16 testów rdzenia, odcisk Seed 1729 bez zmian). **Kryterium 3: spełnione** (dwa przebiegi bajtowo identyczne; obie sondy G1 PASS; sonda `--surface`: 443 kafle brodu, 0 blokujących, 7 kieszeni połączonych).
+
+**Kryterium 2: NIE spełnione.** Seedy 1001–1032, bok 512, profile v10, `pathLength` 40 / 80, `buildingDensity` 30 / 40:
+
+| `rockPasses`, koszt | m06: `cut` mediana (max), seedy z `cut` > 0 | m19: `cut` mediana (max), seedy z `cut` > 0 | L mediana m06 / m19 |
+| --- | ---: | ---: | ---: |
+| 0 | 0 (0), 0 z 32 | 0 (1), 1 z 32 | 166 / 295 |
+| **1, koszt 40 (zapisany)** | 0 (6), 3 z 32 | 0 (15), 8 z 32 | 162 / 296 |
+
+Wymagane było: mediana ≥ 2× większa niż przy 0 i `cut` > 0 w ≥ 24 z 32 seedów; wynik 3 i 8 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt 15 → 5 i 9 z 32; koszt 0 (skała bez dopłaty) → 13 i 22 z 32 (mediana `cut` m19 9). Nawet darmowe przejście przez skałę nie daje 24 z 32, więc **koszt nie jest wąskim gardłem**: szlaki łączą losowe punkty lądu i rzadko wymagają przejścia przez pasmo skały. Długość szlaków (L) bez regresji (162 / 296 wobec 166 / 295).
+
+**Wniosek.** Funkcja działa i nic nie psuje, ale w tych seedach prawie nie widać przełęczy; żeby je widzieć, szlaki musiałyby celowo łączyć obszary rozdzielone skałą (zmiana wyboru końców tras, osobna iteracja). Wygląd w GUI nie sprawdzony. **Nie zweryfikowano:** wyglądu; blokowania kafli Path na skale (sonda ich nie dotyka, bo `rockPasses` jest w sondzie wyłączone); pomiaru w referencjach (odchylenie opisane w zapisie); opcji 2 (skała blokująca z przełęczami): nie zaczęta.
+
+## Iteracja 16 — cele szlaków po drugiej stronie skały (2026-11-09): PARTIAL, kryterium 1 NIE spełnione
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 16”, commit `f258df4`; grep potwierdził). Zaimplementowano w `drawPaths` (tylko `rockPasses` = 1): co drugie podejście szuka startu i celu „przez skałę” (do 64 losowych komórek lądu jako start, z każdej do 8 losowych kierunków, do 48 kroków; ciąg 3–30 komórek Rock bez wody, potem ląd, cel 4 kroki dalej); bez powodzenia stary losowy cel. Przy `rockPasses` 0 strumień losowy i wynik bez zmian.
+
+**Odkrycie przy diagnozie:** przy `pathLength` 40 cel długości (160 komórek na 512×512) wypełnia już pierwsza trasa, więc generator rysuje tylko **1–2 trasy na mapę**; „co drugie podejście” w pierwszej wersji (jedna próba startu) dawało 4 i 6 z 32 seedów, a poszukiwanie startu wśród 64 komórek podniosło to do 10 i 10.
+
+**Kryterium 3: spełnione** (nowy test `surface` `rockPasses`: deterministyczny, zmienia wynik, wartość 2 odrzucona; 16 testów rdzenia, odcisk Seed 1729 bez zmian; dwa przebiegi bajtowo identyczne; obie sondy G1 PASS). **Kryterium 2: spełnione:** L (mediana) 159 / 307 przy limitach 249 / 443.
+
+**Kryterium 1: NIE spełnione** (seedy 1001–1032, bok 512, profile v10, koszt skały 40 z zapisu):
+
+| | m06 `cut` mediana (max), seedy z `cut` > 0 | m19 `cut` mediana (max), seedy z `cut` > 0 |
+| --- | ---: | ---: |
+| `rockPasses` 0 | 0 (0), 0 z 32 | 0 (1), 1 z 32 |
+| `rockPasses` 1, iteracja 15 (losowe cele) | 0 (6), 3 z 32 | 0 (15), 8 z 32 |
+| **`rockPasses` 1, iteracja 16** | **0 (16), 10 z 32** | **0 (25), 10 z 32** |
+
+Wymagane: mediana ≥ 2× i `cut` > 0 w ≥ 24 z 32 seedów; jest 10 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt skały 15 → 13 i 13 z 32; koszt 0 → 21 z 32 (mediana `cut` 3) w m06 i 27 z 32 (mediana 8) w m19; L 153–304. Przy zapisanym koszcie 40 A* woli objazd niż 3–30 komórek skały, więc z wybranymi celami szlak często i tak omija skałę. Wniosek: wąskim gardłem są teraz **koszt skały i to, że mapa dostaje tylko 1–2 trasy**, a nie cele; kryterium 75 % wymagałoby kosztu bliskiego 0 (m19 tak, m06 jeszcze nie) albo wymuszenia przejścia przez skałę, co zmienia charakter szlaków.
+
+**Nie zweryfikowano:** wyglądu w GUI (nie wiem, czy szlak przez skałę wygląda jak przełęcz, czy jak wycięty korytarz 3–4 kafle); blokowania kafli Path na skale; pomiaru w referencjach; opcji 2 (skała blokująca).
+
+## Iteracja 17 — szlaki dochodzą do celu i przechodzą przez rzekę (2026-11-09): PARTIAL, kryteria miary 1 i 2 NIE spełnione, ale miara okazała się zawodna
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 17”, commit `610853c`; grep potwierdził). Zaimplementowano: 17a `drawPaths` stempluje do rzeczywistego startu i celu przy `rockPasses` 1; 17b przy `fordLength` > 0 router (szlaki i trasy do drzwi) przechodzi przez komórki River (koszt +25), woda pod trasą staje się piaskiem (Shore, z maską, żeby późniejszy szlak nie zrobił z niej Path), tylko gdy trasa naprawdę przecina rzekę. Odpowiedź na (2): „Path brush” to lista wszystkich pędzli gruntu, `dirt` można wybrać dziś.
+
+**Błąd znaleziony na obrazach, nie w metryce (z iteracji 12h):** `route_` biegnie od celu do startu, a `reachEnds` łączył `start` z początkiem `smooth_` (końcem celu) i koniec `smooth_` z celem, czyli **na krzyż**. Przy krótkich trasach do drzwi (≤ 16) było to niewidoczne; przy długich szlakach daje długie proste ukośne linie i pętle (potwierdzone renderem seedu 1003 przed i po poprawce). Poprawione (`line(cel, początek smooth_)`, `line(koniec smooth_, start)`). **Skutek uboczny: zmienia wyniki przy `buildingDensity` > 0** (trasy do drzwi mają prawidłowe końce); odcisk Seed 1729 (`buildingDensity` 0) bez zmian; liczby seedów z zamkniętymi budynkami bez zmian, sumy minimalnie inne (np. zasięg 8: 71 / 90 zamiast 69 / 82).
+
+**Pomiar** (seedy 1001–1032, bok 512, profile v10; seedy z miarą > 0 z 32, m06 / m19):
+
+| ustawienie | `tipRock` > 0 | `tipWater` > 0 |
+| --- | ---: | ---: |
+| `rockPasses` 0, `fordLength` 0 | 0 / 1 | 2 / 4 |
+| `rockPasses` 1, `fordLength` 0 | 16 / 24 | 10 / 17 |
+| `rockPasses` 0, `fordLength` 48 | 2 / 0 | 1 / 4 |
+| `rockPasses` 1, `fordLength` 48 | 13 / 23 | 4 / 6 |
+
+**Kryterium 1 (`tipRock` > 0 w ≤ 3 z 32 seedów przy `rockPasses` 1): NIE spełnione** (16 i 24). **Kryterium 2 (`tipWater` o połowę mniejsza przy `fordLength` 48): NIE spełnione dla `rockPasses` 0** (2 → 1, 4 → 4), spełnione tylko przy `rockPasses` 1 (10 → 4, 17 → 6; to wynik zapisany jako dodatkowy, nie z zapisu). **Wniosek o mierze:** „czubek” (komórka Path z ≤ 3 sąsiadami Path) liczy też schodkowe krawędzie szerokiego szlaku w skale i końce przy brzegu, więc rośnie, gdy szlak przechodzi przez skałę; nie rozróżnia „urwany w skale” od „prawidłowo przecina”. **Nie traktuję jej jako dowodu**; decydują obrazy i ocena użytkownika. Kryterium 3: spełnione (16 testów rdzenia, obie sondy G1 PASS, sonda `--surface` nadal 0 blokujących kafli brodu i obok niego, kieszenie połączone; dwa przebiegi bajtowo identyczne). Seedy z zamkniętymi budynkami dla `fordLength` 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 (bez zmian).
+
+**Nie zweryfikowano:** czy szlak przez rzekę wygląda dobrze i czy przechodzi na drugi brzeg we wszystkich przypadkach (obejrzałem tylko render 2 seedów w kolorach rodzajów, nie GUI); kryterium (1) poza miarą; blokowania kafli piasku pod szlakiem przez rzekę (sonda ich nie obejmuje); poszarpanych brzegów piasku i trawy (punkt 4 uwag, osobna diagnoza); wpływu poprawki końców na trasy do drzwi w GUI.
+
+## Iteracja 18 — wygładzenie brzegu piasek / trawa (2026-11-09): PARTIAL, kryterium 2 (5×) NIE spełnione; reguła zmieniona po pomiarze
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 18”, commit `e8be5a2`; grep potwierdził). Zaimplementowano `SurfaceTuning::shoreSmoothing` (0..4 przejść, dopisane na końcu, nie jest częścią profilu stylu; 0 = bajt w bajt jak dotąd), `smoothShores` w rdzeniu (filtr większościowy; wywołanie po pierścieniach plaży, przed `grassRim`) oraz pole wyboru „Smooth beaches” w oknie generatora (domyślnie zaznaczone = 2 przejścia) i miarę `shore` w `style_render`.
+
+**Wynik reguły zapisanej z góry (okno 5×5, komórki ≤ 3 od jeziora), seedy 1001–1032, bok 512, m06 / m19, `shoreSmoothing` 2 wobec 0:** (`spurs` + `notches` + `checker`) mediana 18 → 21 / 22 (nie spadło), `boundary` 627 → 585 (−7 %), `sand` 2990 → 3069 (+3 %). **Kryterium 2 NIE spełnione** (wymagane ≥ 5× mniej). Stan bazowy jest niski (18 na 65 536 komórek), więc miara nie pokazuje „poszarpania” widocznego na zrzucie; ono nie jest samotnymi komórkami, tylko schodkową granicą.
+
+**Zmiana reguły po pomiarze (odchylenie od zapisu, jawnie):** próbowałem okna 7×7 i zasięgu ≤ 9 od jeziora (poza pierścieniami plaży do `shoreWidth` 8) i przyjąłem tę regułę; wybór po zobaczeniu wyników, nie z zapisu. Wynik (`shoreSmoothing` 2 wobec 0): (`spurs` + `notches` + `checker`) 18 → 9 / 10 (2× mniej), `boundary` 627 → 486 / 485 (−22 %), `sand` 2990 → 3012 / 2987 → 3016 (+0,7 %); 4 przejścia dają 9 i 464. **Kryterium 2 nadal NIE spełnione** (2× zamiast 5×); `boundary` nie większe i `sand` w ±15 % spełnione.
+
+**Kryterium 1: spełnione** (`shoreSmoothing` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 3: spełnione** (nowy test `testSmoothShores`, liczby ręczne dla reguły 7×7: pas bez zmian, dziura wypełniona, samotny piasek → trawa / dirt, pierścień 0 zostaje, deterministyczność, 0 przejść bez zmian). **Kryterium 4:** 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne (sondy G1 działają z `shoreSmoothing` 0, więc ich nie obejmują wygładzonego wyniku). 
+
+**Nie zweryfikowano:** czy brzeg wygląda dobrze (ocena użytkownika; z miary nie umiem tego ocenić); wpływu na profile stylu (skład plaży w profilach liczony tylko przez `sand`); granicy trawa / dirt i skała / trawa (nie wygładzane); wygładzenia na zatwierdzonej mapie w sondzie; czy zrzut z GUI pokazuje ten sam efekt (obrazy z `style_render` są zbyt małe, żeby to ocenić).
+
+## Iteracja 19 — wąskie języki piasku między wodą (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd czeka na użytkownika
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 19”, commit `d82b1df`; grep potwierdził). **Diagnoza po czterech zrzutach z GUI po iteracji 18:** (a) wąskie pasy i półwyspy piasku 1–2 kafle szerokości między wodą (rzeka tnie pierścień plaży nakładany przed nią); filtr z 18 ich nie ruszał, bo liczył Lake jako piasek i nie widział rzek; (b) prostokątne wcięcia trawy w piasek (schodki 90° na prostych odcinkach). Pomiar na zatwierdzonej mapie (wiersz `SAND_GRASS_EDGE`): brzeg piasek / trawa **ma** elementy obramowania (1760 z 1760 kafli piasku przy trawie; trawa 106), więc brak obramowania nie jest przyczyną.
+
+Zaimplementowano `trimSpits` (tylko przy `shoreSmoothing` > 0, po nałożeniu rzek): komórka Shore w poziomym lub pionowym ciągu ≤ 2 komórek Shore ograniczonym po obu końcach wodą staje się wodą (River, jeśli któryś koniec to River, inaczej Lake); miara `spit` w `style_render`.
+
+**Kryterium 1: spełnione** (`shoreSmoothing` 0: 16 testów rdzenia, odcisk Seed 1729 bez zmian). **Kryterium 2: spełnione:** `spit` (mediana na 65 536 komórek, seedy 1001–1032, bok 512, m06 / m19, `shoreSmoothing` 2 wobec 0) **10 → 0** (max 19 / 20 → 1 / 2), baza > 2 więc kryterium dotyczy; `sand` 2990 → 3001 i 2987 → 3002 (+0,4–0,5 %); `boundary` 627 → 485 (−23 %). **Kryterium 3: spełnione** (nowy test `testTrimSpits`: pas 2 szerokości znika, pas 3 zostaje, pojedynczy kwadrat w wodzie znika, ciąg z trawą na jednym końcu zostaje, ciąg między rzeką a jeziorem staje się rzeką, 20 + 10 = 30 komórek rzeki). **Kryterium 4: spełnione:** 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne.
+
+**Koszt:** przecięte przesmyki piasku zwiększają liczbę odciętych budynków. Seedy z zamkniętymi budynkami / suma (m06, m19; `shoreSmoothing` 0 → 2): `fordLength` 0: 10 / 121 → 11 / 132 i 10 / 159 → 11 / 180; `fordLength` 48: 2 / 2 → 3 / 4 i 2 / 2 → 2 / 5; `fordLength` 256: 0 → 0 w obu. Brody (zasięg ≥ 48) to naprawiają prawie w całości.
+
+**Nie rozwiązane:** (b) prostokątne wcięcia i schodki 90° trawy w piasek na prostych odcinkach (to kształt granicy z progu szumu na siatce kafli, nie szum; usunięcie wymaga innego kształtu granicy); ocena wyglądu przez użytkownika; czy zrzut 3 (wcięcie trawy) ma dalej ten sam wygląd (nie zmieniałem); sonda G1 nadal nie obejmuje wygładzonego wyniku (działa z `shoreSmoothing` 0). **Nie zweryfikowano:** wyglądu na zatwierdzonej mapie po `trimSpits`.
+
+**Ocena użytkownika po 19 (2026-11-09, GUI): „Lepiej”.** Brzegi po usunięciu wąskich języków piasku wyglądają lepiej (ocena ogólna, bez liczb). Nadal otwarte: prostokątne wcięcia trawy w piasek (schodki 90°), szlaki przez skałę i rzekę oceniane tylko po renderach, mosty z przedmiotem, skała blokująca z przełęczami, graf regionów i POI, odrzucanie seedów.
+
+**Ocena użytkownika (2026-11-09, GUI): „Szlaki wyglądają ok”** (szlaki przez skałę, przez rzekę i z poprawionymi końcami; ocena ogólna, bez liczb).
+
+## Iteracja 20 — schodki i wcięcia 90° na granicy piasek / trawa (2026-11-09): PARTIAL, kryterium 2 NIE spełnione; domyślnie nie włączone w oknie
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 20”, commit `efcfa40`; grep potwierdził). Zaimplementowano `SurfaceTuning::shoreRadius` (0..8, dopisane na końcu; 0 = promień 3 jak w 19), `smoothShores` z parametrem promienia (okno (2r+1)², zasięg od jeziora 3r), miarę `corners` w `style_render`.
+
+**Kryterium 1: spełnione** (`shoreSmoothing` 0 i `shoreRadius` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 3: spełnione** (nowy `testShoreRadius`, 20×15: występ głębokości 1 i długości 5 zostaje przy r = 3 (np. 26 piasku z 49), znika przy r = 5 (60 z 121), prosta granica bez zmian przy r = 5, r = 0 znaczy 3, deterministyczność). **Kryterium 4: spełnione** (16 testów rdzenia i obie sondy G1 PASS, dwa przebiegi bajtowo identyczne).
+
+**Kryterium 2: NIE spełnione.** `corners` (okna 2×2 z 1 lub 3 komórkami piasku, na 65 536, mediana, seedy 1001–1032, bok 512, m06 / m19; `shoreSmoothing` 2):
+
+| promień | `corners` | `boundary` | `sand` | czas `style_render` na 32 seedy |
+| --- | ---: | ---: | ---: | ---: |
+| (bez wygładzania) | 573 / 572 | 627 / 626 | 2990 / 2987 | 3,3 s |
+| 3 (stan z 19) | 460 / 459 | 485 / 484 | 3001 / 3002 | 4,6 s |
+| 4 | 435 / 435 | 471 / 469 | 3010 / 3011 | 5,8 s |
+| **5** | **415 / 415** | 455 / 453 | 2993 / 3004 | 6,8 s |
+| 6 | 404 / 403 | 447 / 447 | 3006 / 3017 | 9,0 s |
+
+Wymagane było −25 % wobec promienia 3, jest −10 % (promień 5) i −12 % (promień 6); `boundary` i `sand` spełniają warunki. **Wniosek:** liczba narożników rośnie razem z długością granicy (stosunek narożników do granicy ≈ 0,9–0,95 przy każdym promieniu), czyli to zwykłe schodki siatki kafli, a nie osobne występy; filtr większościowy usuwa pojedyncze występy (test), ale nie zmienia charakteru schodkowej granicy. Dłuższy czas (+2 s przy promieniu 5 na 512×512, pomiar z jednego uruchomienia 32 seedów) to koszt pętli zasięgu 3r wokół każdej komórki jeziora.
+
+**Decyzja:** pole „Smooth beaches” w oknie zostaje przy promieniu 3 (`shoreRadius` 0), bo promień 5 daje −10 % narożników za +2 s i nie zmienia wyglądu w skali, którą widać na zrzucie. `shoreRadius` jest dostępne w rdzeniu i w `style_render`. **Nie zweryfikowano:** czy promień 5 wygląda lepiej w GUI (nie włączony w oknie, nie oceniany); wpływu na wygląd zrzutu 3; zamkniętych budynków (nie mierzone).
+
+## Iteracja 21 — układ okna „Generate Terrain” (2026-11-09): wdrożone, czeka na ocenę użytkownika
+
+Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 21”, commit `2f078ca`; grep potwierdził). Pola okna trafiły do zakładek `wxNotebook`: **Area**, **Terrain** (z „Smooth beaches”, przeniesionym z miejsca między brodami a skałą), **Paths**, **Buildings**, **Vegetation**; podgląd, tekst pomocniczy, status i przyciski poza zakładkami. Kontrolki tworzone są na stronie bieżącej zakładki (`host`), nazwy i wartości domyślne bez zmian.
+
+**Kryterium 1: spełnione** (`rme` buduje się; 16 testów rdzenia i obie sondy G1 PASS; sondy nie otwierają okna). **Kryterium 3: spełnione według liczby nazw `terrain-`:** 39 przed, 40 po (dodana `terrain-sections` dla zakładek), żadna nie zniknęła. **Kryteria 2 i 4: nie sprawdzone**, bo wymagają oceny w GUI (wysokość okna na ekranie 1080p, brak przycinania, brak nakładania statusu na pola, działanie Preview / Validate / Place / Undo i logika włączania pól).
+
+**Nie zweryfikowano:** wyglądu okna (natywny `wxNotebook` w ciemnym motywie); działania przełączania zakładek z klawiatury i mnemoników; czy zakładki mają sensowną wysokość (Terrain ma 11 wierszy, najwięcej); czy pola nieaktywne (np. wagi przy stylu Natural surface) są czytelne.
+
+**Ocena użytkownika po 21 (2026-11-09, GUI): „Wygląda ok”.** Układ okna w zakładkach potwierdzony wzrokowo (kryterium 2 spełnione według użytkownika; zachowanie Preview / Validate / Place / Undo nie było osobno opisane).
+
+## Iteracja 22 — POI i ustalony start w walidatorze osiągalności (2026-11-09): PARTIAL, kryterium 2 spełnione dla `fordLength` 256
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 22”, commit `089c45d`; grep potwierdził). Zaimplementowano `poiReachabilityOf` w `reachability.*`: start = przechodnia komórka najbliższa środkowi obszaru (nie musi leżeć w największej składowej), wejścia = komórki drzwi, wyjścia = po jednej na bok (przechodnia komórka brzegu najbliższa środkowi boku); punkt osiągnięty, gdy leży w składowej startu. Czysta funkcja liczącą, generator i GUI bez zmian; wiersz `poi` w `style_render`. Zakres: powierzchnia jednego piętra (wyjścia Z i podziemia: osobny etap; decyzja domyślna, użytkownik nie odpowiedział na pytanie o zakres).
+
+**Kryterium 1: spełnione.** Testy ręczne (jezioro: start (3,2) z remisu, 4 wyjścia, 3 osiągnięte, składowa startu 20 z 40; budynek z drzwiami: wejście i 4 wyjścia osiągnięte; bez drzwi start w zamkniętej izbie nie osiąga żadnego wyjścia, składowa 9; bok z wodą bez wyjścia; siatka z samą wodą bez startu; pusta siatka nieprawidłowa) oraz porównanie z niezależną implementacją (przeszukiwanie od startu) na 80 losowych siatkach w dwóch trybach: 160 z 160 zgodnych. **Kryterium 3: spełnione** (16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian; dwa przebiegi bajtowo identyczne).
+
+**Kryterium 2: spełnione dla `fordLength` 256.** Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80; seedy ze **wszystkimi** wejściami i wyjściami osiągniętymi z startu (m06 / m19), suma nieosiągniętych wejść / wyjść:
+
+| `fordLength` | m06 | m19 | nieosiągnięte wejścia (m06 / m19) | nieosiągnięte wyjścia (m06 / m19) |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 19 z 32 | 20 z 32 | 121 / 159 | 13 / 13 |
+| 48 | 28 z 32 | 29 z 32 | 2 / 2 | 3 / 3 |
+| **256** | **32 z 32** | **32 z 32** | 0 / 0 | 0 / 0 |
+
+Wymagane było ≥ 29 z 32 w obu profilach przy 256: jest 32 z 32 (przy 0 i 48 raportuję bez pasma; przy 48 m06 ma 28). Najmniejszy udział składowej startu w komórkach przechodnich: 647 ‰ przy 0, 978 ‰ przy 48, 999 ‰ przy 256.
+
+**Zastrzeżenia (z zapisu i nowe):** start „najbliższy środkowi” to mój wybór (w prawdziwej mapie start to miasto lub temple, którego generator nie tworzy); POI to dziś tylko drzwi i wyjścia brzegowe (nie ma ruin, obozowisk ani punktów z listy); wyjścia na bokach nie wiedzą, co leży w sąsiednich obszarach; **zasięg 256 oznacza bardzo długie ławice przez morze**, więc spełnienie kryterium kosztuje wygląd (oceniane wcześniej tylko przy 48); nie ma jeszcze naprawy ani odrzucania seedów (kolejny punkt planu); walidator nie jest podłączony do okna; model przechodności z D22. **Nie zweryfikowano:** wejść i wyjść Z, podziemi, piętra innego niż 7 (rdzeń jest od piętra niezależny, ale nie testowany), POI w oknie lub w sondzie RME.
+
+## Iteracja 23 — naprawa osiągalności i odrzucanie seedów (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd naprawy czeka na użytkownika
+
+Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 23”, commit `a47cec8`; grep potwierdził). Zaimplementowano: `SurfaceTuning::repairReach` (0/1, dopisane na końcu, nie jest częścią profilu stylu; 0 = bajt w bajt jak dotąd) i tryb naprawy `placeFords` (`FordShape::repair`): po zwykłych brodach każda składowa zawierająca wejście lub wyjście i różna od składowej startu dostaje bród przez wodę do 256 komórek (start liczony raz, bez względu na rozmiar składowej, kształt i wlot jak w 14d); `generateReachableSurface` (odrzucanie seedów: próby `seed`, `seed + 1`, … do `maxAttempts`, pierwsza siatka z wszystkimi POI osiągniętymi, inaczej pierwsza próba z `allReached` = false); wspólne `fixedStartOf` i `exitCellsOf` w `reachability.*`; pole „Repair unreachable places” w zakładce Paths (domyślnie zaznaczone); `repairReach` w odcisku konfiguracji planu tylko gdy ustawione.
+
+**Kryterium 1: spełnione** (`repairReach` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 2: spełnione** (testy ręczne 24×9: rzeka 6 szerokości, zwykły bród zasięgu 3 nic nie robi, naprawa daje 24 komórki piasku i 30 rzeki, po niej wejście i 4 wyjścia osiągnięte, deterministyczność; wyspa bez drzwi i wyjścia zostaje sama; pokój 2 komórki z drzwiami w wodzie dostaje bród; test `reachableSurface`: pierwsza próba, arytmetyka ziarna, determinizm, `maxAttempts` 1 zwraca pierwszą siatkę z `allReached` = false, `maxAttempts` 0 odrzucone). **Kryterium 4: spełnione** (16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne).
+
+**Kryterium 3: spełnione.** Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80 (próby odrzucania liczone na seedach 1001–1039, `maxAttempts` 8); wszystkie POI osiągnięte z startu, m06 / m19:
+
+| `fordLength`, `repairReach` | wszystkie POI osiągnięte | pierwsza próba zawodzi | średnia liczba prób |
+| --- | ---: | ---: | ---: |
+| 0, 0 | 19 / 20 z 32 | 13 / 12 | 1,53 / 1,50 |
+| 48, 0 | 28 / 29 z 32 | 4 / 3 | 1,12 / 1,09 |
+| **48, 1** | **32 / 32 z 32** | **0 / 0** | **1,00 / 1,00** |
+| 0, 1 | 32 / 32 z 32 | 0 / 0 | 1,00 / 1,00 |
+| 256, 0 | 32 / 32 z 32 | 0 / 0 | 1,00 / 1,00 |
+
+Wymagane było ≥ 31 z 32 w obu profilach przy `fordLength` 48 z naprawą: jest 32 z 32. Naprawa działa też bez zwykłych brodów (`fordLength` 0). **Zastrzeżenie do miary „komórki brodów”:** wiersz `reach` liczy różnicę względem tej samej siatki z `fordLength` 0, a od iteracji 17 szlaki przechodzą przez rzeki tylko przy `fordLength` > 0, więc ta różnica obejmuje też zmianę tras (mediana 13 495–13 735 w m19), nie tylko brody; dla naprawy bez zwykłych brodów jest 0 (różnica nie widzi naprawy). Porównanie „nie więcej niż przy samym 256” spełnione tylko formalnie (mediana m06 571 wobec 674, m19 13 495 wobec 13 735; max 25 457 wobec 25 850), **nie traktuję go jako dowodu**.
+
+**Nie zweryfikowano:** wyglądu brodów z naprawy (zasięg do 256 daje bardzo długie ławice; w GUI oceniałeś tylko brody do 48); odrzucania seedów w oknie (funkcja tylko w rdzeniu); wpływu masek i ochrony (Preserve może przerwać bród); wejść i wyjść Z oraz podziemi; czasu generowania (`style_render` na 39 seedach: 8,6–9,2 s z naprawą wobec 8,1–8,7 s bez, ale to jeden pomiar).
+
+**Ocena użytkownika po 23 (2026-11-09, GUI): „Wygląda dobrze”.** Brody z naprawy osiągalności (do 256 komórek) wyglądają dobrze według użytkownika (ocena ogólna, bez liczb; chodzenia w grze nie sprawdzano).

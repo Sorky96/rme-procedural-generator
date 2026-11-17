@@ -226,9 +226,70 @@ void testFit() {
 	check(evaluateDecor(surface, bad, spec, {}).error() == FitError::Generator, "invalid tuning is a generator error");
 }
 
+void testConnectivity() {
+    const auto components = [](const std::vector<uint8_t>& cells, uint32_t w) {
+        std::vector<uint8_t> seen(cells.size());
+        uint32_t count = 0;
+        for (uint32_t i = 0; i < cells.size(); ++i) if (cells[i] && !seen[i]) {
+            ++count;
+            std::vector<uint32_t> queue {i}; seen[i] = 1;
+            for (size_t head = 0; head < queue.size(); ++head) {
+                const int x = int(queue[head] % w), y = int(queue[head] / w);
+                for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+                    const int xx = x + dx, yy = y + dy;
+                    if (xx < 0 || yy < 0 || xx >= int(w) || yy >= int(cells.size() / w)) continue;
+                    const auto j = size_t(yy) * w + xx;
+                    if (cells[j] && !seen[j]) { seen[j] = 1; queue.push_back(uint32_t(j)); }
+                }
+            }
+        }
+        return count;
+    };
+    DecorGrid corridor {{0, 0, 6, 5, 1}, std::vector<DecorKind>(5)};
+    corridor.cells[2] = DecorKind::Tree;
+    std::vector<uint8_t> open(5, 1);
+    check(preserveDecorationConnectivity(corridor, open, {true, false, false}) == 1 && corridor.cells[2] == DecorKind::None,
+        "blocking tree cannot split one-cell cap neck");
+    corridor.cells[2] = DecorKind::Bush;
+    check(preserveDecorationConnectivity(corridor, open, {true, false, false}) == 0 && corridor.cells[2] == DecorKind::Bush,
+        "nonblocking vegetation unchanged");
+    for (uint64_t seed = 1; seed <= 120; ++seed) {
+        StableRandom random(seed, 381);
+        constexpr uint32_t w = 17, h = 13;
+        DecorGrid decor {{0, 0, 6, w, h}, std::vector<DecorKind>(w * h)};
+        std::vector<uint8_t> floor(w * h), mask(w * h);
+        for (size_t i = 0; i < floor.size(); ++i) {
+            floor[i] = random.bounded(5) != 0;
+            decor.cells[i] = DecorKind(random.bounded(4));
+            mask[i] = random.bounded(8) == 0 ? 2 : decor.cells[i] != DecorKind::None && random.bounded(2) ? 1 : 0;
+        }
+        const auto original = decor;
+        auto expected = decor;
+        auto walkable = floor;
+        const bool resolved = seed % 2 == 0;
+        for (size_t i = 0; i < floor.size(); ++i) if (resolved && mask[i] == 2) walkable[i] = 0;
+        for (size_t i = 0; i < floor.size(); ++i) {
+            const bool blocks = resolved ? mask[i] == 1 : decor.cells[i] == DecorKind::Tree || decor.cells[i] == DecorKind::Stone;
+            if (!walkable[i] || !blocks) continue;
+            const auto before = components(walkable, w);
+            walkable[i] = 0;
+            if (components(walkable, w) > before) { walkable[i] = 1; expected.cells[i] = DecorKind::None; }
+        }
+        auto again = original;
+        auto maskAgain = mask;
+        check(bool(preserveDecorationConnectivity(decor, floor, {true, false, true}, resolved ? std::span(mask) : std::span<uint8_t>{})), "connectivity filter succeeds");
+        check(bool(preserveDecorationConnectivity(again, floor, {true, false, true}, resolved ? std::span(maskAgain) : std::span<uint8_t>{})), "repeat filter succeeds");
+        check(decor.cells == expected.cells && again.cells == expected.cells && mask == maskAgain, "independent full component count and repeatability");
+    }
+    std::stop_source stop; stop.request_stop();
+    check(preserveDecorationConnectivity(corridor, open, {}, {}, stop.get_token()).error() == SurfaceError::Cancelled, "connectivity cancellation");
+    std::cout << "CAP_DECOR_CONNECTIVITY_PASS randomPlans=120\n";
+}
+
 } // namespace
 
 int main() {
+    testConnectivity();
 	testClassification();
 	testTuning();
 	testGeneratedContext();

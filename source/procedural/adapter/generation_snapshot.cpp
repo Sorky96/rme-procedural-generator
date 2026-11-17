@@ -93,9 +93,18 @@ std::expected<GenerationSnapshot, SnapshotError> captureGenerationSnapshot(
 	}
 }
 
+bool emptyTerrainContent(const Tile* tile) noexcept {
+	return !tile || (!tile->ground && tile->items.empty() && !tile->creature && !tile->spawn &&
+		!tile->house_id && !tile->mapflags && !tile->extra && !(tile->statflags & ~uint16_t(TILESTATE_BLOCKING)));
+}
+
 bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noexcept {
+	return snapshotMatchesMapAtRevision(map, snapshot, snapshot.input.mapRevision);
+}
+
+bool snapshotMatchesMapAtRevision(const Map& map, const GenerationSnapshot& snapshot, uint64_t revision) noexcept {
 	if (!wxIsMainThread() || map.getGeneration() != snapshot.input.mapGeneration ||
-		map.getChangeTracker().getGeneration() != snapshot.input.mapRevision ||
+		map.getChangeTracker().getGeneration() != revision ||
 		g_version.GetAssetRevision() != snapshot.input.assetRevision ||
 		uint32_t(map.getWidth()) != snapshot.mapWidth || uint32_t(map.getHeight()) != snapshot.mapHeight ||
 		uint32_t(map.getVersion().otbm) != snapshot.mapFormat || uint32_t(map.getVersion().client) != snapshot.mapClientVersion) return false;

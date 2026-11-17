@@ -52,7 +52,11 @@ std::expected<GenerationSnapshot, SnapshotError> captureGenerationSnapshot(
 // border lands on them, and nothing outside the allowed area is touched.
 [[nodiscard]] std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool outerBorderBrushes = false);
 
+[[nodiscard]] bool emptyTerrainContent(const Tile* tile) noexcept;
+
 // Re-checks owned tile values and location metadata as well as revision stamps.
 [[nodiscard]] bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noexcept;
+// Only for synchronous continuation after a known generator step; still compares every source value.
+[[nodiscard]] bool snapshotMatchesMapAtRevision(const Map& map, const GenerationSnapshot& snapshot, uint64_t revision) noexcept;
 
 } // namespace rme::procedural

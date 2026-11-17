@@ -79,6 +79,7 @@ public:
 	void setVariation(int32_t variation) override {
 		current_variation = std::max(0, variation);
 	}
+	[[nodiscard]] size_t getAlternativeCount() const noexcept { return items.getAlternatives().size(); }
 	[[nodiscard]] int getTotalVariants() const {
 		return items.getTotalVariants();
 	}

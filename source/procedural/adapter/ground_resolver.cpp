@@ -4,6 +4,7 @@
 
 #include "app/managers/version_manager.h"
 #include "brushes/ground/ground_brush.h"
+#include "procedural/adapter/surface_resolver.h"
 #include "item_definitions/core/item_definition_store.h"
 #include <limits>
 #include <new>
@@ -34,16 +35,115 @@ uint64_t GroundPlan::fingerprint() const {
 			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
 		}
 	}
+	// Appended only with doors, so plans without them keep their fingerprint.
+	if (!doors.empty()) {
+		hash = (hash ^ 0x6f) * 1099511628211ULL;
+		for (const auto flag : doors) hash = (hash ^ flag) * 1099511628211ULL;
+	}
+	// Appended only with camp fires, so plans without them keep their fingerprint.
+	if (!fires.empty()) {
+		hash = (hash ^ 0x63) * 1099511628211ULL;
+		for (const auto id : fires) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
+	for (const auto [tag, layer] : {std::pair{0x65, std::span(entrances)}, std::pair{0x78, std::span(exits)}}) {
+		if (layer.empty()) continue;
+		hash = (hash ^ tag) * 1099511628211ULL;
+		for (const auto id : layer) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
+	if (!caveFloor.empty()) {
+		hash = (hash ^ 0x62) * 1099511628211ULL;
+		for (const auto cell : caveFloor) hash = (hash ^ cell) * 1099511628211ULL;
+	}
+    if (config.surface.passes) hash = (hash ^ (0x7000u + config.surface.passes)) * 1099511628211ULL;
+	if (config.surface.caveEntrances > 0) hash = (hash ^ uint8_t(config.surface.caveEntranceStyle)) * 1099511628211ULL;
+    if (config.surface.caveEntrances > 0 && (config.surface.caveFarExits || config.surface.caveDoorCorridors)) {
+        hash = (hash ^ uint8_t(config.surface.caveFarExits)) * 1099511628211ULL;
+        hash = (hash ^ uint8_t(config.surface.caveDoorCorridors)) * 1099511628211ULL;
+        for (unsigned char c : profile.caveDoor) hash = (hash ^ c) * 1099511628211ULL;
+    }
+	if (!profile.caveWall.empty()) {
+		for (const unsigned char c : profile.caveWall) hash = (hash ^ c) * 1099511628211ULL;
+		hash = (hash ^ 0) * 1099511628211ULL;
+	}
+    if (config.surface.plateauMinTop) {
+        const auto add = [&](uint64_t v) {
+            for (unsigned i = 0; i < 8; ++i) {
+                hash = (hash ^ uint8_t(v)) * 1099511628211ULL;
+                v >>= 8;
+            }
+        };
+        add(config.surface.plateauMinTop);
+        if (config.surface.plateauLevels > 1) {
+            add(config.surface.plateauLevels);
+        }
+        if (config.surface.plateauMaxPercent) {
+            add(config.surface.plateauMaxPercent);
+        }
+        for (const auto* name : {&profile.plateauCliff, &profile.plateauGround, &profile.plateauRamp}) {
+            for (unsigned char c : *name) {
+                add(c);
+            }
+            add(0);
+        }
+        for (auto c : plateauFloor) {
+            add(c);
+        }
+        for (auto id : plateauRamps) {
+            add(id);
+        }
+    }
+    if (!profile.bridgeBrush.empty()) { for (const unsigned char c : profile.bridgeBrush) hash = (hash ^ c) * 1099511628211ULL; }
+    // Appended only with storeys (iteration 43), so other plans keep their fingerprint.
+    if (config.surface.buildingStoreys) {
+        hash = (hash ^ (0x5300u + config.surface.upperFloorPercent)) * 1099511628211ULL;
+        for (const unsigned char c : profile.buildingStairs) hash = (hash ^ c) * 1099511628211ULL;
+        for (const auto c : plateauFloor) hash = (hash ^ c) * 1099511628211ULL;
+        for (const auto id : stairs) {
+            hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+            hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+        }
+    }
+    // Appended only with dungeons (iteration 45), so other plans keep their fingerprint.
+    if (config.surface.buildingDungeons) {
+        hash = (hash ^ (0x4400u + config.surface.dungeonPercent)) * 1099511628211ULL;
+        for (const auto* name : {&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs, &profile.dungeonDescent}) {
+            for (const unsigned char c : *name) hash = (hash ^ c) * 1099511628211ULL;
+            hash = (hash ^ 0) * 1099511628211ULL;
+        }
+    }
 	return hash;
 }
 
 bool profileNeedsEdgeClearance(const GroundProfile& profile) {
-	for (const std::string& name : profile.active()) {
+    const auto needsClearance = [](const std::string& name) {
 		const auto* brush = name.empty() ? nullptr : g_brushes.getBrush(name);
 		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
-		if (ground && ground->hasOuterZilchBorder()) return true;
-	}
-	return false;
+        return ground && ground->hasOuterZilchBorder();
+    };
+    if (std::ranges::any_of(profile.active(), needsClearance)) return true;
+    // Whole caps can reach the surface rock boundary. Reserve space for their
+    // actual cliff and grass autoborders before generating that surface.
+    return hasPlateau(profile) && (needsClearance(profile.plateauCliff) || needsClearance(profile.plateauGround));
+}
+
+GenerationConfig withRockPassability(GenerationConfig config, const GroundProfile& profile) {
+    constexpr size_t rockIndex = 2; // Grass, Dirt, Rock, ... in a surface profile
+    bool blocks = false;
+    if (config.algorithm == GenerationAlgorithm::Surface && profile.count > rockIndex) {
+        const auto* brush = g_brushes.getBrush(profile.brushes[rockIndex]);
+        if (const auto* ground = brush ? brush->as<GroundBrush>() : nullptr)
+            blocks = std::ranges::any_of(ground->getBorderItems(), [](const GroundBrush::ItemChanceBlock& variant) {
+                return g_item_definitions.get(variant.id).hasFlag(ItemFlag::Unpassable);
+            });
+    }
+    config.surface.rockBlocks = blocks;
+    return config;
 }
 
 std::expected<GroundPlan, ResolveError> resolveGroundPlan(
@@ -66,6 +166,7 @@ std::expected<GroundPlan, ResolveError> resolveGroundPlan(
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
 	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * sizeof(uint16_t);
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
+	if (hasCave(profile)) return std::unexpected(ResolveError::InvalidProfile);
 	if (profile.count != GroundProfile::groundRollCount) return std::unexpected(ResolveError::InvalidProfile);
 	for (const auto& name : profile.active()) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/main.h"
 #include "procedural/adapter/terrain_validation.h"
+#include "procedural/adapter/ground_resolver.h"
 
 #include "app/managers/version_manager.h"
 
@@ -45,7 +46,9 @@ std::expected<void, PreparedValidationError> validatePreparedTerrain(
 	if (!*assets) return fail(PreparedValidationError::StaleAssets);
 
 	// Request: explicit config fields and exact profile names against both captured copies.
-	if (!sameConfig(currentConfig, input.config) || !sameConfig(currentConfig, plan.config) ||
+	// Preparation derives rock passability from the client (iteration 44); derive it the same way here.
+	const auto expected = withRockPassability(currentConfig, currentProfile);
+	if (!sameConfig(expected, input.config) || !sameConfig(expected, plan.config) ||
 		!(currentProfile == plan.profile)) {
 		return fail(PreparedValidationError::StaleRequest);
 	}
@@ -96,6 +99,37 @@ std::expected<void, PreparedValidationError> validatePreparedTerrain(
 		return fail(PreparedValidationError::InvalidPrepared);
 	}
 
+    if (plan.plateauFloor.empty()) {
+        uint32_t levels = 0;
+        for (auto* p = prepared.plateau.get(); p; p = p->plateau.get()) {
+            if (++levels > currentConfig.surface.plateauLevels || levels > 3) {
+                return fail(PreparedValidationError::InvalidPrepared);
+            }
+        }
+    }
+    if (prepared.plateau) {
+        auto upperConfig = currentConfig;
+        --upperConfig.region.z;
+        if (upperConfig.region.z < 0) {
+            return fail(PreparedValidationError::InvalidPrepared);
+        }
+        if (prepared.plateau->cave || prepared.plateau->plan.plateauFloor.empty()) {
+            return fail(PreparedValidationError::InvalidPrepared);
+        }
+        const auto upper = validatePreparedTerrain(map, *prepared.plateau, upperConfig, currentProfile, currentMask, stop);
+        if (!upper) {
+            return upper;
+        }
+    } else if (!plan.plateauRamps.empty()) {
+        return fail(PreparedValidationError::InvalidPrepared);
+    }
+    if (prepared.cave) {
+		auto lowerConfig = currentConfig;
+		++lowerConfig.region.z;
+		if (prepared.cave->cave || prepared.cave->plan.caveFloor.empty()) return fail(PreparedValidationError::InvalidPrepared);
+		const auto lower = validatePreparedTerrain(map, *prepared.cave, lowerConfig, currentProfile, currentMask, stop);
+		if (!lower) return lower;
+	} else if (!plan.entrances.empty()) return fail(PreparedValidationError::InvalidPrepared);
 	if (stop.stop_requested()) return fail(PreparedValidationError::Cancelled);
 	return {};
 }

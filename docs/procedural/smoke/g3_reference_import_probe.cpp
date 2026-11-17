@@ -14,6 +14,7 @@
 #include "procedural/core/png_writer.h"
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/semantic_image.h"
+#include "procedural/core/settlement_stats.h"
 #include "procedural/core/similarity.h"
 #include "procedural/core/water_shape.h"
 #include "procedural/core/style_profile.h"
@@ -383,6 +384,18 @@ void runProbe() {
                 const BuildingSummary b = summarizeBuildings(*buildings);
                 writeText("buildings-surface.txt", std::format("count\t{}\nper_64k\t{}\nlong_median\t{}\nshort_median\t{}\nwall_median\t{}\ndoors_per_building_milli\t{}\nwith_door_permille\t{}\nregion_cells\t{}\n",
                     b.count, b.per64k, b.longMedian, b.shortMedian, b.wallMedian, b.doorsPerBuildingMilli, b.withDoorPermille, buildings->regionCells));
+            }
+            {
+                static constexpr std::string_view settlementPathKeys[] = {"cobblestone", "dark cobblestone", "grassy cobblestone", "item cobblestone", "white gravel", "pavement", "item pavement"};
+                const auto settlements = extractSettlementStats(normalized->map, *keymap, settlementPathKeys, 0, 7, stopSource.get_token());
+                check(settlements.has_value(), "Settlement extraction failed");
+                const SettlementSummary t = summarizeSettlements(*settlements);
+                auto opt = [](const std::optional<uint32_t>& v) { return v ? std::to_string(*v) : std::string("NA"); };
+                writeText("settlements-surface.txt", std::format(
+                    "buildings\t{}\nfacing_set\t{}\nregion_cells\t{}\ngap_median\t{}\nclusters_per_64k_milli\t{}\ncluster_size_median\t{}\nalone_permille\t{}\nin_large_permille\t{}\n"
+                    "near_path_permille\t{}\npath_control_permille\t{}\nnear_water_permille\t{}\nwater_control_permille\t{}\nwith_door_permille\t{}\ndoors_median\t{}\nboundary_door_permille\t{}\nfacing_permille\t{}\nfacing_chance_permille\t{}\n",
+                    t.buildings, t.facingSet, settlements->regionCells, opt(t.gapMedian), opt(t.clustersPer64kMilli), opt(t.clusterSizeMedian), opt(t.aloneP), opt(t.inLargeP),
+                    opt(t.nearPathP), opt(t.pathControlP), opt(t.nearWaterP), opt(t.waterControlP), opt(t.withDoorP), opt(t.doorsMedian), opt(t.boundaryDoorP), opt(t.facingP), opt(t.facingChanceP)));
             }
             const auto channels = extractChannelShapes(normalized->map, *keymap, 0, 7, stopSource.get_token());
             check(channels.has_value(), "Channel extraction failed");

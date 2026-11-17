@@ -103,7 +103,17 @@ struct BuildingShapes {
 	std::vector<Building> buildings;
 	uint64_t regionCells = 0;   // present tiles of the examined floors
 };
-// Generator side: 4-connected components of Floor cells (foundations), no size limit.
+// One building of a reference floor with its position (cell indices are row-major in the floor's own box).
+struct BuildingBox {
+	uint32_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;  // inclusive bounding box
+	uint32_t cells = 0;
+	std::vector<uint32_t> doorCells;          // cells of the component that carry the Door trait
+};
+// The buildings of one floor, in scan order; the same rule extractBuildingShapes applies.
+[[nodiscard]] std::vector<BuildingBox> buildingBoxesOf(const SemanticFloor& floor);
+// Generator side: 4-connected components of Floor cells (foundations), no size limit; with positions.
+[[nodiscard]] std::vector<BuildingBox> floorBoxesOf(const SurfaceGrid& grid);
+// Same components without positions.
 [[nodiscard]] BuildingShapes floorBuildingsOf(const SurfaceGrid& grid);
 [[nodiscard]] std::expected<BuildingShapes, StatsError> extractBuildingShapes(
 	const SemanticMap& map, int zMin, int zMax, std::stop_token stop);

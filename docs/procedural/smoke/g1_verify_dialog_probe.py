@@ -19,6 +19,7 @@ parser.add_argument('--protected-selection',action='store_true',
                     help='Selection-only run with UID 32101 protection markers, on the staged Preview revision')
 parser.add_argument('--resources',action='store_true')
 parser.add_argument('--cancel-preview',action='store_true')
+parser.add_argument('--resource-side',type=int,choices=(500,1000,2000))
 parser.add_argument('--refusals',action='store_true')
 parser.add_argument('--roundtrip',action='store_true')
 parser.add_argument('--roundtrip-timing',action='store_true',
@@ -35,7 +36,7 @@ if args.protected_selection and (args.refusals or args.roundtrip or args.invalid
     parser.error('--protected-selection runs independently')
 args.selection_only=args.selection_only or args.protected_selection
 args.matrix=args.matrix or args.selection_only
-args.resources=args.resources or args.cancel_preview
+args.resources=args.resources or args.cancel_preview or args.resource_side is not None
 if args.resources and args.matrix:
     parser.error('--resources cannot be combined with --matrix or --selection-only')
 staged_preview=(args.resources or args.refusals or args.roundtrip or args.invalidation or
@@ -57,7 +58,7 @@ raw_stderr=(args.run/'stderr.log').read_text(encoding='utf-8',errors='replace').
 external_markers=('InitGoogle()','GoogleDriveFSPipe','=== Source Location Trace: ===','shell_ipc_client.cc')
 ignored_external=[line for line in raw_stderr if any(marker in line for marker in external_markers)]
 stderr=[line for line in raw_stderr if line not in ignored_external]
-partial_focus_warning=((args.refusals or args.roundtrip or args.invalidation) and bool(stderr)
+partial_focus_warning=((args.refusals or args.roundtrip or args.invalidation or args.resource_side is not None) and bool(stderr)
     and len(set(stderr))==1
     and "\\src\\msw\\window.cpp(" in stderr[0]
     and "'SetFocus' failed with error 0x00000057" in stderr[0])
@@ -77,6 +78,10 @@ require((run['passed'] or partial_focus_warning or external_noise_only) and run[
 require(run.get('matrix',False)==args.matrix,'Use --matrix for a matrix run')
 require(run.get('selection_only',False)==args.selection_only,'Selection-only scope mismatch')
 require(run.get('resources',False)==args.resources,'Resource baseline scope mismatch')
+require(run.get('resource_side')==args.resource_side,'Resource size scope mismatch')
+if args.resource_side:
+    require(run.get('cancel_preview',False)==args.cancel_preview,'Cancellation scope mismatch')
+    require((args.run/'run/resource-side.txt').read_text().strip()==str(args.resource_side),'Resource size input mismatch')
 require(run.get('refusals',False)==args.refusals,'Refusal scope mismatch')
 require(run.get('roundtrip',False)==args.roundtrip,'Round-trip scope mismatch')
 require(run.get('roundtrip_timing',False)==args.roundtrip_timing,'Round-trip timing scope mismatch')
@@ -125,16 +130,18 @@ for name,value in run['source_assets'].items():
     require(sha(Path(name))==value,'Changed curated input: '+name)
 
 prior=base/'g1-commit-complete-rme-20261103'
-old=json.loads((prior/'build-manifest.json').read_text())
+# Explicit-size resource runs verify every current object/source above. They do not reuse
+# historical G1 core evidence (which may not exist in a fresh worktree).
+old=json.loads((prior/'build-manifest.json').read_text()) if args.resource_side is None else {'sources':{}}
 changes=sorted(name.replace('\\','/') for name,value in old['sources'].items() if sha(repo/name)!=value)
 expected_changes=['source/ui/main_menubar.cpp','source/ui/menubar/menubar_action_manager.cpp']
 staged_cpp=['source/editor/operations/procedural_draw_operations.cpp',
             'source/procedural/adapter/terrain_preparation.cpp']
 if staged_preview:
     expected_changes += staged_cpp
-require(changes==sorted(expected_changes),
+require(args.resource_side is not None or changes==sorted(expected_changes),
         'Unexpected production CPP change since accepted core probe: '+str(changes))
-core=json.loads((prior/'current-verification.json').read_text())
+core=json.loads((prior/'current-verification.json').read_text()) if args.resource_side is None else {'sources':{}}
 core_changes=sorted(name for name,value in core['sources'].items() if sha(repo/name)!=value)
 expected_core_changes=['source/procedural/CMakeLists.txt']
 if staged_preview:
@@ -143,7 +150,7 @@ if staged_preview:
                               'source/editor/operations/procedural_draw_operations.cpp',
                               'source/procedural/adapter/terrain_preparation.cpp',
                               'source/procedural/adapter/terrain_preparation.h']
-require(core_changes==sorted(expected_core_changes),
+require(args.resource_side is not None or core_changes==sorted(expected_core_changes),
         'Core evidence inputs changed: '+str(core_changes))
 if args.matrix:
     previous=json.loads((base/'g1-dialog-matrix-rme-20261103'/'build-manifest.json').read_text())
@@ -183,6 +190,7 @@ if args.protected_selection:
 resources=[]
 if args.resources:
     require(sha(args.run/'run/resources.csv')==run['resource_csv_sha256'],'Resource CSV changed after run')
+    require(run['report'].endswith('RESOURCE_PASS\n') and 'FAILED\t' not in run['report'],'Resource sequence did not finish')
     if args.cancel_preview:
         require(all(marker in run['report'] for marker in ('RESOURCE_IN_FLIGHT_CANCEL_PASS','RESOURCE_CANCEL_RETRY_PASS')),
                 'Missing in-flight cancellation or retry evidence')
@@ -194,6 +202,9 @@ if args.resources:
         expected=[('1','500','interrupted-preview'),('1','500','interrupt')]
         expected += [(str(cycle),'500',command) for cycle in range(1,4)
                      for command in ('preview','validate','cancel','settled')]
+    if args.resource_side:
+        commands=(['interrupted-preview','interrupt'] if args.cancel_preview else []) + ['preview','validate','cancel','settled']
+        expected=[('1',str(args.resource_side),command) for command in commands]
     require([(row['cycle'],row['side'],row['command']) for row in resources]==expected,'Resource cases incomplete')
     for row in resources:
         require(float(row['elapsed_ms'])>0 and int(row['samples'])>0,'Missing measurement samples')
@@ -220,6 +231,12 @@ if args.cancel_preview:
     result['historical_core_evidence']='Earlier binary; synchronous core probes were not rerun'
     result['not_verified']=['Other cancellation paths and stale targets','Place/Undo/Redo on this binary',
                             'Dense-map and leak testing','Full G1 and OTBM companion round-trip']
+if args.resource_side:
+    result['resource_side']=args.resource_side
+    result['historical_core_evidence']='Not reused; current objects, sources and private inputs checked independently'
+    if partial_focus_warning:
+        result['result']='PARTIAL_G1_GUI_RESOURCE_FOCUS_WARNING'
+        result['runtime_stderr']=stderr
 if args.protected_selection:
     result.update(result='PASS_G1_GUI_PROTECTED_SELECTION_ONLY',protected_uid=32101,protection_markers=protection,
                   matrix_ui_changes=ui_changes,

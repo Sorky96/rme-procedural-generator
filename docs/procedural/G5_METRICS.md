@@ -1,0 +1,481 @@
+# G5: kryteria zapisane przed implementacją i pomiarem
+
+Dokument G5 (FAZA 5: topologia i wielopiętrowe światy). Iteracje 12–23 tej fazy (osady, walidator osiągalności, brody, szlaki przez skałę i rzekę, brzegi, okno, POI, naprawa) są zapisane w historycznym [G4_METRICS.md](G4_METRICS.md) i [G4_GATE_STATUS.md](G4_GATE_STATUS.md), bo powstawały na gałęzi G4; od iteracji 24 kryteria i wyniki G5 są w tym dokumencie i w [G5_GATE_STATUS.md](G5_GATE_STATUS.md). Zasada ta sama: kryteria, pasma i seedy zapisuję przed implementacją i pomiarem, sprawdzam grepem, że zapis jest w pliku.
+
+### Iteracja 24 — graf regionów nad powierzchnią (FAZA 5, punkt 3 planu; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Graf regionów”)
+
+**Zakres.** Czysta funkcja rdzenia `buildRegionGraph(SurfaceGrid, walls)` (`region_graph.{h,cpp}`) opisująca powierzchnię jako graf: **bez zmiany generatora, bez GUI, bez zapisu na mapę**; jedynym odbiorcą na razie jest `style_render` i testy (graf jest podstawą późniejszych ocen jakości i wielu pięter).
+
+**Definicje.**
+- **Klasa komórki:** Land = Grass, Dirt, Shore, Path, Floor; Rock = Rock; Water = Lake, River; Preserve nie ma klasy (nie wchodzi do grafu).
+- **Region (węzeł):** 4-spójna składowa jednej klasy o co najmniej **16** komórkach (`regionMinCells`); mniejsze fragmenty nie są węzłami (liczone osobno w `smallFragments` i `smallFragmentCells`). Numeracja węzłów: kolejność pierwszej komórki (wiersze, potem kolumny). Węzeł zawiera: klasę, liczbę komórek, ramkę (minX, minY, maxX, maxY) i środek ciężkości (średnia współrzędnych, dzielenie całkowite).
+- **Krawędź sąsiedztwa:** dwa różne węzły ze stykającymi się (4-sąsiedztwo) komórkami; waga = liczba takich par komórek (każda para raz, poziomo i pionowo); krawędzie sortowane po (a, b), a < b.
+- **Węzły POI:** start, wejścia (drzwi) i wyjścia z iteracji 22 (tym samym modelem przechodności, ściany włączone); każdy ma indeks węzła-regionu, w którym leży (−1 dla fragmentu mniejszego niż 16) oraz **odległość trasy** od startu w krokach 4-sąsiedzkich po komórkach przechodnich (−1: nieosiągalny; start 0).
+
+**Kryteria.**
+1. Test ręcznie policzony (14×6: Water x 6..8 = 18, Rock x 0..3, y 1..4 = 16, Land po lewej = 20, Land po prawej x 9..13 = 30): 4 węzły w kolejności (Land 20, Water 18, Land 30, Rock 16), krawędzie (0,1) waga 6, (0,3) waga 12, (1,2) waga 6; start (5,2) w węźle 0, wyjścia północne (5,0) odległość 2, południowe (5,5) odległość 3, zachodnie (0,2) (skała, węzeł 3) odległość 5, wschodnie (13,2) w węźle 2 nieosiągalne (−1); fragment mniejszy niż 16 (Rock 3×3 w osobnej siatce) nie jest węzłem i liczy się w `smallFragments`; suma komórek węzłów + fragmentów + Preserve = liczba komórek; deterministyczność; pusta siatka nieprawidłowa; `stop_token`.
+2. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, `pathLength` 40 / 80, `fordLength` 48, `repairReach` 1): mediana i zakres liczby węzłów (Land, Rock, Water osobno), krawędzi, fragmentów; udział seedów, w których wszystkie węzły POI mają odległość ≥ 0 (**oczekiwanie: 32 z 32, zgodnie z iteracją 23; to kryterium przechodzenia**); mediana i maksimum odległości do wejść i wyjść; graf sąsiedztwa spójny (każdy węzeł osiągalny z każdego po krawędziach) w ilu seedach (bez pasma).
+3. 16 testów rdzenia + nowy test, obie sondy G1 PASS (rdzeń generatora bez zmian: odcisk Seed 1729 bez zmian); dwa przebiegi bajtowo identyczne.
+
+**Zastrzeżenia z góry.** Klasy są grube (Land obejmuje trawę, dirt, plażę, szlaki i budynki; wnętrza regionów nie są rozróżniane); sąsiedztwo to dotyk komórek, nie „przejście”; odległość trasy to kroki 4-sąsiedzkie, nie czas w grze; graf nie zna ruin, obozowisk ani punktów z listy; nie ma jeszcze wielu pięter ani wejść Z; próg 16 komórek jest moim wyborem; graf nie jest zapisywany ani pokazywany w GUI.
+
+### Iteracja 25 — ruiny i obozowiska (FAZA 5, punkt „Struktury”; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Ruiny i obozowiska”)
+
+**Odchylenie od zasady „najpierw pomiar w referencjach”.** Nie mierzę w referencjach, jak wyglądają ruiny i obozowiska (rozpoznanie ich w kafelkach referencji wymaga nowego kodu sondy i listy pędzli); kryteria są **bezwzględne**, N/A dla pasm z referencji. Definicje to **moja idealizacja** istniejących mechanizmów (podłoga, ściany, szlaki), nie odtworzenie referencji.
+
+**Definicje (nowe pola `SurfaceTuning`, dopisane na końcu: `ruinPercent` 0..100 i `campCount` 0..50 na 65 536 komórek; 0 = jak dotąd, bajt w bajt; nie są częścią profilu stylu).**
+- **Ruina:** budynek (fundament Floor z iteracji 11–12) wybrany deterministycznie z prawdopodobieństwem `ruinPercent` %; **nie ma drzwi ani szlaku do nich**; zamiast tego **luki w murze**: co najmniej 2 i około ćwierć komórek obrysu (bez narożników) bez ściany (`SurfaceGrid::gaps`). Komórka luki jest przechodnia.
+- **Obozowisko:** polana (dysk Path o promieniu 3, komórki Grass lub Dirt) na terenie bez wody, skały, podłogi i szlaku w promieniu 5 od środka, z jednym „namiotem”: fundamentem Floor 3×3 w środku, którego **cały obrys jest luką** (bez ścian); minimalna odległość między środkami obozowisk i od budynków 12.
+- **Miejsca (`SurfaceGrid::sites`):** po jednej komórce na ruinę i na obozowisko (komórka wnętrza najbliższa środkowi fundamentu); ruina lub obozowisko jest „osiągnięte”, gdy jego miejsce leży w składowej startu (model przechodności z iteracji 13/22; luki jak drzwi bez bycia wejściem).
+
+**Zmiany pochodne.** `SurfaceGrid::valid()` sprawdza luki (na komórkach Floor) i miejsca (na Floor); odcisk siatki dopisuje luki i miejsca tylko, gdy niepuste; resolver pomija ścianę na komórkach luk; walidator osiągalności liczy luki jak komórki przechodnie obrysu, a budynek bez drzwi, ale z lukami, jest osiągalny; `PoiReport` dostaje `sites` i `sitesReached`; okno generatora: pola „Ruins (%)” i „Camps” w zakładce Buildings (profil z podłogą, czyli 8 pędzli, jest wymagany także przy samych obozowiskach).
+
+**Kryteria.**
+1. `ruinPercent` 0 i `campCount` 0: odcisk Seed 1729, 17 testów rdzenia i wynik `style_render` bez zmian.
+2. Testy ręczne: ruina bez drzwi, z lukami: komórki luk przechodnie, budynek osiągalny; budynek z tą samą siatką bez luk i bez drzwi zamknięty; obozowisko: dysk i namiot 3×3 z 8 lukami obrysu, miejsce w środku; walidacja (`valid()`) odrzuca lukę poza Floor; odcisk różni się od siatki bez luk; deterministyczność i niezależność od maski.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `buildingDensity` 30 / 40, `ruinPercent` 30, `campCount` 6, `fordLength` 48, `repairReach` 1): liczba ruin i obozowisk (mediana [min..max]), ruiny jako odsetek budynków (oczekiwanie bliskie 30 %), luki na ruinę (mediana), **udział ruin i obozowisk osiągniętych z startu: kryterium przechodzenia 100 % w ≥ 29 z 32 seedów** (stan wszystkich POI z naprawy: 32 z 32), wejścia budynków z drzwiami nadal wszystkie osiągnięte.
+4. 17 testów rdzenia i obie sondy G1 PASS po przebudowie `rme`; sonda `--surface` dostaje przypadek z ruinami i obozowiskami (Preview, Validate, Commit, Undo, Redo, liczba elementów ściany równa planowi bez luk); dwa przebiegi bajtowo identyczne.
+5. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Ruina to budynek z dziurami w murze, nie zawalona konstrukcja (bez gruzu, bez nierównej wysokości); obozowisko to polana ze ścieżką i podłogą bez namiotu z przedmiotu (brak ognisk, skrzyń, doodadów, bo profil nie ma pędzla na nie); luki są losowe, a nie „realistycznie zniszczone”; nie sprawdzam, czy pędzel ściany ma wszystkie ułożenia przy lukach (ściany układa `WallBrush::doWalls`, więc końce muru przy lukach dostają własne ułożenia pędzla); nie zmierzono w referencjach; ruiny i obozowiska nie są jeszcze w grafie regionów jako osobne POI (tylko `sites` w walidatorze).
+
+### Iteracja 26 — ognisko w obozowisku (FAZA 5; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Dodaj tam campfire. Jedziemy dalej”)
+
+**Zakres.** Obozowisko z iteracji 25 (polana Path z otwartym namiotem 3×3) dostaje **ognisko**: jedną komórkę `SurfaceGrid::fires` w środku polany. Przedmiot pochodzi z pędzla doodad wybranego w profilu (`GroundProfile::campfire`, domyślnie „campfire” w oknie, gdy klient ma taki pędzel), bez identyfikatorów przedmiotów w kodzie. Nowa warstwa planu `GroundPlan::fires` (przedmiot na komórkę, 0 = brak), osobna od roślinności, więc ognisko działa bez zaznaczonej „Vegetation”.
+
+**Zmiany geometrii obozowiska (kosztem zmiany wyników iteracji 25 dla `campCount` > 0; bez `campCount` nic się nie zmienia).** Polana to dysk Path o promieniu około 4 (komórki z dx² + dy² ≤ 18) wokół środka; **ognisko w środku (Path)**; namiot Floor 3×3 przesunięty o 3 komórki na wschód od środka (jego środek to miejsce `sites`, obrys to 8 luk), całkowicie w obrębie polany; warunek wolnego terenu: Grass lub Dirt w promieniu 7 od środka, brak Floor w promieniu 12, odstęp środków ≥ 12.
+
+**Kryteria.**
+1. `campCount` 0 lub puste `campfire`: odcisk Seed 1729, 17 testów rdzenia i odcisk planu bez ognisk bez zmian; plan bez ognisk ma ten sam odcisk co dotąd.
+2. Testy: każde obozowisko ma dokładnie jedno ognisko na komórce Path w środku polany, namiot go nie zakrywa (komórka ogniska ≠ komórki Floor), `valid()` odrzuca ognisko poza Path, odcisk siatki zmienia się z ogniskami, ręcznie policzona geometria jednego obozowiska (liczba komórek polany, 8 luk, 1 ognisko, 1 miejsce), deterministyczność, nowy `campCount` bez budynków działa.
+3. Sonda `--surface` (klient 10.98 **nie ma pędzla „campfire”**, więc przypadek używa dowolnego pędzla doodad z pojedynczymi przedmiotami, np. „small rocks”, jako pędzla ogniska i sprawdza tylko mechanizm): po Commit na każdej komórce ogniska dokładnie jeden element z tego pędzla, na innych komórkach ani jednego, Undo i Redo przywracają stan; odmowy: pędzel ogniska nieznany, pędzel nie jest doodadem; plan z ogniskiem ma inny odcisk niż bez.
+4. Pomiar jak w iteracji 25 (seedy 1001–1032, bok 512, m06 / m19, ruiny 30 %, 6 obozowisk, `fordLength` 48, `repairReach` 1): obozowisk nadal 24 na mapę, ognisk 24, wszystkie miejsca osiągnięte w ≥ 29 z 32 seedów (poprzednio 32 z 32).
+5. 17 testów rdzenia i obie sondy G1 PASS po przebudowie `rme`; dwa przebiegi bajtowo identyczne.
+6. Ocena wyglądu przez użytkownika ma pierwszeństwo.
+
+**Zastrzeżenia z góry.** Ognisko to przedmiot z wybranego pędzla (w pędzlu „campfire” klientów 12.90+ są warianty: pierścień, spalone drewno, ogień; wariant wybierany deterministycznie po komórce, więc część ognisk może być zgaszona); w kliencie 10.98 z repo nie ma pędzla „campfire” (są przedmioty 1421–1426 bez pędzla), więc **działanie z prawdziwym ogniskiem nie zostanie przetestowane w sondzie, tylko mechanizm**; pole „Campfire brush” w oknie jest puste, gdy klient nie ma pędzla o tej nazwie (wtedy ognisk nie ma, a użytkownik może wybrać dowolny doodad); przedmiot blokujący (np. pole ognia) może zablokować komórkę ogniska w grze; ognisko nie jest jeszcze POI.
+
+### Iteracja 27 — wejścia Z i prosta jaskinia pod powierzchnią, część rdzeniowa (FAZA 5, punkty „przejścia Z” i „jaskinie”; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzja użytkownika: „Wejścia i wyjścia Z”, zakres „wejścia + prosta jaskinia”)
+
+**Podział na dwie iteracje.** 27 = **rdzeń** (wejścia na powierzchni, jaskinia jako osobna siatka piętra z+1, walidator osiągalności przez Z, `style_render`). 28 = **adapter** (przedmiot wejścia z pędzla doodad, pędzel gruntu jaskini, Preview, Validate, Commit i Undo dla dwóch pięter, okno). Iteracja 27 nic nie rysuje na mapie.
+
+**Odchylenie od zasady „najpierw pomiar w referencjach”.** Nie mierzę w referencjach wejść ani jaskiń (wymaga nowego kodu sondy); kryteria bezwzględne, definicje to moja idealizacja.
+
+**Definicje (nowe pole `SurfaceTuning::caveEntrances`, 0..20 na 65 536 komórek, dopisane na końcu, 0 = bajt w bajt jak dotąd; nowe pole `SurfaceGrid::entrances`).**
+- **Wejście Z:** komórka Rock na brzegu skały (co najmniej jeden 4-sąsiad Grass, Dirt, Shore lub Path), co najmniej 3 komórki od brzegu obszaru, bez wody i podłogi w oknie 5×5, odstęp od innych wejść ≥ 24 (Czebyszew). Komórka zostaje rodzaju Rock (przechodnia); lista `SurfaceGrid::entrances` (w odcisku tylko, gdy niepusta; `valid()` wymaga Rock).
+- **Jaskinia (`generateCave`, nowy plik `underground.{h,cpp}`):** `CaveGrid` o tym samym obszarze, z = z + 1, komórki Solid lub Floor. Wejście ma tę samą pozycję (x, y) na dolnym piętrze (przejście „dziurą”, jak w Tibii). Wokół każdego wejścia lądowisko (dysk dx² + dy² ≤ 5, 21 komórek); kolejne wejścia (w kolejności indeksów) połączone tunelem o osi wychylonej szumem i szerokości 3; przy jednym wejściu tunel do punktu w stronę środka obszaru, do 40 komórek; co około 24 komórki osi sala (dysk promienia 3–5); komórki w odległości ≤ 1 od brzegu obszaru zostają Solid. Wynik zależy tylko od ziarna, powierzchni i opcji.
+- **Walidator przez Z (`undergroundReachabilityOf(SurfaceGrid, CaveGrid, walls)`):** wejście jest **osiągnięte**, gdy jego komórka na powierzchni leży w składowej startu (iteracja 22); komórki jaskini są **osiągnięte**, gdy leżą w składowej (4-sąsiedztwo) zawierającej lądowisko osiągniętego wejścia. Raport: wejścia, osiągnięte wejścia, komórki Floor, osiągnięte komórki Floor, składowe jaskini, **kieszenie** (składowe bez żadnego osiągniętego wejścia).
+
+**Kryteria.**
+1. `caveEntrances` 0: odcisk Seed 1729, 17 testów rdzenia i wynik `style_render` bez zmian.
+2. Testy ręczne (hand-count): wejścia leżą na brzegu skały i spełniają odstępy i marginesy; jaskinia: lądowisko 21 komórek, tunel łączący dwa wejścia sprawia, że jaskinia ma jedną składową, wszystkie lądowiska są Floor, brzeg obszaru Solid; walidator na ręcznie zbudowanych siatkach (powierzchnia z jeziorem odcinającym jedno wejście: to wejście nieosiągnięte, jego jaskinia osiągnięta tylko jeśli połączona tunelem; jaskinia bez osiągniętego wejścia to kieszeń); deterministyczność; porównanie walidatora z niezależnym przeszukiwaniem na ≥ 50 losowych parach siatek.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, `caveEntrances` 4, `buildingDensity` 30 / 40, `pathLength` 40 / 80, `fordLength` 48, `repairReach` 1): liczba wejść (mediana [min..max]; oczekiwanie bliskie 4 × 4 = 16, ale tylko tam, gdzie jest skała), seedy z co najmniej jednym wejściem, komórki jaskini na 65 536 komórek, składowe jaskini; **kryterium przechodzenia: w seedach z co najmniej 2 wejściami jaskinia ma jedną składową i 0 kieszeni, a wszystkie wejścia są osiągnięte z startu w ≥ 90 % takich seedów** (dzięki naprawie z iteracji 23, która ma osiągać POI; naprawa nie zna jeszcze wejść Z, więc wynik może być niższy; podaję go bez poprawiania).
+4. 17 testów rdzenia + nowe testy, obie sondy G1 PASS; dwa przebiegi bajtowo identyczne.
+
+**Zastrzeżenia z góry.** Jaskinia to tunele i sale bez wody, bez dróg bocznych i bez ślepych zakoułków poza przypadkiem jednego wejścia; wejścia tylko na brzegu skały (nie w budynkach, nie schody); wyjście z jaskini to ten sam punkt (x, y) (nie ma wyjścia na innym końcu); naprawa osiągalności z iteracji 23 nie obejmuje wejść Z; brak jaskini pod wejściami wymusza `caveEntrances` > 0 przy skale; nie ma jeszcze rysowania, przedmiotów ani Undo dla dwóch pięter (iteracja 28); wielopiętrowe góry (kilka pięter pod spodem) poza zakresem.
+
+### Iteracja 28 — adapter wejść Z i jaskini: przedmioty, dwa piętra, Undo, okno (FAZA 5; zapisana 2026-11-09 przed implementacją i przed pomiarem; decyzje użytkownika: „wejścia + prosta jaskinia”, „Dwa kroki”, „Odmowa całości”, „Rampa przy lądowisku”, „cave enter”, kolejność „jaskinia, potem powierzchnia”)
+
+**Zakres.** Rysowanie na mapie tego, co rdzeń iteracji 27 tylko liczy: wejście Z na powierzchni (z), jaskinia na piętrze z + 1, **wyjście z jaskini rampą** przy lądowisku każdego wejścia, Preview, Validate, Commit, Undo i Redo dla dwóch pięter, pola w oknie „Generate Terrain” i przypadek w sondzie G1 `--surface`. Bez identyfikatorów przedmiotów w kodzie: wszystkie przedmioty pochodzą z pędzli wybranych w profilu.
+
+**Dane klienta 10.98 sprawdzone przed zapisem (z `data/1098`, publiczne dane klienta w repo).**
+- Doodad „cave enter”: dwa warianty (8203, 8212); w `items.xml` oba mają `floorchange=down` (zakres 8202–8203 i 8210–8213). Nie sprawdziłem, czy przedmioty blokują ruch w danych klienta (sprawdzi sonda, patrz kryterium 5).
+- Grunt „cave”: obramowanie zewnętrzne id 7 (rysowane przez RME na puste kafle sąsiednie, czyli na komórki Solid; to daje ściany jaskini).
+- **Nie ma jednokaflowego doodada wyjścia w górę** (drabiny 1386 i 3678 to przedmioty bez pędzla i bez `floorchange`, działają przez skrypty serwera). Jedyne doodady z `floorchange` north/south/east/west to rampy („ramp”, „dirt ramp”, „snowy ramp”, „bamboo ramp”, „pyramid ramp”). Każda to kompozyt z czterema wariantami: kafel (0, 0) z przedmiotem `floorchange` w jednym kierunku, kafel (0, 0, z − 1) z przedmiotem „stairs” (459, `floorchange=down`) i kafel ogona po przeciwnej stronie kierunku (np. kierunek north, ogon (0, +1)).
+
+**Definicje.**
+- **Profil (nowe pola `GroundProfile`, dopisane na końcu struktury):** `caveEntrance` (pędzel doodad wejścia, domyślnie w oknie „cave enter”, gdy klient go ma), `caveExit` (pędzel doodad wyjścia, domyślnie „ramp”), `caveGround` (pędzel gruntu jaskini, domyślnie „cave”). Wszystkie puste = brak jaskini, bajt w bajt jak dotąd. Wymagają profilu ośmiu pędzli (jak `campfire`) i `caveEntrances` > 0. Ustawione tylko częściowo (np. wejście bez gruntu jaskini) = odmowa `InvalidProfile`.
+- **Kształt wyjścia (`ExitShape`, rdzeń, bez przedmiotów):** kierunek d ∈ {N, S, E, W} i przesunięcie ogona t. Adapter tłumaczy każdy wariant pędzla `caveExit` na kształt z flag OTB `floorchange`. Pędzel jest przyjęty tylko, gdy **każdy** wariant ma dokładnie: jeden kafel z = 0 w (0, 0) z przedmiotem `floorchange` N/S/E/W, jeden kafel z = −1 w (0, 0) i najwyżej jeden dodatkowy kafel z = 0 sąsiadujący z (0, 0) (ogon). Inaczej odmowa `InvalidProfile`.
+- **Ustawienie wyjścia (czysta funkcja rdzenia `placeCaveExits(surface, cave, shapes)`, deterministyczna):** dla każdego wejścia E (w kolejności listy `entrances`) szukam pozycji P i kształtu s. Kandydaci P to komórki lądowiska E (dx² + dy² ≤ 5) różne od E, w kolejności (dx² + dy², y, x); kształty w kolejności wariantów pędzla. Warunki:
+  - na z + 1: P i P + t (jeśli ogon jest) to Floor jaskini, żadna z nich nie jest E ani komórką innego wyjścia;
+  - na z: komórka P (tam trafia „stairs” z kafla z − 1) jest przechodnia, nie jest Floor ani obrysem budynku, nie jest wejściem, ogniskiem, drzwiami ani komórką z roślinnością;
+  - na z: cel P + d jest przechodni (Grass, Dirt, Rock, Shore, Path), nie jest wejściem, ogniskiem, drzwiami, obrysem ani roślinnością i leży w obszarze.
+  Pierwsze dopasowanie wygrywa. **Wejście bez pasującego wyjścia jest pomijane:** nie dostaje przedmiotu wejścia (nikt nie wpadnie do jaskini bez powrotu), a jego lądowisko zostaje w jaskini. Raport: wejścia, wejścia z wyjściem, wejścia pominięte.
+- **Rysowanie:**
+  - **piętro z:** jak dotąd, plus przedmiot pędzla `caveEntrance` na każdym wejściu z wyjściem (wariant wybierany deterministycznie po komórce, jak ognisko) i przedmiot kafla z = −1 rampy w każdej komórce P;
+  - **piętro z + 1:** grunt `caveGround` na komórkach Floor, przedmiot rampy w P i przedmiot ogona w P + t (wariant s). **Komórki Solid nie dostają gruntu**; mogą na nich powstać tylko elementy obramowania gruntu jaskini od sąsiednich komórek Floor (logika obramowań RME). Komórki Solid bez sąsiada Floor (8-sąsiedztwo) zostają bez kafla. Rdzeń zostawia Solid w pasie 2 od brzegu obszaru, więc obramowanie nie wychodzi poza obszar (sprawdzane, nie zakładane).
+- **Ochrona piętra z + 1 („odmowa całości”):** Preview odmawia (nowy błąd, np. `LowerFloorOccupied`), jeśli w prostokącie obszaru na z + 1 istnieje jakikolwiek niepusty kafel. Odmowa również, gdy z + 1 > 15. Przy masce lub zaznaczeniu obowiązuje cały prostokąt obejmujący. Wejścia (i komórki P) poza maską powierzchni nie są rysowane.
+- **Dwa kroki historii, kolejność:** Validate sprawdza oba piętra przed jakimkolwiek zapisem. Commit = **krok 1: jaskinia (z + 1)**, potem **krok 2: powierzchnia (z)**, każdy jako osobna akcja „Generate Terrain” w `ActionQueue`. Jedno Undo cofa powierzchnię (wejścia znikają, jaskinia zostaje bez wejścia), drugie cofa jaskinię. Gdy krok 2 się nie uda, krok 1 jest automatycznie cofany i okno pokazuje błąd: mapa wraca do stanu sprzed Commit, a w historii nie zostaje żaden krok generatora. Między krokami nie działa żadne zdarzenie GUI ani Lua. Kontrola nieaktualności powierzchni po kroku 1 dopuszcza wyłącznie zmiany z kroku 1 (piętro z + 1).
+- **Budżet:** jeden wspólny budżet przygotowania i Commit dla obu pięter (bez zwrotów), odmowa przy przekroczeniu jak dotąd.
+
+**Kryteria.**
+1. Puste pola `caveEntrance`, `caveExit` i `caveGround` albo `caveEntrances` 0: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i wynik sondy bez zmian (stare przypadki bez zmian).
+2. Testy rdzenia `placeCaveExits` (hand-count na ręcznych siatkach): wyjście w lądowisku, P ≠ E, cel P + d przechodni i nie jest wejściem; wejście otoczone wodą jest pomijane; dwa wejścia nie dzielą komórek wyjścia; deterministyczność; porównanie z niezależnym przeszukiwaniem warunków na ≥ 50 losowych siatkach.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, opcje jak w iteracji 27: `caveEntrances` 4, `buildingDensity` 30 / 40, `pathLength` 40 / 80, `fordLength` 48, `repairReach` 1, kształty wyjścia = geometria czterech wariantów rampy 10.98 podana narzędziu jako kierunek i ogon, bez przedmiotów): wejścia, wejścia z wyjściem (mediana [min..max]), odsetek wejść z wyjściem w sumie po seedach. **Kryterium: ≥ 90 % wejść dostaje wyjście** w każdym z dwóch profili. Dwa przebiegi bajtowo identyczne.
+4. Sonda G1 `--surface`, nowy przypadek `SURFACE_CAVE_E2E_PASS` (klient 10.98: „cave enter”, „ramp”, „cave”):
+   - Preview: zmiany na z i na z + 1, przedmiot wejścia dokładnie na wejściach z wyjściem, rampa w P i ogon w P + t, przedmiot „stairs” w P na z, grunt jaskini dokładnie na komórkach Floor, brak gruntu na komórkach Solid, żaden kafel poza prostokątem na z + 1;
+   - Commit: dwa nowe kroki historii, mapa równa podglądowi na obu piętrach;
+   - Undo raz: powierzchnia jak przed Commit, jaskinia została; Undo drugi raz: oba piętra jak przed Commit (porównanie kafli); Redo dwa razy: stan po Commit;
+   - wymuszony błąd kroku 2 (np. limit historii): oba piętra jak przed Commit, historia bez kroków generatora;
+   - odmowy: niepusty kafel na z + 1 w prostokącie; z = 15; pędzel wejścia nieznany lub nie doodad; pędzel wyjścia bez `floorchange` (np. „small rocks”); pędzel gruntu jaskini nie gruntem; tylko część pól jaskini ustawiona;
+   - przedmioty wejścia i rampy nie blokują ruchu według danych klienta (`isBlocking`); jeśli blokują, przypadek to zgłasza, a ja zapisuję to jako odchylenie, bez zmiany kryterium;
+   - plan z jaskinią ma inny odcisk niż bez.
+5. Okno: zakładka Terrain, sekcja „Underground”: „Cave entrances” (0..20), „Z entrance brush” (lista pędzli doodad), „Cave exit brush” (lista pędzli doodad), „Cave ground brush” (lista pędzli gruntu). Domyślne nazwy tylko wtedy, gdy klient je ma, inaczej pola puste. Pola aktywne tylko przy algorytmie Surface z budynkami (profil ośmiu pędzli). Kontrolki na `host`, kolory i odstępy z `Theme`.
+6. Wszystkie testy rdzenia (18 + nowe) i obie sondy G1 PASS po przebudowie `rme`; ostrzeżenia SetFocus to jedyne tolerowane stderr.
+7. Ocena wyglądu i działania w GUI należy do użytkownika i ma pierwszeństwo przed metrykami.
+
+**Zastrzeżenia z góry.** Działanie w grze nie zostanie sprawdzone. Nie wiadomo, gdzie dokładnie serwer stawia gracza po `floorchange=down` (zakładam to samo x, y) i po rampie (zakładam P + d na z). Kierunek rampy wynika z flag OTB, nie z rysunku. Wariant „cave enter” jest wybierany po komórce, więc wejście może być zwrócone w złą stronę względem skały. Komórka P na powierzchni to druga dziura w dół („stairs” 459, zwykle niewidoczna), więc każde wejście ma w praktyce dwa wejścia do jaskini. Naprawa osiągalności z iteracji 23 dalej nie zna wejść Z. Jedno Undo zostawia jaskinię bez wejścia (zgodnie z decyzją „Dwa kroki”). Przy masce cały prostokąt z + 1 musi być pusty, co może odrzucać dopuszczalne przypadki. Wielopiętrowe góry, schody w budynkach i wyjścia na drugim końcu jaskini są poza zakresem.
+
+### Iteracja 29 — ściany jaskini, wejście w południowej ścianie skały albo dziura w podłodze, wyjścia nie na skałę (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; decyzje użytkownika po teście GUI iteracji 28: „Dungeony nie mają ścian (mają samą podłogę), a wyjścia/wejścia wchodzą w skały. Lepiej je zrobić na południe skały albo dziurę w podłodze”, w pytaniach: „Oba, wybór w oknie”, „Pas gruntu skały”)
+
+**Zakres.** Trzy poprawki tego, co iteracja 28 rysuje: (a) ściany jaskini na z + 1, (b) położenie wejścia Z w jednym z dwóch stylów wybieranych w oknie, (c) wyjście rampą nigdy na skałę ani ze skały. Bez identyfikatorów przedmiotów w kodzie; pędzle z profilu.
+
+**Dane klienta 10.98 sprawdzone przed zapisem (`data/1098`).**
+- Grunt „cave” ma tylko obramowanie zewnętrzne id 7 (krawędź podłogi), nie ściany. Grunt „mountain” ma obramowania wewnętrzne id 3 (ściana wschodnia i południowa) i zewnętrzne id 10 oraz 51 (do pustego).
+- Doodady „cave enter”, „cave enter2”, „cave enter3” (`items.xml`: „cave entrance”, `floorchange=down`), po dwa warianty; **nie wiem, który wariant jest zwrócony na południe** (eksport sprite'ów narzędziem `tools/tibia_data.py` dał błędne obrazki, więc nie oceniam ich z danych; ocenia użytkownik w GUI).
+- Grunty-dziury z `floorchange=down`: „cave hole” (383), „cave small hole” (392); „grass pitfall” (293) to niewidoczna pułapka.
+
+**Definicje.**
+- **Styl wejścia (nowe pole `SurfaceTuning::caveEntranceStyle`, `enum class` na końcu struktury, haszowane tylko przy `caveEntrances` > 0):**
+  - **RockFace** (domyślny): komórka E to Rock; sąsiad południowy (x, y + 1) to Grass, Dirt, Shore albo Path (nie Floor, nie woda); sąsiedzi północny, zachodni i wschodni to Rock. Przedmiot pędzla wejścia (doodad, jak w iteracji 28) na E. Gracz wchodzi z komórki (x, y + 1).
+  - **FloorHole:** komórka E to Grass albo Dirt; jej 4 sąsiedzi to Grass, Dirt, Shore albo Path; w oknie 5 × 5 brak wody i Floor. Na E grunt pędzla wejścia (pędzel **gruntu** z `floorchange=down`, domyślnie „cave hole”) zamiast gruntu powierzchni; bez doodada.
+  - Wspólne dla obu: co najmniej 3 komórki od brzegu obszaru, odstęp ≥ 24 (Chebyshev), ta sama liczba prób i ten sam strumień losowy co w iteracji 27. Wejście nie leży na ścieżce, drzwiach, ognisku, obrysie ani w polu z roślinnością.
+- **Wyjście rampą (zmiana `placeCaveExits`):** na powierzchni P i cel P + d muszą być Grass, Dirt, Shore albo Path. **Rock wypada z listy** (dziś dozwolony, przez to wyjścia prowadzą w skały). Reszta warunków z iteracji 28 bez zmian.
+- **Ściany (nowe pole profilu `caveWall`, pędzel gruntu, na końcu `GroundProfile`, domyślnie w oknie „mountain”):** komórka Solid na z + 1 z co najmniej jednym sąsiadem Floor w 8-sąsiedztwie dostaje grunt `caveWall`. Pozostałe komórki Solid zostają bez kafla. Obramowania RME rysują lica ścian. Pas 2 komórek Solid przy brzegu obszaru (rdzeń) oznacza, że komórki ściany leżą w obszarze; obramowania zewnętrzne ściany mogą wejść na komórki obszaru bez gruntu, ale nie poza prostokąt (sprawdzane, nie zakładane).
+- **Profil:** jaskinia wymaga teraz czterech pól (`caveEntrance`, `caveExit`, `caveGround`, `caveWall`). Brak któregokolwiek przy innych ustawionych = `InvalidProfile`. RockFace wymaga doodada wejścia z pojedynczymi przedmiotami, FloorHole gruntu z przedmiotem `floorchange=down`; inaczej `InvalidProfile`.
+- **Okno, zakładka „Underground”:** nowe pole „Entrance style” (Rock face / Floor hole); lista „Z entrance brush” zmienia się z doodadów na grunty według stylu (domyślnie „cave enter” / „cave hole”, gdy klient je ma); nowe pole „Cave wall brush” (lista gruntów, domyślnie „mountain”). Kontrolki na `host`, kolory i odstępy z `Theme`.
+
+**Kryteria.**
+1. `caveEntrances` 0 albo puste pola jaskini: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i stare przypadki sondy bez zmian. Wiersz `SURFACE_CAVE_E2E_PASS` z iteracji 28 **zmieni się** (nowe reguły wejść i wyjść, ściany); to zapowiedziana zmiana, nie odchylenie.
+2. Testy rdzenia na ręcznych siatkach: RockFace (E Rock, N/W/E Rock, S otwarte; odrzucone: S skała, S woda, S Floor, narożnik); FloorHole (E Grass/Dirt, 4 sąsiedzi otwarci; odrzucone: Rock, przy wodzie, na ścieżce); `placeCaveExits` odrzuca P lub P + d na Rock; porównanie z niezależnym przeszukiwaniem na ≥ 50 losowych siatkach dla obu stylów; deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, opcje z iteracji 28: `caveEntrances` 4, `buildingDensity` 30 / 40, `pathLength` 40 / 80, `fordLength` 48, `repairReach` 1, `caveExitShapes=ramp`), osobno dla RockFace i FloorHole: wejścia, wejścia z wyjściem (mediana [min..max]), odsetek wejść z wyjściem. **Kryteria:** (a) mediana wejść ≥ 8 (połowa z 16 zamówionych) w każdym profilu i stylu; (b) ≥ 90 % wejść z wyjściem w każdym profilu i stylu; (c) 100 % wejść spełnia regułę stylu i 100 % wyjść ma P i P + d poza Rock (sprawdzane przez narzędzie); (d) dwa przebiegi bajtowo identyczne.
+4. Sonda G1 `--surface`, przypadek `SURFACE_CAVE_E2E_PASS` dla obu stylów (klient 10.98: RockFace „cave enter”, FloorHole „cave hole”, wyjście „ramp”, grunt „cave”, ściany „mountain”):
+   - Preview: reguła stylu spełniona dla każdego wejścia; RockFace: przedmiot wejścia na E; FloorHole: grunt E to przedmiot pędzla dziury, bez doodada wejścia; P i P + d poza Rock; grunt ściany dokładnie na komórkach Solid z sąsiadem Floor (8-sąsiedztwo); brak gruntu na pozostałych Solid; żaden kafel poza prostokątem na z + 1;
+   - Commit, Undo raz / dwa razy, Redo dwa razy i wymuszony błąd kroku 2 jak w iteracji 28, dla obu stylów;
+   - odmowy: brak `caveWall` przy pozostałych polach; `caveWall` nie gruntem; FloorHole z doodadem jako wejściem; FloorHole z gruntem bez `floorchange=down` (np. „grass”); RockFace z gruntem jako wejściem;
+   - plany obu stylów mają różne odciski.
+5. Okno jak w definicji; wygląd i działanie ocenia użytkownik.
+6. Wszystkie testy rdzenia i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS` w dwóch przebiegach; ostrzeżenia SetFocus to jedyne tolerowane stderr.
+7. Ocena wyglądu w GUI należy do użytkownika i ma pierwszeństwo przed metrykami: kierunek wariantu „cave enter” na ścianie, wygląd ścian „mountain” w jaskini, wygląd dziury na trawie.
+
+**Zastrzeżenia z góry.** Wariant „cave enter” jest dalej wybierany po komórce, a nie po kierunku; jeśli jeden wariant jest zwrócony na wschód, połowa wejść może wyglądać źle (do decyzji po ocenie w GUI, np. wybór wariantu w oknie). Ściany z obramowań „mountain” rysują lica tylko od wschodu i południa (tak działa ten pędzel); wygląd od północy i zachodu nie jest oceniony. Gracz po zejściu dziurą ląduje według serwera (zakładam to samo x, y). Działanie w grze nie zostanie sprawdzone. Mniej wejść niż w iteracji 27 jest możliwe, bo reguły są ostrzejsze (kryterium 3a).
+
+### Iteracja 30 — rampa wyjścia pod wejściem, bez dziury na powierzchni (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; uwaga użytkownika po teście GUI iteracji 29: „Zobacz jak to wejście wygląda - jest dziura przed nim”, zgoda: „tak, robic”)
+
+**Przyczyna.** `placeCaveExits` szuka najbliższego pola P (odległość² ≤ 5) poza skałą; w stylu RockFace wygrywa zawsze pole (x, y + 1) przed wejściem, czyli pole dojścia. Szablon rampy kładzie na P piętro wyżej przedmiot „top” (w 10.98 grunt „stairs”, czarny), który zastępuje grunt powierzchni. Efekt: czarna dziura tuż przed wejściem, na polu, z którego gracz wchodzi.
+
+**Definicje.**
+- **Wyjście pod wejściem (zmiana `placeCaveExits`):** dla wejścia E jedynym kandydatem jest P = E (ta sama x, y na z + 1). Kształty w kolejności listy; kształt pasuje, gdy: cel D = E + d (kierunek kształtu) spełnia dotychczasowy warunek pola powierzchni (Grass, Dirt, Shore albo Path, niezajęte przez dekor, drzwi, ognisko, przerwę, obrys ani inne wyjście); lądowisko L = E − d (tam serwer przesuwa gracza po zejściu wejściem na rampę) to Floor jaskini i nie jest zarezerwowane; ogon kształtu (jeśli jest) to Floor, nie jest zarezerwowany i jest różny od L. Brak pasującego kształtu = wejście pominięte (`skipped`), **bez szukania dalej** (żadnego wyjścia obok wejścia). Rezerwacje: na dole P, L i ogon; na górze D. W RockFace pasuje tylko kierunek południowy (N, W, E to skała); w FloorHole pierwszy kształt z otwartym celem.
+- **Powierzchnia nad rampą:** pole E zostaje takie, jak ustawia styl (skała z doodadem wejścia albo grunt dziury). Przedmiot „top” szablonu rampy nie jest kładziony nigdzie; jeśli warstwa planu `exitTops` przestaje mieć zastosowanie, zostaje usunięta (bez martwego kodu), a odcisk planu z jaskinią zmienia się (zapowiedziane).
+- Pominięte wejście nie dostaje przedmiotu wejścia (jak w iteracji 28).
+
+**Kryteria.**
+1. `caveEntrances` 0 albo puste pola jaskini: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i stare przypadki sondy bez zmian. Wiersze `SURFACE_CAVE_E2E_PASS` **zmienią się** (zapowiedziane).
+2. Testy rdzenia na ręcznych siatkach: każde wyjście ma P = E; RockFace dostaje kierunek południowy; FloorHole pierwszy kształt z otwartym celem; odrzucenia: cel na skale, wodzie, Floor powierzchni, dekorze; L nie Floor; ogon nie Floor albo równy L; brak kształtu = `skipped` bez wyjścia gdzie indziej. Porównanie z niezależnym przeszukiwaniem na ≥ 50 losowych siatkach dla obu stylów; deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, opcje jak w iteracji 29), osobno dla RockFace i FloorHole: wejścia, wejścia z wyjściem (mediana [min..max]). **Kryteria:** (a) ≥ 90 % wejść z wyjściem w każdym profilu i stylu; (b) 100 % wyjść ma P = E, D poza skałą na polu otwartym i L na Floor (sprawdzane przez narzędzie); (c) dwa przebiegi bajtowo identyczne. Liczba wejść RockFace podawana dla porządku; kryterium 3a iteracji 29 (mediana ≥ 8) dalej nie spełnione i nie jest tu ponownie oceniane (TECH_DEBT D24).
+4. Sonda G1 `--surface`, `SURFACE_CAVE_E2E_PASS` dla obu stylów: rampa na z + 1 dokładnie pod każdym wejściem z wyjściem; na powierzchni żaden przedmiot „top” szablonu rampy; E ma przedmiot wejścia (RockFace) albo grunt dziury (FloorHole); D na polu otwartym bez zmian gruntu; L ma grunt jaskini; reszta sprawdzeń z iteracji 29 (ściany, nic poza prostokątem, Commit, Undo raz / dwa razy, Redo dwa razy, wymuszony błąd kroku 2, odmowy) bez zmian.
+5. Wszystkie testy rdzenia i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS` w dwóch przebiegach; ostrzeżenia SetFocus to jedyne tolerowane stderr.
+6. Ocena w GUI należy do użytkownika: brak czarnej dziury przed wejściem, rampa w jaskini pod wejściem.
+
+**Korekta po implementacji, przed pomiarem (2026-11-10): odchylenie od definicji.** Warunek „ogon różny od L” był błędem specyfikacji: we wszystkich wariantach ramp 10.98 ogon (dolna połowa rampy, przedmiot bez `floorchange`) leży dokładnie na L, więc reguła odrzucała każde wyjście (wykonawca: 0 wyjść, `SUITE_FAIL`). Obowiązuje: ogon może leżeć na L; nadal musi być Floor i niezarezerwowany. W kryterium 2 przypadek „ogon równy L” jest przyjmowany, nie odrzucany. Pozostałe kryteria bez zmian.
+
+**Zastrzeżenia z góry.** Przesunięcie gracza po zejściu na rampę (na L) i po wejściu rampą (na D) opisuję z pamięci zachowania serwerów typu TFS; kodu serwera nie sprawdzam, działania w grze nie da się sprawdzić w edytorze.
+
+### Iteracja 31 — wejście nad każdą rampą w GUI, jaskinia bez budynków (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; uwagi użytkownika po teście GUI iteracji 30: „brak wejscia mimo schodów”, „undeground chyba powinen być dostępny także bez buildings”, zgoda: „Tak, robić”)
+
+**Objawy.** (a) W GUI po Commit na z + 1 stoi rampa, a na powierzchni nad nią jest sama skała bez przedmiotu wejścia (zrzuty użytkownika, okolice x 1018, y 1237, z 7). Sonda `SURFACE_CAVE_E2E_PASS` (obszar 256, jeden seed) tego nie wykrywa. Przyczyna nieznana w chwili zapisu. (b) Okno włącza zakładkę „Underground” i przekazuje `caveEntrances` tylko przy `buildingDensity` > 0 albo `campCount` > 0 (`terrain_generator_dialog.cpp`, `UpdateControlStates` i budowa żądania); rdzeń tego nie wymaga.
+
+**Definicje.**
+- **Diagnoza (a):** odtworzyć błąd w sondzie w ustawieniach jak z GUI (prostokąt nie w początku mapy, bok ≥ 512, roślinność, ścieżki, oba style, budynki 0 i > 0, ≥ 8 seedów), znaleźć przyczynę i opisać ją w raporcie z dowodem. Poprawka w miejscu przyczyny, bez obchodzenia w sondzie.
+- **Okno (b):** „Underground” dostępne dla każdej powierzchni naturalnej; przy `caveEntrances` > 0 profil ma pole podłogi (`surfaceWithFloorCount`), więc pole „Floor brush” jest wtedy aktywne i wymagane; budynki i obozy działają jak dotąd.
+
+**Kryteria.**
+1. `caveEntrances` 0: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i stare przypadki sondy bez zmian.
+2. Nowy przypadek sondy `SURFACE_CAVE_GUI_PASS`: dla każdej kombinacji z definicji po Commit każda rampa na z + 1 ma nad sobą przedmiot wejścia (RockFace) albo grunt dziury (FloorHole), każde wejście ma rampę pod sobą; liczby wejść i wyjść w wierszu. Przed poprawką przypadek musi zawieść (dowód odtworzenia w raporcie); jeśli nie da się odtworzyć, raport to mówi i podaje, co sprawdzono.
+3. Okno: przy `buildingDensity` 0 i `campCount` 0 pole „Cave entrances” i pola jaskini są aktywne, żądanie niesie `caveEntrances`, a sonda z budynkami 0 przechodzi kryterium 2.
+4. Wszystkie testy rdzenia (przebudowane cele `test_procedural_*` i `style_render`, D25) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
+5. Ocena w GUI należy do użytkownika: wejście nad każdą rampą, jaskinia bez budynków.
+
+### Iteracja 32 — płaskowyż na górach (z − 1) z roślinnością, wejście rampą (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; decyzje użytkownika: „1 piętro z roślinnością”, „Rampa z listy”)
+
+**Zakres.** Na dużych polach skały powierzchni (z) powstaje piętro z − 1: płaskowyż z trawą i roślinnością w środku, skałą na krawędzi i rampą z powierzchni na górę. Bez identyfikatorów przedmiotów w kodzie; pędzle z profilu.
+
+**Definicje.**
+- **Nowe pole `SurfaceTuning::plateauMinTop`** (na końcu struktury, 0 = wyłączone, 16..4096, haszowane tylko gdy > 0, poza profilem stylu): minimalna liczba komórek Top płaskowyżu.
+- **Rdzeń, `generatePlateau(SurfaceGrid, seed)` → `PlateauGrid`** (ten sam prostokąt, z − 1; komórki None, Edge, Top) i lista ramp:
+  - komponent skały (4-sąsiedztwo) powierzchni; **Top** = komórki skały w odległości (Chebyshev) ≥ 2 od komórki nie-skały i ≥ 3 od brzegu obszaru; komponent Top (4-sąsiedztwo) mniejszy niż `plateauMinTop` odpada w całości;
+  - **Edge** = komórki skały tego komponentu w odległości 1 od Top (pas skały wokół Top na z − 1);
+  - **Rampy**: 1 na płaskowyż plus 1 na każde pełne 400 komórek Top, najwyżej 4, odstęp ≥ 16 (Chebyshev) między rampami; rampa to pole P na powierzchni (Grass, Dirt albo Path, bez dekoru, drzwi, ogniska, przerwy, obrysu, wejścia Z i wyjścia jaskini) z kształtem z listy kształtów; cel D = P + kierunek na z − 1 ma być komórką Top albo komórką Edge zamienioną na **lądowisko** (wtedy jej sąsiad w kierunku rampy musi być Top); ogon kształtu (jeśli jest) leży na powierzchni, na polu otwartym jak P; kolejność: stały strumień losowy, deterministycznie;
+  - płaskowyż bez rampy jest usuwany (None) — brak niedostępnych płaskowyżów;
+  - **roślinność na Top**: ten sam algorytm co `generateDecoration`, osobny strumień losowy, tylko na komórkach Top (lądowiska i komórki obok rampy bez dekoru).
+- **Profil:** nowe pola `plateauGround` (grunt Top, domyślnie „grass”), `plateauEdge` (grunt Edge, domyślnie „mountain”), `plateauRamp` (pędzel z listy ramp jak „Cave exit brush”, domyślnie „ramp”); wszystkie trzy albo żadne, inaczej `InvalidProfile`. Na lądowisku grunt Top. Przedmiot „top” szablonu rampy nie jest kładziony (jak w iteracji 30). Przedmioty roślinności z tych samych pędzli co powierzchnia.
+- **Adapter i historia:** piętro z − 1 to kolejna jednostka przygotowania; piętro z − 1 musi być puste w całym prostokącie (jak z + 1 dla jaskini), inaczej odmowa z komunikatem w oknie. Każde piętro to osobny krok historii (płaskowyż, jaskinia, powierzchnia — kolejność do ustalenia przez wykonawcę i opisania), Commit, Undo i Redo wszystkich kroków; błąd dowolnego kroku cofa poprzednie (jak iteracja 28). Jeśli `beginTerrainPair` / `finishTerrainPair` obsługuje tylko dwa kroki, uogólnienie na N kroków w osobnym commicie.
+- **Okno:** w zakładce „Underground” (albo nowej „Levels”, decyzja wykonawcy z uzasadnieniem) pola „Mountain tops (min cells)”, „Plateau ground brush”, „Plateau edge brush”, „Plateau ramp brush”; podgląd piętra z − 1 w wyborze „Preview floor”. Kolory i odstępy z `Theme`. Dostępne bez budynków.
+
+**Kryteria.**
+1. `plateauMinTop` 0: odcisk Seed 1729 100×100 = 17159159863505677800, wszystkie testy rdzenia, odciski planu i stare przypadki sondy bez zmian.
+2. Testy rdzenia na ręcznych siatkach: Top / Edge / None według definicji, odrzucenie małego komponentu, rampa (P otwarte, D na Top albo lądowisku, ogon otwarty), płaskowyż bez rampy usunięty, odstęp ramp, roślinność tylko na Top; porównanie z niezależnym przeszukiwaniem na ≥ 50 losowych siatkach; deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, profile v10 m06 i m19, opcje jak iteracja 29 plus `plateauMinTop` 64; w narzędziu `style_render`): płaskowyże, komórki Top, rampy (mediana [min..max]). **Kryteria:** (a) 100 % płaskowyżów ma ≥ 1 rampę; (b) 100 % komórek Top osiągalnych (4-sąsiedztwo po Top i lądowiskach) z celu którejś rampy; (c) 100 % ramp spełnia regułę P / D / ogon; (d) dwa przebiegi bajtowo identyczne. Liczba płaskowyżów podawana bez progu (zależy od profilu).
+4. Sonda G1 `--surface`, nowy przypadek `SURFACE_PLATEAU_E2E_PASS` (klient 10.98: „grass”, „mountain”, „ramp”): grunt Top / Edge / lądowiska dokładnie według planu, nic poza prostokątem na z − 1, rampa na powierzchni na P i ogon, brak przedmiotu „top”, roślinność tylko na Top, Commit, Undo wszystkich kroków po kolei, Redo, wymuszony błąd ostatniego kroku cofa poprzednie, odmowa przy niepustym z − 1, odmowy profilu (brak jednego z trzech pól, Edge nie gruntem, rampa nie z listy); przypadek z płaskowyżem i jaskinią naraz.
+5. Wszystkie testy rdzenia (przebudowane cele, D25) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: wygląd płaskowyżu (krawędź, trawa, drzewa), rampy na górę, przesunięcie rysowania piętra z − 1.
+
+**Zastrzeżenia z góry.** Krawędź z gruntu „mountain” na z − 1 rysuje lica tylko od wschodu i południa (jak ściany jaskini). Wejście rampą na z − 1 opisuję z pamięci zachowania serwera; działania w grze nie sprawdzam. Gdy na z jest wejście Z do jaskini w ścianie skały, nad nim może leżeć Edge płaskowyżu (dozwolone).
+
+### Iteracja 33 — płaskowyż bez ścian, piętra z − 2 i z − 3, rampy między piętrami (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem; decyzje użytkownika: „piętro +1 nie powinno mieć ścian”, „Trawa do krawędzi”, „wszędzie rampy wybrane”, z − 3 tylko gdy jest miejsce na co najmniej 30 pól)
+
+**Zakres.** Zmiana iteracji 32: bez pasa skały na krawędzi płaskowyżu i nowe piętra z − 2 oraz z − 3. Na wszystkich przejściach w górę stoi ta sama wybrana rampa (`plateauRamp`).
+
+**Definicje.**
+- **Bez ścian na z − 1:** komórki Edge z iteracji 32 dostają grunt Top (`plateauGround`), nie `plateauEdge`. Nadal są bez dekoru (pas przy krawędzi bez drzew). Pole profilu `plateauEdge` usunięte z profilu, okna i walidacji. Jeśli usunięcie zmienia format profilu, wykonawca opisuje zgodność wstecz: stary plik z `plateauEdge` ma się wczytać, a pole jest ignorowane albo daje jasny błąd, decyzja z uzasadnieniem. Odcisk przy `plateauMinTop` 0 bez zmian.
+- **Piętro k (k = 2, 3), nowe pole `SurfaceTuning::plateauLevels`** (1..3, domyślnie 1, haszowane tylko gdy > 1, na końcu struktury):
+  - **Podstawa** = komórki pokryte na piętrze k − 1 (Top i dawne Edge, bez lądowisk i bez komórek rampy, ogona i celu).
+  - **Top_k** = komórki podstawy w odległości (Chebyshev) ≥ d_k od komórki spoza podstawy, pas_k = komórki podstawy w odległości d_k − 1 (szerokość 1). **d_k nie jest stałe (decyzja użytkownika 2026-11-10: „każde kolejne piętro może zajmować tyle samo % co poprzednie, a nie twarde odstępy”):** d_k rośnie od 4 (minimum, żeby ogon i P zmieściły się na piętrze k − 1 przy prostej krawędzi; poprawka wykonawcy) w górę, aż liczba komórek piętra k (Top_k, pas_k i korytarze) ≤ `plateauMaxPercent` % liczby komórek piętra k − 1. Bez limitu (`plateauMaxPercent` 0) d_k = 4. Gdy D rampy piętra k nie należy do Top_k ani pasa_k, korytarz lądowiska prowadzi jak na z − 1 (szerokość 1, po podstawie, do pierwszej komórki Top_k, długość ≤ d_k, wliczony do limitu). Kryterium 3 (g): piętro k ≤ 10 % piętra k − 1 w każdym seedzie.
+  - Komponent Top_k (4-sąsiedztwo) mniejszy niż **30 komórek** odpada w całości.
+  - **Pas_k** = komórki podstawy w odległości 1 od Top_k. Leżą na piętrze k, mają grunt Top i nie mają dekoru.
+  - Piętro k − 1 pod piętrem k zostaje bez zmian (stropów nie ma w Tibii, piętro k rysuje się nad nim z przesunięciem).
+- **Rampy na piętrach k ≥ 2:** pole P leży na piętrze k − 1 (Top bez dekoru, poza rzutem piętra k, poza celami i ogonami innych ramp), a kształt pochodzi z listy jak w iteracji 32. Cel D = P + kierunek leży na piętrze k (Top_k albo lądowisko z pasa_k, wtedy sąsiad w tym kierunku to Top_k). Ogon, jeśli jest, leży na piętrze k − 1, na polu otwartym. Liczba ramp jak w iteracji 32 (1 + 1 na każde 400 komórek, najwyżej 4, odstęp ≥ 16). Piętro bez rampy jest usuwane razem z piętrami nad nim. Z P i z ogona usuwa się dekor piętra k − 1, a sąsiedzi P na piętrze k − 1 zostają otwarci.
+- **Roślinność** na Top_k jak na z − 1 (osobny strumień losowy na każde piętro), bez dekoru na pasie_k i lądowiskach.
+- **Adapter i historia:** każde piętro z − 1, z − 2, z − 3 musi być puste w całym prostokącie, inaczej odmowa z komunikatem. Każde niepuste piętro to osobny krok historii. Kolejność: najwyższe piętro najpierw, potem niższe, jaskinia, powierzchnia. Błąd dowolnego kroku cofa wszystkie poprzednie. Gdy obszar leży przy z = 0..2, piętra wychodzące poza z = 0 są odrzucane w walidacji z komunikatem (nie obcinane po cichu).
+- **Okno, zakładka „Levels”:** usunięte pole „Plateau edge brush”, dodane „Mountain levels” (1..3). „Preview floor” pokazuje każde piętro z wyniku.
+
+- **Limit wielkości płaskowyżu (uzupełnienie 2026-11-10, decyzje użytkownika „dodaj limit już na tym etapie”, „lepiej wyrazić to w %”), nowe pole `SurfaceTuning::plateauMaxPercent`** (0 = bez limitu, inaczej 1..100, haszowane tylko gdy > 0, na końcu struktury): udział komórek piętra z − 1 (Top i pas) w liczbie komórek prostokąta. Jedno wspólne odsunięcie od krawędzi skały d rośnie od 2 (2, 3, 4, …), aż suma komórek z − 1 ≤ `plateauMaxPercent` % prostokąta. Przy każdym d komponenty Top (4-sąsiedztwo) < `plateauMinTop` odpadają. Pas ma zawsze szerokość 1: komórki skały w odległości 1 (Chebyshev) od Top. Komórki skały poza Top i pasem zostają bez piętra. **Korytarz lądowiska (poprawka po zgłoszeniu konfliktu przez wykonawcę):** reguła rampy z iteracji 32 zostaje (P poza skałą, D = P + kierunek na komórce skały). Gdy przy d ≥ 3 komórka D nie należy do Top ani do pasa, od D w kierunku rampy idzie prosty korytarz szerokości 1 po komórkach skały, aż do pierwszej komórki Top. Korytarz należy do piętra z − 1 (grunt Top, bez dekoru) i wlicza się do limitu procentowego. Rampa jest dopuszczalna tylko wtedy, gdy korytarz w całości leży na skale i ma długość ≤ d. Rampy z korytarzem i bez niego podlegają tej samej kolejności losowej i odstępom. Gdy dodanie korytarzy przekroczy limit, d rośnie dalej (warunek sprawdzany po dodaniu korytarzy). Piętra z − 2 i z − 3 liczą się od wyniku z − 1 bez dodatkowego limitu (minimum 30 komórek). Okno: pole „Max plateau area (%)”, w oknie domyślnie 10. Pomiar w kryterium 3 z `plateauMaxPercent=10`, dodatkowe kryterium (f): komórki z − 1 ≤ 10 % prostokąta w każdym seedzie. Kryterium 2 obejmuje limit (ręczna siatka i porównanie z niezależnym przeszukiwaniem).
+
+**Kryteria.**
+1. `plateauMinTop` 0: odcisk Seed 1729 100×100 = 17159159863505677800, testy rdzenia, odciski planu i stare przypadki sondy (bez płaskowyżu) bez zmian. Przypadki płaskowyżu z iteracji 32 zmieniają się świadomie (bez Edge), a zmiana jest opisana.
+2. Testy rdzenia na ręcznych siatkach: z − 1 bez gruntu Edge, Top_k i pas_k według definicji, odrzucenie komponentu < 30, rampa piętra k (P, D, ogon, P poza rzutem piętra k), usunięcie piętra bez rampy razem z wyższymi, roślinność tylko na Top_k. Porównanie z niezależnym przeszukiwaniem na ≥ 50 losowych siatkach dla `plateauLevels` 3. Deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, m06 i m19, opcje jak w iteracji 32 plus `plateauLevels=3`, w `style_render`), dla każdego piętra: płaskowyże, komórki Top, rampy (mediana [min..max]). **Kryteria:** (a) każdy płaskowyż każdego piętra ma ≥ 1 rampę z piętra niżej; (b) 100 % komórek każdego piętra osiągalnych z powierzchni przez rampy (przeszukiwanie po piętrach); (c) 100 % ramp spełnia regułę P / D / ogon; (d) każdy komponent z − 3 ma ≥ 30 komórek; (e) dwa przebiegi bajtowo identyczne.
+4. Sonda G1 `--surface`: przypadek `SURFACE_PLATEAU_E2E_PASS` zaktualizowany (bez gruntu krawędzi), nowy przypadek `SURFACE_PLATEAU_LEVELS_E2E_PASS` (3 piętra). Sprawdzane: grunt i rampy każdego piętra dokładnie według planu, nic poza prostokątem, brak przedmiotu „top”, Commit, Undo wszystkich kroków po kolei, Redo, wymuszony błąd ostatniego kroku cofa poprzednie, odmowa przy niepustym z − 2, odmowa przy z zbyt niskim, przypadek z jaskinią naraz.
+5. Wszystkie testy rdzenia (przebudowane cele) i obie sondy G1 PASS po przebudowie `rme`, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: wygląd pięter bez ścian, ramp między piętrami i wielkość płaskowyżów.
+
+**Zastrzeżenia z góry.** Bez ścian krawędź piętra jest widoczna tylko jako brzeg gruntu (autoborder trawy). W grze z poziomu niższego piętra nie ma przeszkody przy krawędzi. Działania w grze nie sprawdzam. Płaskowyże z − 1 przy m19 zajmują około 22 % obszaru (iteracja 32); w tej iteracji tego nie zmieniam.
+
+### Iteracja 34 — góra jako czapa na własnym zboczu (FAZA 5; zapisana 2026-11-10 przed implementacją i przed pomiarem)
+
+**Powód.** Ocena użytkownika iteracji 33 w GUI (zrzut, z 6): wyższe piętra „wiszą w powietrzu”, trawa nie dochodzi do krawędzi, płaskowyż prawie bez roślinności, korytarz lądowiska wystaje w pustkę, rampa stoi samotnie w trawie. Analiza 20 map referencyjnych (lokalna, `local-data/MOUNTAIN_REFERENCE_ANALYSIS.md`, bez publikacji): pod czapą piętra u leży zbocze z pędzla `mountain` na piętrze u + 1 **pod tymi samymi (x, y)** (34817 z N = 59362; przesunięcie +1/+1 mniej częste); trawa czapy sięga ostatniego kafla krawędzi z autoborderem trawy do pustych pól; każde kolejne piętro ma własne zbocze; rampa stoi na kaflu tuż przy zboczu, a przybycie leży na czapie; roślinność na szczytach z trawą ma udział zbliżony do powierzchni lub większy (M06 14,3 % wobec 11,9 %, M19 44,4 % wobec 36,9 %, forgotten 31,6 % wobec 23,2 %).
+
+**Zmiany względem iteracji 33 (zastępują jej geometrię).**
+- **Czapa z − 1 = cały komponent skały powierzchni** (4-sąsiedztwo), bez odsunięcia, bez pasa i bez korytarzy. Skała powierzchni pod czapą zostaje gruntem `mountain` (zbocze, ten sam (x, y)). Komponent < `plateauMinTop` nie dostaje czapy.
+- **Limit `plateauMaxPercent`** dla z − 1: komponenty w stałej kolejności losowej, komponent dostaje czapę, jeśli suma komórek czap z nim ≤ limit; inaczej jest pomijany (zostaje samą skałą). Bez przycinania komponentów.
+- **Piętro k ≥ 2:** czapa C_k = komórki C_{k − 1} w odległości (Chebyshev) ≥ d_k od komórki spoza C_{k − 1}, d_k od 3 w górę, aż |C_k| ≤ `plateauMaxPercent` % |C_{k − 1}| (bez limitu d_k = 3); komponenty C_k < 30 odpadają. **Pod C_k na piętrze z − k + 1 (te same (x, y)) grunt `mountain`** (zbocze), nie trawa; reszta C_{k − 1} to trawa (taras).
+- **Pędzel zbocza:** nowe pole profilu `plateauCliff` (domyślnie „mountain”, musi być pędzlem gruntu z autoborderem; w 10.98 nie „mountain ground”). Rysowany przez autoborder (`DrawOperations`), bez ręcznych przedmiotów ścian. Na powierzchni zbocze to istniejący grunt skały.
+- **Krawędź czapy:** trawa (`plateauGround`) do ostatniego kafla, obramowanie z autoborderu trawy. Żadnego pasa bez trawy.
+- **Rampy:** głowa H na piętrze niższym na kaflu chodliwym tarasu (dla z − 1: Grass, Dirt albo Path powierzchni) sąsiadującym 4-kierunkowo z kaflem zbocza; H + kierunek na piętrze niższym to zbocze, a na piętrze wyższym komórka czapy (przybycie). Ogon H − kierunek na tym samym tarasie, otwarty. **Na piętrze wyższym w (x, y) głowy kładziony jest przedmiot otwarcia z szablonu rampy (w 10.98 „stairs”)** — zmiana wobec iteracji 30, uzasadniona referencjami (M19: 370 z 438 ramp, forgotten: 78 z 92); dotyczy tylko ramp gór, nie ramp jaskini. Przybycie i jego 8 sąsiadów na czapie bez dekoru. Liczba ramp i odstęp jak w iteracji 32. Czapa bez rampy jest usuwana razem z wyższymi.
+- **Roślinność na czapach:** ten sam algorytm i ta sama gęstość co na powierzchni (bez obniżenia), osobny strumień losowy na każde piętro, tylko na trawie czapy i tarasu (nie na zboczu, przybyciach i otwarciach).
+- **Pomijane z iteracji 33:** korytarze lądowisk, pas, minimalne odsunięcie 4. `plateauLevels`, limit procentowy, historia (najwyższe piętro najpierw), odmowy (zajęte piętro, zakres z) zostają.
+
+**Kryteria.**
+1. `plateauMinTop` 0: odcisk Seed 1729 100×100 = 17159159863505677800, testy rdzenia, odciski planu i przypadki sondy bez gór bez zmian.
+2. Testy rdzenia na ręcznych siatkach i porównanie z niezależnym przeszukiwaniem na ≥ 50 siatkach: C_1 równe wybranym komponentom, limit, C_k i zbocze pod C_k na tych samych (x, y), rampy (H, ogon, przybycie, otwarcie), usunięcie bez rampy, roślinność tylko na trawie; deterministyczność.
+3. Pomiar (seedy 1001–1032, bok 512, m06 i m19, opcje jak iteracja 33 bez zmian liczbowych): dla każdego piętra czapy, komórki, rampy, udział kafli z roślinnością na trawie czapy i na trawie powierzchni. **Kryteria:** (a) każda komórka C_k (k ≥ 1) ma pod sobą (te same x, y) zbocze; (b) każda komórka z − k + 1 pod C_k jest zboczem, nie trawą; (c) 100 % komórek czap osiągalnych z powierzchni; (d) limity procentowe; (e) udział roślinności na trawie czap ≥ 70 % udziału na trawie powierzchni w tym samym seedzie (mediana); (f) dwa przebiegi identyczne.
+4. Sonda G1 `--surface`: przypadki gór zaktualizowane: grunt `mountain` pod każdą czapą (po autoborderze ten sam pędzel gruntu), trawa do krawędzi, przedmiot otwarcia na wyższym piętrze w (x, y) głowy, brak przedmiotu otwarcia przy rampach jaskini, Commit, Undo kolejnych kroków, Redo, błąd ostatniego kroku, odmowy, stary profil wczytany.
+5. Wszystkie testy rdzenia i obie sondy PASS po przebudowie, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika (z widocznymi niższymi piętrami): czy góra stoi na zboczu, trawa przy krawędzi, rampy przy zboczu, drzewa na szczytach.
+
+**Zastrzeżenia z góry.** Zbocze z autoborderu „mountain” ma lica od wschodu i południa; narożniki i wygląd z przesunięciem rysowania nie są sprawdzone. Referencje zawierają też rzadkie „skorupy” bez gruntu wewnątrz; tu zbocze jest pełne. Czarne pole poza czapą na zrzucie może zależeć od widoku niższych pięter w edytorze.
+
+### Iteracja 36 — walidator osiągalności przez wszystkie piętra i bramka G5 (FAZA 5; zapisana 2026-11-11 przed implementacją i przed pomiarem; decyzja użytkownika: „zróbmy walidator — największy bloker”)
+
+**Zakres.** Jeden walidator dla całego wyniku generowania: powierzchnia z, jaskinia z + 1, czapy gór z − 1..z − 3, z przejściami Z. Wynik widoczny w oknie, z odrzucaniem seedów. Pomiar bramki G5 ze wszystkimi funkcjami naraz.
+
+**Definicje.**
+- **Model chodzenia (rdzeń, nowy `levelReachabilityOf`):** węzeł = komórka (x, y, piętro) z planu, krawędzie 4-sąsiedztwa na tym samym piętrze między komórkami chodliwymi i krawędzie Z. Chodliwe: grunt otwarty powierzchni (Grass, Dirt, Path, Shore, Sand, bród), podłoga budynku przez drzwi, podłoga jaskini, trawa czap, lądowiska, przybycia i otwarcia ramp. **Niechodliwe:** woda, mur bez drzwi, ściana jaskini, **zbocze pod czapą (skała powierzchni lub `mountain` pod C_k)**, komórka z dekorem blokującym. Dekor blokujący: klasy dekoru, których przedmioty w kliencie mają flagę blokowania (drzewa, duże kamienie itd.). Rdzeń dostaje tę klasyfikację jako dane wejściowe, bez identyfikatorów. **Uzupełnienie po zgłoszeniu wykonawcy (2026-11-11):** pędzel „small rocks” w 10.98 ma warianty blokujące i nieblokujące, więc klasa dekoru nie wystarcza. Rdzeń przyjmuje **maskę blokowania na komórkę** (opcjonalną). Adapter liczy ją z przedmiotów faktycznie wybranych przy rozwiązywaniu planu (flagi klienta, bez identyfikatorów w kodzie); wybór wariantów i wynik generatora bez zmian. Bez maski (np. `style_render` bez klienta) obowiązuje reguła ostrożna: klasa dekoru, której którykolwiek wariant blokuje, blokuje; pomiar bramki G5 w kryterium 4 korzysta z tej reguły i raport podaje ją przy wynikach. Zgodność z mapą w kryterium 3 sprawdzana z maską z adaptera. Skała powierzchni poza czapami: zachowanie z iteracji 13 (przechodnia) **zmienione na niechodliwą**, jeśli przedmioty gruntu skały w kliencie blokują; decyzję wykonawca opiera na danych 10.98 i opisuje. Wtedy stare wyniki `reachabilityOf` się nie zmieniają (nowa funkcja, stara zostaje dla starych testów).
+- **Krawędzie Z:** wejście jaskini (komórka powierzchni) ↔ lądowisko z + 1; rampa wyjścia jaskini: głowa na z + 1 ↔ przybycie na z; rampa góry: głowa H na piętrze niższym ↔ przybycie H + kierunek na wyższym. Wszystkie dwukierunkowe (zgodnie z zachowaniem floorchange w Tibii; nie sprawdzane w grze).
+- **Start:** jak w iteracji 22 (chodliwa komórka powierzchni najbliżej środka). **POI:** drzwi budynków, obozowiska, wejścia i wyjścia jaskini, każda czapa (każda jej komórka chodliwa), każda komórka jaskini.
+- **Raport:** dla każdej kategorii POI osiągnięte / wszystkie, liczba nieosiągalnych kieszeni na każdym piętrze, do 16 pierwszych nieosiągalnych POI z (x, y, z), deterministyczna kolejność.
+- **Odrzucanie seedów w oknie:** nowe pole „Retry seeds until all places are reachable” (0..16 prób, domyślnie 0 = wyłączone). Kolejne seedy jak w `generateReachableSurface` (ten sam wzór), ale ocena przez `levelReachabilityOf` całego planu. Okno pokazuje użyty seed i liczbę prób.
+- **Okno:** po Preview linia stanu z wynikiem walidatora (np. „Reachable: 412/412 places on 5 floors” albo „Unreachable: 3 places (first: x, y, z)”), kolory i odstępy z `Theme`. Place na wyniku z nieosiągalnymi POI pokazuje ostrzeżenie z możliwością kontynuacji (nie blokada). Bez zmian w historii i Commit.
+
+**Kryteria.**
+1. Odcisk Seed 1729 100×100 = 17159159863505677800, stare testy rdzenia, odciski planu i stare wiersze sond bez zmian (walidator tylko czyta plan).
+2. Testy rdzenia: ręczne siatki dla każdej krawędzi Z (wejście jaskini, rampa wyjścia, rampa góry k = 1..3), zbocze niechodliwe, dekor blokujący, mur z drzwiami i bez, kieszeń nieosiągalna na z − 2 wykryta, raport z kolejnością. Porównanie z niezależnym przeszukiwaniem 3D na ≥ 100 losowych planach wielopiętrowych. Deterministyczność.
+3. Sonda G1 `--surface` (klient 10.98): dla planu z budynkami, jaskinią i 3 piętrami gór po Commit **zgodność modelu z mapą**: każda komórka chodliwa w modelu ma na mapie grunt i żadnego przedmiotu z flagą blokowania; każda komórka niechodliwa z powodu dekoru lub zbocza ma przedmiot blokujący albo brak gruntu chodliwego; każda krawędź Z ma na mapie przedmiot z floorchange we właściwym miejscu. Wiersz `LEVEL_REACHABILITY_E2E_PASS` z liczbami. Odrzucanie seedów: przypadek, w którym pierwszy seed ma nieosiągalne POI, a kolejny nie (dobrany przez wykonawcę), daje zapisany seed i liczbę prób.
+4. **Pomiar bramki G5** (seedy 1001–1032, bok 512, m06 i m19, `buildingDensity` 30 / 40, `pathLength` 40 / 80, `ruinPercent` 20, `campCount` 4, `fordLength` 48, `repairReach` 1, `caveEntrances` 4, `caveExitShapes` ramp, `plateauMaxPercent` 10, `plateauLevels` 3; w `style_render`): dla każdej kategorii POI osiągnięte / wszystkie (suma i mediana), kieszenie na piętro, seedy z pełną osiągalnością. **Kryteria G5:** (a) bez odrzucania seedów: pełna osiągalność wszystkich POI w ≥ 30 z 32 seedów każdego profilu; (b) z odrzucaniem (≤ 8 prób): 32 z 32; (c) 100 % krawędzi Z z obu stron chodliwe; (d) dwa przebiegi identyczne. Gdy (a) nie wychodzi, wykonawca podaje przyczyny (kategorie i przykłady) i **nie poprawia generatora w tej iteracji**; poprawki w kolejnej, z osobnymi kryteriami.
+5. Wszystkie testy rdzenia (przebudowane cele) i obie sondy PASS po przebudowie `rme`, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: linia stanu po Preview, ostrzeżenie przy Place, odrzucanie seedów.
+
+**Zastrzeżenia z góry.** Model nie sprawdza ruchu na serwerze gry (floorchange, kolizje potworów, przedmioty ruchome). Ukośne kroki pomijane (4-sąsiedztwo), więc model jest ostrożniejszy niż gra. Szczytów bez rampy generator nie tworzy od iteracji 32, więc kategoria „czapy” powinna wyjść 100 %, jeśli rampy są poprawne.
+
+### Iteracja 37 — naprawa osiągalności na modelu wielopiętrowym, mosty, domknięcie D22 (FAZA 5; zapisana 2026-11-12 przed implementacją i przed pomiarem; decyzja użytkownika: „D22 — weź to teraz”)
+
+**Powód.** Iteracja 36: bramka G5 FAIL (0 z 32 seedów w m06 i m19). Przyczyny: naprawa z iteracji 23 używa starego modelu (roślinność ignorowana, skała przechodnia), zbocza czap przecinają ląd, wejścia jaskini na zboczu. Z D22 zostały: mosty z osobnym przedmiotem i rzeczywista naprawa (walidator w oknie, odrzucanie seedów i sprawdzenie przechodności na kliencie zrobione w iteracji 36).
+
+**Definicje.**
+- **Wejścia jaskini:** nie na komórce zbocza ani pod czapą: wejście tylko na skale powierzchni, nad którą (te same x, y) nie ma czapy, z lądowiskiem jak dotąd. Kolejność generowania: czapy przed wejściami albo filtr po czapach (decyzja wykonawcy, opisana).
+- **Naprawa (nowa, `repairLevelReach`, rdzeń):** po wygenerowaniu całego planu (z czapami i jaskinią), dopóki istnieje nieosiągalny POI: najtańsza ścieżka (Dijkstra, 4-sąsiedztwo, deterministyczne remisy wg (y, x)) na piętrze POI od dowolnej komórki składowej POI do dowolnej komórki składowej startu po koszcie: chodliwe 1, dekor blokujący 3 (usuwany), woda 6 (staje się mostem, gdy ścieżka przecina wodę na ≤ `fordLength` kolejnych komórkach), skała bez czapy 1, **zbocze i mur zabronione**. Po naprawie ponowna ocena `levelReachabilityOf`. Na piętrach czap ścieżka po komórkach czapy tego piętra (dekor 3, zbocze wyższego piętra zabronione). Gdy dla czapy nie ma ścieżki: **czapa i wyższe nad nią są usuwane**, a jej zbocze wraca do skały powierzchni (przechodniej). Gdy POI na powierzchni nie ma ścieżki: POI usuwany (budynek, obóz, wejście jaskini), z liczbą usuniętych w raporcie. Limit 64 napraw na plan; po przekroczeniu raport „unrepaired”.
+- **Mosty (poprawka po zgłoszeniu wykonawcy 2026-11-12: oba warianty „bridge” w 10.98 to chodliwy grunt, więc most zastępuje grunt wody, a woda pod nim nie zostaje):** komórki wody na ścieżce naprawy dostają nowy rodzaj `Bridge` z gruntem mostu zamiast wody; dalszy opis poniżej w zakresie doboru pędzla i wariantu. Pierwotny zapis: grunt wody zostaje, na nim przedmiot mostu z pędzla profilu `bridgeBrush` (w 10.98 pędzel „bridge”, typ wall; wykonawca sprawdza, czy rysuje się poprawnie przez DrawOperations i czy jest chodliwy — flagi klienta; jeśli nie, zgłasza i zostaje bród z piasku jak w iteracji 14b, bez zmiany kryteriów). Most chodliwy w modelu. Bez pędzla mostu: bród (stare zachowanie).
+- **Pole `repairReach`** (istniejące) przełącza nową naprawę zamiast starej; stare zachowanie przy `repairReach` 0 bez zmian. Okno: istniejące „Repair unreachable places” + nowe „Bridge brush” (lista pędzli, domyślnie „bridge”, puste = brody).
+
+**Kryteria.**
+1. `repairReach` 0: odcisk Seed 1729 100×100 = 17159159863505677800, stare testy, odciski i wiersze sond bez zmian (poza świadomie zmienionymi przypadkami z naprawą, opisanymi).
+2. Testy rdzenia: ręczne siatki — przejście przez dekor, most przez rzekę, zakaz zbocza, usunięcie czapy bez ścieżki i powrót skały, usunięcie POI bez ścieżki, wejście jaskini nie pod czapą, limit napraw; porównanie z niezależnym Dijkstrą na ≥ 100 losowych planach; deterministyczność.
+3. Sonda G1 `--surface` (10.98): plan z mostem — przedmiot mostu na wodzie po Commit, komórka mostu bez flagi blokowania, model zgodny z mapą (jak iteracja 36), Undo/Redo; plan z usuniętym dekorem — brak przedmiotu blokującego na ścieżce; nowy wiersz `LEVEL_REPAIR_E2E_PASS`.
+4. **Bramka G5** (ustawienia z iteracji 36 plus `repairReach` 1, reguła ostrożna dekoru w `style_render`): (a) bez ponawiania pełna osiągalność w ≥ 30 z 32 seedów każdego profilu; (b) z ≤ 8 próbami 32 z 32; (c) 100 % krawędzi Z chodliwych; (d) dwa przebiegi identyczne. Dodatkowo podawane: liczba napraw, mostów, usuniętych czap, usuniętych POI (mediana [min..max]). **(e)** usunięte POI ≤ 2 % wszystkich POI każdego profilu (naprawa nie może „zaliczyć” bramki kasowaniem).
+5. Wszystkie testy rdzenia i obie sondy PASS po przebudowie, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: mosty, ścieżki przez las, góry bez szczytu po naprawie.
+
+**Zastrzeżenia z góry.** Most typu wall w 10.98 może mieć kierunki (poziomy, pionowy); wykonawca opisuje, jak dobiera wariant. Wycięty dekor może wyglądać jak przesieka. Ruch w grze nie sprawdzany.
+
+### Iteracja 38 — roślinność czap bez dzielenia, wejścia jaskini przed czapami, jaskinia tylko z wejściem (FAZA 5; zapisana 2026-11-12 przed implementacją i przed pomiarem; zgoda użytkownika)
+
+**Powód.** Iteracja 37: bramka G5 m06 32 / 32, m19 1 / 32 (7 / 32 z ponawianiem). Przyczyny m19: gęsta roślinność blokująca dzieli czapy na setki kieszeni (seed 1001: 395), naprawa kończy na limicie 64; jaskinie bez wejścia (wszystkie wejścia odfiltrowane pod czapami) są nieosiągalne. W m06 filtr zostawił 1 wejście na 32 seedy.
+
+**Definicje.**
+- **Roślinność czap (tylko `repairReach` 1):** dekor blokujący na komórce czapy (każde piętro) jest kładziony tylko wtedy, gdy nie zwiększa liczby składowych chodliwych tego piętra w obrębie czapy (sprawdzenie dokładne, deterministyczna kolejność wierszami). Dekor nieblokujący bez zmian. Przybycia, otwarcia i ich sąsiedzi bez dekoru jak dotąd. Powierzchnia bez zmian (naprawa radzi sobie tam w m06 i m19).
+- **Wejścia jaskini przed czapami (tylko `repairReach` 1):** wejścia wybierane jak w iteracji 29 (skała przy otwartym gruncie, odstępy), **zanim** powstaną czapy. Komórka wejścia i jej 8 sąsiadów są wyłączone z C_1 (wcięcie w czapie; skała pod wcięciem zostaje skałą powierzchni, nie zboczem). Wyższe czapy liczone od C_1 po wcięciu. Filtr wejść pod czapami z iteracji 37 przestaje być potrzebny (usunięty, jeśli martwy).
+- **Jaskinia tylko z wejściem:** składowa jaskini bez żadnego wejścia nie jest generowana (Solid), więc jej komórki nie są POI. Raport podaje liczbę takich usuniętych składowych.
+
+**Kryteria.**
+1. `repairReach` 0: odcisk Seed 1729 100×100 = 17159159863505677800, stare testy i wiersze sond bez zmian (poza szacunkami pamięci).
+2. Testy rdzenia: ręczne siatki — dekor nie dzieli czapy, wcięcie wokół wejścia i skała pod nim, jaskinia bez wejścia usunięta; porównanie z niezależnym przeszukiwaniem na ≥ 100 losowych planach; deterministyczność.
+3. Sonda G1 `--surface`: przypadek z wejściem we wcięciu czapy — przedmiot wejścia, brak zbocza pod wcięciem, krawędź Z chodliwa, Commit, Undo, Redo; nowy wiersz `LEVEL_ENTRANCE_NOTCH_E2E_PASS`.
+4. **Bramka G5** (ustawienia z iteracji 37): (a) bez ponawiania ≥ 30 / 32 w każdym profilu; (b) z ≤ 8 próbami 32 / 32; (c) 100 % krawędzi Z chodliwych; (d) dwa przebiegi identyczne; (e) usunięte POI ≤ 2 %. Dodatkowo: **(f)** wejścia jaskini mediana ≥ 8 na seed w każdym profilu (m06 w iteracji 27: 13); **(g)** udział roślinności na trawie czap ≥ 70 % udziału na trawie powierzchni (mediana, jak iteracja 34).
+5. Wszystkie testy rdzenia i obie sondy PASS po przebudowie, `SUITE_PASS`.
+6. Ocena w GUI należy do użytkownika: wcięcia przy wejściach, drzewa na szczytach.
+
+**Zastrzeżenia z góry.** Wcięcie w czapie to widoczna zatoka skały przy wejściu; jeśli wygląda źle, w kolejnej iteracji wejście w zboczu. Reguła roślinności zmienia rozkład drzew na szczytach (mniej zwartych skupisk).
+
+## Iteracja 39: naprawa na końcowej masce i liczba wejść do jaskiń (2026-11-12)
+
+Wiążące przed implementacją.
+
+1. **Naprawa po autoborderze.** Adapter (okno i sonda) po rozwiązaniu pędzli i autoborderze buduje maskę blokad z faktycznych przedmiotów klienta i, jeśli `levelReachabilityOf` znajduje nieosiągalne cele, ponownie uruchamia naprawę na tej masce (usuwanie dekoru / przesieki przez DrawOperations, w tej samej akcji Undo). Pętla do stabilizacji, łączny limit 64 napraw na plan. Najpierw zdiagnozować i zapisać w raporcie, co blokuje (1149,1026,7) dla seed 1212 w oknie (m19-podobne ustawienia ze zrzutu: 10 wejść, góry 10 %, 3 poziomy) — konkretna nazwa przedmiotu/pędzla i dlaczego wcześniejsza naprawa go nie widziała.
+2. **Test E2E w GUI:** seed 1212 z tymi ustawieniami kończy się bez `Unrepaired`; nowy znacznik sondy `FINAL_MASK_REPAIR_E2E_PASS`; Undo przywraca pustą mapę, Redo identyczny wynik.
+3. **Wejścia do jaskiń (kryterium f iteracji 38):** mediana umieszczonych wejść ≥8 przy `caveEntrances=16` (ustawienia pomiaru jak w iteracji 38) dla m06 i m19. Dozwolone: większy budżet prób selektora RockFace, rozluźnienie wymogu Rock z trzech stron do dwóch przy zachowaniu otwartego wyjścia, usunięcie dekoru w miejscu docelowym wyjścia zamiast odrzucania wejścia. Odstęp 24 komórek zostaje.
+4. Bez regresji: kryteria (a)–(e), (g) iteracji 38, odcisk Seed 1729 100×100 = 17159159863505677800 (jeśli zmiana selektora go zmienia, tylko przy `repairReach=1`; stare ścieżki bez zmian), dwa przebiegi bajtowo identyczne, 18/18 testów, `SUITE_PASS`.
+
+## Iteracja 40: niedostępne wyspy tylko z piasku (2026-11-12)
+
+Wiążące przed implementacją. Zgłoszenie z GUI: na morzu są wyspy z piasku, na których leży dirt.
+
+1. Najpierw zdiagnozować, skąd bierze się dirt na wyspach (rodzaj semantyczny, pędzel, dekor lub ścieżka) i zapisać to w raporcie.
+2. Wyspa to składowa lądu powierzchni (z=7) całkowicie otoczona wodą, bez połączenia z główną składową lądu przez bród, most ani ścieżkę, i bez POI. Każda komórka takiej wyspy dostaje rodzaj Shore (piasek): bez dirt, trawy, ścieżek, dekoru, czap i wejść do jaskiń. Rozstrzygane w rdzeniu przed naprawą i rozwiązywaniem pędzli, deterministycznie.
+3. Wyspy połączone z lądem (bród, most) albo zawierające POI zostają bez zmian.
+4. Test rdzenia z ręcznym przypadkiem (wyspa z dirt → sam piasek; wyspa z brodem → bez zmian) oraz w 120 losowych planach: żadna niedostępna wyspa nie ma komórki innej niż Shore. Pomiar G5: liczba wysp i komórek innych niż Shore na niedostępnych wyspach = 0 dla m06 i m19.
+5. Bez regresji: kryteria (a)–(g) iteracji 38–39, determinizm, 18/18 testów, `SUITE_PASS`. Odcisk Seed 1729 100×100 może się zmienić tylko wtedy, gdy ten seed ma takie wyspy; zmianę uzasadnić w raporcie.
+
+## Iteracja 41: wyjścia jaskini na drugim końcu i korytarze z drzwiami (2026-11-12)
+
+Wiążące przed implementacją. Decyzja użytkownika: kolejność prac „wyjścia z jaskiń na drugim końcu + korytarze z drzwiami”.
+
+1. **Wyjście na drugim końcu.** Dla każdej składowej jaskini (z + 1) z co najmniej jednym wejściem rdzeń próbuje umieścić **wyjście dalekie**: rampę w górę na powierzchnię w komórce Floor tej składowej odległej (BFS po Floor) od każdego wejścia składowej o ≥ 24 komórki; gdy składowa nie ma takiej komórki, tunel (3 szerokości, jak w iteracji 27) jest przedłużany od najdalszej komórki w stronę otwartego gruntu powierzchni o 24..48 komórek. Cel na powierzchni: otwarty grunt (Grass, Dirt, Path, Shore), nie skała, nie pod czapą, poza POI, odstęp ≥ 12 od innych wejść/wyjść. Kształt rampy i rezerwacja jak w `placeCaveExits` (bez wejścia nad rampą: wyjście dalekie jest tylko wyjściem, na powierzchni bez dziury). Deterministycznie, remisy wg (y, x).
+2. **Pomiar (a).** Seedy 1001–1032, bok 512, ustawienia iteracji 39: udział składowych jaskini z wejściem, które dostały wyjście dalekie, ≥ 80 % (mediana po seedach) w m06 i m19; średnia odległość BFS wyjście dalekie → najbliższe wejście ≥ 24.
+3. **Korytarze z drzwiami.** Opcja w zakładce „Underground” (domyślnie wyłączona, stare wyniki bez zmian przy wyłączonej): część połączeń między salami (co najmniej jedno na składową, jeśli ma ≥ 2 sale) staje się korytarzem szerokości 1 o długości 3..8 z jedną komórką **drzwi** w środku; po obu stronach drzwi (prostopadle) Solid lub pas ściany. Drzwi z pędzla drzwi/ściany dostępnego w danych 10.98 (wykonawca wybiera nazwę pędzla z `data/`, zapisuje w profilu nowe pole `caveDoor`; bez identyfikatorów w kodzie; bez pędzla opcja wyłączona z komunikatem w oknie). Drzwi zamknięte, nie zablokowane kluczem; w walidatorze komórka drzwi jest chodliwa (jak drzwi budynków).
+4. **Pomiar (b).** Przy włączonej opcji: ≥ 1 korytarz z drzwiami w ≥ 80 % seedów w obu profilach; każda komórka drzwi ma dokładnie dwóch chodliwych sąsiadów po przeciwnych stronach; sonda w GUI potwierdza przedmiot drzwi na mapie i chodliwość w masce z adaptera.
+5. **Osiągalność.** Wyjścia dalekie i drzwi wchodzą do `levelReachabilityOf` i naprawy; bramka G5 z iteracji 39–40 bez regresji (32/32 seedów, zero nieosiągalnych celów) z włączonymi oboma funkcjami.
+6. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; nowy znacznik sondy `CAVE_FAR_EXIT_DOOR_GUI_PASS`.
+7. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonych nowych opcjach (wyjście dalekie: domyślnie włączone tylko gdy włączona jaskinia; jeśli zmienia odcisk, raport to uzasadnia), testy rdzenia (nowe testy dopisane), `SUITE_PASS`.
+
+## Iteracja 42: przełęcze w górach (2026-11-12)
+
+Wiążące przed implementacją. Decyzja użytkownika: kolejność prac, punkt 3 „przełęcze (passes) w górach”.
+
+1. **Definicja.** Przełęcz to dolina przez masyw górski na piętrze powierzchni: pas szerokości 3 (dopuszczalnie 2–4 na zakrętach) z gruntu chodliwego (Path, a przy braku pędzla Dirt) przecinający skałę i zbocza, z czapami z − 1..z − 3 wyciętymi nad pasem i na jedną komórkę obok (ściany doliny = zbocze „mountain” wyższego piętra). Czapa rozcięta na dwie części zostaje, jeśli każda część spełnia dotychczasowe minimum pola; w przeciwnym razie mniejsza część jest usuwana (skała powierzchni). Rampy i wejścia jaskini rozcięte przez pas są usuwane i umieszczane ponownie istniejącym selektorem.
+2. **Gdzie.** Rdzeń wyznacza masyw (składowa skały/zboczy na powierzchni o polu ≥ 400 komórek) i dwie komórki lądu chodliwego po jego przeciwnych stronach, dla których droga obchodząca masyw jest ≥ 2× dłuższa od drogi przez masyw (BFS). Przebieg przełęczy: najtańsza ścieżka (Dijkstra, remisy (y, x)) z kosztem rosnącym z liczbą pięter nad komórką, z łagodnym zakrętem (bez schodków 1×1). Maksymalnie `passes` przełęczy na plan (nowe pole, domyślnie 0 = wyłączone; w zakładce „Levels”: liczba 0..8). Przy 0 wynik bajtowo jak dotąd.
+3. **Pomiar (a).** Seedy 1001–1032, bok 512, ustawienia iteracji 41 plus `passes=4`: mediana umieszczonych przełęczy ≥ 2 w m06 i m19; dla każdej przełęczy droga przez nią ≤ 0,6 drogi obejścia (BFS na modelu `levelReachabilityOf`).
+4. **Pomiar (b).** Zero komórek przełęczy pod czapą, zero komórek blokujących na pasie (maska reguły ostrożnej i maska z adaptera w sondzie), zero czap poniżej minimum pola po rozcięciu.
+5. **Osiągalność.** Bramka G5 bez regresji (32/32 seedów, zero nieosiągalnych celów) z `passes=4` i z `passes=0`.
+6. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `MOUNTAIN_PASS_GUI_PASS`; sonda sprawdza, że nad komórką przełęczy na z − 1 nic nie ma.
+7. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy `passes=0`, nowe testy rdzenia (ręczny masyw z przełęczą, rozcięta czapa, rampa na pasie), `SUITE_PASS`.
+
+## Iteracja 43: schody i piętro w budynkach — dług D27, część 1 (2026-11-13)
+
+Wiążące przed implementacją. Decyzja użytkownika: „Rozpocznij pracę nad długiem”.
+
+1. **Piętro budynku.** Opcja w zakładce budynków (domyślnie wyłączona; przy wyłączonej wynik bajtowo jak dotąd): część budynków (`upperFloorPercent`, 0..100, domyślnie 30) o wnętrzu ≥ 16 komórek dostaje piętro z − 1 o tym samym obrysie: podłoga z pędzla podłogi budynku, mury na obrysie z pędzla murów budynku, bez drzwi zewnętrznych. Piętro nie może kolidować z czapą gór, przełęczą ani innym budynkiem na z − 1 (wtedy budynek zostaje parterowy).
+2. **Schody.** W każdym takim budynku jedna para przejść Z: na parterze przedmiot schodów w górę we wnętrzu, przy murze, z wolną komórką wejścia przed nim; na z − 1 miejsce przybycia (chodliwa komórka podłogi) i zejście w dół. Przedmioty z pędzla/doodadu dostępnego w danych 10.98 (wykonawca wybiera nazwy z `data/`, zapisuje w profilu, np. `buildingStairs`; bez identyfikatorów w kodzie). Bez pędzla opcja wyłączona z komunikatem w oknie. Schody nie blokują drogi od drzwi do reszty wnętrza parteru.
+3. **Osiągalność.** Piętro budynku jest nowym piętrem w `levelReachabilityOf` i naprawie; każda komórka podłogi piętra osiągalna ze startu przez drzwi i schody. Bramka G5 bez regresji (32/32 seedów, zero nieosiągalnych celów) z opcją włączoną i wyłączoną.
+4. **Pomiar.** Seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 42 plus opcja z domyślnym procentem: udział kwalifikujących się budynków z piętrem w paśmie 20..40 % (mediana), 100 % pięter ze schodami, zero kolizji z czapami/przełęczami.
+5. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `BUILDING_STAIRS_GUI_PASS`, sprawdzający przedmioty schodów na obu piętrach i maskę z adaptera.
+6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonej opcji, nowe testy rdzenia, `SUITE_PASS`.
+
+## Iteracja 44: nieprzechodnia skała w profilu m19 — przypadek z GUI (2026-11-13)
+
+Wiążące przed implementacją. Zgłoszenie z GUI: x 1000, y 1000, 512×512, m19, 10 wejść, góry 3 poziomy, seed 1729, budynki 100 z piętrami 30 % → ok. 5200 nieosiągalnych (diagnoza: pędzel skały „mountain” ma nieprzechodnie podłoże; pomiar bramki z iteracji 39–40 tego nie widział, bo reguła ostrożna dotyczyła tylko dekoru). Decyzje użytkownika: „Chodliwe podłoże”, „POI tylko w połączonym”, „Usuwaj obszar naraz”.
+
+1. **Wejście w ścianie skały:** komórka przedmiotu wejścia i pole przed nim dostają chodliwy grunt (pędzel z profilu, np. ziemia lub grunt jaskini; bez identyfikatorów w kodzie); wygląd wejścia w ścianie zostaje. Każde wejście ma chodliwą krawędź Z w masce z adaptera.
+2. **POI tylko w połączonym lądzie:** rdzeń dostaje informację, czy skała powierzchni jest przechodnia (z adaptera, z flag klienta podłoża pędzla skały; bez klienta — reguła ostrożna: nieprzechodnia, gdy którykolwiek wariant blokuje). Przy nieprzechodniej skale budynki, obozy, ruiny, wejścia do jaskiń i czapy powstają tylko na lądzie połączonym ze startem (BFS w tym modelu, z brodami/mostami/przełęczami); odcięty ląd bez POI.
+3. **Naprawa obszarem:** gdy cel na powierzchni nie ma ścieżki, jedna naprawa usuwa wszystkie POI jego składowej (jedno zdarzenie w limicie 64); liczba usuniętych miejsc w raporcie jak dotąd.
+4. **Test regresji:** dokładny przypadek ze zgłoszenia przez prawdziwe okno z fixture m19 → pełna osiągalność (0 nieosiągalnych, bez `Unrepaired`); nowy znacznik sondy `M19_ROCK_GUI_CASE_PASS`.
+5. **Pomiar bramki z rzeczywistą przechodnością skały:** seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 43 (z piętrami): 32/32 pełne seedy w obu profilach; mediana wejść do jaskiń ≥ 8; udział usuniętych POI raportowany. Wcześniejsze wyniki iteracji 39–43 dla m19 opisać w G5_GATE_STATUS.md jako zmierzone bez przechodności podłoża skały.
+6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 (jeśli się zmieni, uzasadnić: m06/brak klienta), testy rdzenia, `SUITE_PASS`.
+
+## Iteracja 45: lochy pod budynkami — dług D27, część 2 (2026-11-13)
+
+Wiążące przed implementacją. Decyzja użytkownika: „Akceptuję — weź kolejny punkt długu”.
+
+1. **Loch.** Opcja w zakładce „Underground” (domyślnie wyłączona; przy wyłączonej wynik bajtowo jak dotąd): część budynków (`dungeonPercent`, 0..100, domyślnie 20) o wnętrzu ≥ 16 komórek dostaje loch na z + 1: 2..6 pomieszczeń prostokątnych (wnętrze 4×4..9×9) z podłogą i murami z pędzli profilu (nowe pola, np. `dungeonFloor`, `dungeonWall`; bez identyfikatorów w kodzie), połączonych korytarzami szerokości 1–2 z drzwiami (zamknięte, bez klucza) w wejściu do pomieszczenia. Loch nie nachodzi na jaskinię z + 1 (odstęp ≥ 2 komórek od Floor jaskini i jej pasa ścian) ani na inne lochy; bez miejsca budynek zostaje bez lochu.
+2. **Zejście.** W budynku z lochem jedno przejście w dół we wnętrzu przy murze (przedmiot/pędzel z danych 10.98 ze zmianą piętra w dół, np. schody lub drabina; wybór wykonawcy, nazwa w profilu) i wyjście w górę w lochu dokładnie pod nim z chodliwym polem obok. Nie blokuje drogi od drzwi do reszty wnętrza; nie koliduje ze schodami piętra z iteracji 43.
+3. **Osiągalność.** Loch jest częścią piętra z + 1 w `levelReachabilityOf` i naprawie; każde pomieszczenie osiągalne ze startu przez drzwi budynku, zejście i korytarze. Bramka G5 (pomiar z iteracji 44, rzeczywista przechodność skały) bez regresji z opcją włączoną i wyłączoną.
+4. **Pomiar.** Seedy 1001–1032, bok 512, m06 i m19, ustawienia iteracji 44 plus opcja: udział kwalifikujących się budynków z lochem w paśmie 10..30 % (mediana), mediana pomieszczeń na loch ≥ 3, 100 % lochów z zejściem i wyjściem, zero kolizji z jaskinią.
+5. **Undo / sonda.** Commit, Undo do pustej mapy, Redo identyczne; znacznik sondy `DUNGEON_GUI_PASS` sprawdzający mury, drzwi, przedmioty zejścia/wyjścia i maskę z adaptera.
+6. Bez regresji: determinizm (dwa przebiegi bajtowo identyczne), odcisk Seed 1729 100×100 = 17159159863505677800 przy wyłączonej opcji, testy rdzenia (nowe dopisane), `SUITE_PASS`. Po zakończeniu D27 w TECH_DEBT.md zamknięty albo z opisaną resztą.
+
+## Iteracja 45b: poprawki lochów po teście GUI (2026-11-13)
+
+Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (m19, x 1000, y 1000, 512×512, seed 1729): „W rogach wystają kratki w lochach”; „tam gdzie powinno być wejście rampą jest dziura w podłodze zamiast zejścia”.
+
+1. **Rogi lochów.** Na z + 1 żadna komórka poza obrysem murów lochu (także po przekątnej od narożników) nie ma gruntu ani przedmiotu lochu; podłoga tylko wewnątrz murów i pod murami. Najpierw zdiagnozować źródło (podłoga pod komórką narożną, border pędzla podłogi, element narożny muru) i zapisać w raporcie. Test/sonda: zero komórek z gruntem lochu poza obrysem (z dopuszczeniem korytarzy).
+2. **Zejście widoczne.** Na powierzchni w budynku z lochem nie ma gruntu „stairs” (czarna dziura). Zejście ma wyglądać jak schody w dół: przedmiot schodów ze zmianą piętra w dół (np. „stairs” lub „wooden stairs” z danych 10.98, także jako przedmiot RAW wskazany nazwą w profilu, bez ID w kodzie) na podłodze budynku, a w lochu pod nim chodliwe pole przybycia z rampą/schodami w górę. Działa jak przejścia Z dotąd: krawędź Z chodliwa w masce adaptera.
+3. Sonda `DUNGEON_GUI_PASS` sprawdza oba punkty (brak gruntu „stairs” w budynkach, brak gruntu lochu poza obrysem). Bramka G5 i pomiar iteracji 45 bez regresji, determinizm, odcisk Seed 1729 przy wyłączonej opcji, `SUITE_PASS`.
+
+## Iteracja 45c: lochy — kierunek schodów, przejścia, mury budynku (2026-11-13)
+
+Wiążące przed implementacją. Uwagi użytkownika po teście GUI 45b (m19, x 1000, y 1000, 512×512, seed 1729; np. budynek ok. (1094,1402,7), loch ok. (1328,1336,8)).
+
+1. **Kierunek.** Schody w dół na powierzchni i rampa w górę w lochu mają ten sam kierunek: północ (zgodnie z rampą). Wariant przedmiotu/gruntu schodów wybierany według kierunku (węzeł kierunku pędzla lub osobne nazwy w profilu; bez ID w kodzie). Przybycie w lochu po stronie zgodnej z kierunkiem.
+2. **Przejścia między pomieszczeniami.** Każde połączenie korytarz–pomieszczenie ma otwór w murze: drzwi (zamknięte, bez klucza) albo przejście bez muru. Najpierw zdiagnozować, dlaczego w GUI na końcach korytarzy stoi pełny mur (drzwi nie postawione? zastąpione przez autoborder muru?). Sonda: każdy styk korytarza z pomieszczeniem ma na mapie komórkę bez blokującego muru lub z przedmiotem drzwi; zero styków zamkniętych murem.
+3. **Mury budynku nietknięte.** Zejście stoi we wnętrzu budynku, nigdy na komórce muru ani tak, by autoborder/zmiana gruntu usunęła mur; obrys murów budynku z lochem na mapie jest identyczny jak bez lochu (poza drzwiami). Sonda to sprawdza.
+4. `DUNGEON_GUI_PASS` rozszerzona o punkty 1–3; bramka G5, pomiar iteracji 45 bez regresji, determinizm, odcisk Seed 1729 przy wyłączonej opcji, `SUITE_PASS`.
+
+## Iteracja 46: porządki w długu D22–D27 (2026-11-13)
+
+Wiążące przed implementacją. Decyzja użytkownika: „jest ok, kolejne poprawki”.
+
+1. **D25.** `g5_run_suite.py` sam przebudowuje cele `test_procedural_*` i `style_render` (ninja w `build-ninja`) przed uruchomieniem testów i kończy się błędem, gdy przebudowa się nie uda; ścieżka do `local-data` w worktree rozwiązywana bez ręcznej ścieżki bezwzględnej (argument lub wykrycie głównego checkoutu przez `git worktree list`). Zapis w raporcie suite, które cele przebudowano.
+2. **D24 (reszta).** (a) Wariant przedmiotu „cave enter” wybierany według strony skały (kierunku wejścia), nie według komórki; (b) walidacja podglądu jaskini wybiera pędzel ściany z pola profilu po nazwie (`caveWall`), nie po indeksie 1; (c) ocena: czy pędzel „mountain” nadal ma lica tylko od wschodu i południa w generowanych ścianach jaskini — zmierzyć i zapisać; naprawa tylko, jeśli pędzel ma warianty pozostałych lic.
+3. **D23 (część kodowa).** Sprawdzić i zapisać, które pozycje D23 są nadal prawdziwe na HEAD (druga dziura z górnego kafla rampy, wariant „cave enter”, pomiar wyjść bez `occupied`, naprawa nie zna wejść Z, wymóg pustego z + 1, Undo zostawiające jaskinię bez wejścia). Prawdziwe i mieszczące się w kodzie — naprawić z testem; ruch w grze zostaje w D23 jako niesprawdzalny bez serwera.
+4. **D22, D26, D27.** Zaktualizować opisy: D22 zamknięty (walidator, naprawa, odrzucanie, przechodność z klienta, iteracje 36–44); D26 — próba odtworzenia na HEAD przy (1018, 1237, 7) z ustawieniami domyślnymi i m19/m06 (kilka seedów, ~512×512 wokół); jeśli nie występuje, zamknięty jako nieodtwarzalny po zmianach iteracji 37–45; D27 — zgodnie z 45c (mur „brick wall”, zejście „stairs down”, kierunek północ).
+5. Bez regresji: bramka G5 (pomiar iteracji 45), determinizm, odcisk Seed 1729 100×100 = 17159159863505677800 (zmiana wariantu „cave enter” nie zmienia odcisku planu; jeśli zmienia — uzasadnić), 18/18 testów (plus nowe), `SUITE_PASS`.
+
+## Iteracja 47: wygląd jaskiń (2026-11-15)
+
+Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (m19, x 1000, y 1000, 512×512, seed 1729, 10 wejść w ścianie skały): jaskinia to zygzak równoległych tuneli. Przyczyna: `generateCave` łączy wejścia posortowane wierszami kolejno tunelem szerokości 3 z okrągłymi komorami co 24 pola.
+
+1. **Graf połączeń.** Wejścia łączone drzewem najkrótszych połączeń (MST po odległości) plus 1–2 dodatkowe krawędzie tworzące pętle (gdy wejść ≥ 4); żadnej zależności od kolejności indeksu komórki. Pomiar: zero par równoległych tuneli biegnących obok siebie przez całą szerokość obszaru; najdłuższy prosty odcinek osi tunelu ≤ 20 pól.
+2. **Tunele.** Szerokość zmienna 2–5 pól wzdłuż tunelu, meandry z szumu wyraźniejsze niż dotąd (wychylenie zależne od długości, nie ≤ 3), 0–2 krótkie ślepe odnogi na tunel.
+3. **Groty.** Nieregularne komory z szumu wygładzone automatem komórkowym (nie idealne okręgi); udział pól grot (komórek z ≥ 5 sąsiadami podłogi w promieniu 1 przy szerokości > 5) ≥ 25 % podłogi jaskini (mediana na seedach 1001–1032, bok 512, m06 i m19). Każda grota połączona z siecią.
+4. **Spójność i GUI.** Wszystkie wejścia w jednej składowej; rampy pod wejściami jak dotąd; przypadek użytkownika m19 przez adapter: 0 usuniętych miejsc, wszystkie osiągalne. Bramka G5 (pomiar iteracji 45, m06 i m19 32/32) bez regresji.
+5. Bez regresji: determinizm, 18/18 testów (plus nowe), `SUITE_PASS`. Odcisk Seed 1729 100×100 może się zmienić tylko, jeśli ten przypadek ma jaskinię — wtedy nowa wartość zapisana z uzasadnieniem.
+
+## Iteracja 48: D24 — wejścia RockFace w zapasie, pędzel ściany jaskini (2026-11-15)
+
+Wiążące przed implementacją. Decyzje użytkownika: „Zwykłe wejście w zapasie”, „Inny pędzel ściany”.
+
+1. **Zapas wejść.** Przy stylu RockFace, gdy w ścianach skały brakuje miejsc na zadaną liczbę wejść, brakujące stawiane są jako zwykłe wejścia (styl dotychczasowy poza skałą). Kryterium bez zmian: mediana wejść ≥ 8 (seedy 1001–1032, bok 512, m06 i m19, ustawienia pomiaru iteracji 29 lub nowszego), przy czym wejścia w ścianie mają pierwszeństwo — ich liczba nie spada względem HEAD. Każde wejście z rampą pod spodem i w składowej jaskini.
+2. **Pędzel ściany jaskini.** Znaleźć w danych 10.98 (brushes/, materiały) pędzel ściany/góry jaskini z licami ze wszystkich stron (N, W, E, S i narożniki) i ustawić go po nazwie jako `caveWall` w profilach m06/m19 (bez ID w kodzie). Pomiar `CAVE_WALL_FACES`: udział komórek ściany widzących podłogę bez lica ≤ 5 % (był ok. 49 %). Jeśli żaden pędzel nie spełnia — raport z listą sprawdzonych i bez zmiany.
+3. Bez regresji: przypadek użytkownika m19 (x 1000, y 1000, 512×512, seed 1729, 10 wejść RockFace) przez adapter — 0 usuniętych miejsc; bramka G5 `--i47` 32/32; determinizm; odcisk Seed 1729 100×100 = 17159159863505677800; testy rdzenia; `SUITE_PASS`. D24 w TECH_DEBT.md zamknięty albo z opisaną resztą.
+
+## Iteracja 48b: wygląd zwykłych wejść z zapasu (2026-11-16)
+
+Wiążące przed implementacją. Zgłoszenie użytkownika z GUI (np. x 1073, y 1243, z 7): zwykłe wejście z zapasu RockFace to doodad „cave enter” (lico skały) postawiony na trawie — wygląda, jakby wisiało w powietrzu.
+
+1. Wejście z zapasu nie używa przedmiotu lica skały. Wygląda tak jak wejście stylu niebędącego RockFace (np. dziura w ziemi / schody w dół z gruntem lub obrzeżem pasującym do terenu, wybierane po nazwie z danych 10.98, bez ID w kodzie). Najpierw sprawdzić, jakie style wejść już istnieją i użyć istniejącego wyglądu.
+2. Sonda (np. rozszerzenie `D26_RAMP_ENTRANCE_PASS` lub nowy znacznik): żadne wejście poza komórką przylegającą do skały nie ma przedmiotu „cave enter”; każde ma przejście w dół (floorchange) i rampę pod spodem.
+3. Bez regresji: wejścia RockFace bez zmian, przypadek m19 użytkownika 0 usuniętych miejsc, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`.
+
+## Iteracja 48c: lądowanie pod dziurą (2026-11-16)
+
+Wiążące przed implementacją. Uwaga użytkownika: „Pod hole zamiast stair powinny być dirt floor - 384”.
+
+1. Pod wejściem typu dziura („cave hole”, w tym wejścia z zapasu RockFace i styl dziury) na z + 1 nie ma rampy/schodów; leży chodliwy grunt „dirt floor” (w 10.98 przedmiot 384), wybierany po nazwie z danych (pędzel lub przedmiot RAW wskazany nazwą w profilu/stałej), bez ID w kodzie. Wejścia RockFace i dalekie wyjścia z rampą bez zmian.
+2. Krawędź Z dziura → pole pod nią chodliwa w masce adaptera i walidatorze (pole lądowania osiągalne w jaskini). Sonda: każde wejście-dziura ma pod sobą „dirt floor” bez rampy; każde wejście RockFace nadal ma rampę.
+3. Bez regresji: przypadki m19 użytkownika (10 i 15 wejść) 0 usuniętych miejsc, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`.
+
+## Iteracja 49: D23 — jaskinia przy zajętym z + 1, jeden krok Undo (2026-11-16)
+
+Wiążące przed implementacją. Decyzje użytkownika: „Omijaj zajęte”, „Jeden krok”.
+
+1. **Zajęte z + 1.** Jaskinia nie wymaga pustego prostokąta na z + 1: kafle już zajęte na mapie (dowolny grunt lub przedmiot) są dla generatora jaskini lite (nie drążone, nienadpisywane). Wejście/dziura/rampa powstaje tylko nad wolnym polem jaskini; wejścia bez wolnego lądowania nie powstają (lub przenoszone przez istniejący mechanizm wyboru). Spójność: wszystkie postawione wejścia w składowej jaskini, osiągalne. Test: mapa z zajętym fragmentem z + 1 (np. pas lub prostokąt pośrodku) → jaskinia powstaje, zajęte kafle bajtowo nietknięte, 0 usuniętych miejsc lub tylko wejścia nad zajętymi polami.
+2. **Jeden krok Undo.** Place z jaskinią to jedna akcja w historii: jedno Undo przywraca stan sprzed Place (powierzchnia i z + 1), jedno Redo przywraca całość. Sonda sprawdza: po 1 Undo mapa identyczna jak przed, po 1 Redo identyczna jak po Place. Bez zmiany innych operacji edytora.
+3. Bez regresji: przypadki m19 użytkownika (10 i 15 wejść, pusta mapa) bez zmiany wyników, bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, `SUITE_PASS`. D23 w TECH_DEBT.md zaktualizowany (zostaje tylko test w grze i pamięć pól zakładki, jeśli nie sprawdzone).
+
+## Iteracja 50: D24 — ściany jaskini pędzlem muru skalnego (2026-11-17)
+
+Wiążące przed implementacją. Decyzja użytkownika: wariant 1 (pędzel muru skalnego zamiast „mountain”).
+
+1. Ściany jaskini stawiane pędzlem typu mur (wall brush) z danych 10.98 wybieranym po nazwie (kandydaci: „rock wall”, „rocky wall”; wybór uzasadniony w raporcie), na gruncie jaskini, bez ID w kodzie. Pole „Cave wall” w oknie przyjmuje pędzle muru (i nadal gruntowe dla zgodności) — domyślnie wybrany mur skalny.
+2. **Lica.** `CAVE_WALL_FACES`: udział komórek muru stykających się z podłogą jaskini bez widocznego lica/segmentu ≤ 5 % (był ok. 48 %); mur widoczny z każdej strony (N, W, E, S, narożniki).
+3. **Przechodność.** Mur nie wchodzi na pola podłogi jaskini (żadne pole podłogi nie dostaje blokującego przedmiotu); maska adaptera z klienta zgodna z mapą; przypadki m19 użytkownika (10 i 15 wejść, pusty i zajęty z + 1) — 0 usuniętych miejsc, wszystkie wejścia z rampą/dirt floor jak w 48c.
+4. Bez regresji: bramka `--i47` 32/32, determinizm, odcisk Seed 1729 100×100, jedno Undo, `SUITE_PASS`. D24 w TECH_DEBT.md zamknięty lub z opisaną resztą.

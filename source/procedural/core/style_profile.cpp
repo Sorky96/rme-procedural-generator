@@ -256,99 +256,108 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 		}
 		const auto f = splitTabs(line, line.starts_with("key\t") ? 4 : 12);
 		const std::string_view type = f[0];
-		if (type == "client" && f.size() == 2 && !haveClient) { p.client = f[1]; haveClient = true; }
-		else if (type == "level" && f.size() == 2 && !haveLevel) {
-			if (f[1] == "surface") p.level = StyleLevel::Surface;
-			else if (f[1] == "underground") p.level = StyleLevel::Underground;
-			else return std::unexpected(ProfileError::BadFormat);
+        // Legacy edge overrides are ignored: grass reaches the cap edge.
+        if (type == "plateauEdge" && f.size() == 2) {
+            continue;
+        }
+        if (type == "client" && f.size() == 2 && !haveClient) {
+            p.client = f[1];
+            haveClient = true;
+        } else if (type == "level" && f.size() == 2 && !haveLevel) {
+            if (f[1] == "surface") {
+                p.level = StyleLevel::Surface;
+            } else if (f[1] == "underground")
+                p.level = StyleLevel::Underground;
+            else return std::unexpected(ProfileError::BadFormat);
 			haveLevel = true;
-		}
-		else if (type == "floors" && f.size() == 3 && !haveFloors) {
-			if (!parseInt(f[1], p.zMin) || !parseInt(f[2], p.zMax)) return std::unexpected(ProfileError::BadFormat);
-			haveFloors = true;
-		}
-		else if (type == "assets" && f.size() == 3 && f[1] == "otb_sha256" && !haveOtb) { p.otbSha256 = f[2]; haveOtb = true; }
-		else if (type == "assets" && f.size() == 3 && f[1] == "dat_sha256" && !haveDat) { p.datSha256 = f[2]; haveDat = true; }
-		else if (type == "source" && f.size() == 3) {
-			uint64_t w = 0;
-			if (!parseUnsigned(f[2], w) || w > 1000) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "floors" && f.size() == 3 && !haveFloors) {
+            if (!parseInt(f[1], p.zMin) || !parseInt(f[2], p.zMax)) {
+                return std::unexpected(ProfileError::BadFormat);
+            }
+            haveFloors = true;
+        } else if (type == "assets" && f.size() == 3 && f[1] == "otb_sha256" && !haveOtb) {
+            p.otbSha256 = f[2];
+            haveOtb = true;
+        } else if (type == "assets" && f.size() == 3 && f[1] == "dat_sha256" && !haveDat) {
+            p.datSha256 = f[2];
+            haveDat = true;
+        } else if (type == "source" && f.size() == 3) {
+            uint64_t w = 0;
+            if (!parseUnsigned(f[2], w) || w > 1000) return std::unexpected(ProfileError::BadFormat);
 			p.sources.push_back({std::string(f[1]), static_cast<uint32_t>(w)});
-		}
-		else if (type == "key" && f.size() == 4) {
-			KeyMapEntry e;
-			if (!parseStyleKind(f[1], e.kind)) return std::unexpected(ProfileError::UnknownKind);
+        } else if (type == "key" && f.size() == 4) {
+            KeyMapEntry e;
+            if (!parseStyleKind(f[1], e.kind)) return std::unexpected(ProfileError::UnknownKind);
 			e.rule = f[2] == "-" ? std::string {} : std::string(f[2]);
 			e.key = f[3];
 			p.keymap.push_back(std::move(e));
-		}
-		else if (type == "stat" && f.size() == 2 + styleKindCount && f[1] == "kind_tiles" && !haveTiles) {
-			for (size_t i = 0; i < styleKindCount; ++i) if (!parseUnsigned(f[2 + i], p.stats.kindTiles[i])) return std::unexpected(ProfileError::BadFormat);
-			haveTiles = true;
-		}
-		else if (type == "stat" && f.size() == 3 + styleKindCount && f[1] == "pairs") {
-			StyleKind row;
-			if (!parseStyleKind(f[2], row)) return std::unexpected(ProfileError::UnknownKind);
+        } else if (type == "stat" && f.size() == 2 + styleKindCount && f[1] == "kind_tiles" && !haveTiles) {
+            for (size_t i = 0; i < styleKindCount; ++i) {
+                if (!parseUnsigned(f[2 + i], p.stats.kindTiles[i])) {
+                    return std::unexpected(ProfileError::BadFormat);
+                }
+            }
+            haveTiles = true;
+        } else if (type == "stat" && f.size() == 3 + styleKindCount && f[1] == "pairs") {
+            StyleKind row;
+            if (!parseStyleKind(f[2], row)) return std::unexpected(ProfileError::UnknownKind);
 			const size_t a = static_cast<size_t>(row);
 			if (havePairs[a]) return std::unexpected(ProfileError::BadFormat);
 			for (size_t i = 0; i < styleKindCount; ++i) if (!parseUnsigned(f[3 + i], p.stats.pairs[a][i])) return std::unexpected(ProfileError::BadFormat);
 			havePairs[a] = true;
-		}
-		else if (type == "palette" && f.size() == 3) {
-			StyleKind kind;
-			if (!parseStyleKind(f[1], kind) || static_cast<size_t>(kind) >= naturalKindCount) return std::unexpected(ProfileError::UnknownKind);
+        } else if (type == "palette" && f.size() == 3) {
+            StyleKind kind;
+            if (!parseStyleKind(f[1], kind) || static_cast<size_t>(kind) >= naturalKindCount) return std::unexpected(ProfileError::UnknownKind);
 			std::string& slot = p.palette[static_cast<size_t>(kind)];
 			if (!slot.empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
 			slot = f[2];
-		}
-		else if (type == "doodad" && f.size() == 3) {
-			static constexpr std::string_view names[3] = {"Tree", "Bush", "Stone"};
-			size_t k = 3;
+        } else if (type == "doodad" && f.size() == 3) {
+            static constexpr std::string_view names[3] = {"Tree", "Bush", "Stone"};
+            size_t k = 3;
 			for (size_t i = 0; i < 3; ++i) if (f[1] == names[i]) k = i;
 			if (k == 3) return std::unexpected(ProfileError::UnknownKind);
 			if (!p.decorPalette[k].empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
 			p.decorPalette[k] = f[2];
-		}
-		else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
-			if (!p.target) p.target = StyleTarget {};
-			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[2 + i], p.target->sharesPpm[i])) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
+            if (!p.target) {
+                p.target = StyleTarget {};
+            }
+            for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[2 + i], p.target->sharesPpm[i])) return std::unexpected(ProfileError::BadFormat);
 			haveShares = true;
-		}
-		else if (type == "target" && f.size() == 3 + naturalKindCount && f[1] == "adjacency") {
-			StyleKind row;
-			if (!parseStyleKind(f[2], row) || static_cast<size_t>(row) >= naturalKindCount) return std::unexpected(ProfileError::UnknownKind);
+        } else if (type == "target" && f.size() == 3 + naturalKindCount && f[1] == "adjacency") {
+            StyleKind row;
+            if (!parseStyleKind(f[2], row) || static_cast<size_t>(row) >= naturalKindCount) return std::unexpected(ProfileError::UnknownKind);
 			const size_t a = static_cast<size_t>(row);
 			if (haveAdjacency[a]) return std::unexpected(ProfileError::BadFormat);
 			if (!p.target) p.target = StyleTarget {};
 			for (size_t i = 0; i < naturalKindCount; ++i) if (!parseU32(f[3 + i], p.target->adjacencyPpm[a][i])) return std::unexpected(ProfileError::BadFormat);
 			haveAdjacency[a] = true;
-		}
-		else if (type == "decor" && f.size() == 7 && f[1] == "cell") {
-			uint64_t index = 0;
-			if (!parseUnsigned(f[2], index) || index >= 8 || haveDecorCell[index]) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "decor" && f.size() == 7 && f[1] == "cell") {
+            uint64_t index = 0;
+            if (!parseUnsigned(f[2], index) || index >= 8 || haveDecorCell[index]) return std::unexpected(ProfileError::BadFormat);
 			if (!p.decorTarget) p.decorTarget = DecorContext {};
 			DecorCell& d = p.decorTarget->cell[index];
 			if (!parseUnsigned(f[3], d.tiles) || !parseUnsigned(f[4], d.trees) || !parseUnsigned(f[5], d.bushes) || !parseUnsigned(f[6], d.stones)) {
 				return std::unexpected(ProfileError::BadFormat);
 			}
 			haveDecorCell[index] = true;
-		}
-		else if (type == "decor" && f.size() == 8 && f[1] == "tuning" && !p.decorTuning) {
-			uint32_t v[6];
-			for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "decor" && f.size() == 8 && f[1] == "tuning" && !p.decorTuning) {
+            uint32_t v[6];
+            for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
 			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
-		}
-		else if (type == "tuning" && f.size() == 12 && !p.tuning) {
-			uint32_t v[11];
-			for (size_t i = 0; i < 11; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "tuning" && f.size() == 12 && !p.tuning) {
+            uint32_t v[11];
+            for (size_t i = 0; i < 11; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
 			SurfaceTuning tuning;
 			tuning.featureSize = v[0]; tuning.lakePermille = v[1]; tuning.minLakeCells = v[2]; tuning.riverCount = v[3];
 			tuning.minRiverLength = v[4]; tuning.shoreWidth = v[5]; tuning.rockPermille = v[6]; tuning.minRockCells = v[7];
 			tuning.dirtPermille = v[8]; tuning.transitionWidth = v[9]; tuning.meander = v[10];
 			p.tuning = tuning;
-		}
-		else return std::unexpected(ProfileError::BadFormat);
-	}
-	bool allAdjacency = true;
+        } else {
+            return std::unexpected(ProfileError::BadFormat);
+        }
+    }
+    bool allAdjacency = true;
 	for (const bool b : haveAdjacency) allAdjacency = allAdjacency && b;
 	if (p.target && (!haveShares || !allAdjacency)) return std::unexpected(ProfileError::BadFormat);
 	if (p.decorTarget && !std::all_of(haveDecorCell.begin(), haveDecorCell.end(), [](bool b) { return b; })) return std::unexpected(ProfileError::BadFormat);

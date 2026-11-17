@@ -22,6 +22,7 @@ parser.add_argument('--matrix',action='store_true',help='500x500, selected holes
 parser.add_argument('--selection-only',action='store_true',help='Only the sparse-selection GUI regression; not the full matrix')
 parser.add_argument('--resources',action='store_true',help='Three Preview/Validate/Cancel cycles per size, process memory and GUI heartbeat baseline')
 parser.add_argument('--cancel-preview',action='store_true',help='Cancel an active 500x500 Preview, retry with seed 1728, then measure three completed 500x500 cycles')
+parser.add_argument('--resource-side',type=int,choices=(500,1000,2000),help='Run one resource cycle at this size; combine with --cancel-preview for in-flight Cancel and retry')
 parser.add_argument('--refusals',action='store_true',help='Native multifloor, busy, inert live, snapshot allocation and no-client refusals')
 parser.add_argument('--roundtrip',action='store_true',help='Place, Undo, Redo, save and reopen a generated OTBM 5 map')
 parser.add_argument('--roundtrip-side',type=int,choices=(100,500),default=100)
@@ -32,7 +33,7 @@ for name in ('output','profile_data','config'):
     parser.add_argument(name,type=lambda value:Path(value).resolve())
 args=parser.parse_args()
 args.matrix=args.matrix or args.selection_only
-args.resources=args.resources or args.cancel_preview
+args.resources=args.resources or args.cancel_preview or args.resource_side is not None
 if args.resources and args.matrix:
     parser.error('--resources cannot be combined with --matrix or --selection-only')
 if args.refusals and (args.resources or args.matrix):
@@ -97,6 +98,8 @@ if args.resources:
     (run/'.g1-dialog-resources').write_text('Process resource baseline only',encoding='utf-8')
 if args.cancel_preview:
     (run/'.g1-dialog-cancel-preview').write_text('Interrupt and retry one private Preview',encoding='utf-8')
+if args.resource_side:
+    (run/'resource-side.txt').write_text(str(args.resource_side),encoding='utf-8')
 if args.refusals:
     (run/'.g1-dialog-refusals').write_text('Refusal fixtures on one private synthetic editor',encoding='utf-8')
 if args.roundtrip:
@@ -135,7 +138,7 @@ if args.selection_only:
         'MATRIX_SELECTION_UNDO_PASS','MATRIX_SELECTION_REDO_PASS','MATRIX_PASS']
 if args.resources:
     markers=['RESOURCE_HOST','RESOURCE_PASS']
-    markers += ['RESOURCE_CANCEL_PASS\t'+str(cycle) for cycle in range(1,4 if args.cancel_preview else 7)]
+    markers += ['RESOURCE_CANCEL_PASS\t'+str(cycle) for cycle in range(1,2 if args.resource_side else 4 if args.cancel_preview else 7)]
 if args.cancel_preview:
     markers += ['RESOURCE_IN_FLIGHT_CANCEL_PASS','RESOURCE_CANCEL_RETRY_PASS']
 if args.refusals:
@@ -194,8 +197,12 @@ result={'passed':passed,'exit_code':code,'matrix':args.matrix,'selection_only':a
         'Native dialog at100x100: real menu/Preview/Validate/Cancel/Place/Undo/Redo, minimap only; not G1 E2E or sprite preview')}
 if args.resources:
     result['resource_csv_sha256']=sha(run/'resources.csv')
+    result['resource_side']=args.resource_side
+    result['cancel_preview']=args.cancel_preview
 if args.cancel_preview:
     result['scope']='Native 500x500 in-flight Cancel and retry, plus three completed resource cycles'
+if args.resource_side:
+    result['scope']=f'Native {args.resource_side}x{args.resource_side} resource cycle' + (' with in-flight Cancel and retry' if args.cancel_preview else '')
 if args.refusals:
     result['refusals']=True
     result['scope']='Native GUI refusal cases and Preview recovery on a synthetic map'

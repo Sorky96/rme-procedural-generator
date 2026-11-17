@@ -30,6 +30,8 @@ enum class GenerationAlgorithm : uint8_t { GroundRoll = 1, Surface = 2 };
 // validateSurface.
 // The first eleven members are the ones a style profile stores, in that order (positional initialisation in tests and in
 // the profile parser relies on it); the members after them are set by the user in the generator dialog only.
+enum class CaveEntranceStyle : uint8_t { RockFace = 0, FloorHole = 1 };
+
 struct SurfaceTuning {
 	uint32_t featureSize = 24;        // coarsest noise lattice step in cells, 1..4096
 	uint32_t lakePermille = 60;       // share of lowest cells that start as lake, 0..500
@@ -44,7 +46,31 @@ struct SurfaceTuning {
 	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
 	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
-	bool operator==(const SurfaceTuning&) const = default;
+	uint32_t fordLength = 0;          // longest water crossing (cells) a ford may span, 0..256; 0 = no fords (not part of a style profile)
+	uint32_t rockPasses = 0;          // 1 = trails may cross bands of rock (iteration 15); 0 = they go around (not part of a style profile)
+	uint32_t shoreSmoothing = 0;      // majority-filter passes that round the sand / grass edge near lakes, 0..4; 0 = as generated (not part of a style profile)
+	uint32_t shoreRadius = 0;         // window radius of the shore smoothing, 0..8; 0 = 3 (not part of a style profile)
+	uint32_t repairReach = 0;        // 1 = repair the complete decorated multi-floor plan (repairLevelReach, iteration 37); not part of a style profile
+	uint32_t ruinPercent = 0;        // share of the buildings (percent, 0..100) that become ruins: no door, gaps in the wall (iteration 25); not part of a style profile
+	uint32_t campCount = 0;           // clearings with an open tent floor per 65536 cells, 0..50 (iteration 25); not part of a style profile
+	uint32_t caveEntrances = 0;      // Z entrances on the edge of rock bands per 65536 cells, 0..20 (iteration 27); not part of a style profile
+	CaveEntranceStyle caveEntranceStyle = CaveEntranceStyle::RockFace;
+    uint32_t plateauMinTop = 0; // 0 off, otherwise 16..4096
+    uint32_t plateauLevels = 1; // 1..3
+    uint32_t plateauMaxPercent = 0; // 0 unlimited, otherwise 1..100
+    bool caveFarExits = true; // only used when caves are enabled
+    bool caveDoorCorridors = false;
+    uint32_t passes = 0; // mountain valleys, 0..8; zero preserves historical output
+    bool buildingStoreys = false; // iteration 43: z - 1 floor with stairs above some buildings; off preserves historical output
+    uint32_t upperFloorPercent = 30; // share of qualifying buildings (interior >= 16 cells) that get the floor, 0..100
+    // Iteration 44: the client ground of the rock brush cannot be walked on. POIs and cap ramps are then kept only on the
+    // land connected to the start; false preserves historical output.
+    bool rockBlocks = false;
+    // Iteration 45: a walled dungeon on z + 1 (the cave floor) below some buildings, reached by stairs down inside;
+    // needs caves (caveEntrances > 0). Off preserves historical output.
+    bool buildingDungeons = false;
+    uint32_t dungeonPercent = 20; // share of qualifying buildings (interior >= 16 cells) that get a dungeon, 0..100
+    bool operator==(const SurfaceTuning&) const = default;
 };
 
 // Chances in permille of a cell that is eligible. The defaults are the generator's built-in rules, so

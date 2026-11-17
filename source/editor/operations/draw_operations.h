@@ -32,9 +32,19 @@ public:
 	static rme::procedural::PreparationSteps<std::expected<rme::procedural::TerrainPreview, rme::procedural::PreviewError>>
 	prepareTerrainPreviewSteps(const Map& map, const rme::procedural::GenerationSnapshot& snapshot,
 		const rme::procedural::GroundPlan& plan, rme::procedural::PreviewBudget budget, std::stop_token stop);
+	// Clears selected removable blockers in the owned, already bordered sandbox.
+	// The final diff is committed with the original terrain history unit.
+	static std::expected<void, rme::procedural::PreviewError> clearTerrainPreviewBlockers(
+		rme::procedural::TerrainPreview& preview, std::span<const uint8_t> clear,
+		std::stop_token stop = {});
 private:
+	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitTerrainUnits(
+		Editor& editor, const rme::procedural::PreparedTerrain& prepared,
+		rme::procedural::TerrainCommitBudget budget, std::stop_token stop);
+	// `units` are the floors of `prepared` with changes; they are committed as one history step.
 	static std::expected<rme::procedural::TerrainCommitReceipt, rme::procedural::TerrainCommitError> commitValidatedTerrain(
 		Editor& editor, const rme::procedural::PreparedTerrain& prepared,
+		std::span<const rme::procedural::PreparedTerrain* const> units,
 		rme::procedural::TerrainCommitBudget budget, std::stop_token stop);
 };
 

@@ -5,8 +5,73 @@
 #include "procedural/adapter/ground_resolver.h"
 #include "procedural/core/decoration.h"
 #include "procedural/core/surface.h"
+#include "procedural/core/underground.h"
+
+class DoodadBrush;
+class WallBrush;
 
 namespace rme::procedural {
+
+struct BridgeBrush { uint16_t horizontal = 0, vertical = 0; };
+std::expected<BridgeBrush, ResolveError> resolveBridgeBrush(std::string_view name);
+struct CaveDoorBrush { uint16_t wall = 0, horizontal = 0, vertical = 0; };
+std::expected<CaveDoorBrush, ResolveError> resolveCaveDoorBrush(std::string_view name);
+
+struct CaveExitBrush {
+	struct Items { uint16_t ramp = 0, tail = 0, opening = 0; };
+	std::vector<ExitShape> shapes;
+	std::vector<Items> items;
+};
+
+struct CaveBrushes : CaveExitBrush {
+	// Rock-face entrances always open to the south (`caveEntranceAllowed`), so only the doodad's first alternative is
+	// placed: in the cave entrance doodads of the RME data it is the south-facing hole (the second faces east). A floor
+	// hole is the ground brush's placement item.
+	uint16_t entrance = 0;
+	// Rock-face style only: the floor hole of an ordinary entrance off the rock (iteration 48b), 0 without that brush.
+	uint16_t hole = 0;
+	// Walkable ground on z + 1 under a hole (either style), in place of the ramp (iteration 48c): the "cave ropespot"
+	// ground brush's placement item ("dirt floor" in 10.98). 0 without that brush; holes then keep their ramp.
+	uint16_t landing = 0;
+	uint16_t ground = 0;
+	// Ground on the wall band around the floor: the wall ground brush's placement item, or the cave ground when the cave
+	// wall is a wall brush (iteration 50).
+	uint16_t wall = 0;
+	// Iteration 50: the wall brush's placement piece on every wall band cell, aligned later by RME's wall logic; 0 for a
+	// ground-brush cave wall.
+	uint16_t wallPiece = 0;
+};
+
+[[nodiscard]] bool hasPlateau(const GroundProfile& profile) noexcept;
+[[nodiscard]] bool validPlateauProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+std::expected<CaveExitBrush, ResolveError> resolvePlateauBrushes(const GroundProfile& profile, const GenerationConfig& config);
+
+// Iteration 43: storeys need walled buildings and a ramp-like stairs doodad (same shape rules as cave exits);
+// the stairs name is set exactly when the option is on.
+[[nodiscard]] bool validStoreyProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+std::expected<CaveExitBrush, ResolveError> resolveBuildingStairsBrush(std::string_view name);
+
+// Iteration 45: dungeons need walled, doored buildings, a cave (z + 1 is drawn with the cave's unit), a ground brush
+// for the floor, a wall brush with closed, unlocked normal doors and a ramp-like stairs doodad; the three names are
+// set exactly when the option is on.
+[[nodiscard]] bool validDungeonProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+struct DungeonBrushes {
+    uint16_t floor = 0;   // placement item of the floor brush
+    CaveDoorBrush wall;   // wall piece and door items
+    CaveExitBrush stairs; // stairs up on z + 1 (their upper part is not used)
+    uint16_t descent = 0; // visible stairs down on the surface: a floor-change-down ground of the descent brush
+};
+std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundProfile& profile);
+
+[[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
+// Iteration 50: the cave wall may name a wall brush, drawn over cave ground, instead of a ground brush. Returns that
+// brush; null for a ground brush, a wall decoration brush or an unknown name. GUI thread.
+[[nodiscard]] const WallBrush* caveWallBrushOf(const GroundProfile& profile);
+[[nodiscard]] bool validCaveProfile(const GroundProfile& profile, const GenerationConfig& config) noexcept;
+// Translates a ramp-like doodad (every alternate a composite: a floor-change tile, a tile on the floor
+// above and at most one tail tile) into exit shapes in alternate order. GUI thread, client loaded.
+std::expected<CaveExitBrush, ResolveError> resolveCaveExitBrush(const DoodadBrush& exit);
+std::expected<CaveBrushes, ResolveError> resolveCaveBrushes(const GroundProfile& profile, const GenerationConfig& config);
 
 // Resolves a surface grid into the same GroundPlan the rest of the pipeline already consumes.
 // profile.count must be GroundProfile::surfaceCount, with names in SurfaceKind order after
