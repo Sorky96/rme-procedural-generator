@@ -37,6 +37,61 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I51b — eksperyment kolejności rankingu (2026-11-18, przed implementacją i pomiarem)
+
+**Decyzja użytkownika:** przygotować osobno zarejestrowany eksperyment poprawy
+rankingu. I51 pozostaje FAIL (m06 18/32, m19 18/32). Poniższy eksperyment
+nie zastępuje historycznego wyniku ani kryteriów I51.
+
+**Hipoteza, nie ustalenie:** dyskretna liczba trafionych pasm może przesłaniać
+mniejsze, ciągłe błędy pozostałych metryk. Sprawdzamy jedną zmianę porządku,
+bez uczenia wag, selekcji metryk ani nowych wariantów po zobaczeniu wyników.
+Nie obliczono dotąd wyniku proponowanego wariantu na raportach I51.
+
+**A (kontrola):** (hardFail rosnąco, inBand malejąco, distance rosnąco, indeks).
+**B (jedyny eksperyment):** (hardFail rosnąco, distance rosnąco, inBand malejąco, indeks).
+Oba są rankingiem leksykograficznym z warunkiem twardym na pierwszym miejscu.
+distance pozostaje całkowitą sumą z polityki 396e057. Pasma g6-bands-v1,
+26 metryk, N/A, jednostki, cap i wszystkie parametry generatora bez zmian.
+Nie zmieniamy produkcyjnego domyślnego porządku A podczas eksperymentu.
+
+**Dane i wykonanie:** nowa macierz seedów użytkownika 2001–2032, N=16,
+bok 512; profile m06/m19, pathLength/buildingDensity 40/30 i 80/40,
+rockBlocks 0/1, --g5-levels. Ten sam zestaw kandydatów służy A i B,
+bez ponawiania ani usuwania nieudanych seedów. Dwa pełne przebiegi muszą
+dać bajtowo identyczne raporty. Kandydat 0 zachowuje seed użytkownika.
+Historyczne seedy 1001–1032 można ocenić dopiero po zamrożeniu kodu,
+wyłącznie jako wynik dodatkowy, bez udziału w decyzji o przyjęciu B.
+
+**Ocena główna:** te same mapy M01,M05,M11,M18 i średnia po trzech rodzinach,
+jak w I51. M12–M17 wyłącznie dodatkowo. Sukces = hardFail zwycięzcy 0
+i odległość holdout ściśle poniżej mediany wszystkich 16 kandydatów.
+Próg dla B: co najmniej 23/32 osobno dla m06 i m19. Ponadto B musi mieć
+ściśle więcej sukcesów niż A na nowej macierzy w każdym profilu.
+Warunki są łączne; niespełnienie któregokolwiek oznacza I51B_FAIL,
+bez przyjęcia B i bez automatycznej zmiany kryteriów. Nie deklarujemy
+istotności statystycznej na podstawie samego przekroczenia progu.
+
+Raport obejmuje A i B per seed, mapa i rodzina; pary poprawa/pogorszenie/
+bez zmiany, liczbę zmian zwycięzcy, hardFail, inBand i distance zwycięzców,
+baseline losowy liczony dokładnie jak w I51, pokrycie i przyczyny N/A.
+Nie używamy holdoutu do wyboru zwycięzcy; służy wyłącznie ewaluacji.
+Błąd danych unieważnia przebieg, nie jest porażką jakości ani N/A.
+
+**Ograniczenie dowodu:** mapy oceniano już w I51; nowe seedy nie czynią
+ich ponownie niewidzianymi. I51b jest eksperymentem rozwojowym po ujawnieniu
+holdoutu. Nawet PASS nie zamyka G6 ani nie zastępuje oceny na nowych mapach
+lub ślepego testu I55. Nie dobieramy nowych map na podstawie wyników B.
+
+**Testy i regresja:** ręcznie policzony przypadek, w którym A i B wybierają
+różnych kandydatów; hardFail i pełne remisy; niezależne odtworzenie obu
+porządków w Pythonie; agregacja par i odmowa niekompletnej macierzy.
+Build, g5_run_suite z obiema sondami → SUITE_PASS; G5 --i47 z rockBlocks
+m06=0,m19=1 → 32/32 obu profili; fingerprint 1729 100×100 bez zmian.
+Bez zmian GUI, Place/Undo, generatora i formatu map. Implementacja przez
+agenta Codex medium w worktree, po tym commicie; przegląd, ff-merge,
+niezależna regresja, raport G6_GATE_STATUS i cleanup build-ninja worktree.
+
 ### I51 — uzupełnienie wiążące przed implementacją i pomiarem (2026-11-17)
 
 Poniższe reguły zastępują wcześniejsze niedookreślone wybory metryk,

@@ -1,5 +1,15 @@
 # G6 — stan bramki
 
+## I51b — przygotowany eksperyment (2026-11-18)
+
+Na prośbę użytkownika zapisano przed implementacją i pomiarem eksperyment
+zamiany priorytetu inBand/distance. Jedyny wariant B i kontrola A będą
+oceniane na wspólnej nowej macierzy seedów 2001–2032. Kryteria, próg
+23/32 dla obu profili i wymóg poprawy wobec A: G6_METRICS, sekcja I51b.
+Nie wykonano implementacji ani pomiaru B. To eksperyment rozwojowy na
+ujawnionym wcześniej holdoucie; ewentualny PASS nie zamknie G6.
+Wynik I51 pozostaje FAIL. Ostatnie wyniki regresji poniżej dotyczą I51.
+
 ## I51 — pełna polityka, wynik niezaliczony (2026-11-17)
 
 Kryteria uzupełniono przed implementacją i oceną w `396e057`.
