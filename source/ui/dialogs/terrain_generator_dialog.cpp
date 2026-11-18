@@ -834,6 +834,38 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     candidate_progress_ = newd wxGauge(this, wxID_ANY, int(maxCandidateCount));
     candidate_progress_->SetName("terrain-candidate-progress");
     right->Add(candidate_progress_, 0, wxEXPAND | wxTOP, gap);
+    right->Add(label("Feedback for Selected candidate (independent of Place):"), 0, wxTOP, gap);
+    right->Add(label("Optional note (maximum 1024 UTF-8 bytes):"), 0, wxTOP, gap);
+    feedback_note_ = newd wxTextCtrl(this, wxID_ANY);
+    feedback_note_->SetName("terrain-feedback-note");
+    feedback_note_->SetBackgroundColour(Theme::Get(Theme::Role::Background));
+    feedback_note_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    right->Add(feedback_note_, 0, wxEXPAND | wxTOP, gap);
+    auto* feedbackButtons = newd wxBoxSizer(wxHORIZONTAL);
+    const auto feedbackButton = [&](const char* caption, const char* name, FeedbackAction action) {
+        auto* button = newd wxButton(this, wxID_ANY, caption);
+        button->SetName(name);
+        button->Bind(wxEVT_BUTTON, [this, action](wxCommandEvent&) { OnFeedback(action); });
+        feedbackButtons->Add(button, 0, wxRIGHT, gap);
+        return button;
+    };
+    approve_button_ = feedbackButton("&Approve", "terrain-approve", FeedbackAction::Approve);
+    reject_button_ = feedbackButton("&Reject", "terrain-reject", FeedbackAction::Reject);
+    adjust_button_ = feedbackButton("Ad&just", "terrain-adjust", FeedbackAction::Adjust);
+    right->Add(feedbackButtons, 0, wxTOP, gap);
+    auto* adjustScope = label(adjustmentScope);
+    adjustScope->Wrap(Theme::Grid(110));
+    right->Add(adjustScope, 0, wxEXPAND | wxTOP, gap);
+    right->Add(label("Local version history (choose, then Activate / rollback):"), 0, wxTOP, gap);
+    auto* historyRow = newd wxBoxSizer(wxHORIZONTAL);
+    history_choice_ = newd wxChoice(this, wxID_ANY);
+    history_choice_->SetName("terrain-history");
+    historyRow->Add(history_choice_, 1, wxEXPAND | wxRIGHT, gap);
+    rollback_button_ = newd wxButton(this, wxID_ANY, "Activate / roll&back");
+    rollback_button_->SetName("terrain-rollback");
+    rollback_button_->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnRollback, this);
+    historyRow->Add(rollback_button_, 0);
+    right->Add(historyRow, 0, wxEXPAND | wxTOP, gap);
 
 	auto* body = newd wxBoxSizer(wxHORIZONTAL);
 	body->Add(left, 0, wxEXPAND | wxRIGHT, margin);
@@ -929,8 +961,17 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	});
 
 	UpdateClientLabel();
+	default_adjustment_ = {uint32_t(path_length_spin_->GetValue()), uint32_t(building_density_spin_->GetValue()),
+        uint32_t(ruin_percent_spin_->GetValue()), uint32_t(camp_count_spin_->GetValue()), uint32_t(ford_length_spin_->GetValue()),
+        uint32_t(rock_passes_check_->GetValue()), smooth_beaches_check_->GetValue() ? 2u : 0u, uint32_t(repair_check_->GetValue())};
+    RefreshHistoryChoices();
+    if (profile_choice_->GetSelection() > 0) {
+        style_choice_->SetSelection(1);
+        wxCommandEvent restored; OnProfileChosen(restored);
+    }
 	UpdateControlStates();
 	SetStatus(has_source_map_ ? wxString("Choose an area and press Preview.") : describe(TerrainTargetError::NoEditor), !has_source_map_);
+	if (!history_error_.empty()) SetStatus(wxstr(history_error_), true);
 	scope_choice_->SetFocus();
 }
 
@@ -948,17 +989,26 @@ void TerrainGeneratorDialog::LoadStyleProfiles() {
 	namespace rp = rme::procedural;
 	const auto folder = rp::styleProfileDirectory();
 	const auto ids = rp::loadedClientAssetIds();
+	profile_choice_->Clear(); profile_choice_->Append("Built-in (manual settings)"); profile_choice_->SetSelection(0);
+	profiles_.clear(); style_history_.reset(); history_error_.clear();
+	auto history = rp::StyleHistoryStore::open(folder / "history.json");
+	if (history) style_history_ = std::move(*history);
+	else history_error_ = history.error();
 	wxString hint;
 	if (!ids) {
 		hint = "Style profiles need a loaded client with items.otb.";
 	} else {
 		auto scan = rp::scanStyleProfiles(folder, *ids);
+		if (style_history_) rp::offerStyleHistory(scan.offer, style_history_->data(), *ids);
 		const wxString where(folder.generic_wstring());
 		if (!scan.exists) {
 			hint = "No style profiles. Put *.profile files in:\n" + where;
 		} else {
 			profiles_ = std::move(scan.offer.offered);
 			for (const auto& entry : profiles_) profile_choice_->Append(wxstr(entry.name));
+			if (style_history_) for (size_t i = 0; i < profiles_.size(); ++i)
+                if (!profiles_[i].versionId.empty() && profiles_[i].versionId == style_history_->data().active)
+                    profile_choice_->SetSelection(int(i + 1));
 			hint = wxstr(std::format("{} style profile(s) offered from:\n", profiles_.size())) + where;
 			const size_t hidden = scan.offer.otherClient + scan.offer.otherAssets + scan.offer.notUsable + scan.unreadable;
 			if (hidden > 0) {
@@ -1000,6 +1050,30 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	for (size_t i = 0; i < std::size(groundFields); ++i) if (!default_brushes_[i].empty()) setBrush(groundFields[i], default_brushes_[i]);
 	for (size_t i = 0; i < std::size(decorFields); ++i) if (!default_decor_brushes_[i].empty()) setBrush(decorFields[i], default_decor_brushes_[i]);
 	const int picked = profile_choice_->GetSelection();
+	if (style_history_ && picked > 0 && size_t(picked) <= profiles_.size()) {
+        const auto& version = profiles_[size_t(picked)-1].versionId;
+        if (!version.empty() && version != style_history_->data().active) {
+            const auto ids = loadedClientAssetIds();
+            const auto saved = ids ? style_history_->activate(version, ids->client, ids->otbSha256, ids->datSha256) :
+                std::expected<void,std::string>(std::unexpected("Cannot identify client assets."));
+            if (!saved) {
+                profile_choice_->SetSelection(0);
+                for (size_t i=0;i<profiles_.size();++i)
+                    if (profiles_[i].versionId==style_history_->data().active) profile_choice_->SetSelection(int(i+1));
+                wxCommandEvent restore; OnProfileChosen(restore);
+                SetStatus(wxstr(saved.error()), true); return;
+            }
+            RefreshHistoryChoices();
+        }
+    }
+    if (picked > 0 && size_t(picked) <= profiles_.size() && !profiles_[size_t(picked)-1].versionId.empty()) {
+	const auto adjustment = profiles_[size_t(picked)-1].adjustment ?
+        *profiles_[size_t(picked)-1].adjustment : default_adjustment_;
+    path_length_spin_->SetValue(int(adjustment[0])); building_density_spin_->SetValue(int(adjustment[1]));
+    ruin_percent_spin_->SetValue(int(adjustment[2])); camp_count_spin_->SetValue(int(adjustment[3]));
+    ford_length_spin_->SetValue(int(adjustment[4])); rock_passes_check_->SetValue(adjustment[5] != 0);
+    smooth_beaches_check_->SetValue(adjustment[6] != 0); repair_check_->SetValue(adjustment[7] != 0);
+    }
 	if (picked <= 0 || static_cast<size_t>(picked) > profiles_.size()) {
 		SetStatus("Built-in settings: brushes set back to the defaults.", false);
 		return;
@@ -1033,7 +1107,78 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
 	if (!skipped.empty()) message += " Not usable in this client, kept the default: " + skipped + ".";
 	SetStatus(message, false);
+	UpdateControlStates();
 }
+
+void TerrainGeneratorDialog::RefreshHistoryChoices() {
+    history_choice_->Clear(); history_ids_.clear();
+    if (style_history_) for (const auto& p : profiles_) {
+        if (p.versionId.empty()) continue;
+        history_choice_->Append(wxstr(p.name + (p.versionId == style_history_->data().active ? " Active" : "")));
+        history_ids_.push_back(p.versionId);
+        if (p.versionId == style_history_->data().active) history_choice_->SetSelection(int(history_ids_.size()-1));
+    }
+    if (history_choice_->GetSelection() == wxNOT_FOUND && !history_ids_.empty()) history_choice_->SetSelection(0);
+}
+
+void TerrainGeneratorDialog::OnRollback(wxCommandEvent&) {
+    const int picked = history_choice_->GetSelection();
+    if (!NaturalSurface() || !style_history_ || picked < 0 || size_t(picked) >= history_ids_.size()) return;
+    const auto ids = loadedClientAssetIds();
+    if (!ids) { SetStatus("Load a compatible client before activating a version.", true); return; }
+    const auto saved = style_history_->activate(history_ids_[size_t(picked)], ids->client, ids->otbSha256, ids->datSha256);
+    if (!saved) { SetStatus(wxstr(saved.error()), true); return; }
+    const auto id = style_history_->data().active;
+    for (size_t i=0; i<profiles_.size(); ++i) if (profiles_[i].versionId == id) profile_choice_->SetSelection(int(i+1));
+    wxCommandEvent changed; OnProfileChosen(changed); RefreshHistoryChoices(); UpdateControlStates();
+    SetStatus("Local version activated. History retained; press Preview for a new series.", false);
+}
+
+void TerrainGeneratorDialog::OnFeedback(FeedbackAction action) try {
+    if (!style_history_) { SetStatus(wxstr(history_error_), true); return; }
+    if (!NaturalSurface() || collecting_ || preview_steps_ || !prepared_ || !selected_candidate_ ||
+        *selected_candidate_ >= candidates_.size() || !SeriesCurrent()) {
+        SetStatus("Feedback refused: generate and select a current candidate first.", true); return;
+    }
+    const auto request = ReadRequest();
+    if (!request || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile ||
+        candidateFingerprints(*prepared_) != candidates_[*selected_candidate_].fingerprints) {
+        SetStatus("Feedback refused: preview is stale.", true); return;
+    }
+    if (action != FeedbackAction::Reject && !CandidateAllowed()) {
+        SetStatus("Approve and Adjust require an admissible candidate. Reject can record hardFail.", true); return;
+    }
+    const auto note = feedback_note_->GetValue().utf8_str();
+    if (note.length() > 1024) { SetStatus("Note exceeds 1024 UTF-8 bytes. Shorten the note before saving.", true); feedback_note_->SetFocus(); return; }
+    const auto ids = loadedClientAssetIds();
+    if (!ids) { SetStatus("Cannot identify loaded client assets for feedback.", true); return; }
+    const int picked = profile_choice_->GetSelection();
+    const OfferedProfile* p = picked > 0 && size_t(picked) <= profiles_.size() ? &profiles_[size_t(picked)-1] : nullptr;
+    if (action == FeedbackAction::Adjust && !p) { SetStatus("Adjust requires a base profile.", true); return; }
+    if (p && checkProfile(p->profile, ids->client, ids->otbSha256, ids->datSha256, request->config.region.z) != ProfileCompatibility::Compatible) {
+        SetStatus("Feedback refused: profile/client assets mismatch.", true); return;
+    }
+    StyleFeedback f; f.action=action; f.note=std::string(note.data(),note.length());
+    f.settings = p ? p->profile : StyleProfile{};
+    f.settings.client=ids->client; f.settings.otbSha256=ids->otbSha256; f.settings.datSha256=ids->datSha256;
+    f.settings.tuning=request->config.surface; f.settings.decorTuning=request->config.decor;
+    f.generation=request->config.surface; f.vegetation=request->config.vegetation;
+    f.adjustment=styleAdjustment(request->config.surface);
+    f.base=p ? (p->baseId.empty() ? styleIdentity(p->profile) : p->baseId) : "";
+    f.version=p ? p->versionId : "";
+    f.policy=ranking_bands_.empty() ? "unranked/I54-v1" : "g6-bands-v1/A/I54-v1";
+    const auto& c=candidates_[*selected_candidate_];
+    f.candidate=*selected_candidate_; f.userSeed=series_request_->config.seed;
+    f.initialSeed=c.initialSeed; f.actualSeed=c.seed; f.fingerprints=c.fingerprints; f.hardFail=c.score.hardFail;
+    const auto saved=style_history_->record(std::move(f), p ? &p->profile : nullptr, p ? p->versionId : "");
+    if (!saved) { SetStatus(wxstr(saved.error()),true); return; }
+    feedback_note_->Clear();
+    if (action==FeedbackAction::Adjust) {
+        ReleasePreview(); LoadStyleProfiles(); RefreshHistoryChoices();
+        wxCommandEvent changed; OnProfileChosen(changed); UpdateControlStates();
+        SetStatus("Adjust saved as a new local version. Previous versions retained; press Preview.",false);
+    } else SetStatus("Feedback saved locally for Selected candidate. Map and Undo unchanged.",false);
+} catch (const std::exception& e) { SetStatus(wxstr(std::string("Feedback refused: ")+e.what()),true); }
 
 void TerrainGeneratorDialog::ReleasePreview() {
 	preview_timer_.Stop();
@@ -1156,6 +1301,12 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	place_button_->Enable(CandidateAllowed());
     candidate_count_spin_->Enable(natural);
     copy_index_text_->Enable(natural);
+    const bool feedback = natural && style_history_ && !collecting_ && !preview_steps_ && prepared_ && selected_candidate_ && *selected_candidate_ < candidates_.size();
+    reject_button_->Enable(feedback);
+    approve_button_->Enable(feedback && CandidateAllowed());
+    adjust_button_->Enable(feedback && CandidateAllowed() && profile_choice_->GetSelection() > 0);
+    history_choice_->Enable(natural && !history_ids_.empty());
+    rollback_button_->Enable(natural && style_history_ && !history_ids_.empty());
 }
 
 void TerrainGeneratorDialog::UpdateClientLabel() {

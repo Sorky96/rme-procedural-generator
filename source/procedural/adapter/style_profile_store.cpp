@@ -50,6 +50,15 @@ std::filesystem::path styleProfileDirectory() {
 	return toPath(FileSystem::GetLocalDataDirectory()) / "procedural" / "styles";
 }
 
+void offerStyleHistory(ProfileOffer& offer, const StyleHistory& history, const ClientAssetIds& ids) {
+	for (auto& p : offer.offered) p.baseId = styleIdentity(p.profile);
+	for (const auto& v : history.versions) {
+		if (checkProfile(v.profile, ids.client, ids.otbSha256, ids.datSha256, 7) != ProfileCompatibility::Compatible) continue;
+		offer.offered.push_back({"Local " + v.id.substr(0, 8) + (v.parent.empty() ? " (base)" : " <- " + v.parent.substr(0, 8)),
+			v.profile, v.id, v.base, v.adjustment});
+	}
+}
+
 StyleProfileFolder scanStyleProfiles(const std::filesystem::path& folder, const ClientAssetIds& ids, size_t maxFiles, size_t maxFileBytes) {
 	StyleProfileFolder result;
 	result.path = folder;

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "procedural/core/style_profile_set.h"
+#include "procedural/core/style_history.h"
 
 #include <filesystem>
 #include <optional>
@@ -10,7 +11,8 @@
 namespace rme::procedural {
 
 // Style profiles on disk (G4): files named *.profile in one folder, written by the offline learning tools from
-// private reference maps. Nothing here writes to disk or to the map; the dialog only reads.
+// private reference maps. Source profiles are read-only; local feedback/version writes use
+// StyleHistoryStore, independently of the map and Undo.
 
 struct ClientAssetIds {
 	std::string client;       // loaded client id, e.g. "10.98"
@@ -24,6 +26,9 @@ struct ClientAssetIds {
 
 // <local data directory>/procedural/styles. The folder is not created.
 [[nodiscard]] std::filesystem::path styleProfileDirectory();
+
+// Add compatible local snapshots without modifying the read-only source profiles.
+void offerStyleHistory(ProfileOffer& offer, const StyleHistory& history, const ClientAssetIds& ids);
 
 struct StyleProfileFolder {
 	std::filesystem::path path;

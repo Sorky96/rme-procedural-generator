@@ -73,6 +73,7 @@ void oneRun(uint32_t count,const char* policy,std::ostream& report, const char* 
     const auto revision=editor.map.getChangeTracker().getGeneration();
     auto* d=new TerrainGeneratorDialog(g_gui.root);
     auto& style=control<wxChoice>(*d,"terrain-style");style.SetSelection(1);changed(style);
+    auto& builtIn=control<wxChoice>(*d,"terrain-profile");builtIn.SetSelection(0);changed(builtIn);
     auto& n=control<wxSpinCtrl>(*d,"terrain-candidate-count");
     check(n.GetMin()==1 && n.GetMax()==16 && n.GetValue()==4,"N bounds/default");
     n.SetValue(int(count));changed(n,wxEVT_TEXT);
@@ -133,6 +134,63 @@ void oneRun(uint32_t count,const char* policy,std::ostream& report, const char* 
     }
     auto expected=prepareTerrain(editor.map,config,profile,{100000,120000,500000,2ULL<<30});
     check(bool(expected),"Independent selected adapter failed");
+    if (count==1 && !*policy && !*copyIndex) {
+        check(!control<wxButton>(*d,"terrain-adjust").IsEnabled(),"I54 built-in Adjust disabled");
+        click(*d,"terrain-approve");
+        const auto history=StyleHistoryStore::open(styleProfileDirectory()/"history.json");
+        check(history && !history->data().feedback.empty() && history->data().feedback.back().base.empty(),"I54 built-in feedback");
+        unchanged(editor,revision);report<<"I54_BUILTIN_FEEDBACK_NO_BASE_ADJUST_DISABLED_PASS\n";
+    }
+    if (count==4 && std::string(policy)=="m06") {
+        const auto file=styleProfileDirectory()/"history.json";
+        auto state=StyleHistoryStore::open(file);check(bool(state),"I54 private history");
+        const auto before=state->data().feedback.size();
+        auto& note=control<wxTextCtrl>(*d,"terrain-feedback-note");
+        note.SetValue(wxString::FromUTF8((std::string(1023,'a')+"\xc4\x85").c_str()));
+        click(*d,"terrain-approve");
+        check(control<wxStaticText>(*d,"terrain-status").GetLabel().Contains("1024 UTF-8"),"I54 note overlimit visible");
+        check(StyleHistoryStore::open(file)->data().feedback.size()==before,"I54 overlimit persisted");
+        note.SetValue(wxString::FromUTF8("Ocena \xc5\xbc\xc3\xb3\xc5\x82\xc4\x87"));
+        click(*d,"terrain-approve");click(*d,"terrain-reject");
+        state=StyleHistoryStore::open(file);
+        check(state && state->data().feedback.size()==before+2,"I54 independent explicit feedback");
+        const auto& saved=state->data().feedback[before];
+        check(saved.candidate==target && saved.actualSeed==seed && saved.userSeed==1729 && !saved.note.empty(),"I54 saved Selected identity/UTF-8");
+        unchanged(editor,revision);
+        click(*d,"terrain-adjust");
+        state=StyleHistoryStore::open(file);check(state && state->data().versions.size()==2,"I54 root and local version");
+        const auto first=state->data().active;
+        const auto root=state->data().versions[0].id;
+        check(list.GetItemCount()==0 && !control<wxButton>(*d,"terrain-place").IsEnabled(),"I54 Adjust invalidates series");
+        click(*d,"terrain-approve");
+        check(StyleHistoryStore::open(file)->data().feedback.size()==before+3,"I54 stale feedback refused");
+        auto& versions=control<wxChoice>(*d,"terrain-history");versions.SetSelection(0);click(*d,"terrain-rollback");
+        check(StyleHistoryStore::open(file)->data().active==root,"I54 explicit rollback persisted");
+        const auto regenerate=[&] {
+            control<wxCheckBox>(*d,"terrain-repair").SetValue(false);
+            for(const char* name:{"terrain-grass-brush","terrain-dirt-brush","terrain-rock-brush","terrain-shore-brush","terrain-water-brush"}) {
+                auto& brush=control<wxComboBox>(*d,name); if(brush.FindString("grass")==wxNOT_FOUND)brush.Append("grass");brush.SetStringSelection("grass");
+            }
+            click(*d,"terrain-preview");wait(*d);
+            const auto selected=list.GetNextItem(-1,wxLIST_NEXT_ALL,wxLIST_STATE_SELECTED);
+            if(selected>=0)list.SetItemState(selected,0,wxLIST_STATE_SELECTED);
+            list.SetItemState(long(target),wxLIST_STATE_SELECTED|wxLIST_STATE_FOCUSED,wxLIST_STATE_SELECTED|wxLIST_STATE_FOCUSED);wait(*d);
+            check(control<wxButton>(*d,"terrain-place").IsEnabled(),"I54 regenerated version admissible");
+        };
+        regenerate();click(*d,"terrain-adjust");
+        state=StyleHistoryStore::open(file);
+        check(state && state->data().versions.size()==3 && state->data().versions.back().parent==root && state->data().active!=first,"I54 branch after rollback");
+        auto* restored=new TerrainGeneratorDialog(g_gui.root);
+        check(control<wxChoice>(*restored,"terrain-profile").GetStringSelection().Contains("Local"),"I54 reopened dialog restores version");
+        restored->Destroy();
+        regenerate();unchanged(editor,revision);
+        // Force stale settings without an event: handler must compare the actual request.
+        auto& seedInput=control<wxTextCtrl>(*d,"terrain-seed");seedInput.ChangeValue("1730");
+        const auto n=state->data().feedback.size();click(*d,"terrain-reject");
+        check(StyleHistoryStore::open(file)->data().feedback.size()==n,"I54 stale request handler refusal");
+        seedInput.ChangeValue("1729");
+        report<<"I54_SELECTED_FEEDBACK_UTF8_ADJUST_ROLLBACK_BRANCH_REOPEN_STALE_NO_MUTATION_PASS\n";
+    }
     d->Hide();
     wxTheApp->CallAfter([d]{click(*d,"terrain-place");});
     check(d->ShowModal()==wxID_OK,"Place failed");
@@ -181,6 +239,7 @@ void hardFailure(std::ostream& report) {
     check(g_gui.NewMap(),"HardFail map");auto& editor=*g_gui.GetCurrentEditor();
     auto* d=new TerrainGeneratorDialog(g_gui.root);
     auto& style=control<wxChoice>(*d,"terrain-style");style.SetSelection(1);changed(style);
+    auto& builtIn=control<wxChoice>(*d,"terrain-profile");builtIn.SetSelection(0);changed(builtIn);
     control<wxSpinCtrl>(*d,"terrain-candidate-count").SetValue(1);
     control<wxSpinCtrl>(*d,"terrain-cave-entrances").SetValue(1);
     control<wxCheckBox>(*d,"terrain-repair").SetValue(false);
@@ -194,6 +253,13 @@ void hardFailure(std::ostream& report) {
         found=true;
         check(!control<wxButton>(*d,"terrain-place").IsEnabled(),"hardFail enabled Place");
         click(*d,"terrain-place");
+        const auto history=StyleHistoryStore::open(styleProfileDirectory()/"history.json");check(bool(history),"I54 hardFail history");
+        const auto size=history->data().feedback.size();
+        click(*d,"terrain-approve");click(*d,"terrain-adjust");
+        check(StyleHistoryStore::open(styleProfileDirectory()/"history.json")->data().feedback.size()==size,"I54 hardFail approve/adjust refused");
+        click(*d,"terrain-reject");
+        const auto rejected=StyleHistoryStore::open(styleProfileDirectory()/"history.json");
+        check(rejected && rejected->data().feedback.size()==size+1 && rejected->data().feedback.back().hardFail,"I54 hardFail Reject saved");
         check(editor.map.getTileCount()==0 && editor.actionQueue->getSize()==0,"Forced hardFail Place mutated map");
     }
     check(found,"No real-client hardFail fixture in fixed search range");
@@ -238,6 +304,7 @@ void copyGuard(std::ostream& report) {
     { std::ofstream file("copy-fixture.i53", std::ios::binary); file << serializeCopyIndex(index); }
     auto* d = new TerrainGeneratorDialog(g_gui.root);
     auto& style=control<wxChoice>(*d,"terrain-style"); style.SetSelection(1); changed(style);
+    auto& builtIn=control<wxChoice>(*d,"terrain-profile");builtIn.SetSelection(0);changed(builtIn);
     control<wxSpinCtrl>(*d,"terrain-candidate-count").SetValue(1);
     control<wxSpinCtrl>(*d,"terrain-plateau-percent").SetValue(0);
     control<wxCheckBox>(*d,"terrain-repair").SetValue(false);

@@ -52,6 +52,16 @@ private:
 
 	void OnInputChanged(wxCommandEvent& event);
 	void OnProfileChosen(wxCommandEvent& event);
+	void OnFeedback(rme::procedural::FeedbackAction action);
+	void OnRollback(wxCommandEvent& event);
+	void RefreshHistoryChoices();
+	std::optional<rme::procedural::StyleHistoryStore> style_history_;
+	std::string history_error_;
+	wxTextCtrl* feedback_note_ = nullptr;
+	wxButton *approve_button_ = nullptr, *reject_button_ = nullptr, *adjust_button_ = nullptr, *rollback_button_ = nullptr;
+	wxChoice* history_choice_ = nullptr;
+	std::vector<std::string> history_ids_;
+	rme::procedural::StyleAdjustment default_adjustment_ {};
 	void OnPreview(wxCommandEvent& event);
 	void OnPreviewTick(wxTimerEvent& event);
     void OnCandidateSelected(wxListEvent& event);
