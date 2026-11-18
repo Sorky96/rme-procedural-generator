@@ -1,5 +1,40 @@
 # G6 — stan bramki
 
+## I51b — eksperyment niezaliczony (2026-11-18)
+
+Prerejestracja `9ab1ca0`; implementacja Codex medium w osobnym worktree,
+przegląd i ff-merge `9b79919`. Domyślny ranking A zachowano; B dostępny
+wyłącznie w jawnym trybie offline --i51b. Bez zmian generatora, GUI i pasm.
+
+**I51B_FAIL:** B nie przewyższa A w żadnym profilu. Seedy 2001–2032:
+m06 A=29/32, B=28/32; m19 A=27/32, B=21/32. Wymagane B≥23/32 i B>A
+osobno dla obu profili. Nie dostrajano kryteriów ani modelu po wyniku.
+Historyczne I51 nadal FAIL 18/32 obu profili; nie zastępujemy jego wyniku
+nowymi seedami. G6 pozostaje otwarte; ten holdout był wcześniej ujawniony.
+
+Raport wykonawcy: [g6_i51b_report.md](smoke/g6_i51b_report.md),
+pełne wyniki [g6_i51b_holdout.json](smoke/g6_i51b_holdout.json).
+Integrator powtórzył ocenę surowych raportów i potwierdził wynik.
+Testy integratora: I51b 3/3 PASS, ewaluator I51 8/8 PASS.
+Wykonawca: CTest 22/22 PASS i dwa identyczne pełne przebiegi macierzy.
+Integrator nie generował ponownie pełnej macierzy; powtarzalność oceniono
+na raportach wykonawcy.
+
+Niezależna walidacja integratora: kanoniczny build PASS; SUITE_PASS,
+19/19 testów rdzenia, sondy --commit i --surface PASS, zasoby wejściowe
+bez zmian (surface: 157 znanych ostrzeżeń SetFocus, bez innych stderr).
+Pomiar G5 --i47 z rockBlocks m06=0,m19=1: G5_GATE_PASS, 32/32 obu
+profili i identyczne powtórzenia. Test CLI na przebudowanym narzędziu:
+CANDIDATE_RANK_CLI_PASS, w tym fingerprint 17159159863505677800 i --i51b.
+Worktree nie zawierał build-ninja, brak katalogu do usunięcia.
+
+Po zakończeniu buildu można sprawdzić offline CLI --i51b: dla każdego seeda
+powinny pojawić się winner (A) i winnerB (B), obliczone z tych samych wierszy.
+Powtórzenie polecenia musi dać ten sam raport. B nie trafia do GUI.
+Ręczny test GUI: kroki Place/Undo/Redo i mountain opisane poniżej;
+nie został wykonany przez integratora. Nie potwierdzono oryginalnego RME
+ani determinizmu między kompilatorami.
+
 ## I51b — przygotowany eksperyment (2026-11-18)
 
 Na prośbę użytkownika zapisano przed implementacją i pomiarem eksperyment
