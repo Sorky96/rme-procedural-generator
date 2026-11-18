@@ -37,6 +37,45 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I54 — lokalny feedback i historia profilu (przed implementacją)
+
+1. Surface: jawne Approve / Reject / Adjust dla aktualnie wybranego i
+   przygotowanego kandydata. Approve oznacza dopuszczalny wynik, Reject można
+   zapisać także dla hardFail. Są to pojedyncze, jawne oceny, niezależne od
+   Place. Wybór w galerii sam nie zapisuje ocen innych kandydatów. Opcjonalna
+   notatka do 1024 bajtów UTF-8 z widocznym błędem nadlimitu.
+2. Lokalny, wersjonowany JSON w katalogu profili użytkownika. Wpis wiąże
+   ocenę z tożsamością klienta i zasobów, profilem i wersją albo ustawieniami
+   wbudowanymi, indeksem, seedem początkowym i rzeczywistym, odciskami pięter
+   oraz wersją formatu/polityki. Wpis ma trwały unikatowy identyfikator.
+   Bez ścieżek map, nazw map i danych kafli. Zachowujemy wcześniejsze oceny.
+3. Adjust świadomie zapisuje bieżące obsługiwane strojenie stylu jako nową
+   lokalną wersję na podstawie wybranego, dopuszczalnego kandydata. GUI
+   pokazuje zakres zapisywanych parametrów. Historia zachowuje poprzednie
+   wersje i ich powiązania. Wyjściowe profile są tylko do odczytu. Profile
+   starszego formatu nadal działają. Wersja lokalna zachowuje istniejące
+   ograniczenia zgodności klienta i pochodzenie pasm. Brak profilu bazowego
+   wyłącza Adjust, ale pozwala ocenić kandydata.
+4. Powrót do wybranej zgodnej wersji zmienia aktywną wersję profilu bez
+   usuwania nowszych wersji. Operacja jest jawna i unieważnia serię I52.
+   Kolejne Adjust po powrocie tworzy nową wersję z wybraną wersją jako
+   rodzicem. Po ponownym uruchomieniu zachowują się oceny, historia i wybór
+   wersji. Zapis atomowy i ograniczone wczytywanie. Błąd walidacji, zapisu
+   lub konflikt zapisu zgłaszamy czytelnie, bez nadpisania poprzednich
+   danych. Nieznana wersja formatu nie jest automatycznie resetowana.
+5. Kontrolki dziedziczą Theme i obsługę klawiaturą. Wygasły podgląd nie
+   przyjmuje feedbacku. Feedback, Adjust i powrót nie zapisują nic na mapie
+   ani w Undo. Place pozostaje pojedynczym Undo, z blokadami I52/I53.
+   Bez automatycznej zmiany rankingu, zdalnej synchronizacji i ML.
+
+Testy: odczyt i ponowne otwarcie historii, wszystkie trzy akcje, zgodność
+profilu i danych klienta, UTF-8, uszkodzony/obcy format, błąd zapisu,
+konflikt, rollback i Adjust z wcześniejszej wersji. Sonda klienta sprawdza
+wybór innego kandydata, zapis jego oceny, odmowę dla starego wyniku,
+rollback, brak zmian mapy/Undo oraz Place/Undo/Redo. Build, SUITE_PASS z
+sondami, G5 --i47 32/32 obu profili i odcisk 1729 bez zmian. Ręczny odbiór
+GUI i ślepy test jakości raportowane osobno. Prywatna historia poza Git.
+
 ### I53 — wykrywanie zgodnych fragmentów (2026-11-18, przed implementacją)
 
 Zakres: odcisk semantyczny powierzchni kandydata i porównanie z lokalnym
