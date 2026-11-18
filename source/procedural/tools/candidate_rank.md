@@ -1,5 +1,35 @@
 # I51 — frozen ranking and holdout evaluation
 
+## I51b experiment (preregistered at 9ab1ca0)
+
+The optional `--i51b` CLI flag requires bands and appends `experiment I51b`
+and `winnerB` TSV records. The existing `winner` remains A:
+`(hardFail, -inBand, distance, index)`. B alone uses
+`(hardFail, distance, -inBand, index)`. Both consume the same measured scores;
+neither selection reads holdout. Without the flag the CLI format and default
+ordering are unchanged. Metric policy, bands and generator remain frozen.
+
+```text
+rtk proxy py -I docs/procedural/smoke/g6_measure_candidates.py EXE PROFILE_DIR scratchpad/i51b-matrix --g5-levels --i51b
+rtk proxy py -I docs/procedural/smoke/g6_evaluate_i51b.py PRIVATE_ROOT PROFILE_DIR scratchpad/i51b-matrix scratchpad/i51b-holdout.json
+rtk proxy py -I tests/test_g6_i51b.py
+```
+
+The I51b matrix is seeds 2001–2032, N16, side512, all other settings as I51,
+two byte-identical full runs. No failed seed is retried or removed. Independent
+Python reconstruction verifies scores and both winners and refuses incomplete
+matrices. JSON includes A/B per seed/map/family, winner scores, hard failures,
+exact random baseline, coverage/N/A audit, winner changes, distance
+improved/worsened/tied pairs and success transitions. M12–M17 remain additional.
+B must achieve at least 23/32 and strictly exceed A separately in both profiles;
+otherwise the result is I51B_FAIL without adopting B or tuning the experiment.
+Exit codes: 0 PASS, 1 valid FAIL, 2 blocked measurement. Even PASS cannot close
+G6: these holdout maps were already revealed in I51. Historical seeds are not
+part of this experiment's acceptance decision.
+
+Measured result: [g6_i51b_report.md](../../../docs/procedural/smoke/g6_i51b_report.md)
+and [g6_i51b_holdout.json](../../../docs/procedural/smoke/g6_i51b_holdout.json).
+
 Policy: the binding supplement in [G6_METRICS.md](../../../docs/procedural/G6_METRICS.md),
 commit `396e057`. I51/G6 acceptance remains the integrator's decision.
 Generator, GUI, persistence, `mountain` default and item definitions are unchanged.

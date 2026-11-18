@@ -52,7 +52,8 @@ constexpr ExitShape offlineShapes[] = {{ExitDirection::North, 0, 1, true}, {Exit
 
 void usage() {
     std::cout << "candidate_rank PROFILE SIDE FIRST_USER_SEED LAST_USER_SEED [--count 1..16] [--bands FILE]\n"
-        "  [--path-length 0..400] [--building-density 0..100] [--rock-blocks 0|1] [--g5-levels]\n"
+        "  [--path-length 0..400] [--building-density 0..100] [--rock-blocks 0|1] [--g5-levels] [--i51b]\n"
+        "--i51b adds winnerB (hardFail,distance,inBand descending,index) on the same candidates; winner remains A.\n"
         "Default count=4. Without --bands: measurements only, never a claimed ranking/gate pass.\n"
         "Bands: g6-ranking-bands/1 then metric reference lowerHundredths upperHundredths.\n"
         "Relative band [0.67*ref,1.5*ref]: lowerHundredths=67*ref, upperHundredths=150*ref.\n"
@@ -76,10 +77,11 @@ int main(int argc, char** argv) try {
     auto tuning = *profile->tuning;
     uint32_t count = 4;
     std::vector<CandidateBand> bands;
-    bool g5 = false;
+    bool g5 = false, i51b = false;
     for (int i = 5; i < argc; ++i) {
         const std::string_view key = argv[i];
         if (key == "--g5-levels") { g5 = true; continue; }
+        if (key == "--i51b") { i51b = true; continue; }
         if (++i == argc) throw std::runtime_error("missing option value");
         if (key == "--bands") { bands = readBands(argv[i]); continue; }
         const auto value = number(argv[i]);
@@ -89,6 +91,7 @@ int main(int argc, char** argv) try {
         else if (key == "--rock-blocks" && value <= 1) tuning.rockBlocks = value != 0;
         else throw std::runtime_error("unknown option or out-of-range value: " + std::string(key));
     }
+    if (i51b && bands.empty()) throw std::runtime_error("--i51b requires bands");
     if (g5) {
         tuning.ruinPercent = 20; tuning.campCount = 4; tuning.fordLength = 48; tuning.repairReach = 1;
         tuning.caveEntrances = 16; tuning.plateauMinTop = 64; tuning.plateauMaxPercent = 10; tuning.plateauLevels = 3;
@@ -100,6 +103,7 @@ int main(int argc, char** argv) try {
     std::cout << "g6-candidate-report/1\n";
     std::cout << std::format("settings\tside={}\tcount={}\tpathLength={}\tbuildingDensity={}\trockBlocks={}\tg5={}\tmode={}\n",
         side, count, tuning.pathLength, tuning.buildingDensity, tuning.rockBlocks, g5, bands.empty() ? "measure-only" : "ranking");
+    if (i51b) std::cout << "experiment\tI51b\n";
     for (const auto& band : bands) std::cout << std::format("band\t{}\t{}\t{}\t{}\n", candidateMetricNames[band.metric],
         band.reference, band.lowerHundredths, band.upperHundredths);
     std::cout << "userSeed\tindex\tseed\tsurfaceFingerprint\thardFail\tinBand\tdistance";
@@ -107,7 +111,7 @@ int main(int argc, char** argv) try {
     std::cout << '\n';
     bool scoringFailed = false;
     for (uint64_t userSeed = first;; ++userSeed) {
-        std::optional<CandidateScore> best;
+        std::optional<CandidateScore> best, bestB;
         bool complete = true;
         for (uint32_t index = 0; index < count; ++index) {
             const auto seed = candidateSeed(userSeed, index);
@@ -143,12 +147,14 @@ int main(int argc, char** argv) try {
                 } else {
                     std::cout << std::format("{}\t{}", score->inBand, score->distance);
                     if (!best || betterCandidate(*score, *best)) best = *score;
+                    if (i51b && (!bestB || betterCandidateI51b(*score, *bestB))) bestB = *score;
                 }
             } else std::cout << "NA\tNA";
             for (const auto& value : *metrics) std::cout << '\t' << (value ? std::to_string(*value) : "NA");
             std::cout << '\n';
         }
         if (!bands.empty() && complete && best) std::cout << std::format("winner\t{}\t{}\t{}\t{}\t{}\n", userSeed, best->index, best->hardFail, best->inBand, best->distance);
+        if (i51b && complete && bestB) std::cout << std::format("winnerB\t{}\t{}\t{}\t{}\t{}\n", userSeed, bestB->index, bestB->hardFail, bestB->inBand, bestB->distance);
         if (userSeed == last) break; // UINT64_MAX is a valid user seed.
     }
     return scoringFailed ? 4 : 0;

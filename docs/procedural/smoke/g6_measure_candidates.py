@@ -33,7 +33,11 @@ def main():
     parser.add_argument('scratch_dir', type=Path)
     parser.add_argument('--bands-dir', type=Path, default=Path(__file__).resolve().parents[1] / 'g6-bands-v1')
     parser.add_argument('--g5-levels', action='store_true')
+    parser.add_argument('--i51b', action='store_true', help='frozen 2001..2032 matrix, common A/B candidates')
     args = parser.parse_args()
+    if args.i51b and not args.g5_levels:
+        parser.error('I51b requires --g5-levels')
+    first_seed = 2001 if args.i51b else 1001
     args.scratch_dir.mkdir(parents=True, exist_ok=True)
 
     def measure(spec):
@@ -43,6 +47,8 @@ def main():
         command += ['--bands', str((args.bands_dir / f'{name}.bands').resolve())]
         if args.g5_levels:
             command += ['--g5-levels']
+        if args.i51b:
+            command += ['--i51b']
         reports = []
         for run in (1, 2):
             def block(first):
@@ -58,7 +64,7 @@ def main():
                 return result.stdout
             # Worlds are independent per seed. Restore canonical order after bounded parallel execution.
             with ThreadPoolExecutor(max_workers=4) as blocks:
-                report = merge_reports(list(blocks.map(block, range(1001, 1033, 8))))
+                report = merge_reports(list(blocks.map(block, range(first_seed, first_seed + 32, 8))))
             (args.scratch_dir / f'{name}-run{run}.tsv').write_bytes(report)
             (args.scratch_dir / f'{name}-run{run}.stderr').write_bytes(b'')
             records = [line for line in report.splitlines() if line.split(b'\t', 1)[0].isdigit()]

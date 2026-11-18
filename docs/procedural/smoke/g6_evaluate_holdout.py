@@ -223,10 +223,13 @@ def load_references(root, profile_dir):
                         'profiles': profile_audit, 'maps': audit}
 
 
-def read_candidates(path, bands):
+def read_candidates(path, bands, *, i51b=False):
     text = path.read_text(encoding='utf-8').splitlines()
     if text[0] != 'g6-candidate-report/1':
         raise ValueError('candidate schema')
+    experiments = [line for line in text if line.startswith('experiment\t')]
+    if experiments != (['experiment\tI51b'] if i51b else []):
+        raise ValueError('candidate experiment mismatch')
     settings = dict(s.split('=', 1) for s in text[1].split('\t')[1:])
     style = path.name.split('-')[0]
     expected = {'side': '512', 'count': '16', 'pathLength': '40' if style == 'm06' else '80',
@@ -247,8 +250,10 @@ def read_candidates(path, bands):
     columns = text[header].split('\t')
     if len(set(columns)) != len(columns) or not set(METRICS).issubset(columns):
         raise ValueError('missing/duplicate metric column')
-    records = list(csv.DictReader(io.StringIO('\n'.join(s for s in text[header:] if not s.startswith('winner\t'))), delimiter='\t'))
-    groups = {seed: [] for seed in range(1001, 1033)}
+    records = list(csv.DictReader(io.StringIO('\n'.join(s for s in text[header:]
+        if not s.startswith('winner\t') and not (i51b and s.startswith('winnerB\t')))), delimiter='\t'))
+    first_seed = 2001 if i51b else 1001
+    groups = {seed: [] for seed in range(first_seed, first_seed + 32)}
     for row in records:
         if None in row or any(v is None for v in row.values()):
             raise ValueError('malformed candidate row')

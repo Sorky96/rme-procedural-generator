@@ -45,6 +45,8 @@ struct CandidateScore {
     bool operator==(const CandidateScore&) const = default;
 };
 [[nodiscard]] bool betterCandidate(const CandidateScore& a, const CandidateScore& b) noexcept;
+// Preregistered I51b experiment only; production ordering above remains A.
+[[nodiscard]] bool betterCandidateI51b(const CandidateScore& a, const CandidateScore& b) noexcept;
 // SplitMix64 finalizer, fixed unsigned arithmetic. Index 0 is the unchanged user seed.
 [[nodiscard]] uint64_t candidateSeed(uint64_t userSeed, uint32_t index) noexcept;
 [[nodiscard]] std::expected<CandidateMetrics, CandidateScoreError> candidateMetricsOf(

@@ -23,6 +23,11 @@ uint64_t candidateSeed(uint64_t userSeed, uint32_t index) noexcept {
     return x ^ (x >> 31);
 }
 
+bool betterCandidateI51b(const CandidateScore& a, const CandidateScore& b) noexcept {
+    return std::tuple(a.hardFail, a.distance, -int64_t(a.inBand), a.index) <
+        std::tuple(b.hardFail, b.distance, -int64_t(b.inBand), b.index);
+}
+
 bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& reach, const LevelRepairReport& repair) noexcept {
     return !validationPassed || !reach.allReached() || reach.walkableEdges != reach.edges || repair.unrepaired || repair.removedPois || repair.removedCaps ||
         repair.removedStoreys || repair.removedDungeons;

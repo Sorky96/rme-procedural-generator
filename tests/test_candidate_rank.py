@@ -34,7 +34,7 @@ def main():
     def rows(report):
         text = report.decode().splitlines()
         header = next(i for i, line in enumerate(text) if line.startswith('userSeed\t'))
-        return list(csv.DictReader(io.StringIO('\n'.join(line for line in text[header:] if not line.startswith('winner\t'))), delimiter='\t'))
+        return list(csv.DictReader(io.StringIO('\n'.join(line for line in text[header:] if not line.startswith(('winner\t', 'winnerB\t')))), delimiter='\t'))
 
     one = run('--count', '1')
     row = rows(one)[0]
@@ -55,11 +55,18 @@ def main():
     except RuntimeError:
         pass
     records = rows(ranking)
+    experiment = run('--bands', str(band), '--count', '16', '--i51b', side='128', first='1001', last='1002')
+    assert rows(experiment) == records  # No regeneration or scoring change between orders.
+    assert b'experiment\tI51b' in experiment and b'winnerB\t' not in ranking
     assert len(records) == 32
     for seed in ('1001', '1002'):
         candidates = [row for row in records if row['userSeed'] == seed]
         best = min(candidates, key=lambda r: (r['hardFail'] == 'true', -int(r['inBand']), int(r['distance']), int(r['index'])))
         assert f'winner\t{seed}\t{best["index"]}\t'.encode() in ranking
+        assert f'winner\t{seed}\t{best["index"]}\t'.encode() in experiment
+        best_b = min(candidates, key=lambda r: (r['hardFail'] == 'true', int(r['distance']), -int(r['inBand']), int(r['index'])))
+        assert f'winnerB\t{seed}\t{best_b["index"]}\t'.encode() in experiment
+    run('--i51b', code=2)
     run('--count', '0', code=2)
     run('--count', '17', code=2)
     run('--count', '-1', code=2)

@@ -132,6 +132,7 @@ target_link_libraries(candidate_rank PRIVATE rme_procedural_core)
 
 find_program(RME_PY_LAUNCHER py)
 if(RME_PY_LAUNCHER)
+    add_test(NAME test_g6_i51b COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_g6_i51b.py)
     add_test(NAME test_g6_holdout COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_g6_holdout.py)
     add_test(NAME test_candidate_rank_cli COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_candidate_rank.py
         $<TARGET_FILE:candidate_rank> ${PROJECT_SOURCE_DIR}/scratchpad/candidate-rank-cli)

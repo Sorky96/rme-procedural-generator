@@ -156,6 +156,14 @@ void seedAndFingerprint() {
 }
 } // namespace
 int main() try {
+    // Hand-counted disagreement: A chooses two bands despite distance 10000;
+    // B chooses distance 0 despite only one band. Hard failures always lose.
+    const CandidateScore a {false, 2, 10000, 3}, b {false, 1, 0, 0};
+    require(betterCandidate(a, b) && betterCandidateI51b(b, a), "I51b hand-counted disagreement");
+    require(betterCandidateI51b(a, {true, 26, 0, 0}), "I51b hard condition first");
+    require(betterCandidateI51b({false, 2, 10, 9}, {false, 1, 10, 0}), "I51b bands break equal distance");
+    require(betterCandidateI51b({false, 2, 10, 0}, {false, 2, 10, 9}), "I51b index breaks full score tie");
+    require(!betterCandidateI51b(a, a), "I51b identical score is not better");
     handCounted(); refusals(); bindingDistances(); hardConditions(); seedAndFingerprint();
     std::cout << "CANDIDATE_SCORE_PASS\n";
     return 0;
