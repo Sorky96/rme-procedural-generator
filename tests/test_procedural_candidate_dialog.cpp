@@ -151,11 +151,16 @@ void oneRun(uint32_t count,const char* policy,std::ostream& report, const char* 
         check(control<wxStaticText>(*d,"terrain-status").GetLabel().Contains("1024 UTF-8"),"I54 note overlimit visible");
         check(StyleHistoryStore::open(file)->data().feedback.size()==before,"I54 overlimit persisted");
         note.SetValue(wxString::FromUTF8("Ocena \xc5\xbc\xc3\xb3\xc5\x82\xc4\x87"));
-        click(*d,"terrain-approve");click(*d,"terrain-reject");
+        click(*d,"terrain-approve");
+        const auto approved = control<wxStaticText>(*d,"terrain-status").GetLabel().ToStdString();
+        click(*d,"terrain-reject");
         state=StyleHistoryStore::open(file);
-        check(state && state->data().feedback.size()==before+2,"I54 independent explicit feedback");
+        check(state && state->data().feedback.size()==before+2,
+            "I54 independent explicit feedback: Approve: " + approved + ", Reject: " +
+                control<wxStaticText>(*d,"terrain-status").GetLabel().ToStdString());
         const auto& saved=state->data().feedback[before];
-        check(saved.candidate==target && saved.actualSeed==seed && saved.userSeed==1729 && !saved.note.empty(),"I54 saved Selected identity/UTF-8");
+        check(saved.candidate==target && saved.actualSeed==seed && saved.userSeed==1729 &&
+            saved.note=="Ocena \xc5\xbc\xc3\xb3\xc5\x82\xc4\x87","I54 saved Selected identity/UTF-8");
         unchanged(editor,revision);
         click(*d,"terrain-adjust");
         state=StyleHistoryStore::open(file);check(state && state->data().versions.size()==2,"I54 root and local version");

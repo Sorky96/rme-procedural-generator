@@ -1148,7 +1148,9 @@ void TerrainGeneratorDialog::OnFeedback(FeedbackAction action) try {
     if (action != FeedbackAction::Reject && !CandidateAllowed()) {
         SetStatus("Approve and Adjust require an admissible candidate. Reject can record hardFail.", true); return;
     }
-    const auto note = feedback_note_->GetValue().utf8_str();
+    const wxString noteText = feedback_note_->GetValue();
+    const auto note = noteText.utf8_str();
+    if (!noteText.empty() && !note.data()) { SetStatus("Cannot encode the note as UTF-8.", true); return; }
     if (note.length() > 1024) { SetStatus("Note exceeds 1024 UTF-8 bytes. Shorten the note before saving.", true); feedback_note_->SetFocus(); return; }
     const auto ids = loadedClientAssetIds();
     if (!ids) { SetStatus("Cannot identify loaded client assets for feedback.", true); return; }
@@ -1158,7 +1160,9 @@ void TerrainGeneratorDialog::OnFeedback(FeedbackAction action) try {
     if (p && checkProfile(p->profile, ids->client, ids->otbSha256, ids->datSha256, request->config.region.z) != ProfileCompatibility::Compatible) {
         SetStatus("Feedback refused: profile/client assets mismatch.", true); return;
     }
-    StyleFeedback f; f.action=action; f.note=std::string(note.data(),note.length());
+    StyleFeedback f;
+    f.action = action;
+    if (note.data()) f.note.assign(note.data(), note.length());
     f.settings = p ? p->profile : StyleProfile{};
     f.settings.client=ids->client; f.settings.otbSha256=ids->otbSha256; f.settings.datSha256=ids->datSha256;
     const auto& effective = prepared_->snapshot.input.config;
