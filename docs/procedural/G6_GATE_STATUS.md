@@ -1,5 +1,33 @@
 # G6 — stan bramki
 
+## I55 — ślepy test gotowy do przeprowadzenia
+
+Kryteria zapisano w `6251dbb`, narzędzia scalono jako `3bfe971`.
+Anonimowy pakiet lokalny obejmuje 20 par i formularz z eksportem JSON.
+Integrator potwierdził kompletność archiwum, odciski wszystkich 40 widoków
+i brak klucza w paczce. Klucz pozostaje zamknięty do otrzymania 20 ocen.
+Próg ślepego testu to 13 wygranych L3 na 20 par.
+
+Porównanie wcześniejszych rodzin jest diagnostyczne. Audyt lokalnych
+wejść nie znalazł nowych rodzin z udokumentowanym pochodzeniem, zgodą
+i weryfikacją pokrewieństwa G4. Dane tych rodzin trzeba zamrozić przed
+oceną ilościową. Próg to 23/32 ścisłych wygranych osobno dla obu profili.
+Brak 20 ocen i nowych rodzin pozostawia I55 i G6 otwarte.
+
+Build integratora i CTest 5/5 przeszły przy wyłączonej instalacji zależności.
+Pełne `SUITE_PASS` obejmuje 22/22 testów rdzenia, sondy Commit i Surface
+oraz niezmienione zasoby wejściowe. `G5_GATE_PASS` (--i47) daje 32/32
+dla obu profili i identyczne powtórzenia. Odcisk 1729 nadal wynosi
+`17159159863505677800`. Niezależne powtórzenie I55 i porównanie z macierzą
+wykonawcy potwierdziło identyczność 532 plików PNG/TSV. Diagnostykę
+odtworzono na głównym buildzie. Formularz sprawdzono pod kątem struktury
+pakietu i logiki eksportu w kodzie. Ręczny test w przeglądarce pozostał otwarty.
+
+Po scaleniu usunięto build-ninja worktree wykonawcy. Zgłoszoną
+niezamierzoną instalację agenta przerwano. Raport odnotowuje częściowe
+zapisy w jego buildzie i cache AppData.
+[Instrukcja I55](smoke/g6_i55.md).
+
 ## I54 — lokalne oceny i wersje profili
 
 Kryteria zapisano w `e9ca540`. Zmiany scalono jako `93426ed`. Approve,
