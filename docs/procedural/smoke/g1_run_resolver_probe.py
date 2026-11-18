@@ -13,12 +13,15 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--preview', action='store_true', help='Run the owned sandbox/diff probe instead of resolver-only checks')
 parser.add_argument('--surface', action='store_true', help='Run the surface v2 resolver and border probe')
 parser.add_argument('--series', action='store_true', help='Run I52 production candidate dialog selection/Place/Undo/Redo')
+parser.add_argument('--learn', action='store_true', help='Run I56 open map learning and generator Place/Undo/Redo')
 parser.add_argument('--commit', action='store_true', help='Include atomic terrain history assertions; no GUI preview or G1 E2E claim')
 parser.add_argument('--capacity', type=int, choices=(500, 1000, 2000), help='Opt-in large synthetic multi-floor Preview/Place/Undo/Redo probe')
 parser.add_argument('--visible', action='store_true', help='Show the private GUI normally for editor/selection tests requiring focus')
 for name in ('output', 'profile_data', 'config'):
     parser.add_argument(name, type=lambda value: Path(value).resolve())
 args = parser.parse_args()
+if args.learn and (args.capacity or args.commit or args.preview or args.surface or args.series):
+    parser.error('--learn runs independently of the other probes')
 if args.capacity and (args.commit or args.preview or args.surface or args.series):
     parser.error('--capacity runs independently of the other probes')
 if args.series and (args.commit or args.preview or args.surface):
@@ -30,7 +33,7 @@ if not (args.output.is_relative_to(repo / 'local-data/procedural-smoke') or args
     parser.error('A private output inside local-data/procedural-smoke or scratchpad is required')
 args.output.mkdir(parents=True, exist_ok=False)
 subprocess.run([sys.executable, str(Path(__file__).with_name('g1_build_input_probe.py')),
-              str(args.output), '--source', str(repo / ('tests/test_procedural_candidate_dialog.cpp' if args.series else 'tests/test_procedural_capacity.cpp' if args.capacity else 'tests/test_procedural_preview.cpp' if args.preview else 'tests/test_procedural_surface_resolver.cpp' if args.surface else 'tests/test_procedural_resolver.cpp')),
+              str(args.output), '--source', str(repo / ('tests/test_procedural_learning_dialog.cpp' if args.learn else 'tests/test_procedural_candidate_dialog.cpp' if args.series else 'tests/test_procedural_capacity.cpp' if args.capacity else 'tests/test_procedural_preview.cpp' if args.preview else 'tests/test_procedural_surface_resolver.cpp' if args.surface else 'tests/test_procedural_resolver.cpp')),
                 '--application-entry'], cwd=repo, check=True)
 run = args.output / 'run'
 data = run / 'data'
@@ -72,20 +75,21 @@ with (args.output / 'stdout.log').open('w', encoding='utf-8') as stdout, \
     process = subprocess.Popen([str(args.output / 'snapshot_probe.exe')], cwd=run, env=env,
                                stdout=stdout, stderr=stderr, startupinfo=startup)
     (args.output / 'probe-pid.txt').write_text(str(process.pid), encoding='utf-8')
-    code = process.wait(timeout=1800 if args.surface or args.capacity or args.series else 180)  # Timeout leaves the same child alive for inspection.
+    code = process.wait(timeout=1800 if args.surface or args.capacity or args.series or args.learn else 180)  # Timeout leaves the same child alive for inspection.
 report = (run / 'resolver-probe.log').read_text(encoding='utf-8')
 unchanged = all(hashlib.sha256(Path(path).read_bytes()).hexdigest() == value for path, value in original.items())
 stderr_empty = (args.output / 'stderr.log').stat().st_size == 0
 stderr_lines = [line for line in (args.output / 'stderr.log').read_text(encoding='utf-8', errors='replace').splitlines() if line.strip()]
 # Match the full suite's existing tolerance for hidden-window wx SetFocus warnings.
-capacity_stderr_ok = bool(args.capacity or args.series) and all("'SetFocus' failed" in line for line in stderr_lines)
-passed = code == 0 and unchanged and (stderr_empty or capacity_stderr_ok) and ('CANDIDATE_DIALOG_PASS\n' if args.series else 'CAPACITY_PASS\n' if args.capacity else 'PREVIEW_PASS\n' if args.preview else 'RESOLVER_PASS\n') in report and 'FAILED\t' not in report
+capacity_stderr_ok = bool(args.capacity or args.series or args.learn) and all("'SetFocus' failed" in line for line in stderr_lines)
+passed = code == 0 and unchanged and (stderr_empty or capacity_stderr_ok) and ('LEARNING_DIALOG_PASS\n' if args.learn else 'CANDIDATE_DIALOG_PASS\n' if args.series else 'CAPACITY_PASS\n' if args.capacity else 'PREVIEW_PASS\n' if args.preview else 'RESOLVER_PASS\n') in report and 'FAILED\t' not in report
 if args.commit:
     passed = passed and all(marker in report for marker in (
         'TERRAIN_RESERVATION_FAILURES_PASS\t', 'TERRAIN_COMMIT_FAILURES_PASS\t',
         'TERRAIN_COMMIT_SIZE_PASS\t100\t', 'TERRAIN_COMMIT_SIZE_PASS\t500\t', 'TERRAIN_SELECTED_COMMIT_PASS\t'))
 verification = {'passed': passed, 'exit_code': code, 'input_assets_unchanged': unchanged,
-                'scope': ('real loaded-client production dialog controls/handlers, candidate selection and Place/Undo/Redo; synthetic maps, automated events, no manual visual/keyboard claim' if args.series else
+                'scope': ('real loaded-client open-map learning, local save, normal offer, I54 feedback and Place/Undo/Redo; synthetic maps, automated controls, no manual visual/keyboard claim' if args.learn else
+                          'real loaded-client production dialog controls/handlers, candidate selection and Place/Undo/Redo; synthetic maps, automated events, no manual visual/keyboard claim' if args.series else
                           'real loaded-client capacity preparation and Place/Undo/Redo with production dialog budgets; synthetic empty map, no native dialog interaction' if args.capacity else
                           'real loaded-client owned preview and atomic Commit/Undo/Redo core; no GUI preview/Commit wiring or G1 E2E' if args.commit else
                           'real loaded-client owned DrawOperations sandbox/diff; no commit/GUI-preview or G1 E2E' if args.preview else

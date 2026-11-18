@@ -4,6 +4,7 @@
 
 #include "app/main.h"
 #include "ui/dialogs/terrain_generator_dialog.h"
+#include "ui/dialogs/style_learning_dialog.h"
 #include "ui/dialogs/terrain_generator_limits.h"
 
 #include "app/managers/version_manager.h"
@@ -506,6 +507,19 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	profile_choice_->SetSelection(0);
 	LoadStyleProfiles();
 	form->Add(profile_choice_, 1, wxEXPAND);
+
+    form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
+    auto* learn = new wxButton(host, wxID_ANY, "Learn from open map...");
+    learn->SetName("terrain-learn");
+    learn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        ReleasePreview(); UpdateControlStates();
+        StyleLearningDialog dialog(this);
+        if (dialog.ShowModal() == wxID_OK) {
+            LoadStyleProfiles(); RefreshHistoryChoices();
+            SetStatus("Profile saved locally. Choose it in Style profile to generate a preview.", false);
+        }
+    });
+    form->Add(learn, 1, wxEXPAND);
 
 	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_brush_choice_ = brushChoice("terrain-rock-brush", "rocky ground", false);
