@@ -390,6 +390,7 @@ TerrainPreparationSteps runPreparation(
 	try {
 		const auto cellCount = limits.cellCount;
         std::optional<CandidateMetrics> candidateMetrics;
+        CopyAssessment copyAssessment;
 		auto& remaining = limits.remaining;
 		const auto semanticBytes = limits.semanticBytes;
 		const auto planBytes = limits.planBytes;
@@ -406,6 +407,7 @@ TerrainPreparationSteps runPreparation(
 		if (!reserve(snapshotBytes)) co_return fail(PreparationInputError::MemoryLimit);
         // Conservative allowance for channel/patch measurement temporaries, charged before allocation.
         if (budget.measureCandidate && !reserve(cellCount * 512 + 65536)) co_return fail(PreparationInputError::MemoryLimit);
+        if (budget.copyIndex && !reserve(copyWorkingBytes(cellCount))) co_return fail(PreparationInputError::MemoryLimit);
 
 		// Count actual writable cells before generating: a sparse mask is judged by what it writes.
 		// Capture always owns two full-size masks. A mismatch is malformed resolver input, reported
@@ -1063,8 +1065,17 @@ TerrainPreparationSteps runPreparation(
                 levels->passes = std::move(passes);
                 levels->plan = std::move(*semantic);
                 levels->blockingMask.resize(levelCells);
-                if (budget.measureCandidate) {
-                    auto work = [surface = std::move(*grid)](std::stop_token token) { return candidateMetricsOf(surface, token); };
+                if (budget.measureCandidate || budget.copyIndex) {
+                    auto work = [surface = std::move(*grid), &copyAssessment, budget](std::stop_token token)
+                        -> std::expected<CandidateMetrics, CandidateScoreError> {
+                        if (budget.copyIndex) {
+                            const auto assessed = assessCopy(surface, *budget.copyIndex, token);
+                            if (!assessed) return std::unexpected(token.stop_requested() ? CandidateScoreError::Cancelled : CandidateScoreError::MeasurementFailed);
+                            copyAssessment = *assessed;
+                        }
+                        if (!budget.measureCandidate) return CandidateMetrics{};
+                        return candidateMetricsOf(surface, token);
+                    };
                     std::expected<CandidateMetrics, CandidateScoreError> measured = std::unexpected(CandidateScoreError::Cancelled);
                     if (background) {
                         CoreTask<decltype(measured)> task(std::move(work));
@@ -1075,7 +1086,7 @@ TerrainPreparationSteps runPreparation(
                         measured = task.take();
                     } else measured = work(stop);
                     if (!measured) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                    candidateMetrics = std::move(*measured);
+                    if (budget.measureCandidate) candidateMetrics = std::move(*measured);
                 }
 
             } else {
@@ -1193,7 +1204,7 @@ TerrainPreparationSteps runPreparation(
 		const PreparationMemory memory {
 			infrastructureBytes, snapshotBytes, semanticBytes, planBytes, previewBytes, budget.maxBytes - remaining
 		};
-        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics)};
+        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics), copyAssessment};
     } catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
 	} catch (const std::system_error&) {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/candidate_score.h"
 #include "procedural/core/style_profile.h"
+#include "procedural/core/copy_guard.h"
 
 #include <algorithm>
 #include <charconv>
@@ -52,7 +53,8 @@ constexpr ExitShape offlineShapes[] = {{ExitDirection::North, 0, 1, true}, {Exit
 
 void usage() {
     std::cout << "candidate_rank PROFILE SIDE FIRST_USER_SEED LAST_USER_SEED [--count 1..16] [--bands FILE]\n"
-        "  [--path-length 0..400] [--building-density 0..100] [--rock-blocks 0|1] [--g5-levels] [--i51b]\n"
+        "  [--path-length 0..400] [--building-density 0..100] [--rock-blocks 0|1] [--g5-levels] [--i51b] [--copy-index FILE]\n"
+        "Explicit local I53 index: bad/incompatible/insufficient data aborts the series; no index means similarity not evaluated.\n"
         "--i51b adds winnerB (hardFail,distance,inBand descending,index) on the same candidates; winner remains A.\n"
         "Default count=4. Without --bands: measurements only, never a claimed ranking/gate pass.\n"
         "Bands: g6-ranking-bands/1 then metric reference lowerHundredths upperHundredths.\n"
@@ -77,6 +79,7 @@ int main(int argc, char** argv) try {
     auto tuning = *profile->tuning;
     uint32_t count = 4;
     std::vector<CandidateBand> bands;
+    std::optional<CopyIndex> copyIndex;
     bool g5 = false, i51b = false;
     for (int i = 5; i < argc; ++i) {
         const std::string_view key = argv[i];
@@ -84,6 +87,11 @@ int main(int argc, char** argv) try {
         if (key == "--i51b") { i51b = true; continue; }
         if (++i == argc) throw std::runtime_error("missing option value");
         if (key == "--bands") { bands = readBands(argv[i]); continue; }
+        if (key == "--copy-index") {
+            auto loaded = readCopyIndex(argv[i], profile->client, profile->otbSha256, profile->datSha256);
+            if (!loaded) throw std::runtime_error("invalid/incompatible/insufficient local I53 index");
+            copyIndex = std::move(*loaded); continue;
+        }
         const auto value = number(argv[i]);
         if (key == "--count" && value >= 1 && value <= 16) count = uint32_t(value);
         else if (key == "--path-length" && value <= 400) tuning.pathLength = uint32_t(value);
@@ -104,10 +112,20 @@ int main(int argc, char** argv) try {
     std::cout << std::format("settings\tside={}\tcount={}\tpathLength={}\tbuildingDensity={}\trockBlocks={}\tg5={}\tmode={}\n",
         side, count, tuning.pathLength, tuning.buildingDensity, tuning.rockBlocks, g5, bands.empty() ? "measure-only" : "ranking");
     if (i51b) std::cout << "experiment\tI51b\n";
+    if (copyIndex) {
+        std::cout << "similarity\ti53-index/1\tg4-natural-v1\twindow=16\tmodulo=4\tminpresent=50\tshared>=16\tcontainment>=100\n";
+        std::cout << "projection\tGrass,Dirt,Rock,Shore,Water\tLake/River=Water\tabsent=Unknown,Preserve,Other,NoGround,Unmapped,Path,Floor,Bridge\titems/underground=excluded\n";
+        for (size_t r = 0; r < 2; ++r) {
+            const auto& ref = copyIndex->references[r];
+            std::cout << std::format("reference\t{}\t{}\t{}\t{}\t{}\t{}\n", ref.alias, ref.sourceSha256,
+                ref.semanticSha256, ref.keymapSha256, ref.fingerprint.hashes.size(), ref.fingerprint.hashes.size() - copyIndex->generic.size());
+        }
+    } else std::cout << "similarity\tnot-evaluated (no index)\n";
     for (const auto& band : bands) std::cout << std::format("band\t{}\t{}\t{}\t{}\n", candidateMetricNames[band.metric],
         band.reference, band.lowerHundredths, band.upperHundredths);
     std::cout << "userSeed\tindex\tseed\tsurfaceFingerprint\thardFail\tinBand\tdistance";
     for (const auto name : candidateMetricNames) std::cout << '\t' << name;
+    if (copyIndex) std::cout << "\tcopyState\tcopyBefore\tcopyAfter\tM06shared\tM06permille\tM19shared\tM19permille";
     std::cout << '\n';
     bool scoringFailed = false;
     for (uint64_t userSeed = first;; ++userSeed) {
@@ -137,7 +155,13 @@ int main(int argc, char** argv) try {
             if (!reach) throw std::runtime_error("reachability measurement failed");
             const auto metrics = candidateMetricsOf(world->surface);
             if (!metrics) throw std::runtime_error("shape measurement failed");
-            const bool hard = candidateHardFail(world->surface.valid(), *reach, world->repair);
+            CopyAssessment copy;
+            if (copyIndex) {
+                const auto result = assessCopy(world->surface, *copyIndex);
+                if (!result) throw std::runtime_error("I53 assessment failed");
+                copy = *result;
+            }
+            const bool hard = candidateHardFail(world->surface.valid(), *reach, world->repair) || copy.hardFail();
             std::cout << std::format("{}\t{}\t{}\t{}\t{}\t", userSeed, index, seed, fingerprint, hard);
             if (!bands.empty()) {
                 const auto score = scoreCandidateMetrics(*metrics, bands, hard, index);
@@ -151,6 +175,8 @@ int main(int argc, char** argv) try {
                 }
             } else std::cout << "NA\tNA";
             for (const auto& value : *metrics) std::cout << '\t' << (value ? std::to_string(*value) : "NA");
+            if (copyIndex) std::cout << std::format("\t{}\t{}\t{}\t{}\t{}\t{}\t{}", copyStateName(copy.state),
+                copy.before, copy.after, copy.shared[0], copy.permille[0], copy.shared[1], copy.permille[1]);
             std::cout << '\n';
         }
         if (!bands.empty() && complete && best) std::cout << std::format("winner\t{}\t{}\t{}\t{}\t{}\n", userSeed, best->index, best->hardFail, best->inBand, best->distance);

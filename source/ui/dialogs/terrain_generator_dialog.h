@@ -66,6 +66,7 @@ private:
         uint32_t attempts = 0;
         std::array<uint64_t, 5> fingerprints {};
         wxBitmap thumbnail;
+        rme::procedural::CopyAssessment copyAssessment;
     };
     std::vector<Candidate> candidates_;
     std::optional<Request> series_request_;
@@ -75,6 +76,8 @@ private:
     bool collecting_ = false, updating_candidates_ = false;
     std::span<const rme::procedural::CandidateBand> ranking_bands_;
     wxSpinCtrl* candidate_count_spin_ = nullptr;
+    wxTextCtrl* copy_index_text_ = nullptr;
+    std::optional<rme::procedural::CopyIndex> copy_index_;
     wxListCtrl* candidate_list_ = nullptr;
     wxImageList* candidate_images_ = nullptr; // owned by list via AssignImageList
     wxGauge* candidate_progress_ = nullptr;

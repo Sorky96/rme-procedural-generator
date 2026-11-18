@@ -67,7 +67,7 @@ void verify(Editor& e,const PreparedTerrain& expected) {
     floor(expected);if(expected.cave)floor(*expected.cave);
     for(auto* p=expected.plateau.get();p;p=p->plateau.get())floor(*p);
 }
-void oneRun(uint32_t count,const char* policy,std::ostream& report) {
+void oneRun(uint32_t count,const char* policy,std::ostream& report, const char* copyIndex = "") {
     check(g_gui.NewMap(),"New private map");
     auto& editor=*g_gui.GetCurrentEditor();
     const auto revision=editor.map.getChangeTracker().getGeneration();
@@ -91,6 +91,7 @@ void oneRun(uint32_t count,const char* policy,std::ostream& report) {
         brush.SetStringSelection("grass");
     }
     control<wxTextCtrl>(*d,"terrain-seed").ChangeValue("1729");
+    control<wxTextCtrl>(*d,"terrain-copy-index").SetValue(copyIndex);
     d->Show();click(*d,"terrain-preview");wait(*d);
     auto& list=control<wxListCtrl>(*d,"terrain-candidates");
     check(list.GetItemCount()==count,"Incomplete gallery: "+control<wxStaticText>(*d,"terrain-status").GetLabel().ToStdString());
@@ -103,6 +104,8 @@ void oneRun(uint32_t count,const char* policy,std::ostream& report) {
     list.SetItemState(long(target),wxLIST_STATE_SELECTED|wxLIST_STATE_FOCUSED,wxLIST_STATE_SELECTED|wxLIST_STATE_FOCUSED);
     wait(*d);unchanged(editor,revision);
     check(control<wxButton>(*d,"terrain-place").IsEnabled(),"Selected candidate must be admissible");
+    if (*copyIndex) check(list.GetItemText(target,2).Contains("below copy thresholds"), "Clean indexed result must be assessed");
+    else check(list.GetItemText(target,2).Contains("not-evaluated"), "No index must say not evaluated");
     check(list.GetItemText(target).Contains("Selected"),"Text selection label missing");
     check(control<wxTextCtrl>(*d,"terrain-seed").GetValue()=="1729","User seed silently replaced");
     const uint64_t seed=std::stoull(list.GetItemText(target,1).ToStdString());
@@ -198,6 +201,90 @@ void hardFailure(std::ostream& report) {
     report<<"CANDIDATE_REAL_CLIENT_HARDFAIL_BLOCK_PASS\n";
 }
 
+void copyGuard(std::ostream& report) {
+    check(g_gui.NewMap(), "I53 fixture map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    const auto revision = editor.map.getChangeTracker().getGeneration();
+    const auto ids = loadedClientAssetIds(); check(bool(ids), "I53 assets");
+    GenerationConfig config{{100,100,7,100,100},1729}; config.algorithm = GenerationAlgorithm::Surface;
+    config.surface.shoreSmoothing = 2; config.surface.repairReach = 0;
+    config.surface.plateauMinTop = 0; config.surface.plateauMaxPercent = 0;
+    const auto surface = generateSurface({config.region, config.seed, config.surface}, {65001,65001,16}, {10000,100000,10000000});
+    check(bool(surface), "I53 fixture surface");
+    const auto fp = surfaceClassFingerprint(*surface); check(fp && fp->hashes.size() >= 16, "I53 sufficient fixture");
+    CopyIndex index; index.client=ids->client; index.otbSha256=ids->otbSha256; index.datSha256=ids->datSha256;
+    index.references[0] = {"M06", std::string(64,'a'), std::string(64,'b'), std::string(64,'c'), *fp};
+    Fingerprint independent; independent.windows=independent.candidateWindows=32;
+    for (uint64_t i=1; i<=32; ++i) independent.hashes.push_back(i);
+    index.references[1] = {"M19", std::string(64,'d'), std::string(64,'e'), std::string(64,'c'), independent};
+    GroundProfile ground{{"grass","grass","grass","grass","grass","grass"},6};
+    auto baseline = prepareTerrain(editor.map,config,ground,{100000,120000,500000,2ULL<<30});
+    check(bool(baseline), "I53 memory baseline");
+    auto fullBudget = PreparationBudget{100000,120000,500000,2ULL<<30};
+    fullBudget.copyIndex = &index;
+    auto charged = prepareTerrain(editor.map,config,ground,fullBudget);
+    check(charged && charged->copyAssessment.hardFail() &&
+        charged->memory.totalBytes >= baseline->memory.totalBytes + copyWorkingBytes(10000), "I53 scratch was not charged");
+    charged = std::unexpected(PreparationInputError::Cancelled);
+    auto limited = PreparationBudget{100000,120000,500000,baseline->memory.totalBytes};
+    limited.copyIndex = &index;
+    const auto refused = prepareTerrain(editor.map,config,ground,limited);
+    check(!refused, "I53 under-budget preparation unexpectedly succeeded");
+    check(refused.error()==PreparationError(PreparationInputError::MemoryLimit) ||
+        refused.error()==PreparationError(SnapshotError::Limit) || refused.error()==PreparationError(ResolveError::PlanLimit) ||
+        refused.error()==PreparationError(PreviewError::Limit), "I53 failed for a non-budget reason");
+    baseline = std::unexpected(PreparationInputError::Cancelled);
+    report << "I53_SHARED_BUDGET_REFUSAL_PASS stage=" << refused.error().index() << '\n';
+    { std::ofstream file("copy-fixture.i53", std::ios::binary); file << serializeCopyIndex(index); }
+    auto* d = new TerrainGeneratorDialog(g_gui.root);
+    auto& style=control<wxChoice>(*d,"terrain-style"); style.SetSelection(1); changed(style);
+    control<wxSpinCtrl>(*d,"terrain-candidate-count").SetValue(1);
+    control<wxSpinCtrl>(*d,"terrain-plateau-percent").SetValue(0);
+    control<wxCheckBox>(*d,"terrain-repair").SetValue(false);
+    for (const char* name : {"terrain-grass-brush","terrain-dirt-brush","terrain-rock-brush","terrain-shore-brush","terrain-water-brush"}) {
+        auto& brush=control<wxComboBox>(*d,name);
+        if (brush.FindString("grass")==wxNOT_FOUND) brush.Append("grass");
+        brush.SetStringSelection("grass");
+    }
+    auto& path=control<wxTextCtrl>(*d,"terrain-copy-index");
+    path.SetValue("copy-fixture.i53");
+    d->Show(); click(*d,"terrain-preview"); wait(*d);
+    auto& list=control<wxListCtrl>(*d,"terrain-candidates");
+    check(list.GetItemCount()==1 && list.GetItemText(0,2).Contains("copy thresholds met"),
+        "I53 copy not detected: "+control<wxStaticText>(*d,"terrain-status").GetLabel().ToStdString());
+    check(!control<wxButton>(*d,"terrain-place").IsEnabled(), "I53 enabled Place");
+    click(*d,"terrain-place"); unchanged(editor,revision);
+    report << "I53_COPY_FORCED_PLACE_BLOCK_PASS\n";
+    { std::ofstream file("broken-fixture.i53"); file << "corrupt\n"; }
+    auto wrongAssets = index; wrongAssets.client = "other-client";
+    { std::ofstream file("wrong-assets-fixture.i53",std::ios::binary); file << serializeCopyIndex(wrongAssets); }
+    for (const char* bad : {"missing-index.i53", "broken-fixture.i53", "wrong-assets-fixture.i53"}) {
+        path.SetValue(bad); click(*d,"terrain-preview"); wait(*d);
+        check(list.GetItemCount()==0 && !control<wxButton>(*d,"terrain-place").IsEnabled() &&
+            control<wxStaticText>(*d,"terrain-status").GetLabel().Contains("Entire series refused"), "Bad explicit index did not refuse series");
+        click(*d,"terrain-place"); unchanged(editor,revision);
+    }
+    report << "I53_BAD_INDEX_REFUSAL_PASS\n";
+    path.SetValue("copy-fixture.i53");
+    click(*d,"terrain-preview"); click(*d,"terrain-cancel");
+    for (int i=0;i<20;++i) { wxYieldIfNeeded(); std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+    check(list.GetItemCount()==0 && !control<wxButton>(*d,"terrain-place").IsEnabled(), "I53 cancelled result resurfaced");
+    unchanged(editor,revision);
+    report << "I53_CANCEL_PASS\n";
+    control<wxSpinCtrl>(*d,"terrain-width").SetValue(8);
+    control<wxSpinCtrl>(*d,"terrain-height").SetValue(8);
+    click(*d,"terrain-preview"); wait(*d);
+    check(list.GetItemCount()==1 && list.GetItemText(0,2).Contains("too few windows"), "Small sample did not say not evaluated");
+    unchanged(editor,revision);
+    report << "I53_SMALL_SAMPLE_NOT_EVALUATED_PASS\n";
+    d->Destroy(); editor.map.clearChanges(); g_gui.CloseCurrentEditor();
+    index.references[0].fingerprint = independent;
+    for(auto& h:index.references[0].fingerprint.hashes) h += 100;
+    { std::ofstream file("clean-fixture.i53", std::ios::binary); file << serializeCopyIndex(index); }
+    oneRun(1,"",report,"clean-fixture.i53");
+    report << "I53_CLEAR_PLACE_UNDO_REDO_PASS\n";
+}
+
 void run() {
     std::ofstream report("resolver-probe.log");report<<std::unitbuf;
     try {
@@ -224,6 +311,7 @@ void run() {
         oneRun(4,"m06",report);oneRun(4,"m19",report);
         safety(report);
         hardFailure(report);
+        copyGuard(report);
         report<<"CANDIDATE_DIALOG_PASS\n";report.close();
         wxTheApp->CallAfter([]{g_gui.root->Close();});
     }catch(const std::exception& e){report<<"FAILED\t"<<e.what()<<'\n';report.close();std::_Exit(9);}

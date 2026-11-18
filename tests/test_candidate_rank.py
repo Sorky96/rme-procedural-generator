@@ -37,6 +37,11 @@ def main():
         return list(csv.DictReader(io.StringIO('\n'.join(line for line in text[header:] if not line.startswith(('winner\t', 'winnerB\t')))), delimiter='\t'))
 
     one = run('--count', '1')
+    assert b'similarity\tnot-evaluated (no index)' in one
+    run('--copy-index', str(scratch / 'missing.i53'), code=2)
+    bad_index = scratch / 'broken.i53'
+    bad_index.write_text('i53-index/99\ncorrupt\n')
+    run('--copy-index', str(bad_index), code=2)
     row = rows(one)[0]
     assert row['seed'] == '1729' and row['surfaceFingerprint'] == '17159159863505677800'
     assert 'mode=measure-only' in one.decode() and b'winner\t' not in one

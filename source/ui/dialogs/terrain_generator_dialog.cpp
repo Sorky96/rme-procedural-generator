@@ -458,6 +458,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
         formatMiB(preparationBudget.maxBytes))));
     candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
     candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(label("Local similarity index (optional):"), 0, wxALIGN_CENTER_VERTICAL);
+    copy_index_text_ = text("terrain-copy-index", "");
+    copy_index_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    copy_index_text_->SetToolTip("Explicit local I53 index path. Empty: similarity is not evaluated. Invalid or incompatible: entire series refused. Five G4 natural ground classes only; items and underground excluded.");
+    form->Add(copy_index_text_, 1, wxEXPAND);
     retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
     retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 
@@ -1039,6 +1044,7 @@ void TerrainGeneratorDialog::ReleasePreview() {
     candidate_list_->DeleteAllItems(); candidate_images_->RemoveAll();
     candidate_progress_->SetValue(0);
 	preview_steps_.reset();
+	copy_index_.reset();
 	pending_request_.reset();
 	prepared_.reset();
 	selection_.reset();
@@ -1149,6 +1155,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	validate_button_->Enable(prepared_.has_value());
 	place_button_->Enable(CandidateAllowed());
     candidate_count_spin_->Enable(natural);
+    copy_index_text_->Enable(natural);
 }
 
 void TerrainGeneratorDialog::UpdateClientLabel() {
@@ -1393,6 +1400,19 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
             return;
         }
         working_bytes_ = *available;
+        if (NaturalSurface() && !copy_index_text_->GetValue().empty()) {
+            const auto ids = loadedClientAssetIds();
+            auto index = ids ? readCopyIndex(std::filesystem::path(copy_index_text_->GetValue().ToStdWstring()),
+                ids->client, ids->otbSha256, ids->datSha256, working_bytes_) :
+                std::expected<CopyIndex, SimilarityError>(std::unexpected(SimilarityError::BadFormat));
+            if (!index || index->estimatedBytes >= working_bytes_) {
+                ReleasePreview(); UpdateControlStates();
+                SetStatus("Local similarity index is unreadable, incompatible, insufficient or exceeds the joint budget. Entire series refused.", true);
+                return;
+            }
+            copy_index_ = std::move(*index);
+            working_bytes_ -= copy_index_->estimatedBytes;
+        }
         candidates_.reserve(candidate_count_);
         collecting_ = true;
         preview_attempt_ = 1;
@@ -1439,7 +1459,7 @@ bool TerrainGeneratorDialog::SeriesCurrent() {
 bool TerrainGeneratorDialog::CandidateAllowed() const {
     return !collecting_ && !preview_steps_ && prepared_ && selected_candidate_ &&
         *selected_candidate_ < candidates_.size() && !candidates_[*selected_candidate_].score.hardFail &&
-        !prepared_->preview.getChanges().empty();
+        !prepared_->copyAssessment.hardFail() && !prepared_->preview.getChanges().empty();
 }
 
 bool TerrainGeneratorDialog::StartCandidate(uint64_t seed) {
@@ -1453,6 +1473,7 @@ bool TerrainGeneratorDialog::StartCandidate(uint64_t seed) {
     auto budget = preparationBudget;
     budget.maxBytes = working_bytes_;
     budget.measureCandidate = !ranking_bands_.empty();
+    budget.copyIndex = copy_index_ ? &*copy_index_ : nullptr;
     const auto mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
     auto* editor = CurrentTarget();
     auto steps = prepareTerrainSteps(editor->map, pending_request_->config, pending_request_->profile, budget, mask);
@@ -1533,11 +1554,12 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         if (!target) {
             ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
-        const bool hardFail = result->levels && candidateHardFail(true, result->levels->report, result->levels->repair);
+        const bool hardFail = result->copyAssessment.hardFail() ||
+            (result->levels && candidateHardFail(true, result->levels->report, result->levels->repair));
         const auto fingerprints = candidateFingerprints(*result);
         if (!collecting_) {
             const auto& row = candidates_[*selected_candidate_];
-            if (hardFail != row.score.hardFail || fingerprints != row.fingerprints) {
+            if (hardFail != row.score.hardFail || fingerprints != row.fingerprints || result->copyAssessment != row.copyAssessment) {
                 ReleasePreview(); UpdateControlStates(); SetStatus("Candidate rebuild differs from the validated gallery. Generate a new series.", true); return;
             }
             prepared_ = std::move(*result);
@@ -1547,6 +1569,9 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 *selected_candidate_, row.seed, row.initialSeed, row.attempts,
                 hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
                 ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.");
+            message += std::format(" Similarity: {}. Windows {}/{} after/before filter; M06 shared {} ({} per mille), M19 shared {} ({} per mille).",
+                copyStateName(row.copyAssessment.state), row.copyAssessment.after, row.copyAssessment.before,
+                row.copyAssessment.shared[0], row.copyAssessment.permille[0], row.copyAssessment.shared[1], row.copyAssessment.permille[1]);
             if (prepared_->levels) {
                 const auto& levels = *prepared_->levels;
                 uint64_t reached = 0, total = 0;
@@ -1558,6 +1583,7 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
         }
         Candidate row;
+        row.copyAssessment = result->copyAssessment;
         row.initialSeed = preview_first_seed_; row.seed = request->config.seed; row.attempts = preview_attempt_;
         row.fingerprints = fingerprints;
         row.score = {hardFail, 0, 0, uint32_t(candidates_.size())};
@@ -1576,7 +1602,8 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         const int image = candidate_images_->Add(row.thumbnail);
         candidate_list_->InsertItem(index, wxstr(std::format("#{}", index)), image);
         candidate_list_->SetItem(index, 1, wxstr(std::format("{} / {} / {}", row.seed, row.initialSeed, row.attempts)));
-        candidate_list_->SetItem(index, 2, hardFail ? "hardFail - Place blocked" : "Validated / admissible");
+        candidate_list_->SetItem(index, 2, wxstr(std::format("{}; similarity: {}", hardFail ? "hardFail - Place blocked" : "Validated / admissible",
+            copyStateName(row.copyAssessment.state))));
         candidates_.push_back(std::move(row));
         prepared_.reset();
         candidate_progress_->SetValue(int(candidates_.size()));
@@ -1676,8 +1703,8 @@ void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) {
 		SetStatus(message, true);
 		return;
 	}
-	SetStatus(wxstr(std::format("Preview validated. {} tiles will change when you place it.",
-		prepared_->preview.getChanges().size())), false);
+	SetStatus(wxstr(std::format("Preview validated. {} tiles. Similarity: {}.",
+		prepared_->preview.getChanges().size(), copyStateName(prepared_->copyAssessment.state))), prepared_->copyAssessment.hardFail());
 }
 
 void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
