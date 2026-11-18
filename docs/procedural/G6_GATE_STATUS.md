@@ -1,5 +1,35 @@
 # G6 — stan bramki
 
+## I53 — kontrola zgodnych fragmentów
+
+Kryteria zapisano w `87e2246`. Implementację przejrzano i scalono jako
+`561ef2f`. Jawny indeks lokalny M06/M19 uruchamia kontrolę w CLI i Surface.
+Kandydat z co najmniej 16 wspólnymi unikatowymi oknami i zawieraniem co
+najmniej 100‰ dla jednej referencji dostaje hardFail i blokuje Place.
+Brak indeksu albo mała próbka mają osobny komunikat. Uszkodzony lub
+niezgodny indeks odrzuca serię.
+
+Integrator odbudował indeks M06/M19 i dwukrotnie uruchomił pełną macierz.
+Indeks oraz raporty obu przebiegów mają takie same SHA-256 jak u wykonawcy.
+Trafienia I53: m06 0/32, m19 0/32. Wszystkie próbki były wystarczające.
+m06 seed 1032 nadal ma hardFail z wcześniejszej kontroli.
+Raport opisuje pochodzenie indeksu i zakres pięciu klas powierzchni.
+[Wyniki i instrukcja GUI](smoke/g6_i53_report.md).
+
+Kanoniczny build Windows x64 i CTest 25/25 PASS, w tym odcisk
+`17159159863505677800`. Zestaw G5 SUITE_PASS: 21/21 testów rdzenia i obie
+sondy, zasoby wejściowe bez zmian. Świeża sonda serii potwierdziła sześć
+przypadków I53, w tym blokadę wymuszonego Place oraz Place → jedno Undo →
+Redo dla wyniku poniżej progów. G5 --i47 z rockBlocks m06=0,m19=1:
+G5_GATE_PASS, 32/32 obu profili we wszystkich konfiguracjach i identyczne
+powtórzenia.
+
+Do ręcznego testu można użyć `scratchpad/i53-index-integrator/references.i53`
+z pasującym klientem albo syntetycznych indeksów `copy-fixture.i53` i
+`clean-fixture.i53` z `scratchpad/i53-integrator/run` w profilu sondy.
+Ręczny odbiór GUI i rzeczywiste wyczerpanie RAM pozostają niesprawdzone.
+Po scaleniu usunięto build-ninja worktree agenta. G6 pozostaje otwarte.
+
 ## I52 — galeria i wybór kandydata (2026-11-18)
 
 Kryteria prerejestrowano w `0a25e6c`. Implementację Codex medium w osobnym
