@@ -9,6 +9,7 @@
 #include "procedural/adapter/generation_selection.h"
 #include "procedural/adapter/style_profile_store.h"
 #include "procedural/adapter/terrain_preparation.h"
+#include "procedural/core/candidate_series.h"
 
 #include <array>
 #include <cstdint>
@@ -25,6 +26,10 @@ class wxButton;
 class wxChoice;
 class wxComboBox;
 class wxPanel;
+class wxListCtrl;
+class wxListEvent;
+class wxImageList;
+class wxGauge;
 class wxSpinCtrl;
 class wxStaticText;
 class wxTextCtrl;
@@ -33,7 +38,7 @@ class wxTextCtrl;
 // Validate never change the map or history; "Place on map" commits the owned preview as one Undo
 // step through DrawOperations and closes the dialog with wxID_OK. Every command looks the current
 // editor up again and refuses a different map, live session, busy selection/history, active Lua
-// transaction or missing client. Preview advances in slices on the GUI thread.
+// transaction or missing client. Core workers own plain inputs; adapter access is GUI-only.
 class TerrainGeneratorDialog : public wxDialog {
 public:
 	explicit TerrainGeneratorDialog(wxWindow* parent);
@@ -49,6 +54,30 @@ private:
 	void OnProfileChosen(wxCommandEvent& event);
 	void OnPreview(wxCommandEvent& event);
 	void OnPreviewTick(wxTimerEvent& event);
+    void OnCandidateSelected(wxListEvent& event);
+    bool StartCandidate(uint64_t seed);
+    void SelectCandidate(uint32_t index);
+    void UpdateCandidateLabels();
+    bool SeriesCurrent();
+    bool CandidateAllowed() const;
+    struct Candidate {
+        rme::procedural::CandidateScore score;
+        uint64_t initialSeed = 0, seed = 0;
+        uint32_t attempts = 0;
+        std::array<uint64_t, 5> fingerprints {};
+        wxBitmap thumbnail;
+    };
+    std::vector<Candidate> candidates_;
+    std::optional<Request> series_request_;
+    std::optional<uint32_t> selected_candidate_, recommended_candidate_;
+    uint32_t candidate_count_ = 1;
+    uint64_t series_revision_ = 0, series_assets_ = 0, working_bytes_ = 0;
+    bool collecting_ = false, updating_candidates_ = false;
+    std::span<const rme::procedural::CandidateBand> ranking_bands_;
+    wxSpinCtrl* candidate_count_spin_ = nullptr;
+    wxListCtrl* candidate_list_ = nullptr;
+    wxImageList* candidate_images_ = nullptr; // owned by list via AssignImageList
+    wxGauge* candidate_progress_ = nullptr;
 	void OnCancel(wxCommandEvent& event);
 	void SchedulePreviewTick();
 	void OnValidate(wxCommandEvent& event);

@@ -22,6 +22,7 @@ parser.add_argument('--i44', action='store_true')
 parser.add_argument('--i45', action='store_true')
 parser.add_argument('--i47', action='store_true', help='also require the iteration 47 cave shape criteria (the line is always reported)')
 parser.add_argument('--rock-blocks', nargs='*', default=[], metavar='PROFILE=0|1')
+parser.add_argument('--output', type=Path, help='private measurement directory (e.g. scratchpad/i47)')
 args = parser.parse_args()
 rock_blocks = dict(item.split('=') for item in args.rock_blocks)
 args.i45 |= args.i47
@@ -30,7 +31,7 @@ if args.i44 and set(rock_blocks) != {'m06', 'm19'}:
     parser.error('--i44 needs --rock-blocks m06=0|1 m19=0|1 (from M19_ROCK_GUI_CASE_PASS)')
 args.i43 |= args.i44
 args.i41 |= args.i42 or args.i43
-output = root / ('local-data/i47-measurement' if args.i47 else 'local-data/i45-measurement' if args.i45 else 'local-data/i44-measurement' if args.i44 else 'local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
+output = args.output or root / ('local-data/i47-measurement' if args.i47 else 'local-data/i45-measurement' if args.i45 else 'local-data/i44-measurement' if args.i44 else 'local-data/i43-measurement' if args.i43 else 'local-data/i42-measurement' if args.i42 else 'local-data/i41-measurement' if args.i41 else 'local-data/i40-measurement')
 output.mkdir(parents=True, exist_ok=True)
 def measure(spec):
     profile, density, length, passes, storeys, dungeons = spec

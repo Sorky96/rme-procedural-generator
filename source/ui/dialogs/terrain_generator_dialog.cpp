@@ -45,6 +45,9 @@
 #include <wx/combobox.h>
 #include <wx/dcclient.h>
 #include <wx/image.h>
+#include <wx/imaglist.h>
+#include <wx/listctrl.h>
+#include <wx/gauge.h>
 #include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
@@ -69,6 +72,15 @@ const wxString tooLargeMessage = wxstr(std::format(
     maxSide, maxSide, maxChanges
 ));
 const wxString cancelledMessage = "The operation was cancelled. Nothing was changed.";
+std::array<uint64_t, 5> candidateFingerprints(const PreparedTerrain& prepared) {
+    std::array<uint64_t, 5> result {};
+    size_t i = 0;
+    result[i++] = prepared.preview.getFingerprint();
+    if (prepared.cave) result[i++] = prepared.cave->preview.getFingerprint();
+    for (auto* cap = prepared.plateau.get(); cap && i < result.size(); cap = cap->plateau.get())
+        result[i++] = cap->preview.getFingerprint();
+    return result;
+}
 const wxString noClientMessage = "No client is loaded. Load the client for this map first.";
 const wxString busyMessage = "Finish the current selection or edit first, then try again.";
 
@@ -141,7 +153,7 @@ wxString describe(PreparationInputError error) {
 		case PreparationInputError::InvalidProfile:
 			return "Each brush name must be between 1 and 256 characters.";
 		case PreparationInputError::MemoryLimit:
-			return "This area needs more memory than the 512 MiB preview limit. Choose a smaller area.";
+			return "This series exceeds the joint preparation memory budget. Choose a smaller area or explicitly reduce N.";
 		case PreparationInputError::ContextLimit:
 		case PreparationInputError::ChangeLimit:
 			return tooLargeMessage;
@@ -216,7 +228,7 @@ wxString describe(ResolveError error) {
 		case ResolveError::InvalidItem:
 			return "A ground brush uses items the loaded client does not provide. Choose different brushes.";
 		case ResolveError::PlanLimit:
-			return "This area needs more memory than the 512 MiB preview limit. Choose a smaller area.";
+			return "This series exceeds the joint preparation memory budget. Choose a smaller area or explicitly reduce N.";
 		case ResolveError::Cancelled:
 			return cancelledMessage;
 		case ResolveError::AllocationFailed:
@@ -438,6 +450,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
     retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
     form->Add(retry_spin_, 1, wxEXPAND);
+    form->Add(label("Candidates (1-16):"), 0, wxALIGN_CENTER_VERTICAL);
+    candidate_count_spin_ = spin("terrain-candidate-count", 1, int(maxCandidateCount), int(defaultCandidateCount));
+    form->Add(candidate_count_spin_, 1, wxEXPAND);
+    candidate_count_spin_->SetToolTip(wxstr(std::format(
+        "Joint series preparation budget: {}. Includes gallery, selection and one working preview; N is never reduced automatically.",
+        formatMiB(preparationBudget.maxBytes))));
+    candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
     retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
     retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 
@@ -791,6 +811,24 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_floor_label_->Hide();
 	preview_floor_choice_->Hide();
 	right->Add(preview_panel_, 1, wxEXPAND);
+    right->Add(label("Candidates: arrows select; Selected and Recommended are labelled."), 0, wxTOP, gap);
+    candidate_list_ = newd wxListCtrl(this, wxID_ANY, wxDefaultPosition,
+        wxSize(-1, Theme::Grid(28)), wxLC_REPORT | wxLC_SINGLE_SEL);
+    candidate_list_->SetName("terrain-candidates");
+    candidate_list_->SetBackgroundColour(Theme::Get(Theme::Role::Background));
+    candidate_list_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+    candidate_list_->InsertColumn(0, "Candidate", wxLIST_FORMAT_LEFT, Theme::Grid(34));
+    candidate_list_->InsertColumn(1, "Seed / initial / attempts", wxLIST_FORMAT_LEFT, Theme::Grid(60));
+    candidate_list_->InsertColumn(2, "Validation", wxLIST_FORMAT_LEFT, Theme::Grid(32));
+    const int thumb = std::min(128, Theme::Grid(12));
+    auto images = std::make_unique<wxImageList>(thumb, thumb, true);
+    candidate_images_ = images.get();
+    candidate_list_->AssignImageList(images.release(), wxIMAGE_LIST_SMALL);
+    candidate_list_->Bind(wxEVT_LIST_ITEM_SELECTED, &TerrainGeneratorDialog::OnCandidateSelected, this);
+    right->Add(candidate_list_, 0, wxEXPAND | wxTOP, gap);
+    candidate_progress_ = newd wxGauge(this, wxID_ANY, int(maxCandidateCount));
+    candidate_progress_->SetName("terrain-candidate-progress");
+    right->Add(candidate_progress_, 0, wxEXPAND | wxTOP, gap);
 
 	auto* body = newd wxBoxSizer(wxHORIZONTAL);
 	body->Add(left, 0, wxEXPAND | wxRIGHT, margin);
@@ -841,6 +879,10 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		for (size_t kind = 0; kind < std::size(decorFields); ++kind) default_decor_brushes_[kind] = decorFields[kind]->GetValue();
 	}
 	CentreOnParent();
+    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
+        ReleasePreview(); // Stop and join owned workers before the window or map can disappear.
+        event.Skip();
+    });
 
 	// Every input change releases the owned preview.
     for (wxSpinCtrl* control :
@@ -925,7 +967,7 @@ void TerrainGeneratorDialog::LoadStyleProfiles() {
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 	event.Skip();
-	const bool hadPreview = preview_steps_ || prepared_ || preview_bitmap_.IsOk();
+	const bool hadPreview = series_request_ || preview_steps_ || prepared_ || preview_bitmap_.IsOk();
 	ReleasePreview();
 	UpdateControlStates();
 	if (hadPreview) {
@@ -990,6 +1032,12 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 
 void TerrainGeneratorDialog::ReleasePreview() {
 	preview_timer_.Stop();
+    collecting_ = false;
+    series_request_.reset();
+    candidates_.clear();
+    selected_candidate_.reset(); recommended_candidate_.reset();
+    candidate_list_->DeleteAllItems(); candidate_images_->RemoveAll();
+    candidate_progress_->SetValue(0);
 	preview_steps_.reset();
 	pending_request_.reset();
 	prepared_.reset();
@@ -1099,7 +1147,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	Layout();
 	preview_button_->Enable(!preview_steps_);
 	validate_button_->Enable(prepared_.has_value());
-	place_button_->Enable(prepared_ && !prepared_->preview.getChanges().empty());
+	place_button_->Enable(CandidateAllowed());
+    candidate_count_spin_->Enable(natural);
 }
 
 void TerrainGeneratorDialog::UpdateClientLabel() {
@@ -1326,22 +1375,31 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 			selection_.reset();
 			return;
 		}
-		const std::span<const uint8_t> mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
 
-		preview_attempt_ = 1;
-        preview_first_seed_ = request->config.seed;
+        series_request_ = *request;
+        series_revision_ = editor->map.getChangeTracker().getGeneration();
+        series_assets_ = g_version.GetAssetRevision();
+        candidate_count_ = NaturalSurface() ? uint32_t(candidate_count_spin_->GetValue()) : 1;
+        ranking_bands_ = {};
+        const auto picked = profile_choice_->GetSelection();
+        if (NaturalSurface() && picked > 0 && size_t(picked) <= profiles_.size())
+            ranking_bands_ = candidateBandsFor(profiles_[size_t(picked) - 1].profile);
+        const uint64_t imageBytes = uint64_t(request->config.region.width) * request->config.region.height * 7 + bitmapOverheadBytes;
+        const auto available = candidateWorkingBudget(preparationBudget.maxBytes, candidate_count_,
+            selection_ ? selection_->estimatedBytes : 0, imageBytes);
+        if (!available) {
+            ReleasePreview();
+            SetStatus("Complete series exceeds the memory budget. Reduce the area or explicitly choose fewer candidates; N was not reduced.", true);
+            return;
+        }
+        working_bytes_ = *available;
+        candidates_.reserve(candidate_count_);
+        collecting_ = true;
+        preview_attempt_ = 1;
+        preview_first_seed_ = candidateSeed(request->config.seed, 0);
         preview_fallback_ = false;
-        pending_request_ = std::move(*request);
-		auto steps = prepareTerrainSteps(editor->map, pending_request_->config,
-			pending_request_->profile, preparationBudget, mask);
-		if (!steps) {
-			ReleasePreview();
-			SetStatus(describe(steps.error()), true);
-			return;
-		}
-		preview_steps_.emplace(std::move(*steps));
-		SetStatus("Preparing preview. Press Cancel to stop.", false);
-		SchedulePreviewTick();
+        candidate_progress_->SetRange(int(candidate_count_));
+        StartCandidate(preview_first_seed_);
 	} catch (const std::bad_alloc&) {
 		ReleasePreview();
 		SetStatus(memoryMessage, true);
@@ -1359,6 +1417,7 @@ void TerrainGeneratorDialog::SchedulePreviewTick() {
 
 void TerrainGeneratorDialog::OnCancel(wxCommandEvent& event) {
 	if (!preview_steps_) {
+		ReleasePreview();
 		event.Skip();
 		return;
 	}
@@ -1368,117 +1427,178 @@ void TerrainGeneratorDialog::OnCancel(wxCommandEvent& event) {
 	preview_button_->SetFocus();
 }
 
+bool TerrainGeneratorDialog::SeriesCurrent() {
+    auto* editor = CurrentTarget();
+    if (!editor || !series_request_) return false;
+    if (editor->map.getChangeTracker().getGeneration() != series_revision_ ||
+        g_version.GetAssetRevision() != series_assets_) return false;
+    if (selection_ && !validateGenerationSelection(*editor, *selection_)) return false;
+    return true;
+}
+
+bool TerrainGeneratorDialog::CandidateAllowed() const {
+    return !collecting_ && !preview_steps_ && prepared_ && selected_candidate_ &&
+        *selected_candidate_ < candidates_.size() && !candidates_[*selected_candidate_].score.hardFail &&
+        !prepared_->preview.getChanges().empty();
+}
+
+bool TerrainGeneratorDialog::StartCandidate(uint64_t seed) {
+    if (!SeriesCurrent()) {
+        ReleasePreview(); SetStatus(staleMessage, true); UpdateControlStates(); return false;
+    }
+    prepared_.reset();
+    pending_request_ = *series_request_;
+    preview_bitmap_ = selected_candidate_ ? candidates_[*selected_candidate_].thumbnail : wxNullBitmap;
+    pending_request_->config.seed = seed;
+    auto budget = preparationBudget;
+    budget.maxBytes = working_bytes_;
+    budget.measureCandidate = !ranking_bands_.empty();
+    const auto mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
+    auto* editor = CurrentTarget();
+    auto steps = prepareTerrainSteps(editor->map, pending_request_->config, pending_request_->profile, budget, mask);
+    if (!steps) {
+        const auto message = describe(steps.error());
+        ReleasePreview(); SetStatus(message + " Entire series refused; N was not reduced.", true); UpdateControlStates(); return false;
+    }
+    preview_steps_.emplace(std::move(*steps));
+    SetStatus(wxstr(std::format("{} candidate {}/{}; seed {}, initial {}, attempt {}. Cancel stops the whole series.",
+        collecting_ ? "Generating" : "Loading", collecting_ ? candidates_.size() + 1 : *selected_candidate_ + 1,
+        candidate_count_, seed, preview_first_seed_, preview_attempt_)), false);
+    UpdateControlStates();
+    SchedulePreviewTick();
+    return true;
+}
+
+void TerrainGeneratorDialog::UpdateCandidateLabels() {
+    for (size_t i = 0; i < candidates_.size(); ++i) {
+        std::string text = std::format("#{}", i);
+        if (recommended_candidate_ == i) text += " Recommended";
+        if (selected_candidate_ == i) text += " Selected";
+        candidate_list_->SetItem(long(i), 0, wxstr(text));
+    }
+}
+
+void TerrainGeneratorDialog::SelectCandidate(uint32_t index) {
+    if (collecting_ || index >= candidates_.size()) return;
+    preview_timer_.Stop();
+    preview_steps_.reset(); // Requests stop and joins before changing request storage.
+    pending_request_.reset();
+    prepared_.reset();
+    selected_candidate_ = index;
+    preview_bitmap_ = candidates_[index].thumbnail;
+    preview_panel_->Refresh();
+    UpdateCandidateLabels();
+    preview_attempt_ = candidates_[index].attempts;
+    preview_first_seed_ = candidates_[index].initialSeed;
+    StartCandidate(candidates_[index].seed);
+}
+
+void TerrainGeneratorDialog::OnCandidateSelected(wxListEvent& event) {
+    if (updating_candidates_ || collecting_) return;
+    try { SelectCandidate(uint32_t(event.GetIndex())); }
+    catch (const std::bad_alloc&) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); }
+}
+
 void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
-	if (!preview_steps_) return;
-	if (!CurrentTarget()) {
-		ReleasePreview();
-		UpdateControlStates();
-		return;
-	}
-
-	try {
-		auto outcome = preview_steps_->advance();
-		if (!outcome) {
-			SchedulePreviewTick();
-			return;
-		}
-		preview_steps_.reset();
-		auto request = std::move(pending_request_);
-		pending_request_.reset();
-		UpdateControlStates();
-		auto& result = *outcome;
-		if (!result) {
-			selection_.reset();
-			SetStatus(describe(result.error()), true);
-			return;
-		}
-
-        if (result->levels && !result->levels->report.allReached() && !preview_fallback_) {
+    if (!series_request_) return;
+    if (!SeriesCurrent()) {
+        ReleasePreview(); UpdateControlStates(); SetStatus(staleMessage, true); return;
+    }
+    if (!preview_steps_) { preview_timer_.StartOnce(100); return; }
+    try {
+        auto outcome = preview_steps_->advance();
+        if (!outcome) { SchedulePreviewTick(); return; }
+        preview_steps_.reset();
+        auto request = std::move(pending_request_);
+        pending_request_.reset();
+        auto& result = *outcome;
+        if (!result) {
+            const auto message = describe(result.error());
+            ReleasePreview(); UpdateControlStates();
+            SetStatus(message + " Entire series refused; N was not reduced.", true); return;
+        }
+        if (collecting_ && result->levels && !result->levels->report.allReached() && !preview_fallback_) {
             const auto limit = uint32_t(std::max(1, retry_spin_->GetValue()));
             if (preview_attempt_ < limit || (preview_attempt_ > 1 && request->config.seed != preview_first_seed_)) {
-                if (preview_attempt_ < limit) {
-                    request->config.seed = preview_first_seed_ + preview_attempt_++;
-                } else {
-                    request->config.seed = preview_first_seed_;
-                    preview_fallback_ = true;
-                }
-                pending_request_ = std::move(*request);
-                const auto mask = selection_ ? std::span<const uint8_t>(selection_->mask) : std::span<const uint8_t>();
-                auto steps = prepareTerrainSteps(CurrentTarget()->map, pending_request_->config,
-                    pending_request_->profile, preparationBudget, mask);
-                if (!steps) { ReleasePreview(); SetStatus(describe(steps.error()), true); return; }
-                preview_steps_.emplace(std::move(*steps));
-                UpdateControlStates();
-                SetStatus(wxstr(std::format("Checking seed {} (attempt {}).", pending_request_->config.seed, preview_attempt_)), false);
-                SchedulePreviewTick();
-                return;
+                uint64_t seed = preview_first_seed_;
+                if (preview_attempt_ < limit) seed += preview_attempt_++;
+                else { preview_fallback_ = true; ++preview_attempt_; }
+                result = std::unexpected(PreparationInputError::Cancelled);
+                StartCandidate(seed); return;
             }
         }
-        seed_text_->ChangeValue(wxstr(std::format("{}", request->config.seed)));
-		// Fresh target and source validation before the result is retained or displayed.
-		const auto target = selection_ ?
-			validateSelectedTerrainTarget(*result, *selection_, request->config, request->profile) :
-			validateTerrainTarget(*result, request->config, request->profile);
-		if (!target) {
-			selection_.reset();
-			SetStatus(describe(target.error()), true);
-			return;
-		}
-		const auto fingerprint = result->preview.currentFingerprint();
-		if (!fingerprint || *fingerprint != result->preview.getFingerprint()) {
-			selection_.reset();
-			SetStatus(staleMessage, true);
-			return;
-		}
-
-		prepared_ = std::move(*result);
-		if (!BuildPreviewBitmap()) {
-			ReleasePreview();
-			SetStatus(memoryMessage, true);
-			return;
-		}
-
-		const auto& region = prepared_->snapshot.input.config.region;
-		const uint64_t imageBytes = uint64_t(region.width) * region.height * 7 + bitmapOverheadBytes;
-        uint64_t changedTiles = prepared_->preview.getChanges().size();
-        uint64_t floors = 1;
-        if (prepared_->cave) {
-            changedTiles += prepared_->cave->preview.getChanges().size();
-            ++floors;
+        const auto target = selection_ ?
+            validateSelectedTerrainTarget(*result, *selection_, request->config, request->profile) :
+            validateTerrainTarget(*result, request->config, request->profile);
+        if (!target) {
+            ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
-        for (auto* upper = prepared_->plateau.get(); upper; upper = upper->plateau.get()) {
-            changedTiles += upper->preview.getChanges().size();
-            ++floors;
-        }
-		SetStatus(wxstr(std::format("Preview ready: {} tiles across {} floors will change in a {} x {} area (seed {}). "
-			"Estimated preparation memory: {}. Commit memory limit: {}.",
-			changedTiles, floors, region.width, region.height,
-			prepared_->snapshot.input.config.seed,
-			formatMiB(prepared_->memory.totalBytes + imageBytes + (selection_ ? selection_->estimatedBytes : 0)),
-			formatMiB(commitBudget.maxBytes))), false);
-        if (prepared_->levels) {
-            const auto& report = prepared_->levels->report;
-            uint64_t reached = 0, total = 0;
-            for (const auto& c : report.categories) { reached += c.reached; total += c.total; }
-            auto text = std::format("Reachable: {}/{} places on {} floors. Seed {}, {} attempts.",
-                reached, total, report.pockets.size(), prepared_->plan.config.seed, preview_attempt_);
-            if (prepared_->plan.config.surface.repairReach) {
-                const auto& repair = prepared_->levels->repair;
-                text += std::format(" Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.{}",
-                    repair.repairs, repair.bridges, repair.removedCaps, repair.removedPois, repair.unrepaired ? " Unrepaired." : "");
+        const bool hardFail = result->levels && candidateHardFail(true, result->levels->report, result->levels->repair);
+        const auto fingerprints = candidateFingerprints(*result);
+        if (!collecting_) {
+            const auto& row = candidates_[*selected_candidate_];
+            if (hardFail != row.score.hardFail || fingerprints != row.fingerprints) {
+                ReleasePreview(); UpdateControlStates(); SetStatus("Candidate rebuild differs from the validated gallery. Generate a new series.", true); return;
             }
-            if (!report.firstUnreachable.empty()) {
-                const auto& p = report.firstUnreachable.front();
-                text += std::format(" Unreachable: {} places (first: {}, {}, {}).", total - reached, p.x, p.y, p.z);
+            prepared_ = std::move(*result);
+            if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
+            UpdateControlStates();
+            auto message = std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {}",
+                *selected_candidate_, row.seed, row.initialSeed, row.attempts,
+                hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
+                ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.");
+            if (prepared_->levels) {
+                const auto& levels = *prepared_->levels;
+                uint64_t reached = 0, total = 0;
+                for (const auto& category : levels.report.categories) { reached += category.reached; total += category.total; }
+                message += std::format(" Reachable: {}/{} places. Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.",
+                    reached, total, levels.repair.repairs, levels.repair.bridges, levels.repair.removedCaps, levels.repair.removedPois);
             }
-            SetStatus(wxstr(text), !report.allReached());
+            SetStatus(wxstr(message), hardFail);
+            preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
         }
-	} catch (const std::bad_alloc&) {
-		ReleasePreview();
-		SetStatus(memoryMessage, true);
-	}
-	UpdateControlStates();
-	preview_panel_->Refresh();
+        Candidate row;
+        row.initialSeed = preview_first_seed_; row.seed = request->config.seed; row.attempts = preview_attempt_;
+        row.fingerprints = fingerprints;
+        row.score = {hardFail, 0, 0, uint32_t(candidates_.size())};
+        if (!ranking_bands_.empty()) {
+            if (!result->candidateMetrics) { ReleasePreview(); UpdateControlStates(); SetStatus("Candidate measurement missing. Entire series refused.", true); return; }
+            const auto score = scoreCandidateMetrics(*result->candidateMetrics, ranking_bands_, hardFail, row.score.index);
+            if (!score) { ReleasePreview(); UpdateControlStates(); SetStatus("Candidate measurement failed. Entire series refused.", true); return; }
+            row.score = *score;
+        }
+        prepared_ = std::move(*result);
+        preview_floor_choice_->SetSelection(0);
+        if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
+        const int thumb = std::min(128, Theme::Grid(12));
+        row.thumbnail = wxBitmap(preview_bitmap_.ConvertToImage().Scale(thumb, thumb, wxIMAGE_QUALITY_NORMAL));
+        const auto index = long(candidates_.size());
+        const int image = candidate_images_->Add(row.thumbnail);
+        candidate_list_->InsertItem(index, wxstr(std::format("#{}", index)), image);
+        candidate_list_->SetItem(index, 1, wxstr(std::format("{} / {} / {}", row.seed, row.initialSeed, row.attempts)));
+        candidate_list_->SetItem(index, 2, hardFail ? "hardFail - Place blocked" : "Validated / admissible");
+        candidates_.push_back(std::move(row));
+        prepared_.reset();
+        candidate_progress_->SetValue(int(candidates_.size()));
+        if (candidates_.size() < candidate_count_) {
+            preview_attempt_ = 1; preview_fallback_ = false;
+            preview_first_seed_ = candidateSeed(series_request_->config.seed, uint32_t(candidates_.size()));
+            StartCandidate(preview_first_seed_); return;
+        }
+        collecting_ = false;
+        std::array<CandidateScore, maxCandidateCount> scores;
+        for (size_t i = 0; i < candidates_.size(); ++i) scores[i] = candidates_[i].score;
+        recommended_candidate_ = recommendedCandidate(std::span(scores).first(candidates_.size()), !ranking_bands_.empty());
+        const uint32_t initial = recommended_candidate_.value_or(0);
+        updating_candidates_ = true;
+        candidate_list_->SetItemState(long(initial), wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
+            wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+        updating_candidates_ = false;
+        candidate_list_->SetFocus();
+        SelectCandidate(initial);
+    } catch (const std::bad_alloc&) {
+        ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true);
+    }
 }
 
 bool TerrainGeneratorDialog::BuildPreviewBitmap() {
@@ -1535,12 +1655,16 @@ void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) {
 		UpdateControlStates();
 		return;
 	}
-	const auto request = ReadRequest();
+	auto request = ReadRequest();
 	if (!request) {
 		ReleasePreview();
 		UpdateControlStates();
 		return;
 	}
+    if (!SeriesCurrent() || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile) {
+        ReleasePreview(); UpdateControlStates(); SetStatus(staleMessage, true); return;
+    }
+    request->config.seed = prepared_->plan.config.seed;
 	const auto target = selection_ ?
 		validateSelectedTerrainTarget(*prepared_, *selection_, request->config, request->profile) :
 		validateTerrainTarget(*prepared_, request->config, request->profile);
@@ -1565,15 +1689,17 @@ void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
 		UpdateControlStates();
 		return;
 	}
-	const auto request = ReadRequest();
+	auto request = ReadRequest();
 	if (!request) {
 		ReleasePreview();
 		UpdateControlStates();
 		return;
 	}
-    if (prepared_->levels && !prepared_->levels->report.allReached() &&
-        wxMessageBox("Some places cannot be reached from the start. Place this terrain anyway?",
-            "Unreachable places", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES) return;
+    if (!CandidateAllowed()) { SetStatus("Only a validated, admissible candidate can be placed.", true); return; }
+    if (!SeriesCurrent() || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile) {
+        ReleasePreview(); UpdateControlStates(); SetStatus(staleMessage, true); return;
+    }
+    request->config.seed = prepared_->plan.config.seed;
 	// The commit validates again and copies the owned diff; it never regenerates or reborders.
 	const auto receipt = selection_ ?
 		DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :

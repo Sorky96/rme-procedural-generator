@@ -40,6 +40,7 @@
 #include <wx/combobox.h>
 #include <wx/spinctrl.h>
 #include <wx/timer.h>
+#include <wx/listctrl.h>
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
@@ -1283,6 +1284,8 @@ class MountainDialogRun final : public wxEvtHandler {
 public:
     MountainDialogRun(TerrainGeneratorDialog& dialog, Editor& editor, size_t floors, bool requireReachable = false, bool previewOnly = false) : dialog_(dialog), editor_(editor), floors_(floors), requireReachable_(requireReachable), previewOnly_(previewOnly),
         sourceChanged_(editor.map.hasChanged()), sourceGeneration_(editor.map.getGeneration()), sourceRevision_(editor.map.getChangeTracker().getGeneration()) {
+        auto* count = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-candidate-count", &dialog_));
+        check(count != nullptr, "Candidate count control"); count->SetValue(1);
         unchanged();
         Bind(wxEVT_TIMER, &MountainDialogRun::tick, this);
         timer_.Start(20);
@@ -1312,11 +1315,11 @@ private:
                 auto* status = wxWindow::FindWindowByName("terrain-status", &dialog_);
                 check(status, "GUI mountain status missing");
                 const auto message = status->GetLabel();
-                if (message.StartsWith("Preparing preview")) return;
+                if (!wxWindow::FindWindowByName("terrain-preview", &dialog_)->IsEnabled()) return;
                 status_ = message.ToStdString();
-                if (requireReachable_) check(message.StartsWith("Reachable:") && !message.Contains("Unrepaired") && !message.Contains("Unreachable"),
+                if (requireReachable_) check(message.StartsWith("Selected #") && !message.Contains("hardFail"),
                     "Final-mask repair status: " + status_);
-                check(message.StartsWith("Preview ready:") || message.StartsWith("Reachable:"), "GUI mountain preview refused: " + message.ToStdString());
+                check(message.StartsWith("Selected #"), "GUI mountain preview refused: " + message.ToStdString());
                 unchanged();
                 auto* floors = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("terrain-preview-floor", &dialog_));
                 if (floors && !floors_) floors_ = floors->GetCount();
@@ -1746,6 +1749,7 @@ void plateaus(std::ostream& report, uint32_t levels = 1)
 void levelRetryProbe(std::ostream& report) {
     check(g_gui.NewMap(), "Retry dialog map");
     auto* dialog = new TerrainGeneratorDialog(g_gui.root);
+    dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-candidate-count", dialog))->SetValue(1);
     const auto spin = [&](const char* name) {
         auto* control = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, dialog));
         check(control != nullptr, std::format("Missing {}", name)); return control;
@@ -1780,15 +1784,17 @@ void levelRetryProbe(std::ostream& report) {
             wxYieldIfNeeded();
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        check(place->IsEnabled(), "Retry dialog preview failed: " + status->GetLabel().ToStdString());
-        return !status->GetLabel().Contains("Unreachable:");
+        check(status->GetLabel().StartsWith("Selected #"), "Retry dialog preview failed: " + status->GetLabel().ToStdString());
+        return place->IsEnabled();
     };
     bool previousFailed = false, found = false;
     for (uint64_t value = 1; value <= 64 && !found; ++value) {
         const bool success = run(value, 0);
         if (success && previousFailed) {
             check(run(value - 1, 2), "Retry did not select reachable second seed");
-            check(seed->GetValue() == wxstr(std::format("{}", value)) && status->GetLabel().Contains("2 attempts"), "Retry seed or attempt count");
+            auto* candidates = dynamic_cast<wxListCtrl*>(wxWindow::FindWindowByName("terrain-candidates", dialog));
+            check(seed->GetValue() == wxstr(std::format("{}", value - 1)) && candidates &&
+                candidates->GetItemText(0, 1) == wxstr(std::format("{} / {} / 2", value, value - 1)), "Retry actual/initial seed or attempt count");
             report << std::format("LEVEL_RETRY_E2E_PASS initial={} used={} attempts=2\n", value - 1, value);
             found = true;
         }
@@ -2367,7 +2373,7 @@ void buildingStairsGuiProbe(std::ostream& report) {
     // its Place asks about unreachable places in a modal box. The adapter result above is committed instead.
     MountainDialogRun run(*dialog, editor, 0, false, true);
     const int modal = dialog->ShowModal(); run.stop();
-    check(modal == wxID_CANCEL && run.placed() && run.floors() == 2 && run.status().starts_with("Reachable:"), "I43 GUI preview: " + run.failure() + run.status());
+    check(modal == wxID_CANCEL && run.placed() && run.floors() == 2 && run.status().starts_with("Selected #"), "I43 GUI preview: " + run.failure() + run.status());
     dialog->Destroy();
     check(bool(DrawOperations::commitTerrainPreview(*prepared, config, p, {750000, 1536ULL << 20})), "I43 commit");
     // Committed map: stairs below, opening above, an open arrival beside it and walls on the storey outline.

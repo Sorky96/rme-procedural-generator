@@ -389,6 +389,7 @@ TerrainPreparationSteps runPreparation(
 	if (g_version.GetAssetRevision() != limits.assetRevision) co_return fail(PreviewError::StaleSnapshot);
 	try {
 		const auto cellCount = limits.cellCount;
+        std::optional<CandidateMetrics> candidateMetrics;
 		auto& remaining = limits.remaining;
 		const auto semanticBytes = limits.semanticBytes;
 		const auto planBytes = limits.planBytes;
@@ -403,6 +404,8 @@ TerrainPreparationSteps runPreparation(
 		if (!snapshot) co_return fail(snapshot.error());
 		const uint64_t snapshotBytes = snapshot->estimatedBytes;
 		if (!reserve(snapshotBytes)) co_return fail(PreparationInputError::MemoryLimit);
+        // Conservative allowance for channel/patch measurement temporaries, charged before allocation.
+        if (budget.measureCandidate && !reserve(cellCount * 512 + 65536)) co_return fail(PreparationInputError::MemoryLimit);
 
 		// Count actual writable cells before generating: a sparse mask is judged by what it writes.
 		// Capture always owns two full-size masks. A mismatch is malformed resolver input, reported
@@ -504,10 +507,22 @@ TerrainPreparationSteps runPreparation(
                         if (!brushes) co_return fail(brushes.error());
                         capShapes = brushes->shapes;
                     }
-                    auto world = buildLevelWorld(std::move(*grid), decor ? std::move(*decor) : DecorGrid{},
-                        input.config.seed, input.config.surface, input.config.decor, caveShapes, capShapes, input.config.vegetation, stop,
-                        stairBrush.shapes, dungeonBrushes ? std::span<const ExitShape>(dungeonBrushes->stairs.shapes) : std::span<const ExitShape>{},
-                        caveBlocked);
+                    auto work = [surface = std::move(*grid), decoration = decor ? std::move(*decor) : DecorGrid{},
+                        seed = input.config.seed, tuning = input.config.surface, decorTuning = input.config.decor,
+                        caveShapes, capShapes, vegetation = input.config.vegetation, stairShapes = stairBrush.shapes,
+                        dungeonShapes = dungeonBrushes ? dungeonBrushes->stairs.shapes : std::vector<ExitShape>{}, caveBlocked](std::stop_token token) mutable {
+                        return buildLevelWorld(std::move(surface), std::move(decoration), seed, tuning, decorTuning,
+                            caveShapes, capShapes, vegetation, token, stairShapes, dungeonShapes, caveBlocked);
+                    };
+                    std::expected<LevelWorld, ReachabilityError> world = std::unexpected(ReachabilityError::Cancelled);
+                    if (background) {
+                        CoreTask<decltype(world)> task(std::move(work));
+                        while (!task.done()) {
+                            if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                            co_await std::suspend_always{};
+                        }
+                        world = task.take();
+                    } else world = work(stop);
                     if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                     passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
@@ -551,8 +566,24 @@ TerrainPreparationSteps runPreparation(
                     if (walkableRockFace) for (const auto e : world->surface.entrances)
                         if (world->surface.cells[e] == SurfaceKind::Rock && blocking[e] == 2) blocking[e] = 0;
                     if (input.config.surface.repairReach) {
-                        auto repaired = repairLevelReach(*world, !profile.wall.empty(), rockBlocks, caveShapes, {},
-                            input.config.surface.fordLength, !profile.bridgeBrush.empty(), blocking, stop);
+                        auto work = [ownedWorld = std::move(*world), walls = !profile.wall.empty(), rockBlocks,
+                            caveShapes, fordLength = input.config.surface.fordLength, bridges = !profile.bridgeBrush.empty(),
+                            blocking = std::move(blocking)](std::stop_token token) mutable {
+                            auto repaired = repairLevelReach(ownedWorld, walls, rockBlocks, caveShapes, {}, fordLength, bridges, blocking, token);
+                            return std::pair(std::move(ownedWorld), std::move(repaired));
+                        };
+                        using RepairResult = decltype(work(stop));
+                        std::optional<RepairResult> result;
+                        if (background) {
+                            CoreTask<RepairResult> task(std::move(work));
+                            while (!task.done()) {
+                                if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                                co_await std::suspend_always{};
+                            }
+                            result = task.take();
+                        } else result = work(stop);
+                        *world = std::move(result->first);
+                        auto repaired = std::move(result->second);
                         if (!repaired) co_return fail(repaired.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
                         repairReport = *repaired;
                     }
@@ -566,30 +597,46 @@ TerrainPreparationSteps runPreparation(
 				if (hasCave(profile)) {
 					auto brushes = resolveCaveBrushes(profile, input.config);
 					if (!brushes) co_return fail(brushes.error());
-					auto generated = repairWorld ? std::expected<CaveGrid, SurfaceError>(*repairWorld->cave) :
-						generateCave(*grid, input.config.seed, stop, nullptr, caveBlocked);
-					if (!generated) co_return fail(fromSurface(generated.error()));
-					std::vector<uint8_t> occupied;
-					if (decor) {
-						occupied.resize(cellCount);
-						for (size_t i = 0; i < cellCount; ++i) occupied[i] = decor->cells[i] != DecorKind::None;
-					}
-					auto exits = repairWorld ? std::expected<CaveExitPlan, UndergroundError>(repairWorld->exits) : placeCaveExits(*grid, *generated, brushes->shapes, occupied, stop);
-					if (!exits) co_return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
-						exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
-                    // Blocked cells can cut a tunnel: drop the parts no exit enters (buildLevelWorld does the same).
-                    if (!repairWorld && !caveBlocked.empty()) {
-                        auto removed = removeUnenteredCaveComponents(*generated, *exits, stop);
-                        if (!removed) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    struct CaveStage { SurfaceGrid surface; CaveGrid cave; CaveExitPlan exits; };
+                    using CaveResult = std::expected<CaveStage, PreparationError>;
+                    CaveResult stage = std::unexpected(PreparationInputError::Cancelled);
+                    if (repairWorld) stage = CaveStage{std::move(*grid), *repairWorld->cave, repairWorld->exits};
+                    else {
+                        auto work = [surface = std::move(*grid), seed = input.config.seed, tuning = input.config.surface,
+                            shapes = brushes->shapes, decoration = decor ? *decor : DecorGrid{}, caveBlocked](std::stop_token token) mutable -> CaveResult {
+                            auto generated = generateCave(surface, seed, token, nullptr, caveBlocked);
+                            if (!generated) return fail(fromSurface(generated.error()));
+                            std::vector<uint8_t> occupied;
+                            if (!decoration.cells.empty()) {
+                                occupied.resize(decoration.cells.size());
+                                for (size_t i = 0; i < occupied.size(); ++i) occupied[i] = decoration.cells[i] != DecorKind::None;
+                            }
+                            auto exits = placeCaveExits(surface, *generated, shapes, occupied, token);
+                            if (!exits) return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
+                                exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
+                            if (!caveBlocked.empty() && !removeUnenteredCaveComponents(*generated, *exits, token))
+                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                            if (tuning.caveFarExits && !placeFarCaveExits(surface, *generated, *exits, shapes, seed, occupied, token))
+                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                            if (tuning.caveDoorCorridors && !placeCaveDoorCorridors(*generated, *exits, shapes, token))
+                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                            return CaveStage{std::move(surface), std::move(*generated), std::move(*exits)};
+                        };
+                        // Keep resolved vegetation unchanged: the cave worker needs only its occupied mask.
+                        // The owned decoration above is a copy, charged by semantic working memory.
+                        if (background) {
+                            CoreTask<CaveResult> task(std::move(work));
+                            while (!task.done()) {
+                                if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                                co_await std::suspend_always{};
+                            }
+                            stage = task.take();
+                        } else stage = work(stop);
                     }
-                    if (!repairWorld && input.config.surface.caveFarExits) {
-                        auto distant = placeFarCaveExits(*grid, *generated, *exits, brushes->shapes, input.config.seed, occupied, stop);
-                        if (!distant) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                    }
-                    if (!repairWorld && input.config.surface.caveDoorCorridors) {
-                        auto doors = placeCaveDoorCorridors(*generated, *exits, brushes->shapes, stop);
-                        if (!doors) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                    }
+                    if (!stage) co_return fail(stage.error());
+                    *grid = std::move(stage->surface);
+                    auto generated = std::optional<CaveGrid>(std::move(stage->cave));
+                    auto exits = std::optional<CaveExitPlan>(std::move(stage->exits));
 					levelCave = *generated;
                     levelExits = *exits;
                     levelShapes = brushes->shapes;
@@ -1016,6 +1063,21 @@ TerrainPreparationSteps runPreparation(
                 levels->passes = std::move(passes);
                 levels->plan = std::move(*semantic);
                 levels->blockingMask.resize(levelCells);
+                if (budget.measureCandidate) {
+                    auto work = [surface = std::move(*grid)](std::stop_token token) { return candidateMetricsOf(surface, token); };
+                    std::expected<CandidateMetrics, CandidateScoreError> measured = std::unexpected(CandidateScoreError::Cancelled);
+                    if (background) {
+                        CoreTask<decltype(measured)> task(std::move(work));
+                        while (!task.done()) {
+                            if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                            co_await std::suspend_always{};
+                        }
+                        measured = task.take();
+                    } else measured = work(stop);
+                    if (!measured) co_return fail(stop.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    candidateMetrics = std::move(*measured);
+                }
+
             } else {
 				auto grid = generateTerrain(input.config, input.extent, { budget.maxCells, semanticBytes },
 					input.mask, input.protection, stop);
@@ -1131,7 +1193,7 @@ TerrainPreparationSteps runPreparation(
 		const PreparationMemory memory {
 			infrastructureBytes, snapshotBytes, semanticBytes, planBytes, previewBytes, budget.maxBytes - remaining
 		};
-        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels)};
+        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics)};
     } catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
 	} catch (const std::system_error&) {

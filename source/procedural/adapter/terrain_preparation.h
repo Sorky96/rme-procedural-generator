@@ -7,6 +7,7 @@
 #include "procedural/adapter/terrain_preview.h"
 #include "procedural/core/reachability.h"
 #include "procedural/core/level_repair.h"
+#include "procedural/core/candidate_score.h"
 
 #include <cstdint>
 #include <expected>
@@ -24,6 +25,7 @@ struct PreparationBudget {
 	uint64_t maxContextCells = 0; // Clipped two-cell halo context captured from the map.
 	uint64_t maxChanges = 0; // Writable cells and resulting preview changes.
 	uint64_t maxBytes = 0; // One joint estimate for every stage below.
+    bool measureCandidate = false; // I52: worker measurement of the actual adapter surface.
 };
 
 // Fixed allowance for synchronous stack frames, the wrapper's own locals, RNG engines and seed
@@ -75,6 +77,7 @@ struct PreparedTerrain {
         std::vector<MountainPass> passes;
 	};
 	std::unique_ptr<Levels> levels;
+    std::optional<CandidateMetrics> candidateMetrics;
 };
 
 // Captures, generates, resolves and builds the DrawOperations preview for one region in a single

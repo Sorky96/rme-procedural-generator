@@ -66,6 +66,7 @@ def rebuild_core_targets():
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument('--probes', nargs=2, metavar=('PROFILE_DATA', 'CONFIG'), type=Path)
 parser.add_argument('--local-data', type=Path, help='base for relative probe inputs (default: the main checkout local-data)')
+parser.add_argument('--output-root', type=Path, default=repo / 'local-data/procedural-smoke', help='private probe output folder (scratchpad is supported)')
 args = parser.parse_args()
 
 rebuild_core_targets()
@@ -88,7 +89,7 @@ if args.probes:
     print(f'probe inputs: {profile_data} {config}')
     stamp = time.strftime('%Y%m%d-%H%M%S')
     for mode in ('commit', 'surface'):
-        out = repo / 'local-data/procedural-smoke' / f'suite-{mode}-{stamp}'
+        out = args.output_root / f'suite-{mode}-{stamp}'
         run = subprocess.run([sys.executable, '-I', str(repo / 'docs/procedural/smoke/g1_run_resolver_probe.py'),
                               str(out), str(profile_data), str(config), f'--{mode}'], capture_output=True, text=True)
         try:
