@@ -2,10 +2,12 @@
 #include "procedural/core/candidate_score.h"
 #include "procedural/core/style_profile.h"
 #include "procedural/core/copy_guard.h"
+#include "procedural/core/png_writer.h"
 
 #include <algorithm>
 #include <charconv>
 #include <format>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -53,7 +55,8 @@ constexpr ExitShape offlineShapes[] = {{ExitDirection::North, 0, 1, true}, {Exit
 
 void usage() {
     std::cout << "candidate_rank PROFILE SIDE FIRST_USER_SEED LAST_USER_SEED [--count 1..16] [--bands FILE]\n"
-        "  [--path-length 0..400] [--building-density 0..100] [--rock-blocks 0|1] [--g5-levels] [--i51b] [--copy-index FILE]\n"
+        "  [--path-length 0..400] [--building-density 0..100] [--rock-blocks 0|1] [--g5-levels] [--i51b] [--copy-index FILE] [--render-dir DIR]\n"
+        "--render-dir exports the measured post-repair surface, one pixel per tile, using the style_render palette.\n"
         "Explicit local I53 index: bad/incompatible/insufficient data aborts the series; no index means similarity not evaluated.\n"
         "--i51b adds winnerB (hardFail,distance,inBand descending,index) on the same candidates; winner remains A.\n"
         "Default count=4. Without --bands: measurements only, never a claimed ranking/gate pass.\n"
@@ -80,6 +83,7 @@ int main(int argc, char** argv) try {
     uint32_t count = 4;
     std::vector<CandidateBand> bands;
     std::optional<CopyIndex> copyIndex;
+    std::optional<std::filesystem::path> renderDir;
     bool g5 = false, i51b = false;
     for (int i = 5; i < argc; ++i) {
         const std::string_view key = argv[i];
@@ -87,6 +91,7 @@ int main(int argc, char** argv) try {
         if (key == "--i51b") { i51b = true; continue; }
         if (++i == argc) throw std::runtime_error("missing option value");
         if (key == "--bands") { bands = readBands(argv[i]); continue; }
+        if (key == "--render-dir") { renderDir = argv[i]; continue; }
         if (key == "--copy-index") {
             auto loaded = readCopyIndex(argv[i], profile->client, profile->otbSha256, profile->datSha256);
             if (!loaded) throw std::runtime_error("invalid/incompatible/insufficient local I53 index");
@@ -100,6 +105,7 @@ int main(int argc, char** argv) try {
         else throw std::runtime_error("unknown option or out-of-range value: " + std::string(key));
     }
     if (i51b && bands.empty()) throw std::runtime_error("--i51b requires bands");
+    if (renderDir) std::filesystem::create_directories(*renderDir);
     if (g5) {
         tuning.ruinPercent = 20; tuning.campCount = 4; tuning.fordLength = 48; tuning.repairReach = 1;
         tuning.caveEntrances = 16; tuning.plateauMinTop = 64; tuning.plateauMaxPercent = 10; tuning.plateauLevels = 3;
@@ -162,6 +168,21 @@ int main(int argc, char** argv) try {
                 copy = *result;
             }
             const bool hard = candidateHardFail(world->surface.valid(), *reach, world->repair) || copy.hardFail();
+            if (renderDir) {
+                // Existing style_render palette, plus repaired bridges in the path color.
+                // No labels or PNG metadata in evaluator views.
+                constexpr PngColor colors[] = {{0, 0, 0}, {70, 150, 40}, {120, 80, 40}, {140, 140, 140},
+                    {235, 215, 150}, {40, 90, 200}, {40, 90, 200}, {200, 170, 120}, {120, 120, 150}, {200, 170, 120}};
+                static_assert(std::size(colors) == size_t(SurfaceKind::Bridge) + 1);
+                std::vector<uint8_t> pixels(world->surface.cells.size());
+                std::ranges::transform(world->surface.cells, pixels.begin(), [](auto kind) { return uint8_t(kind); });
+                const auto png = encodeIndexedPng(side, side, colors, pixels);
+                if (!png) throw std::runtime_error("semantic PNG encoding failed");
+                std::ofstream file(*renderDir / std::format("{}-{}.png", userSeed, index), std::ios::binary);
+                file.write(reinterpret_cast<const char*>(png->data()), static_cast<std::streamsize>(png->size()));
+                file.close();
+                if (!file) throw std::runtime_error("semantic PNG write failed");
+            }
             std::cout << std::format("{}\t{}\t{}\t{}\t{}\t", userSeed, index, seed, fingerprint, hard);
             if (!bands.empty()) {
                 const auto score = scoreCandidateMetrics(*metrics, bands, hard, index);

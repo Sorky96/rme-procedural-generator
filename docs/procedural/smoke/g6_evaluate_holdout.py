@@ -223,7 +223,7 @@ def load_references(root, profile_dir):
                         'profiles': profile_audit, 'maps': audit}
 
 
-def read_candidates(path, bands, *, i51b=False):
+def read_candidates(path, bands, *, i51b=False, first_seed=None, count=16):
     text = path.read_text(encoding='utf-8').splitlines()
     if text[0] != 'g6-candidate-report/1':
         raise ValueError('candidate schema')
@@ -232,7 +232,7 @@ def read_candidates(path, bands, *, i51b=False):
         raise ValueError('candidate experiment mismatch')
     settings = dict(s.split('=', 1) for s in text[1].split('\t')[1:])
     style = path.name.split('-')[0]
-    expected = {'side': '512', 'count': '16', 'pathLength': '40' if style == 'm06' else '80',
+    expected = {'side': '512', 'count': str(count), 'pathLength': '40' if style == 'm06' else '80',
                 'buildingDensity': '30' if style == 'm06' else '40', 'rockBlocks': 'false' if style == 'm06' else 'true',
                 'g5': 'true', 'mode': 'ranking'}
     if settings != expected:
@@ -252,7 +252,8 @@ def read_candidates(path, bands, *, i51b=False):
         raise ValueError('missing/duplicate metric column')
     records = list(csv.DictReader(io.StringIO('\n'.join(s for s in text[header:]
         if not s.startswith('winner\t') and not (i51b and s.startswith('winnerB\t')))), delimiter='\t'))
-    first_seed = 2001 if i51b else 1001
+    if first_seed is None:
+        first_seed = 2001 if i51b else 1001
     groups = {seed: [] for seed in range(first_seed, first_seed + 32)}
     for row in records:
         if None in row or any(v is None for v in row.values()):
@@ -279,8 +280,8 @@ def read_candidates(path, bands, *, i51b=False):
             winners[seed] = (integer(index), hard, integer(in_band), integer(distance))
     for seed, rows in groups.items():
         rows.sort(key=lambda r: r['index'])
-        if [r['index'] for r in rows] != list(range(16)):
-            raise ValueError('matrix requires exactly 16 candidates for every seed')
+        if [r['index'] for r in rows] != list(range(count)):
+            raise ValueError(f'matrix requires exactly {count} candidates for every seed')
         best = min(rows, key=lambda r: (r['hard'], -r['inBand'], r['distance'], r['index']))
         if winners.get(seed) != (best['index'], str(best['hard']).lower(), best['inBand'], best['distance']):
             raise ValueError('missing or incorrect winner')

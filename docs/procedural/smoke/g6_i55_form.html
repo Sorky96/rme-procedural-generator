@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Ocena par terenu</title>
+<style>
+:root { --ink:#172b3a; --paper:#fff; --accent:#075e75; --line:#c2ced4; }
+body { font:1rem/1.5 system-ui,sans-serif; color:var(--ink); background:var(--paper); margin:2rem auto; padding:0 1rem; max-width:72rem; }
+fieldset { border:1px solid var(--line); margin:2rem 0; padding:1rem; }
+.views { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+figure { margin:0; min-width:0; } img { display:block; width:100%; height:auto; image-rendering:pixelated; }
+label { display:inline-block; padding:.65rem; } textarea { display:block; width:95%; font:inherit; }
+button,select { font:inherit; padding:.7rem; } button { color:white; background:var(--accent); border:0; cursor:pointer; }
+:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+output { display:block; margin:1rem 0; } .detail .views { grid-template-columns:512px 512px; } .detail { overflow:auto; }
+</style>
+<h1>Ocena par terenu</h1>
+<p>Oceń każdą parę według ogólnej preferencji. Wybierz A, B lub remis.
+Opcjonalnie zanotuj uwagi o naturalności, stylu, różnorodności lub grywalności.
+Widoki semantyczne pokazują kształt i rozkład terenu. Testy grywalności odbywają się osobno.</p>
+<p>Obie strony mają ten sam obszar i skalę. Kolory oznaczają klasy terenu:
+zielony — trawa, brązowy — ziemia, szary — skała, jasny piaskowy — brzeg,
+niebieski — woda, piaskowy — ścieżka lub most, szaroniebieski — podłoga, czarny — brak klasy.</p>
+<label>Skala obu stron <select id="scale"><option value="fit">Dopasuj</option><option value="detail">1 piksel / kafel (przewijanie)</option></select></label>
+<p>Strona działa lokalnie i niczego nie wysyła. Eksport zapisuje plik odpowiedzi.
+Wybierz katalog scratchpad przy zapisie. Zachowaj plik przed zamknięciem strony;
+możesz go ponownie wczytać. Klucz pozostaje zamknięty do złożenia wszystkich 20 ocen.</p>
+<label>Wczytaj zapisane odpowiedzi <input id="restore" type="file" accept="application/json"></label>
+<form id="form"><div id="pairs"></div><button type="button" id="draft">Zapisz szkic</button>
+<button type="submit">Eksportuj komplet 20 ocen</button></form>
+<output id="status" aria-live="polite"></output>
+<script>
+'use strict';
+const pairs = __PAIRS__;
+const container = document.querySelector('#pairs');
+for (const p of pairs) {
+  const field = document.createElement('fieldset');
+  const legend = document.createElement('legend'); legend.textContent = p.id; field.append(legend);
+  const views = document.createElement('div'); views.className = 'views';
+  for (const side of ['A','B']) {
+    const figure = document.createElement('figure'), caption = document.createElement('figcaption'), img = document.createElement('img');
+    caption.textContent = side; img.src = p.views[side].file; img.alt = `Teren ${p.id}, strona ${side}`;
+    img.width = 512; img.height = 512; img.loading = 'lazy'; figure.append(caption,img); views.append(figure);
+  }
+  field.append(views);
+  for (const [value,text] of [['A','A'],['B','B'],['tie','Remis']]) {
+    const label = document.createElement('label'), input = document.createElement('input');
+    input.type = 'radio'; input.name = p.id; input.value = value; input.required = true;
+    label.append(input,document.createTextNode(text)); field.append(label);
+  }
+  const label = document.createElement('label'), note = document.createElement('textarea');
+  label.textContent = 'Notatka (opcjonalna, do 1024 bajtów UTF-8)'; note.id = `note-${p.id}`; note.rows = 2;
+  label.append(note); field.append(label); container.append(field);
+}
+document.querySelector('#scale').onchange = e => container.classList.toggle('detail',e.target.value === 'detail');
+const status = document.querySelector('#status');
+function save(complete) {
+  const ratings = pairs.map(p => ({id:p.id,choice:document.querySelector(`input[name="${p.id}"]:checked`)?.value || '',note:document.getElementById(`note-${p.id}`).value}));
+  if (ratings.some(r => new TextEncoder().encode(r.note).length > 1024)) { status.textContent = 'Skróć notatkę przekraczającą 1024 bajty.'; return; }
+  if (complete && ratings.some(r => !r.choice)) { status.textContent = 'Wymagane są wszystkie 20 ocen.'; return; }
+  const data = {schema:'g6-i55-ratings/1',ratings};
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  const a = document.createElement('a'); a.href = url; a.download = complete ? 'ratings.json' : 'ratings-draft.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(url),1000);
+  status.textContent = 'Wyeksportowano odpowiedzi. Zapisz je w scratchpad.';
+}
+document.querySelector('#form').onsubmit = e => { e.preventDefault(); save(true); };
+document.querySelector('#draft').onclick = () => save(false);
+document.querySelector('#restore').onchange = async e => {
+  try {
+    const data = JSON.parse(await e.target.files[0].text());
+    if (data.schema !== 'g6-i55-ratings/1' || !Array.isArray(data.ratings) || data.ratings.length !== 20 || new Set(data.ratings.map(r => r.id)).size !== 20) throw Error();
+    for (const p of pairs) {
+      const r = data.ratings.find(r => r.id === p.id);
+      if (!r || !['','A','B','tie'].includes(r.choice) || typeof r.note !== 'string' || new TextEncoder().encode(r.note).length > 1024) throw Error();
+    }
+    for (const r of data.ratings) {
+      for (const input of document.getElementsByName(r.id)) input.checked = input.value === r.choice;
+      document.getElementById(`note-${r.id}`).value = r.note;
+    }
+    status.textContent = 'Wczytano odpowiedzi.';
+  } catch { status.textContent = 'Nieprawidłowy plik odpowiedzi lub inny zestaw par.'; }
+};
+</script></html>

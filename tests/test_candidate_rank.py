@@ -45,6 +45,20 @@ def main():
     row = rows(one)[0]
     assert row['seed'] == '1729' and row['surfaceFingerprint'] == '17159159863505677800'
     assert 'mode=measure-only' in one.decode() and b'winner\t' not in one
+    renders = scratch / 'semantic'
+    rendered = run('--count', '1', '--render-dir', str(renders))
+    assert rendered == one  # Export cannot change measured world, score, or report.
+    png = (renders / '1729-0.png').read_bytes()
+    assert png[:8] == b'\x89PNG\r\n\x1a\n'
+    assert int.from_bytes(png[16:20], 'big') == 100 and int.from_bytes(png[20:24], 'big') == 100
+    assert b'tEXt' not in png and b'iTXt' not in png and b'eXIf' not in png
+    # Every SurfaceKind, including Bridge introduced by level repair, has a palette entry.
+    assert png[37:41] == b'PLTE' and int.from_bytes(png[33:37], 'big') == 10 * 3
+    run('--count', '1', '--render-dir', str(renders))
+    assert (renders / '1729-0.png').read_bytes() == png
+    blocked = scratch / 'not-a-directory'
+    blocked.write_bytes(b'file')
+    run('--render-dir', str(blocked), code=2)
     four = rows(run())
     assert len(four) == 4 and len({row['seed'] for row in four}) == 4
     ranking = run('--bands', str(band), '--count', '16', side='128', first='1001', last='1002')

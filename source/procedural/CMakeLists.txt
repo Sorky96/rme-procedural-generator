@@ -148,6 +148,7 @@ add_test(NAME test_procedural_candidate_series COMMAND test_procedural_candidate
 
 find_program(RME_PY_LAUNCHER py)
 if(RME_PY_LAUNCHER)
+    add_test(NAME test_g6_i55 COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_g6_i55.py)
     add_test(NAME test_g6_copy COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_g6_copy.py ${PROJECT_SOURCE_DIR}/scratchpad/i53-python)
     add_test(NAME test_g6_i51b COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_g6_i51b.py)
     add_test(NAME test_g6_holdout COMMAND ${RME_PY_LAUNCHER} -I ${PROJECT_SOURCE_DIR}/tests/test_g6_holdout.py)
