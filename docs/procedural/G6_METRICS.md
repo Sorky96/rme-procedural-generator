@@ -37,6 +37,45 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I56 — lokalne uczenie profilu z otwartej mapy użytkownika
+
+Użytkownik może otworzyć własną zgodną mapę w RME, a następnie wybrać
+„Ucz z otwartej mapy” w edytorze. Pierwszy zakres obejmuje jedną otwartą
+mapę i jawnie wskazany prostokąt powierzchni na jednym piętrze z zakresu
+0–7. Standardowa ścieżka działa bez ręcznego uruchamiania CLI. Użytkownik
+widzi obszar, liczbę rozpoznanych i pominiętych kafli oraz wynik analizy.
+Przed analizą potwierdza, że ma prawo użyć mapy. Dane pozostają lokalne.
+
+Używamy istniejących statystyk semantycznych i deterministycznego
+dopasowania G4. Mapowanie klas jest jawne i oparte na nazwach oraz
+aktualnych pędzlach klienta. Nieznany grunt pozostaje nierozpoznany.
+Próbka z mniej niż 1024 rozpoznanymi kaflami naturalnego gruntu lub z
+pokryciem poniżej 50% obecnych kafli odmawia dopasowania, podając liczby.
+Prostokąt ma wymiary w granicach mapy, maksymalnie 512×512. Użytkownik
+widzi zastosowane mapowanie i może skorygować przypisania przed analizą.
+
+Zgodność klienta jest wiązana z tymi samymi identyfikatorami OTB/DAT co
+w istniejącej ofercie profili. Profil ma jawne pochodzenie użytkownika,
+bez nazw/ścieżek mapy i bez przypisania do referencji M06/M19. Zapis po
+potwierdzeniu, pod wybraną nazwą, do lokalnego katalogu profili. Nazwa
+nie może wyjść poza ten katalog. Istniejący plik jest chroniony przed
+nadpisaniem, zapis jest atomowy. Profil po zapisie pojawia się w zwykłym
+wyborze generatora i przechodzi dotychczasową walidację oraz historię I54.
+
+Analiza korzysta z odczytu mapy na wątku GUI w ograniczonych porcjach,
+a dopasowanie działa na własnych danych poza nim. Postęp, błąd i anulowanie
+są widoczne. Zmiana mapy, klienta lub ustawień unieważnia wynik. Analiza,
+anulowanie i zapis profilu nie wpływają na mapę ani kolejkę Undo.
+Zakres obejmuje dopasowanie stylu powierzchni. ML, kopiowanie fragmentów,
+wielomapowe uczenie i dopasowanie podziemi pozostają poza tym krokiem.
+
+Testy: identyczne wejście daje identyczny profil, za mała próbka, nieznane
+grunty, błędna nazwa, brak prawa użycia, konflikt nazwy, anulowanie,
+nieaktualna mapa, zgodność klienta. Sonda rzeczywistego klienta: mapa →
+profil → oferta generatora → podgląd → Place/Undo/Redo. Regresja: build,
+SUITE_PASS z sondami, G5 --i47 32/32 obu profili i odcisk 1729 bez zmian.
+I56 jest rozszerzeniem workflow. Nie zalicza ślepego testu I55 ani G6.
+
 ### I55 — ocena rankingu i ślepy test użytkownika (przed implementacją i pomiarem)
 
 Porównujemy ten sam generator i tę samą pulę N=4 (domyślna liczba I52).
