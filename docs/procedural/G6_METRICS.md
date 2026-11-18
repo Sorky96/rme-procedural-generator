@@ -37,6 +37,49 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I53 — wykrywanie zgodnych fragmentów (2026-11-18, przed implementacją)
+
+Zakres: odcisk semantyczny powierzchni kandydata i porównanie z lokalnym
+indeksem referencji użytych przez profile. Wykorzystujemy algorytm `similarity`
+z G4: okna 16×16, co najmniej 50% obecnych komórek, pomijanie jednolitych
+okien i próbkowanie po treści modulo 4. Porównanie ignoruje pozycję i piętro.
+Referencje i generator używają identycznych nazw klas powierzchni i tej
+samej konwencji obecności. Referencje przeliczamy z danych semantycznych i
+zatwierdzonego mapowania G4, nigdy z istniejących hashy nazw gruntu. Nieznane
+i Preserve są nieobecne. Raport wymienia mapowania i ograniczenia klas.
+
+Indeks lokalny ma wersję formatu, klienta, parametry odcisku i manifest
+źródeł. Do decyzji wchodzą wyłącznie M06/M19. M01/M05/M11/M18 ani mapy
+M12–M17 nie mogą zasilać indeksu lub filtra. Okna obecne w obu mapach
+usuwamy z obu referencji i kandydata przed porównaniem. Raport zawiera
+liczby okien przed i po filtrze oraz wspólne unikatowe hashe na referencję.
+Warunek twardy: dla dowolnej pojedynczej referencji ≥16 wspólnych unikatowych
+hashy oraz ≥100‰ zawierania względem odcisku kandydata po filtrze. Progi
+pochodzą z G4 i pozostają zamrożone. Mniej niż 16 okien po filtrze oznacza
+„za mało danych”, bez deklaracji braku kopii. Indeks bez wystarczającej
+referencji, z błędem lub niezgodnością nie daje wyniku oceny.
+
+W trybie offline z podanym indeksem i w Surface GUI z aktywnym zgodnym
+lokalnym indeksem kopiowanie spełniające oba progi daje hardFail przed
+rankingiem A i blokuje Place także po wymuszonym wywołaniu. Bez indeksu
+lub przy zbyt małej próbce użytkownik widzi, że podobieństwa nie oceniono.
+Jeśli jawnie skonfigurowany indeks jest uszkodzony/niezgodny, seria zgłasza
+błąd zamiast pomijać kontrolę. Kontrola nie modyfikuje mapy. W GUI korzysta
+z istniejącego anulowania, aktualności wyniku i wspólnego budżetu I52.
+
+Testy: ręczna arytmetyka obu progów; kopia przesunięta z inną kolejnością
+kluczy; niezależny teren; okna ogólne, rzadkie, jednolite i za mała próbka;
+niezgodne/uszkodzone dane i anulowanie. Sonda: wykryta kopia blokuje Place,
+czysty dopuszczalny kandydat nadal ma jedno Place/Undo/Redo. Jeśli wejścia
+lokalne są dostępne, raport dla m06/m19, seedy 1001–1032, N=1, bok 512,
+ustawienia I51 z --g5-levels, dwa identyczne przebiegi. Zapisujemy wszystkie
+trafienia bez korekty progów. Zgodność hasha klas nie dowodzi kopiowania
+przez generator. Kontrola nie obejmuje przedmiotów ani geometrii podziemi.
+
+Regresja: kanoniczny build, SUITE_PASS z sondami, G5 --i47 32/32 obu
+profili, fingerprint 1729 100×100 bez zmian. Raport I53 i kroki GUI w
+G6_GATE_STATUS. Prywatne indeksy i mapy pozostają poza Git.
+
 ### I52 — kandydaci w GUI (2026-11-18, przed implementacją)
 
 Zakres: istniejące okno generatora Surface, N domyślnie 4, zakres 1–16,
