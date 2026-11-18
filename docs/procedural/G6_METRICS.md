@@ -37,6 +37,46 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I52 — kandydaci w GUI (2026-11-18, przed implementacją)
+
+Zakres: istniejące okno generatora Surface, N domyślnie 4, zakres 1–16,
+galeria/lista z miniaturą, indeksem, rzeczywistym seedem i stanem walidacji.
+Ranking A pozostaje niezaliczonym baseline: UI nie obiecuje jakości i nie
+używa B. Dla rozpoznanego profilu m06/m19 stosuje jawne pasma g6-bands-v1;
+bez przypisanej polityki pokazuje brak rankingu, nie zgaduje profilu.
+
+1. Kandydat i używa candidateSeed(userSeed,i); kandydat 0 zachowuje seed.
+   N=1 zachowuje dotychczasowy wynik i fingerprint 1729 100×100.
+   Istniejące retry walidacji są jawnie raportowane wraz z użytym seedem;
+   nie wolno przedstawiać seeda po retry jako pierwotnego. Dwa uruchomienia
+   z tymi samymi wejściami dają te same wyniki i wybór rekomendowany.
+2. Dla dostępnego rankingu domyślnie zaznaczony najlepszy dopuszczalny A;
+   użytkownik może wybrać innego dopuszczalnego kandydata. Wybrany i
+   rekomendowany są rozróżnione tekstem, nie wyłącznie kolorem. Bez rankingu
+   domyślnie pierwszy dopuszczalny. Nie wolno zapisać kandydata hardFail,
+   niezwalidowanego, niekompletnego lub ze starego zestawu parametrów.
+3. Ocena warunku twardego uwzględnia rzeczywistą walidację adaptera i
+   osiągalność, nie tylko przybliżenie offline. Wybór zmienia podgląd
+   istniejącym mechanizmem; generacja i przełączanie nie mutują mapy.
+   Place zapisuje dokładnie wybrany wynik, jeden Action/Undo; Redo odtwarza
+   go bez ponownego losowania. Zmiana mapy/parametrów unieważnia kandydatów.
+4. Generacja poza wątkiem GUI, postęp i anulowanie. Zamykanie okna,
+   anulowanie, zmiana mapy i spóźniony wynik nie mogą dotknąć nieaktualnego
+   okna/mapy. Pamięć ma jawny łączny budżet całej serii, nie N niezależnych
+   pełnych budżetów. Brak miejsca powoduje czytelny błąd bez częściowego Place;
+   nie wolno po cichu obniżać N. Nie przechowujemy N pełnych kopii mapy.
+5. Istniejący układ i Theme; wybór dostępny klawiaturą, widoczny fokus,
+   czytelny stan błędu i pustego wyniku. Bez feedbacku approve/reject/adjust
+   i historii profili (I54), bez zmiany generatora, mountain i formatu map.
+
+Testy: N=1/4/16 i granice, oba profile, fallback bez pasm, kolejność A,
+wybór nierekomendowanego, hardFail blokuje Place, anulowanie/stare wyniki,
+budżet serii i brak mutacji przed Place. Sonda rzeczywistego klienta:
+wybór kandydata -> Place -> jedno Undo -> Redo i zgodność z podglądem.
+Build; g5_run_suite z sondami SUITE_PASS; G5 --i47 rockBlocks m06=0,m19=1
+32/32; odcisk bez zmian. Osobno raport ręcznego GUI (jeśli niewykonany,
+nie ogłaszamy pełnego zaliczenia I52). Bez twierdzeń o poprawie jakości.
+
 ### I51b — eksperyment kolejności rankingu (2026-11-18, przed implementacją i pomiarem)
 
 **Decyzja użytkownika:** przygotować osobno zarejestrowany eksperyment poprawy
