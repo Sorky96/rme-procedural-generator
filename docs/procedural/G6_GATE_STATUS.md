@@ -1,5 +1,26 @@
 # G6 — stan bramki
 
+## I56 — lokalne uczenie z otwartej mapy
+
+Kryteria `90ebf92`, implementacja `3c8d45c`. Polecenie **Learn from open
+map…** analizuje jeden prostokąt powierzchni do 512×512. Użytkownik
+przegląda klasy gruntu, potwierdza prawo użycia i zapisuje lokalny profil
+zgodny z klientem. Generator pokazuje profil w zwykłej liście. Przepływ
+działa na statystykach G4, bez zmiany mapy źródłowej i jej historii Undo.
+
+Kanoniczny build integratora przeszedł z instalacją manifestu wyłączoną.
+Niezależne SUITE_PASS obejmuje 23/23 i sondy Commit oraz Surface. Sonda
+I56 z zasobami klienta zakończyła się LEARNING_DIALOG_PASS, z zapisem,
+ofertą, I54, Place/Undo/Redo, anulowaniem i unieważnieniem próbki. Zasoby
+wejściowe zachowały sumy kontrolne. G5_GATE_PASS daje 32/32 dla obu
+profili i identyczne powtórzenia. Odcisk 1729 to 17159159863505677800.
+Początkową próbę instalacji
+zależności przez wykonawcę przerwano przed odnotowaniem ukończonej
+instalacji pakietu. Katalog build-ninja worktree wykonawcy usunięto.
+
+Ręczny odbiór wyglądu i klawiatury pozostaje otwarty. I55 i G6 nadal
+wymagają ocen i niezależnych rodzin map. [Kroki GUI i zakres I56](I56_LOCAL_LEARNING.md).
+
 ## I55 — ślepy test gotowy do przeprowadzenia
 
 Kryteria zapisano w `6251dbb`, narzędzia scalono jako `3bfe971`.
