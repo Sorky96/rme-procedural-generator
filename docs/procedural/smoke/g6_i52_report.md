@@ -55,7 +55,7 @@ There is no feedback/history implementation (I54).
 
 1. Finish all builds. Start the rebuilt RME with a loaded supported client and an
    empty disposable map. Open Generate Terrain, select Natural surface. Check N=4,
-   minimum 1 and maximum 16. Check Theme text, focus and layout at normal/high DPI. Abbas
+   minimum 1 and maximum 16. Check Theme text, focus and layout at normal/high DPI.
 2. Set rectangle (100,100,7), size 100×100, seed 1729, retry 0. Generate with N=1.
    The row must show index 0, initial/actual seed 1729, one attempt. Place must stay
    disabled during work. This request does not itself assert the *core default*

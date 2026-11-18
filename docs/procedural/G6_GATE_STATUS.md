@@ -1,5 +1,53 @@
 # G6 — stan bramki
 
+## I52 — galeria i wybór kandydata (2026-11-18)
+
+Kryteria prerejestrowano w `0a25e6c`. Implementację Codex medium w osobnym
+worktree przejrzano i scalono ff jako `f610cde`. Dodano N=1–16 (domyślnie 4),
+miniatury, jawny seed początkowy/rzeczywisty i liczbę prób, wybór wyniku
+oraz rekomendację A tylko dla jawnie powiązanych profili M06/M19.
+Bez polityki wybierany jest pierwszy dopuszczalny wynik. B nie trafia do GUI.
+Ranking nadal ma niezaliczoną bramkę jakości I51.
+
+Galeria przechowuje metadane i miniatury; pełny sandbox wybranego wyniku
+jest odtwarzany bez retry i porównywany z zapisanymi odciskami pięter.
+Place zapisuje zwalidowany sandbox przez DrawOperations jako jedno Undo.
+Seria ma wspólny budżet szacunkowy, anulowanie i kontrolę aktualności mapy,
+parametrów i danych klienta. Nie zweryfikowano rzeczywistego OOM/RSS.
+
+Raport wykonawcy i szczegółowe kroki ręczne:
+[g6_i52_report.md](smoke/g6_i52_report.md). Wykonawca zgłosił build PASS,
+CTest 23/23, sondy Commit/Surface/serii PASS i G5 32/32 obu profili.
+Dwie końcowe korekty błędów przebudowano u wykonawcy bez ponownego
+linkowania sond, dlatego integrator uruchamia świeże sondy z końcowych źródeł.
+
+Niezależna walidacja integratora na końcowych źródłach:
+
+- Kanoniczny build: BUILD SUCCESSFUL.
+- Zestaw: SUITE_PASS, 20/20 testów rdzenia; świeżo przebudowane sondy
+  --commit i --surface PASS, wejściowe zasoby bez zmian. Surface: 157
+  znanych ostrzeżeń SetFocus, bez innych stderr.
+- Świeżo przebudowana sonda --series: CANDIDATE_DIALOG_PASS, exit 0,
+  zasoby wejściowe bez zmian. N=1/4/16, oba profile i fallback, wybór
+  innego dopuszczalnego kandydata, Place/Undo/Redo, anulowanie, zmiana
+  parametrów/zamknięcie/nieaktualna mapa oraz wymuszony hardFail Place PASS.
+  Siedem znanych ostrzeżeń SetFocus, bez innych stderr.
+  To automatyczne sterowanie produkcyjnymi kontrolkami, nie ręczny odbiór.
+- Pomiar G5 --i47 rockBlocks m06=0,m19=1: G5_GATE_PASS, 32/32 obu profili.
+
+Prywatne dowody: scratchpad/g6-i52-{build,suite,series,g5}.log oraz
+scratchpad/i52-integrator/verification.json. Sondy przebudowano po obu
+końcowych korektach wykonawcy; rzeczywistego OOM i wstrzykiwania awarii
+alokacji w tych ścieżkach nie testowano ponownie.
+Po ff-merge usunięto wyłącznie build-ninja worktree t3-aaa1909a po
+sprawdzeniu docelowej ścieżki. Nie wykonano ręcznego testu GUI/DPI/klawiatury.
+I52 pozostaje częściowe do odbioru; I51 i I51b FAIL, G6 nadal otwarte.
+
+Test ręczny: wygeneruj N=1,4,16; wybierz innego dopuszczalnego kandydata
+niż Recommended, sprawdź piętra, Place -> jedno Undo -> Redo. Sprawdź
+blokadę Place dla hardFail, anulowanie serii, zmianę parametrów i domyślną
+ścianę mountain. Zmiana wyboru ani Preview nie mogą zmieniać mapy.
+
 ## I51b — eksperyment niezaliczony (2026-11-18)
 
 Prerejestracja `9ab1ca0`; implementacja Codex medium w osobnym worktree,
