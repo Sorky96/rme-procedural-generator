@@ -1161,9 +1161,12 @@ void TerrainGeneratorDialog::OnFeedback(FeedbackAction action) try {
     StyleFeedback f; f.action=action; f.note=std::string(note.data(),note.length());
     f.settings = p ? p->profile : StyleProfile{};
     f.settings.client=ids->client; f.settings.otbSha256=ids->otbSha256; f.settings.datSha256=ids->datSha256;
-    f.settings.tuning=request->config.surface; f.settings.decorTuning=request->config.decor;
-    f.generation=request->config.surface; f.vegetation=request->config.vegetation;
-    f.adjustment=styleAdjustment(request->config.surface);
+    const auto& effective = prepared_->snapshot.input.config;
+    f.settings.tuning = effective.surface;
+    f.settings.decorTuning = effective.decor;
+    f.generation = effective.surface;
+    f.vegetation = effective.vegetation;
+    f.adjustment = styleAdjustment(effective.surface);
     f.base=p ? (p->baseId.empty() ? styleIdentity(p->profile) : p->baseId) : "";
     f.version=p ? p->versionId : "";
     f.policy=ranking_bands_.empty() ? "unranked/I54-v1" : "g6-bands-v1/A/I54-v1";
