@@ -1,5 +1,35 @@
 # G6 — stan bramki
 
+## I54 — lokalne oceny i wersje profili
+
+Kryteria zapisano w `e9ca540`. Zmiany scalono jako `93426ed`. Approve,
+Reject i Adjust zapisują ocenę wybranego kandydata w lokalnej historii.
+Adjust zapisuje osiem obsługiwanych ustawień stylu jako nową wersję.
+Powrót do wcześniejszej wersji zachowuje nowsze wersje i pozwala utworzyć
+od niej kolejną gałąź. Zapis atomowy wykrywa konflikt wczytanych danych.
+Po przeglądzie `1d5010b` wiąże ocenę z faktycznymi ustawieniami kandydata
+z adaptera, w tym przechodniością skały ustaloną przez dane klienta.
+
+Wykonawca potwierdził build Windows x64, 22/22 testów rdzenia,
+7/7 wybranych testów CTest i sondę serii klienta. Katalog build-ninja
+worktree wykonawcy usunięto po scaleniu.
+
+Niezależny zestaw `SUITE_PASS` (22/22, Commit, Surface) oraz pomiar
+`G5_GATE_PASS` (32/32 obu profili, identyczne powtórzenia) przeszły.
+Odcisk 1729 100×100: `17159159863505677800`. Sonda I54 wykryła błąd
+żywotności bufora UTF-8 przy zapisie notatki. Wadliwy zapis odrzucono,
+a wcześniejsza ocena pozostała w pliku. Poprawka `68a1fc4` zachowuje
+źródłowy tekst podczas konwersji. Po niej przeszły kanoniczny build
+i przebudowana sonda serii `CANDIDATE_DIALOG_PASS`, z porównaniem
+notatki bajt w bajt i sprawdzeniem rollbacku, rozgałęzienia historii,
+odmowy nieaktualnego wyniku, Place/Undo/Redo oraz blokad I53. Zasoby
+wejściowe pozostały bez zmian. Sonda zgłosiła wyłącznie dziewięć znanych
+ostrzeżeń SetFocus. Commit/Surface wykonano przed poprawką UTF-8.
+
+Ręczny odbiór wizualny i klawiaturowy pozostaje niesprawdzony. Ślepy test
+jakości należy do I55. G6 pozostaje otwarte.
+[Kroki GUI i raport wykonawcy](smoke/g6_i54_report.md).
+
 ## I53 — kontrola zgodnych fragmentów
 
 Kryteria zapisano w `87e2246`. Implementację przejrzano i scalono jako
