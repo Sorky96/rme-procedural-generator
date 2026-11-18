@@ -37,6 +37,53 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### I55 — ocena rankingu i ślepy test użytkownika (przed implementacją i pomiarem)
+
+Porównujemy ten sam generator i tę samą pulę N=4 (domyślna liczba I52).
+L2 to kontrola operacyjna: pierwszy dopuszczalny wynik w kolejności indeksu
+z istniejących reguł, bez oceny stylu. L3 to najlepszy dopuszczalny wg A.
+Obie strony mają identyczne parametry, warunki twarde i indeks I53 M06/M19.
+Feedback I54 zapisujemy w wersjonowanym formacie, bez aktualizacji rankingu
+podczas eksperymentu. Brak dopuszczalnego wyniku oznacza brak pary i blokuje
+pełne zaliczenie tej serii. Nie zastępujemy seedów po obejrzeniu wyników.
+
+**Ślepy test:** dokładnie 20 par, seedy 3001–3010 dla m06 i m19, bok 512,
+parametry I51 z geometrią G5 oraz N=4. Obie strony mają identyczny obszar,
+zestaw widoków i skalę. Jeśli wybrano ten sam wynik, para nadal jest w teście.
+Pakiet dla oceniającego ujawnia tylko anonimowy identyfikator i strony A/B.
+Przypisanie stron zamrażamy przed oceną, z równowagą 5/5 w każdym profilu,
+w osobnym lokalnym kluczu. Oceniający wybiera A/B/remis według ogólnej
+preferencji, z opcjonalną notatką o naturalności, stylu, różnorodności lub
+grywalności. Wszystkie 20 ocen jest wymaganych przed odsłonięciem klucza.
+Sukces L3 to ≥13/20, remisy nie są wygranymi. Raport osobno podaje remisy,
+proporcje per profil i liczbę identycznych par. Pakiet widoków semantycznych
+ocenia kształt i rozkład terenu. Grywalność potwierdzają osobne testy i sondy.
+
+**Porównanie ilościowe:** wspólna pula jak wyżej, seedy 3001–3032 na profil.
+Te same 26 metryk, N/A, odległości i równe wagi rodzin co w I51. Raportujemy
+odległości L2 i L3, liczbę ścisłych wygranych L3 na 32 seedy per profil,
+remisy, różnicę median i pokrycie. Jako warunek porównania przyjmujemy
+≥23/32 ścisłych wygranych L3 osobno dla każdego profilu na nowych rodzinach.
+Obok raportujemy wyniki in-sample M06/M19 i diagnostyczne M01/M05/M11+M18
+już oglądane w I51/I51b. M12–M17 co najwyżej osobny dodatek. Rozbieżności
+między próbami opisujemy jako możliwe przeuczenie, z uwzględnieniem pokrycia.
+Kontrola I53 raportuje odrzucenia, brak oceny i ich mianowniki.
+
+Nowe rodziny muszą być spoza wcześniejszych analiz i strojenia, z jawnym
+pochodzeniem i prawem użycia, oraz przejść kontrolę pokrewieństwa G4 przed
+ujawnieniem wyników L2/L3. Ich manifest i wybór jednostek oceny zamrażamy
+przed pomiarem. Wycinki tego samego świata pozostają jedną rodziną. Brak
+takich danych blokuje wniosek o jakości na niewidzianych mapach, ale można
+przygotować ślepy test preferencji i porównanie diagnostyczne. Nie zastępują
+one tego dowodu. I51/I51b zachowują wyniki historyczne. PASS I55 wymaga obu
+ocen i regresji. G6 pozostaje otwarte do zebrania tych dowodów.
+
+Testy: komplet/parzystość stron, odmowa niepełnych ocen, deterministyczny
+wybór i wynik, identyczne pary, remisy, granice 12/13 i 22/23, brak źródeł
+i niewystarczające pokrycie. Materiały, klucz i oceny tylko w scratchpadzie.
+Kod, instrukcja i wynik bez prywatnych danych do Git. Build, SUITE_PASS
+z sondami, G5 --i47 32/32 obu profili i odcisk 1729 bez zmian.
+
 ### I54 — lokalny feedback i historia profilu (przed implementacją)
 
 1. Surface: jawne Approve / Reject / Adjust dla aktualnie wybranego i
