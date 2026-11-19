@@ -146,6 +146,13 @@ rtk proxy py -B -I docs/procedural/smoke/g6_i55.py measure EXE PROFILE_DIR COPY_
 rtk proxy py -B -I docs/procedural/smoke/g6_i55_intake.py evaluate local-data/scratchpad/i55-intake/frozen/manifest.json local-data/scratchpad/i55-matrix-new local-data/scratchpad/i55-unseen-result.json
 ```
 
+For I55, use the `candidate_rank` executable and `i53-index/1` from the
+pre-D10 revision `7bd6968`. When rebuilding that toolchain, build
+`candidate_rank` and `copy_index` in a checkout of that revision and run
+its `g6_build_copy_index.py` with the original I53 inputs. Keep the
+executable and index together. D10 uses `i53-index/2` in the current
+generator. The I55 scripts still validate the original similarity policy.
+
 `measure` verifies the frozen intake before generation and binds its hash in the
 matrix's pre-generation manifest. An older diagnostic matrix with no such binding
 is rejected; attaching references after measurement is not this workflow.
