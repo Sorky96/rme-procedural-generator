@@ -21,14 +21,11 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from g5_local_data import main_checkout_local_data
+
 repo = Path(__file__).resolve().parents[3]
 build = repo / 'build-ninja'
-
-
-def main_checkout_local_data():
-    listing = subprocess.run(['git', '-C', str(repo), 'worktree', 'list', '--porcelain'], capture_output=True, text=True)
-    first = next((line[len('worktree '):] for line in listing.stdout.splitlines() if line.startswith('worktree ')), None)
-    return Path(first) / 'local-data' if listing.returncode == 0 and first else repo / 'local-data'
 
 
 def resolve_input(path, local_data):
@@ -84,7 +81,7 @@ for exe in tests:
 print(f'core tests: {len(tests) - len(failures)}/{len(tests)} passed')
 
 if args.probes:
-    local_data = (args.local_data or main_checkout_local_data()).resolve()
+    local_data = (args.local_data or main_checkout_local_data(repo)).resolve()
     profile_data, config = (resolve_input(path, local_data) for path in args.probes)
     print(f'probe inputs: {profile_data} {config}')
     stamp = time.strftime('%Y%m%d-%H%M%S')

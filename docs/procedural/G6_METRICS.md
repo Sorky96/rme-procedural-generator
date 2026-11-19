@@ -421,4 +421,3 @@ alternatywne źródło. Brak profilu kończy przebieg przed generacją
 z komunikatem zawierającym brakującą ścieżkę. Próba obejmuje katalog
 ze spacjami i zachowanie komendy I47. Wynik I47 ma pozostać 32/32
 w obu profilach, z identycznymi powtórzeniami. Kod generatora poza zakresem.
-

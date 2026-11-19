@@ -3,18 +3,25 @@
 --i44 runs the i43 settings with storeys on and the client's rock passability per profile (--rock-blocks m19=1 ...);
 --i45 runs the i44 settings with dungeons below buildings off and on (default 20 %);
 --i47 adds the cave shape criteria (entrances in one component, straight axis <= 20, cavern share median >= 25 %,
-no long parallel tunnels) to the i45 run."""
+no long parallel tunnels) to the i45 run.
+Profiles come from --local-data, by default the main checkout local-data (also from a worktree); a missing m06 or m19
+profile stops the run before any generation."""
 import argparse
 import json
 import re
 import statistics
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from g5_local_data import main_checkout_local_data
+
 root = Path(__file__).resolve().parents[3]
-profiles = Path('C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10')
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--local-data', type=Path,
+                    help='folder holding procedural-smoke/g4-profiles (default: the main checkout local-data)')
 parser.add_argument('--i41', action='store_true')
 parser.add_argument('--i42', action='store_true')
 parser.add_argument('--i43', action='store_true')
@@ -24,6 +31,10 @@ parser.add_argument('--i47', action='store_true', help='also require the iterati
 parser.add_argument('--rock-blocks', nargs='*', default=[], metavar='PROFILE=0|1')
 parser.add_argument('--output', type=Path, help='private measurement directory (e.g. scratchpad/i47)')
 args = parser.parse_args()
+profiles = (args.local_data or main_checkout_local_data(root)).resolve() / 'procedural-smoke/g4-profiles/10.98-v10'
+missing = [str(profiles / f'{name}.profile') for name in ['m06', 'm19'] if not (profiles / f'{name}.profile').is_file()]
+if missing:
+    parser.error('missing G4 profile: ' + ', '.join(missing))
 rock_blocks = dict(item.split('=') for item in args.rock_blocks)
 args.i45 |= args.i47
 args.i44 |= args.i45
