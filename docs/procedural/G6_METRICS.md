@@ -76,6 +76,19 @@ profil → oferta generatora → podgląd → Place/Undo/Redo. Regresja: build,
 SUITE_PASS z sondami, G5 --i47 32/32 obu profili i odcisk 1729 bez zmian.
 I56 jest rozszerzeniem workflow. Nie zalicza ślepego testu I55 ani G6.
 
+### I55 — przygotowanie przyjęcia nowych rodzin (2026-11-19)
+
+Przed pomiarem narzędzie sprawdza udokumentowane pochodzenie, prawo użycia
+i deklarację, że mapy nie uczestniczyły w analizie ani strojeniu. Odrzuca
+znane tożsamości i rodziny pokrewne według zamrożonych reguł G4. Wycinki
+jednego świata pozostają jedną rodziną. Zamrożony manifest wiąże jednostki,
+klienta, mapowanie, dowody pokrewieństwa i wejścia metryk przez SHA-256.
+Porównanie korzysta wyłącznie z zaakceptowanych, zweryfikowanych pakietów.
+Najpierw powstaje manifest, potem można obliczyć odległości L2 i L3.
+Zmiana wejścia po zamrożeniu blokuje pomiar. Brak rzeczywistych danych
+pozostawia test zablokowany. Syntetyczne przypadki sprawdzają narzędzie,
+a ich wyniki nie wliczają się do bramki. Próg i agregacja I55 bez zmian.
+
 ### I55 — ocena rankingu i ślepy test użytkownika (przed implementacją i pomiarem)
 
 Porównujemy ten sam generator i tę samą pulę N=4 (domyślna liczba I52).
