@@ -148,6 +148,11 @@ class IntakeTests(unittest.TestCase):
         m.prepare(spec, review)
         with self.assertRaises(ValueError):
             m.freeze(spec, review, spec.parent / 'frozen')
+        approval = m.read(review)
+        approval.update(accepted=True, reviewer='synthetic test', date='fixture', units=[])
+        review.write_text(json.dumps(approval))
+        with self.assertRaisesRegex(ValueError, 'unchanged intake'):
+            m.freeze(spec, review, spec.parent / 'frozen')
         with self.assertRaises(FileExistsError):
             m.prepare(spec, review)
 

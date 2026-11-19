@@ -273,7 +273,7 @@ def freeze(spec, review, output):
     review = i55.private(review)
     approval = read(review)
     if (approval['schema'] != 'g6-i55-intake-review/1' or approval['accepted'] is not True
-            or approval['inputSha256'] != manifest['inputSha256']):
+            or any(approval[k] != manifest[k] for k in ('inputSha256', 'families', 'units', 'split', 'inputs'))):
         raise ValueError('explicit human acceptance of unchanged intake required')
     text(approval['reviewer'])
     text(approval['date'])
