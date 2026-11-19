@@ -62,11 +62,15 @@ void EditorManager::CloseCurrentEditor() {
 	spdlog::info("EditorManager::CloseCurrentEditor - Closing current tab");
 	g_palettes.RefreshPalettes();
 
+	// Removing the page makes wxAuiNotebook focus the next one. Do it while the
+	// frame is enabled: under the info bar it is disabled and Win32 SetFocus
+	// fails with error 87.
+	wxWindow* page = g_gui.tabbook->DetachTab(g_gui.tabbook->GetSelection());
 	{
 		// Destroying the tab frees the whole map and its GL resources, which
 		// can take a moment on large maps; tell the user what is happening.
 		ScopedInfoBar closing("Closing map...");
-		g_gui.tabbook->DeleteTab(g_gui.tabbook->GetSelection());
+		g_gui.tabbook->DestroyDetachedTab(page);
 	}
 
 	// wxAuiNotebook does not emit PAGE_CLOSED when the close event was vetoed
