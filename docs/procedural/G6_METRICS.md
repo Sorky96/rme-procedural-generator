@@ -421,3 +421,10 @@ alternatywne źródło. Brak profilu kończy przebieg przed generacją
 z komunikatem zawierającym brakującą ścieżkę. Próba obejmuje katalog
 ze spacjami i zachowanie komendy I47. Wynik I47 ma pozostać 32/32
 w obu profilach, z identycznymi powtórzeniami. Kod generatora poza zakresem.
+# D21 — odtwarzanie pomiarów G4 z iteracji 3–4
+
+Jedno polecenie uruchamia `style_styles` i `water_eval` z jawnymi danymi
+lokalnymi i zapisuje w scratchpad wyniki oraz parametry. Dwa przebiegi na
+tych samych wejściach dają identyczne wyniki pomiarowe. Zgodność z tabelami
+G4 wykazać na dostępnych historycznych wejściach. Brakujące dane i odchylenia
+opisać jawnie, bez zmiany historycznych wartości i bez zmiany generatora.
