@@ -1,5 +1,23 @@
 # G6 — stan bramki
 
+### I55 — przyjmowanie nowych rodzin (2026-11-19)
+
+Uzupełnienie kryteriów `bd89a30`, implementacja `0ecae87`. Narzędzie
+sprawdza deklaracje i dowody, identyfikatory źródeł oraz pokrewieństwo G4.
+Po przeglądzie zamraża rodziny, jednostki i odciski danych przed generacją
+macierzy. Poprawka `37c6688` sprawdza też zgodność treści zaakceptowanego
+przeglądu z ponownym audytem, w tym jednostek i podziału rodzin.
+
+Niezależnie przeszły build, testy intake 8/8 i CTest 6/6. Szablon wejścia
+sprawdzono we własnym katalogu prywatnym. Worktree wykonawcy nie zawierał
+katalogu build-ninja. Pełna regresja SUITE_PASS: 23/23 i obie sondy,
+z niezmienionymi zasobami wejściowymi. G5_GATE_PASS: 32/32 dla obu profili,
+identyczne powtórzenia i zachowany odcisk 1729 (`17159159863505677800`).
+Przyjęcie rzeczywistych nowych map i pomiar nowych rodzin nadal czekają
+na wejście. Komplet 20 ocen ślepych jest odrębnym wymaganiem. Testy
+syntetyczne nie są dowodem jakości. G6 pozostaje otwarte.
+[Instrukcja przyjmowania i przygotowania map](smoke/g6_i55_intake.md).
+
 ## I56 — lokalne uczenie z otwartej mapy
 
 Kryteria `90ebf92`, implementacja `3c8d45c`. Polecenie **Learn from open
