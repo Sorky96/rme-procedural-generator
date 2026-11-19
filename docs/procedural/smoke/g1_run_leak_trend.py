@@ -34,7 +34,7 @@ args = parser.parse_args()
 if args.cycles < WARMUP + 3:
     parser.error('--cycles must leave at least 3 cycles after warm-up')
 repo = Path(__file__).resolve().parents[3]
-if not args.output.is_relative_to(repo / 'local-data/procedural-smoke'):
+if not (args.output.is_relative_to(repo / 'local-data/procedural-smoke') or args.output.is_relative_to(repo / 'scratchpad')):
     raise ValueError('Output must be a NEW private procedural-smoke directory')
 args.output.mkdir(parents=True, exist_ok=False)
 sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -82,9 +82,15 @@ with (args.output / 'stdout.log').open('w', encoding='utf-8') as out, (args.outp
 report = (run / 'dialog-probe.log').read_text(encoding='utf-8')
 rows = list(csv.DictReader((run / 'leak-trend.csv').open(newline='')))
 lines = report.splitlines()
+heap_report = run / 'heap-trend.csv'
+if args.heap and heap_report.is_file():
+    with heap_report.open(newline='') as stream:
+        heap_samples = sum(1 for _ in csv.DictReader(stream))
+else:
+    heap_samples = 0
 complete = (code == 0 and 'LEAK_PASS' in lines and 'FAILED\t' not in report and len(rows) == args.cycles + 1 and
             [f'LEAK_CYCLE_PASS\t{i}' for i in range(1, args.cycles + 1)] == [l for l in lines if l.startswith('LEAK_CYCLE_PASS')] and
-            (not args.heap or len(list(csv.DictReader((run / 'heap-trend.csv').open(newline='')))) == args.cycles + 2))
+            (not args.heap or heap_samples == args.cycles + 2))
 unchanged = all(sha(Path(path)) == value for path, value in original.items())
 current = all(sha(repo / path) == value for path, value in source_hashes.items())
 stderr_lines = [l for l in (args.output / 'stderr.log').read_text(encoding='utf-8', errors='replace').splitlines() if l.strip()]

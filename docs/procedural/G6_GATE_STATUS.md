@@ -1,5 +1,25 @@
 # G6 — stan bramki
 
+## D4 — pomiar pamięci Preview
+
+Kryteria `04b03de`, integracja `9786851` i `ebe0f9d`.
+Analiza czterech serii na mapie 500×500 z jednym kandydatem rozdziela
+pamięć zajętych bloków CRT od zatwierdzonej rezerwy. Po 200 cyklach
+pamięć prywatna wzrosła o ok. 70 MiB, z czego ok. 53 MiB to rezerwa
+CRT, a 17 MiB pozostało poza zidentyfikowanymi stertami. Zajęte bloki
+CRT wzrosły o ok. 0,03 MiB. Wzrost wyhamował w drugiej połowie serii.
+Formalne kryterium G1 nadal nie przechodzi. Kod produkcyjny bez zmian.
+
+Kanoniczny build, `SUITE_PASS` (23/23 i obie sondy bez ostrzeżeń)
+oraz I47 (`G5_GATE_PASS`, 32/32 dla obu profili, identyczne powtórzenia)
+przeszły. Zachowano odcisk 1729 i ścianę `mountain`. Niezależna analiza
+odtworzyła wyniki zapisanych serii. Skrócona próba `--heap` 5 cykli
+zapisała komplet próbek w scratchpad, z kodem procesu 0 i zachowanymi
+wejściami. Próg trendu G1 dał wynik negatywny także w tej próbie.
+
+Automatyczna kontrola wykonania zablokowała usunięcie `build-ninja`
+z worktree wykonawcy. [Raport, reprodukcja i granice diagnozy](G6_D4.md).
+
 ## D1 — fokus przy zamykaniu karty
 
 Kryteria `04b03de`, poprawka `6ba5973`, sonda `40a9d02`.
