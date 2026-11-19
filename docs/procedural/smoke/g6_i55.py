@@ -131,20 +131,28 @@ def read_matrix(directory):
     return all_groups, audit
 
 
-def measure(exe, profiles, index, output):
+def measure(exe, profiles, index, output, family_manifest=None):
     output = private(output)
     if output.exists():
         raise ValueError('measurement directory must be new; no overwriting a frozen run')
     inputs = {'exe': Path(exe).resolve(), 'index': Path(index).resolve()}
+    family_data = None
+    if family_manifest is not None:
+        family_data = sibling('g6_i55_intake').verify(family_manifest)
+        inputs['familyManifest'] = Path(family_manifest).resolve()
     for style in STYLES:
         inputs[style] = Path(profiles).resolve() / f'{style}.profile'
         inputs[style + '-bands'] = g6.BANDS_DIR / f'{style}.bands'
+    if family_data is not None:
+        sibling('g6_i55_intake').check_generator_inputs(family_data, profiles, index)
     for name in ('g6_i55.py', 'g6_i55_form.html', 'g6_evaluate_holdout.py', 'g6_measure_candidates.py'):
         inputs[name] = Path(__file__).with_name(name)
     frozen = {'schema': 'g6-i55-inputs/1', 'policyCommit': POLICY,
               'seeds': list(SEEDS), 'blindSeeds': list(BLIND_SEEDS), 'count': 4, 'side': 512,
               'newFamilies': [], 'newFamilyStatus': 'BLOCKED: no frozen eligible new-family sources supplied',
               'inputs': {k: {'path': str(p), 'sha256': sha(p)} for k, p in inputs.items()}}
+    if family_data is not None:
+        frozen.update(newFamilies=family_data['families'], newFamilyStatus='FROZEN: pending quantitative evaluation; I55 OPEN')
     write_json(output / 'manifest.json', frozen)  # Before any generation or comparison.
 
     def run_block(spec):
@@ -364,6 +372,8 @@ def main():
         p = sub.add_parser(name)
         for param in params:
             p.add_argument(param, type=Path)
+        if name == 'measure':
+            p.add_argument('--family-manifest', type=Path)
     args = vars(parser.parse_args())
     command = args.pop('command')
     try:

@@ -95,16 +95,18 @@ def load_bands(path):
     return result
 
 
-def load_references(root, profile_dir):
+def load_references(root, profile_dir, *, aliases=None, check_bands=True):
     """Audit all 19 maps, source identity, DAT and keymap, then read G4 summaries.
 
     Old bundles predate subsequent measurements, so each metric is taken from its explicit
     authoritative bundle. Repeated channels/scale/paths are also checked for agreement.
     No OTBM or sprite file is copied/read. Existing import and verification receipts are evidence.
+    Explicit aliases reuse this audit for intake; check_bands=False skips only the
+    historical M06/M19 reference-value check (the intake caller checks those separately).
     """
     references, audit, profile_audit = {}, {}, {}
     global_keymap = global_dat = global_spr = None
-    for alias in (f'M{i:02}' for i in range(1, 20)):
+    for alias in (aliases if aliases is not None else (f'M{i:02}' for i in range(1, 20))):
         receipts, tables, summary_hashes = [], {}, {}
         for bundle in BUNDLES:
             directory = root / bundle / alias
@@ -214,7 +216,7 @@ def load_references(root, profile_dir):
         if [s for s in profile if s.startswith('key\t')] != global_keymap.splitlines()[1:]:
             raise ValueError('profile mapping differs from references')
         bands = load_bands(BANDS_DIR / f'{style}.bands')
-        if any(references[alias][m] != bands[m][0] for m in METRICS):
+        if check_bands and any(references[alias][m] != bands[m][0] for m in METRICS):
             raise ValueError('frozen profile references disagree with G4 data')
         profile_audit[style] = {'profileSha256': hashlib.sha256((profile_dir / f'{style}.profile').read_bytes()).hexdigest(),
                                 'bandsSha256': hashlib.sha256((BANDS_DIR / f'{style}.bands').read_bytes()).hexdigest()}
