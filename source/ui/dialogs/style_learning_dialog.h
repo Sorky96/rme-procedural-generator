@@ -29,6 +29,7 @@ private:
     wxTextCtrl *mapping_ = nullptr, *name_ = nullptr;
     wxCheckBox* permission_ = nullptr;
     wxButton *read_ = nullptr, *analyze_ = nullptr, *save_ = nullptr;
+    wxButton* cancel_ = nullptr;
     wxStaticText* status_ = nullptr;
     wxGauge* progress_ = nullptr;
     uint64_t generation_ = 0, revision_ = 0, assets_ = 0;

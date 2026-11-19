@@ -97,10 +97,15 @@ void run() {
             check(field<wxStaticText>(*d, "learn-status").GetLabel().Contains("right"), "Permission refusal");
             field<wxCheckBox>(*d, "learn-permission").SetValue(true);
             field<wxSpinCtrl>(*d, "learn-width").SetValue(64); field<wxSpinCtrl>(*d, "learn-height").SetValue(64);
-            click(*d, "learn-read"); click(*d, "learn-cancel"); settle();
+            check(!field<wxButton>(*d, "learn-cancel").IsEnabled(), "Stop enabled while idle");
+            click(*d, "learn-read");
+            check(field<wxButton>(*d, "learn-cancel").IsEnabled(), "Stop unavailable while reading");
+            click(*d, "learn-cancel"); settle();
             check(!field<wxButton>(*d, "learn-analyze").IsEnabled(), "Cancelled read resurfaced"); unchanged();
+            check(!field<wxButton>(*d, "learn-cancel").IsEnabled(), "Stop stayed enabled after cancellation");
             click(*d, "learn-read"); until([&] { return field<wxButton>(*d, "learn-analyze").IsEnabled(); });
             check(field<wxTextCtrl>(*d, "learn-mapping").GetValue().Contains("grass"), "Actual brush name mapping");
+            check(!field<wxButton>(*d, "learn-cancel").IsEnabled(), "Stop enabled after reading");
             click(*d, "learn-analyze"); click(*d, "learn-cancel");
             until([&] { return field<wxButton>(*d, "learn-read").IsEnabled(); });
             check(!field<wxButton>(*d, "learn-save").IsEnabled(), "Cancelled fit resurfaced"); unchanged();

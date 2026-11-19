@@ -28,9 +28,8 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     const int gap = Theme::Grid(2), margin = Theme::Grid(4);
     auto* root = new wxBoxSizer(wxVERTICAL);
     auto* help = new wxStaticText(this, wxID_ANY,
-        "Local surface analysis only. Choose an explicit rectangle and floor.\n"
-        "Read names, review/edit the G4 mapping, then analyze. No map or Undo changes.\n"
-        "This fit is not a quality evaluation, a copy check, or underground learning.");
+        "Learn a surface style from a region of the current map.\n"
+        "Read the region, review the ground classes, then analyze and save a profile.");
     root->Add(help, 0, wxEXPAND | wxALL, margin);
     auto* form = new wxFlexGridSizer(2, gap, gap); form->AddGrowableCol(1);
     auto spin = [&](const char* label, const char* name, int min, int max, int value) {
@@ -48,7 +47,7 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     permission_ = new wxCheckBox(this, wxID_ANY, "I have the &right to use this map for local style learning.");
     permission_->SetName("learn-permission"); root->Add(permission_, 0, wxALL, margin);
     permission_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { Invalidate(false); });
-    root->Add(new wxStaticText(this, wxID_ANY, "&Mapping (key / class / rule / brush name; tab separated):"), 0, wxLEFT | wxRIGHT, margin);
+    root->Add(new wxStaticText(this, wxID_ANY, "Ground &mapping (edit the class column, keep the tabs):"), 0, wxLEFT | wxRIGHT, margin);
     mapping_ = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(Theme::Grid(100), Theme::Grid(28)), wxTE_MULTILINE | wxHSCROLL);
     mapping_->SetName("learn-mapping"); root->Add(mapping_, 1, wxEXPAND | wxALL, margin);
     mapping_->SetToolTip("G4 classes (case sensitive): Grass, Dirt, Rock, Shore, Water, Other, Unmapped, NoGround. Keep unknown grounds Unmapped. Edit the class column; keep the exact brush name.");
@@ -57,7 +56,7 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     nameRow->Add(new wxStaticText(this, wxID_ANY, "Profile &name:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
     name_ = new wxTextCtrl(this, wxID_ANY); name_->SetName("learn-name");
     nameRow->Add(name_, 1); root->Add(nameRow, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
-    root->Add(new wxStaticText(this, wxID_ANY, "1-64 letters, digits, '-' or '_'. Saved locally; existing names are protected."), 0, wxALL, margin);
+    root->Add(new wxStaticText(this, wxID_ANY, "Use 1-64 ASCII letters, digits, hyphens or underscores."), 0, wxALL, margin);
     progress_ = new wxGauge(this, wxID_ANY, 100); root->Add(progress_, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
     status_ = new wxStaticText(this, wxID_ANY, "Read the rectangle to review ground names. Data stays on this computer.");
     status_->SetName("learn-status"); root->Add(status_, 0, wxEXPAND | wxALL, margin);
@@ -69,7 +68,14 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     read_ = button("&Read rectangle", "learn-read", [this](wxCommandEvent&) { Read(); });
     analyze_ = button("&Analyze", "learn-analyze", [this](wxCommandEvent&) { Analyze(); }); analyze_->Disable();
     save_ = button("&Save profile", "learn-save", [this](wxCommandEvent&) { Save(); }); save_->Disable();
-    button("Cancel analysis", "learn-cancel", [this](wxCommandEvent&) { Invalidate(false); Status("Analysis cancelled. No profile saved."); });
+    cancel_ = button("&Stop", "learn-cancel", [this](wxCommandEvent&) {
+        if (!reading_ && (!worker_.valid() || stop_.stop_requested())) return;
+        const bool wasReading = reading_;
+        Invalidate(wasReading);
+        Status(wasReading ? "Reading stopped. Read the rectangle to start again."
+                          : "Analysis stopped. Choose Analyze to try again.");
+    });
+    cancel_->Disable();
     auto* close = new wxButton(this, wxID_CANCEL, "Close"); buttons->Add(close);
     root->Add(buttons, 0, wxALL, margin); SetSizerAndFit(root); SetMinSize(GetSize()); CentreOnParent();
     for (auto* child : GetChildren()) {
@@ -85,7 +91,14 @@ void StyleLearningDialog::Status(const std::string& text) {
 }
 void StyleLearningDialog::Invalidate(bool discardSample) {
     stop_.request_stop(); reading_ = false; result_.reset(); save_->Disable();
-    if (discardSample) { captured_ = false; sample_.reset(); }
+    if (discardSample) {
+        captured_ = false;
+        source_valid_ = false;
+        sample_.reset();
+        if (mapping_) mapping_->ChangeValue(wxEmptyString);
+    }
+    if (cancel_) cancel_->Disable();
+    if (progress_) progress_->SetValue(0);
     if (analyze_) analyze_->Enable(captured_ && !worker_.valid());
     if (read_) read_->Enable(!worker_.valid());
     if (status_) Status("Settings changed. Read again if the rectangle changed, then analyze.");
@@ -128,7 +141,7 @@ void StyleLearningDialog::Read() {
     auto sample = SemanticMap::create(std::span(&bounds, 1), {512 * 512});
     if (!sample) { Status("Cannot allocate sample."); return; }
     sample_ = std::move(*sample); source_valid_ = true; row_ = 0; reading_ = true;
-    read_->Disable(); analyze_->Disable(); progress_->SetValue(0); Status("Reading rectangle locally (bounded rows)...");
+    read_->Disable(); analyze_->Disable(); cancel_->Enable(); Status("Reading the rectangle...");
 }
 void StyleLearningDialog::Analyze() {
     asset_check_ = {};
@@ -148,6 +161,7 @@ void StyleLearningDialog::Analyze() {
             try { return fitLearningSample(sample, std::move(mapping), ids.client, ids.otbSha256, ids.datSha256, token); }
             catch (const std::exception&) { return std::expected<StyleProfile, std::string>(std::unexpected("Analysis failed; no profile saved.")); }
         });
+        cancel_->Enable();
     } catch (const std::exception&) {
         read_->Enable(); analyze_->Enable(captured_); Status("Cannot start the local analysis worker. No profile saved.");
     }
@@ -167,15 +181,16 @@ void StyleLearningDialog::Tick() {
             reading_ = false; captured_ = true;
             const auto mapping = serializeKeyMap(proposeKeyMap(sample_->groundKeys(), defaultKeyRules()));
             if (!mapping) { Invalidate(); Status("Cannot display ground mapping."); return; }
-            mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable();
+            mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable(); cancel_->Disable();
             const auto counts = summarize(*sample_);
             Status(std::format("Read {} present tiles. Review/correct mapping; unknown or unbrushed ground is not guessed. Then Analyze.", counts.tilesPerFloor[size_t(z_->GetValue())]));
         }
     }
     if (worker_.valid()) {
-        progress_->Pulse();
+        if (!stop_.stop_requested()) progress_->Pulse();
         if (worker_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
         auto result = worker_.get(); read_->Enable(); analyze_->Enable(captured_);
+        cancel_->Disable(); progress_->SetValue(0);
         if (stop_.stop_requested() || !CurrentSource() || analyzed_mapping_ != mapping_->GetValue().ToStdString(wxConvUTF8)) {
             result_.reset(); save_->Disable(); return;
         }
@@ -184,7 +199,7 @@ void StyleLearningDialog::Tick() {
         const auto& stats = result_->stats;
         uint64_t present = 0, natural = 0;
         for (size_t i = 0; i < styleKindCount; ++i) { present += stats.kindTiles[i]; if (i < naturalKindCount) natural += stats.kindTiles[i]; }
-        Status(std::format("Fit ready: {} recognized, {} skipped, {} present. User-local surface provenance; no M06/M19 bands. Enter a name and Save profile to confirm.", natural, present - natural, present));
+        Status(std::format("Fit ready. Used {} of {} present tiles ({} skipped). Enter a name and choose Save profile.", natural, present, present - natural));
     }
 }
 void StyleLearningDialog::Save() {
