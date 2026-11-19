@@ -428,3 +428,14 @@ lokalnymi i zapisuje w scratchpad wyniki oraz parametry. Dwa przebiegi na
 tych samych wejściach dają identyczne wyniki pomiarowe. Zgodność z tabelami
 G4 wykazać na dostępnych historycznych wejściach. Brakujące dane i odchylenia
 opisać jawnie, bez zmiany historycznych wartości i bez zmiany generatora.
+# D10 — kopie obrócone i odbite
+
+Sprawdzić wszystkie osiem symetrii kwadratu dla ustalonego przed pomiarem
+fragmentu każdej z M06 i M19. Kryterium to wykrycie każdej kopii przy
+progach I53: co najmniej 16 wspólnych okien i 100‰ zawierania.
+Kontrola na niezależnym terenie bez trafienia. Macierz generatora dla
+seedów 1001–1032 ma pozostać na 0/32 dla każdego profilu w dwóch
+identycznych przebiegach. Zmiany odcisków wymagają odrzucenia starego
+formatu indeksu z instrukcją przebudowy. Gdy kryterium nie przejdzie,
+opisać wyniki bez dostrajania progów i pozostawić blokadę Place bez zmian.
+Regresja: build, SUITE_PASS, I47 32/32 na profil i zachowany odcisk 1729.
