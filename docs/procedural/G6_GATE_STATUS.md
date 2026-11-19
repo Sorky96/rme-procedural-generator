@@ -1,5 +1,20 @@
 # G6 — stan bramki
 
+## D25 — przenośne wejścia pomiaru G5 (2026-11-19)
+
+Kryteria `ce474b7`, zmiana `8015f6a` i korekta testu `807e6e0`.
+Pomiar wybiera profile z głównego checkoutu także z worktree. Parametr
+`--local-data` pozwala wskazać inny katalog. Brak profilu przerywa
+pomiar przed generacją i wskazuje pełną ścieżkę.
+
+Dwa testy ścieżek przeszły. Kanoniczny build i `SUITE_PASS` potwierdziły
+23/23 testy rdzenia, obie sondy i niezmienione zasoby. Zestaw kontroluje
+także odcisk 1729 (`17159159863505677800`) i domyślną ścianę `mountain`.
+Niezależny pomiar I47 z `--local-data` w katalogu ze spacjami dał
+`G5_GATE_PASS`, 32/32 dla obu profili i identyczne powtórzenia.
+Worktree wykonawcy nie zawierał katalogu `build-ninja`. Zmiana dotyczy
+narzędzi CLI i nie wymaga nowych kroków w GUI.
+
 ## D23 — zajęte piętro i pojemność Undo (2026-11-19)
 
 Kryteria `b59f590`, sondy scalone przez fast-forward do `5bbe147`.
