@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from g5_local_data import main_checkout_local_data
 
 MEASURE = Path(__file__).with_name('g5_measure_levels.py')
