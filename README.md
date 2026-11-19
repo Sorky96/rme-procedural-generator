@@ -1,5 +1,5 @@
 <p align="left">
-  <a href="https://suppi.pl/karolak6612" style="text-decoration: none; border: none;"><img src="https://github.com/user-attachments/assets/39c46c55-bcdb-42d0-9f2a-b23bb05b4019" alt="Suppi" width="160" height="90" style="display: inline-block; vertical-align: middle;"></a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://revolut.me/karolak6612" style="text-decoration: none; border: none;"><img width="160" height="90" alt="obraz" src="https://github.com/user-attachments/assets/6f2c7220-9108-4274-817d-fbabeb5cdcc3" /></a>
+  <a href="https://suppi.pl/karolak6612" style="text-decoration: none; border: none;"><img src="https://github.com/user-attachments/assets/39c46c55-bcdb-42d0-9f2a-b23bb05b4019" alt="Suppi" width="160" height="90" style="display: inline-block; vertical-align: middle;"></a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://revolut.me/karolak6612" style="text-decoration: none; border: none;"><img width="160" height="90" alt="Image" src="https://github.com/user-attachments/assets/6f2c7220-9108-4274-817d-fbabeb5cdcc3" /></a>
 </p>
 
 
@@ -10,6 +10,10 @@
 **Note: This is an active work-in-progress. There is no final stable release yet, only experimental alpha builds.**
 
 ---
+
+## Procedural terrain
+
+Use **Map → Generate terrain…** to preview and place terrain or learn a local surface style from your own map. See the [procedural terrain guide](PROCEDURAL_README.md).
 
 ## What is new in Redux?
 
@@ -49,13 +53,7 @@
 
 ## Downloads
 
-Automated alpha builds are compiled for Windows and Linux on every update:
-
-- **Releases page**: https://github.com/Open-Tibia-Tools/remeres-map-editor-redux/releases
-
-Download the latest alpha archive (`.zip` for Windows, `.tar.gz` for Linux), extract it, and run the editor.
-
-Remember that these are alpha builds. Keep backups of your maps.
+For the procedural editor in this repository, follow [Building from Source](#building-from-source). Alpha archives for the base editor are available from the [upstream RME Redux releases](https://github.com/Open-Tibia-Tools/remeres-map-editor-redux/releases).
 
 ---
 
@@ -97,7 +95,7 @@ python tools/convert_legacy_data_gui.py
 
 *(If `wxPython` is not installed on your system, the tool will automatically offer to install it for you on startup).*
 
-<img width="1208" height="838" alt="obraz" src="https://github.com/user-attachments/assets/68df076d-b3c1-4c67-a33e-a15e5de5c882" />
+<img width="1208" height="838" alt="Image" src="https://github.com/user-attachments/assets/68df076d-b3c1-4c67-a33e-a15e5de5c882" />
 
 
 #### Step-by-Step Guide:
@@ -116,10 +114,11 @@ python tools/convert_legacy_data_gui.py
 
 Check `BUILDING.md` for complete step-by-step instructions.
 
-### Windows (Visual Studio 2022)
-1. Install VS 2022 with C++ desktop workload, CMake, and vcpkg.
-2. Run `build_windows.bat`.
-3. The executable will be in `build\Release\rme.exe` (or open `build\rme.sln`).
+### Windows x64
+
+1. Install Visual Studio with the Desktop development with C++ workload, CMake, Ninja, and vcpkg. Set `VCPKG_ROOT` to your vcpkg directory if the build script cannot locate it.
+2. From the repository root, run `cmd /c build_ninja.bat`.
+3. Run `build-ninja/rme.exe`.
 
 ### Linux (Ubuntu)
 1. Run `./setup_conan.sh` to install dependencies.

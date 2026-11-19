@@ -18,7 +18,7 @@ in-process workflow; the application never launches the offline CLI.
    Fit uses G4 `accumulateKindStats`, `targetFromStats` and `fitTuning` directly:
    fixed side 160, seeds 1–6, four coordinate-descent passes, default start.
    The same sample is both targets; this is fitting, **not held-out validation**.
-   The progress indicator pulses while the owned worker runs. **Cancel analysis**
+   The progress indicator pulses while the owned worker runs. **Stop**
    discards its result; closing requests cancellation and joins the worker.
 5. Inspect the result, enter a filename stem (1–64 ASCII letters, digits, `-`,
    `_`) and **Save profile** to confirm. No path or device names are allowed.
