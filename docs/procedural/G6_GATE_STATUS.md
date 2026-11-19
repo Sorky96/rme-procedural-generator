@@ -1,5 +1,28 @@
 # G6 — stan bramki
 
+## D1 — fokus przy zamykaniu karty
+
+Kryteria `04b03de`, poprawka `6ba5973`, sonda `40a9d02`.
+Notebook odłącza kartę przy włączonej ramce. Zwolnienie mapy
+i zasobów GL odbywa się pod oknem „Closing”. Na kliencie 10.98
+wykonawca odtworzył błąd Win32 87 przed zmianą i dwukrotnie
+potwierdził puste stderr po zmianie.
+
+Kanoniczny build i `SUITE_PASS` przeszły. Rdzeń 23/23, sonda Commit
+i sonda Surface zakończyły się bez ostrzeżeń SetFocus. Odcisk
+`17159159863505677800` i ściana `mountain` są pokryte przez zestaw.
+Niezależna sonda D1 dała PASS dla Exit, Cancel i zamknięcia karty,
+za każdym razem z pustym stderr. I47 dał `G5_GATE_PASS`, po 32/32
+dla m06 i m19, z identycznymi powtórzeniami.
+
+Próba ręczna. Otwórz dwie mapy i zamknij bieżącą przez File → Close,
+a następnie powtórz przyciskiem karty. Przy dwóch mapach rozpocznij
+File → Exit z niezapisaną zmianą i anuluj zapis. Sprawdź, że mapa
+i zmiana pozostały. Ręczna ocena fokusu oraz zamykanie dużej mapy
+pozostają niesprawdzone. Automatyczna kontrola wykonania odrzuciła
+usunięcie `build-ninja` z worktree D1.
+[Raport reprodukcji](smoke/g6_d1_report.md).
+
 ## D21 — odtworzenie tabel G4
 
 Kryteria `e3e6f8b`, integracja `a877308`. Niezależny przebieg
