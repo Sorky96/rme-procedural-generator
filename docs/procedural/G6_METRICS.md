@@ -413,3 +413,12 @@ Nie zmienia progu ≥70% ani wymogu osobnego wyniku dla obu profili.
 - **I53:** test memoryzacji: odcisk wyniku wobec referencji (`similarity.*`) jako warunek twardy.
 - **I54:** feedback Approve/Reject/Adjust, lokalna historia, wersjonowane profile z rollbackiem.
 - **I55:** ocena G6: holdout wobec L2/L3, overfitting, ślepy test 20 par (≥ 65 %).
+# D25 — przenośna ścieżka profili pomiaru G5
+
+Pomiar ma odnajdywać katalog profili G4 w `local-data` głównego
+checkoutu także z worktree. Jawny parametr `--local-data` wskazuje
+alternatywne źródło. Brak profilu kończy przebieg przed generacją
+z komunikatem zawierającym brakującą ścieżkę. Próba obejmuje katalog
+ze spacjami i zachowanie komendy I47. Wynik I47 ma pozostać 32/32
+w obu profilach, z identycznymi powtórzeniami. Kod generatora poza zakresem.
+
