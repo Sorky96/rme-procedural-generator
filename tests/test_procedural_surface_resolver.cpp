@@ -44,10 +44,12 @@
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -3222,6 +3224,212 @@ void occupiedLowerFloorCase(std::ostream& report) {
     g_gui.CloseCurrentEditor();
 }
 
+// D23 (G6): the occupied z + 1 of the cave and dungeon cases holds a real house (ground, house id, PZ flag, zone, exit), a
+// monster spawn with its creature and a waypoint, all placed on cells the same request carves on an empty map. Preview
+// (prepare, validate), Place, one Undo and one Redo keep those tiles and the house, spawn, waypoint and zone registries
+// identical; the generated part keeps the G5 clearance from every occupied tile.
+struct D23Case {
+    const char* label;
+    int x0, y0, side;
+    GenerationConfig config;
+    GroundProfile profile;
+    bool dungeons;
+};
+
+struct D23Fixture {
+    std::vector<Position> tiles;
+    Position spawnAt, waypointAt;
+    uint16_t zone = 0;
+};
+
+struct D23State {
+    std::vector<std::unique_ptr<Tile>> tiles;
+    std::string registries;
+};
+
+D23State d23Capture(Map& map, const D23Fixture& fixture) {
+    D23State state;
+    for (const auto& position : fixture.tiles) {
+        const auto* tile = map.getTile(position);
+        check(tile != nullptr, "D23 fixture tile vanished");
+        state.tiles.push_back(tile->deepCopy());
+        state.registries += std::format("T{},{}:h{}f{}z{}", position.x, position.y, tile->getHouseID(), tile->getMapFlags(), tile->getZoneIds().size());
+        if (tile->spawn) state.registries += std::format("s{}", tile->spawn->getSize());
+        if (tile->creature) state.registries += std::format("c{}/{}", tile->creature->getName(), tile->creature->getSpawnTime());
+        state.registries += ';';
+    }
+    if (const auto* house = map.houses.getHouse(1)) {
+        const auto exit = house->getExit();
+        state.registries += std::format("H{}/{}/{}/{},{},{}/{};", house->name, house->rent, house->getTiles().size(), exit.x, exit.y, exit.z, house->townid);
+    } else {
+        state.registries += "H-;";
+    }
+    for (const auto& at : map.spawns) state.registries += std::format("S{},{},{};", at.x, at.y, at.z);
+    const auto* waypoint = map.waypoints.getWaypoint(map.getTileL(fixture.waypointAt));
+    state.registries += waypoint ? std::format("W{}@{},{},{};", waypoint->name, waypoint->pos.x, waypoint->pos.y, waypoint->pos.z) : std::string("W-;");
+    for (const auto& at : map.getZoneTilePositions(fixture.zone)) state.registries += std::format("Z{},{};", at.x, at.y);
+    return state;
+}
+
+bool d23Same(const D23State& first, const D23State& second) {
+    if (first.registries != second.registries || first.tiles.size() != second.tiles.size()) return false;
+    for (size_t i = 0; i < first.tiles.size(); ++i)
+        if (!snapshotTilesEqual(first.tiles[i].get(), second.tiles[i].get())) return false;
+    return true;
+}
+
+void d23Case(const D23Case& scenario, std::ostream& report) {
+    UndoLimits undoLimits;
+    const char* label = scenario.label;
+    const int x0 = scenario.x0, y0 = scenario.y0, side = scenario.side;
+    const auto& config = scenario.config;
+    const auto& profile = scenario.profile;
+    const bool dungeons = scenario.dungeons;
+    constexpr PreparationBudget preparation{1000000, 1100000, 2000000, 8ULL << 30};
+    constexpr TerrainCommitBudget commit{2000000, 8ULL << 30};
+    const auto n = size_t(side) * size_t(side);
+    const auto* caveBrush = g_brushes.getBrush(profile.caveGround);
+    const auto* dungeonBrush = dungeons ? g_brushes.getBrush(profile.dungeonFloor) : nullptr;
+    const auto isDungeonFloor = [&](const Tile* tile) { return dungeonBrush && tile && tile->ground && brushOf(tile->ground->getID()) == dungeonBrush->as<GroundBrush>(); };
+    const auto isCaveFloor = [&](const Tile* tile) { return tile && tile->ground && brushOf(tile->ground->getID()) == caveBrush->as<GroundBrush>(); };
+    // Reference on an empty map: where the request carves (dungeon floor for the dungeon case, cave floor otherwise).
+    D23Fixture fixture;
+    std::vector<Position> carved;
+    {
+        check(g_gui.NewMap(), "D23 reference map");
+        auto& editor = *g_gui.GetCurrentEditor();
+        const auto reference = prepareTerrain(editor.map, config, profile, preparation);
+        check(reference && reference->cave, std::format("D23 {} reference preparation", label));
+        for (size_t i = 0; i < n; ++i) {
+            const Position at(x0 + int(i % size_t(side)), y0 + int(i / size_t(side)), 8);
+            const auto* tile = reference->cave->preview.getBuffer().getTile(at);
+            if (dungeons ? isDungeonFloor(tile) : isCaveFloor(tile)) carved.push_back(at);
+        }
+        g_gui.CloseCurrentEditor();
+    }
+    check(carved.size() > 64, std::format("D23 {} reference carves too little to host the fixture", label));
+    // House: a 4 x 4 block at the first carved cell that has carved cells 3 east, 3 south and 3 diagonal; spawn: the last carved cell.
+    const auto carvedSet = std::set<Position>(carved.begin(), carved.end());
+    Position houseAt = carved.front();
+    for (const auto& at : carved)
+        if (carvedSet.contains({at.x + 3, at.y, 8}) && carvedSet.contains({at.x, at.y + 3, 8}) && carvedSet.contains({at.x + 3, at.y + 3, 8})) { houseAt = at; break; }
+    fixture.spawnAt = carved.back();
+    fixture.waypointAt = fixture.spawnAt;
+    for (int dy = 0; dy < 4; ++dy) for (int dx = 0; dx < 4; ++dx) fixture.tiles.emplace_back(houseAt.x + dx, houseAt.y + dy, 8);
+    fixture.tiles.push_back(fixture.spawnAt);
+    check(std::max(std::abs(houseAt.x - fixture.spawnAt.x), std::abs(houseAt.y - fixture.spawnAt.y)) > 8, std::format("D23 {} fixture cells overlap", label));
+
+    check(g_gui.NewMap(), "D23 occupied map");
+    auto& editor = *g_gui.GetCurrentEditor();
+    const auto grass = g_brushes.getBrush("grass")->as<GroundBrush>()->getPlacementItemId();
+    for (const auto& at : fixture.tiles) TerrainPlacement::placeBrushItem(*editor.map.getOrCreateTile(at), grass);
+    auto house = std::make_unique<House>(editor.map);
+    house->setID(1); house->name = "D23 House"; house->rent = 777; house->setExit(Position(houseAt.x, houseAt.y, 8));
+    auto* houseRef = house.get();
+    check(editor.map.houses.addHouse(std::move(house)), "D23 house registration");
+    check(editor.map.convert({MAP_OTBM_5, editor.map.getVersion().client}), "D23 OTBM 5 map");
+    const auto zone = fixture.zone = editor.map.addZone("D23 Zone");
+    check(zone != 0, "D23 zone id");
+    for (size_t i = 0; i + 1 < fixture.tiles.size(); ++i) {
+        auto* tile = editor.map.getTile(fixture.tiles[i]);
+        tile->setHouse(houseRef);
+        tile->setPZ(true);
+        tile->addZone(zone);
+        tile->ground->setActionID(32101);
+        tile->ground->setText("D23 house");
+    }
+    auto* spawnTile = editor.map.getTile(fixture.spawnAt);
+    spawnTile->spawn = std::make_unique<Spawn>(2);
+    spawnTile->spawn->addKind(Spawn::MONSTERS);
+    spawnTile->creature = std::make_unique<Creature>("Rat");
+    spawnTile->creature->setSpawnTime(41);
+    check(editor.map.addSpawn(spawnTile), "D23 spawn registration");
+    editor.map.waypoints.addWaypoint(std::make_unique<Waypoint>("D23 Waypoint", fixture.waypointAt));
+    editor.map.rebuildZoneIndex();
+    const auto fixtureBefore = d23Capture(editor.map, fixture);
+    check(fixtureBefore.registries.find("H-;") == std::string::npos && fixtureBefore.registries.find("W-;") == std::string::npos &&
+        fixtureBefore.registries.find(";S") != std::string::npos && fixtureBefore.registries.find(";Z") != std::string::npos, "D23 fixture registries incomplete");
+
+    const auto image = [&](int z) { return stackImage(editor.map, x0 - 3, y0 - 3, z, side + 6, side + 6); };
+    const auto beforeUpper = image(7), beforeLower = image(8);
+    const auto prior = editor.actionQueue->getSize();
+    auto prepared = prepareTerrain(editor.map, config, profile, preparation);
+    check(bool(prepared), prepared ? "" : std::format("D23 {} occupied z + 1 refused: domain {} value {}", label, prepared.error().index(),
+        std::visit([](auto error) { return int(error); }, prepared.error())));
+    check(prepared->cave && prepared->levels, std::format("D23 {} cave or level report missing", label));
+    check(bool(validateTerrainTarget(*prepared, config, profile)), std::format("D23 {} preview validation", label));
+    check(d23Same(fixtureBefore, d23Capture(editor.map, fixture)) && image(7) == beforeUpper && image(8) == beforeLower,
+        std::format("D23 {} Preview changed the map", label));
+    // Real coverage: a cave, a dungeon when asked, entrances, reachability; and clearance from every occupied tile.
+    const auto distance = [&](const Position& at) {
+        int best = INT_MAX;
+        for (const auto& tile : fixture.tiles) best = std::min(best, std::max(std::abs(at.x - tile.x), std::abs(at.y - tile.y)));
+        return best;
+    };
+    // Cells the empty-map request carved within the clearance of the fixture: the fixture really displaces generated cells.
+    const auto displaced = size_t(std::ranges::count_if(carved, [&](const Position& at) { return distance(at) <= 3; }));
+    check(displaced > 0, std::format("D23 {} fixture displaces nothing", label));
+    int minChange = INT_MAX, minCave = INT_MAX, minDungeon = INT_MAX;
+    size_t caveCells = 0, dungeonCells = 0;
+    for (const auto& at : prepared->cave->preview.getChanges()) {
+        const auto* tile = prepared->cave->preview.getBuffer().getTile(at);
+        minChange = std::min(minChange, distance(at));
+        if (isCaveFloor(tile) && !tile->getWall()) { ++caveCells; minCave = std::min(minCave, distance(at)); }
+        if (isDungeonFloor(tile) && !tile->getWall()) { ++dungeonCells; minDungeon = std::min(minDungeon, distance(at)); }
+    }
+    const auto entrances = std::ranges::count_if(prepared->plan.entrances, [](uint16_t id) { return id != 0; });
+    check(caveCells > 0 && entrances > 0, std::format("D23 {} no cave under the occupied z + 1", label));
+    check(!dungeons || dungeonCells > 0, std::format("D23 {} no dungeon under the occupied z + 1", label));
+    check(minChange >= 1, std::format("D23 {} generated part touches an occupied tile", label));
+    check(minCave >= 3 && (!dungeons || minDungeon >= 4), std::format("D23 {} clearance: cave floor {} dungeon floor {}", label, minCave, minDungeon));
+    check(prepared->levels->report.allReached() && !prepared->levels->repair.unrepaired, std::format("D23 {} not reachable", label));
+
+    check(bool(DrawOperations::commitTerrainPreview(*prepared, config, profile, commit)), std::format("D23 {} Place failed", label));
+    check(editor.actionQueue->getSize() == prior + 1, std::format("D23 {} Place is not one history step", label));
+    check(d23Same(fixtureBefore, d23Capture(editor.map, fixture)), std::format("D23 {} Place changed the occupied tiles or registries", label));
+    for (const auto* unit : {&*prepared, prepared->cave.get()}) for (const auto& at : unit->preview.getChanges())
+        check(snapshotTilesEqual(editor.map.getTile(at), unit->preview.getBuffer().getTile(at)), std::format("D23 {} map differs from preview", label));
+    const auto afterUpper = image(7), afterLower = image(8);
+    check(afterUpper != beforeUpper && afterLower != beforeLower, std::format("D23 {} Place changed nothing", label));
+    check(editor.actionQueue->undo(), std::format("D23 {} Undo refused", label));
+    check(image(7) == beforeUpper && image(8) == beforeLower && !editor.actionQueue->canUndo(), std::format("D23 {} one Undo did not restore all floors", label));
+    check(d23Same(fixtureBefore, d23Capture(editor.map, fixture)), std::format("D23 {} Undo changed the occupied tiles or registries", label));
+    check(editor.actionQueue->redo() && !editor.actionQueue->canRedo(), std::format("D23 {} Redo refused or left a step", label));
+    check(image(7) == afterUpper && image(8) == afterLower, std::format("D23 {} one Redo did not restore all floors", label));
+    check(d23Same(fixtureBefore, d23Capture(editor.map, fixture)), std::format("D23 {} Redo changed the occupied tiles or registries", label));
+    report << std::format("OCCUPIED_Z1_FIXTURE_CASE {} house=4x4@{},{} spawn@{},{} fixtureTiles={} carvedOnEmpty={} displaced={} caveCells={} dungeonCells={} entrances={} "
+        "minChange={} minCave={} minDungeon={} repairs={} removedPois={} undoSteps=1\n", label, houseAt.x, houseAt.y, fixture.spawnAt.x, fixture.spawnAt.y,
+        fixture.tiles.size(), carved.size(), displaced, caveCells, dungeonCells, entrances, minChange, minCave, dungeons ? minDungeon : -1,
+        prepared->levels->repair.repairs, prepared->levels->repair.removedPois);
+    editor.map.clearChanges();
+    g_gui.CloseCurrentEditor();
+}
+
+void occupiedFixtureCases(std::ostream& report) {
+    GenerationConfig cave{{1000, 1000, 7, 512, 512}, 1729};
+    cave.algorithm = GenerationAlgorithm::Surface;
+    cave.surface = SurfaceTuning{192, 300, 12, 8, 20, 8, 240, 8, 300, 6000, 8};
+    cave.surface.caveEntrances = 10; cave.surface.repairReach = 1; cave.surface.shoreSmoothing = 2;
+    cave.surface.rockBlocks = true; cave.surface.caveEntranceStyle = CaveEntranceStyle::RockFace;
+    GroundProfile caveProfile{{"grass", "dirt", "mountain", "sand", "sea", "sea", "cobblestone", "stone floor"}, GroundProfile::surfaceWithFloorCount};
+    caveProfile.caveEntrance = "cave enter"; caveProfile.caveExit = "ramp"; caveProfile.caveGround = "cave"; caveProfile.caveWall = "rocky wall";
+    d23Case({"cave", 1000, 1000, 512, cave, caveProfile, false}, report);
+
+    GenerationConfig dungeon{{100, 100, 7, 192, 192}, 1001};
+    dungeon.algorithm = GenerationAlgorithm::Surface;
+    dungeon.surface.buildingDensity = 60; dungeon.surface.repairReach = 1; dungeon.surface.rockPermille = 200;
+    dungeon.surface.caveEntrances = 16; dungeon.surface.shoreSmoothing = 2;
+    dungeon.surface.buildingStoreys = true; dungeon.surface.upperFloorPercent = 50;
+    dungeon.surface.buildingDungeons = true; dungeon.surface.dungeonPercent = 60;
+    GroundProfile dungeonProfile{{"grass", "dirt", "mountain", "sand", "clear water", "clear water", "cobblestone", "stone floor"}, 8};
+    dungeonProfile.wall = "stone wall"; dungeonProfile.door = "Normal door"; dungeonProfile.bridgeBrush = "bridge"; dungeonProfile.buildingStairs = "ramp";
+    dungeonProfile.caveEntrance = "cave enter"; dungeonProfile.caveExit = "ramp"; dungeonProfile.caveGround = "cave"; dungeonProfile.caveWall = "mountain";
+    dungeonProfile.dungeonFloor = "dark tiled stone floor"; dungeonProfile.dungeonWall = "brick wall"; dungeonProfile.dungeonStairs = "ramp";
+    dungeonProfile.dungeonDescent = "stairs down";
+    d23Case({"dungeon", 100, 100, 192, dungeon, dungeonProfile, true}, report);
+    report << "OCCUPIED_Z1_FIXTURE_PASS\n";
+}
+
 void run() {
     const auto root = std::filesystem::current_path();
     std::ofstream report(root / "resolver-probe.log");
@@ -3233,6 +3441,7 @@ void run() {
 		std::vector<std::string> warnings;
 		check(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
         occupiedLowerFloorCase(report);
+        occupiedFixtureCases(report);
         m19NoCavesCase(report);
         fallbackEntranceLookCase(report);
         d26RampCase(report);
