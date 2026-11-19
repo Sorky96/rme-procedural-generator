@@ -37,6 +37,23 @@ Kandydat i ma seed `mix(seedUżytkownika, i)` z ustaloną funkcją mieszającą 
 
 ## Plan dalszych iteracji (kryteria zostaną zapisane przed każdą z nich)
 
+### D23 — regresja zajętego dolnego piętra i jednego Undo (2026-11-19)
+
+Pierwszy zakres porządków po G5 obejmuje dowody działania w edytorze.
+Sonda z rzeczywistym klientem sprawdza jaskinię i lochy przy zajętym z+1
+w przypadkach z kaflami domu oraz spawnem. Fixture musi faktycznie mieć
+jaskinię i co najmniej jeden loch. Istniejące kafle, metadane i indeksy
+pozostają identyczne w Preview, Place, Undo i Redo. Wygenerowana część
+omija chroniony obszar według reguł G5, a Place pozostaje jednym krokiem
+historii dla wszystkich pięter. Zgłaszamy rzeczywiste pokrycie sondy.
+
+Uruchamiamy istniejącą sondę pojemności 500×500 z jednym krokiem. Wynik
+zalicza zgodność podglądu i Place oraz pełny Undo/Redo bez zapisu poza
+maską. Odmowa limitu pozostawia mapę i historię bez zmian i jest raportowana
+osobno. Większe przypadki pozostają do osobnej oceny. Regresja zachowuje
+SUITE_PASS, G5 --i47 32/32 obu profili, odcisk 1729 i domyślne mountain.
+Dowody z edytora nie zamykają ruchu w grze ani ręcznej oceny zakładki.
+
 ### I56 — lokalne uczenie profilu z otwartej mapy użytkownika
 
 Użytkownik może otworzyć własną zgodną mapę w RME, a następnie wybrać
