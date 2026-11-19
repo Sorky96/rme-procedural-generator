@@ -439,3 +439,14 @@ identycznych przebiegach. Zmiany odcisków wymagają odrzucenia starego
 formatu indeksu z instrukcją przebudowy. Gdy kryterium nie przejdzie,
 opisać wyniki bez dostrajania progów i pozostawić blokadę Place bez zmian.
 Regresja: build, SUITE_PASS, I47 32/32 na profil i zachowany odcisk 1729.
+# D1 i D4 — zamknięcie okna i pamięć Preview
+
+- D1. Odtworzyć opisany przypadek File → Exit na kliencie 10.98.
+  Jeżeli wystąpi, usunąć ostrzeżenie SetFocus przy zamykaniu.
+  Sprawdzić kod wyjścia, anulowanie zamknięcia i zwykłe zamknięcie karty.
+  W razie braku reprodukcji zapisać warunki i wynik bez poprawki na ślepo.
+- D4. Powtórzyć serie 30 i 200 cykli Preview z tymi samymi ustawieniami.
+  Zmierzyć pamięć prywatną w punktach po rozgrzaniu i po zamknięciu
+  dialogu. Zestawić z danymi sterty, jeśli dostępne, i podać granice
+  diagnozy. Sam wzrost pamięci prywatnej nie wystarcza do stwierdzenia
+  wycieku. Ewentualną poprawkę poprzedzić osobnymi kryteriami.
