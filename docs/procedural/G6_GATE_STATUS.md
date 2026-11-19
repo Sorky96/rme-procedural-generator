@@ -1,5 +1,29 @@
 # G6 — stan bramki
 
+## D23 — zajęte piętro i pojemność Undo (2026-11-19)
+
+Kryteria `b59f590`, sondy scalone przez fast-forward do `5bbe147`.
+Na kliencie 10.98 potwierdzono ochronę domu, strefy, spawnu i waypointu
+na z + 1 przy jaskini i lochu. Preview nie zmienia mapy. Place zapisuje
+obie kondygnacje w jednym kroku, a Undo i Redo odtwarzają właściwy stan.
+Niezależna sonda `--capacity 500` zgłosiła `CAPACITY_PASS` dla 300 137
+zmian na czterech piętrach przy limicie Undo 4096 MiB.
+
+Kanoniczny build przeszedł z wyłączoną instalacją zależności.
+`SUITE_PASS` obejmuje 23/23 testy rdzenia i obie sondy na zasobach
+o niezmienionych sumach kontrolnych. Sonda Surface potwierdziła domyślną
+ścianę `mountain`. Odcisk 1729 dla 100×100 to `17159159863505677800`.
+`G5_GATE_PASS` w trybie I47 potwierdził 32/32 dla m06 i m19 oraz
+identyczne powtórzenia.
+Automatyczna kontrola wykonania odrzuciła usunięcie katalogu
+`build-ninja` z worktree wykonawcy. Katalog pozostał na dysku.
+
+Ręczna próba w edytorze polega na przygotowaniu powierzchni z domem i
+spawnem piętro niżej, wykonaniu Preview i Place oraz sprawdzeniu obu
+pięter po jednym Undo i Redo. Otwarta pozostaje ocena lądowania w grze,
+zapamiętywania zakładki Underground i pojemności 1000 oraz 2000.
+[Zakres i wyniki sond D23](G6_D23.md).
+
 ### I55 — przyjmowanie nowych rodzin (2026-11-19)
 
 Uzupełnienie kryteriów `bd89a30`, implementacja `0ecae87`. Narzędzie
