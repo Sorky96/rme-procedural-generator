@@ -1,5 +1,39 @@
 # G6 — stan bramki
 
+## D21 — odtworzenie tabel G4
+
+Kryteria `e3e6f8b`, integracja `a877308`. Niezależny przebieg
+`D21_PASS` porównał dwa uruchomienia każdego narzędzia z historycznymi
+raportami bajt w bajt. Zgadza się 15/15 wartości iteracji 3 i 10/10
+wartości wiersza 4b. Model 4a nie trafił do Git. Zachowany raport
+podaje 99,994% P1 wobec 99,997% w tabeli. Wartości historyczne
+zachowano. Trzy testy runnera przeszły. Worktree wykonawcy nie
+zawierał `build-ninja`. Zmiana dotyczy CLI.
+[Instrukcja odtworzenia](smoke/G4_ITER34_REPRODUCE.md).
+
+## D10 — obroty i odbicia fragmentów I53
+
+Kryteria `7bd6968`, pomiar bazowy `18f3126`, implementacja `fd36847`.
+I53 wykrywa teraz 8/8 symetrii wycinka każdej z M06 i M19 przy
+dotychczasowych progach. Poprzednia wersja wykrywała 1/8 na mapę.
+Kontrola negatywna ma 0/8 trafień. Dwa pomiary macierzy m06 i m19
+są identyczne i dają 0/32 trafień na profil. Zmiana obejmuje
+grunt powierzchni w oknach 16×16.
+
+Indeks `/2` wymaga przebudowy. W GUI Surface wskaż stary indeks
+i uruchom Preview, aby sprawdzić komunikat przebudowy. Następnie
+wskaż nowy indeks i uruchom Preview ponownie. Zamrożony I55 używa
+narzędzi i indeksu `/1` sprzed D10.
+Kontrolny przebieg z tym zestawem zgłosił `I55_MATRIX_REPEATABILITY_PASS`.
+Kanoniczny build i `SUITE_PASS` przeszły z 23/23 testami rdzenia,
+obiema sondami, zachowanym odciskiem 1729 i domyślną ścianą `mountain`.
+I47 dał `G5_GATE_PASS`, po 32/32 dla m06 i m19, z identycznymi
+powtórzeniami. Regresja obejmuje też stan gałęzi po integracji D21.
+Automatyczna kontrola wykonania zablokowała usunięcie `build-ninja`
+z worktree wykonawcy.
+[Wyniki pomiaru D10](smoke/g6_d10_report.md).
+[Odtworzenie I55](smoke/g6_i55_intake.md).
+
 ## D25 — przenośne wejścia pomiaru G5 (2026-11-19)
 
 Kryteria `ce474b7`, zmiana `8015f6a` i korekta testu `807e6e0`.
