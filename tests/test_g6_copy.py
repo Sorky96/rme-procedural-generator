@@ -43,6 +43,10 @@ class Decoder(unittest.TestCase):
         for bad in (valid.replace(b'modulo=4', b'modulo=1'), valid.replace(b'0000000000000002', b'0000000000000001')):
             with self.assertRaises(ValueError):
                 builder.parse_fp(bad)
+        # D10: copy_index output must declare square-symmetry fingerprints; older tools are refused.
+        self.assertEqual(builder.copy_index_fp(b'i53-fingerprint/2 d4-canonical-v1\n' + valid), (counts, hashes))
+        with self.assertRaises(ValueError):
+            builder.copy_index_fp(valid)
 
 
 if __name__ == '__main__':

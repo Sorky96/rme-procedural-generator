@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Offline class raster -> G4 fingerprint. Only the explicitly supplied local file is read.
+// Offline class raster -> I53 fingerprint (G4 windows, canonical over square symmetries). Only the explicitly supplied local file is read.
 #include "procedural/core/copy_guard.h"
 #include <fstream>
 #include <iostream>
@@ -20,7 +20,7 @@ int main(int argc, char** argv) try {
         throw std::runtime_error("truncated raster or trailing data");
     const auto fp = classFingerprint(uint32_t(w), uint32_t(h), cells);
     if (!fp) throw std::runtime_error("fingerprint failed");
-    std::cout << serializeFingerprint(*fp);
+    std::cout << "i53-fingerprint/2 " << copyFingerprintKind << '\n' << serializeFingerprint(*fp);
     return 0;
 } catch (const std::exception& error) {
     std::cerr << "copy_index: " << error.what() << '\n'; return 2;

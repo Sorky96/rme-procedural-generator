@@ -94,7 +94,8 @@ int main(int argc, char** argv) try {
         if (key == "--render-dir") { renderDir = argv[i]; continue; }
         if (key == "--copy-index") {
             auto loaded = readCopyIndex(argv[i], profile->client, profile->otbSha256, profile->datSha256);
-            if (!loaded) throw std::runtime_error("invalid/incompatible/insufficient local I53 index");
+            if (!loaded) throw std::runtime_error(copyIndexNeedsRebuild(argv[i]) ? std::string(copyIndexRebuildHint) :
+                std::string("invalid/incompatible/insufficient local I53 index"));
             copyIndex = std::move(*loaded); continue;
         }
         const auto value = number(argv[i]);
@@ -119,7 +120,8 @@ int main(int argc, char** argv) try {
         side, count, tuning.pathLength, tuning.buildingDensity, tuning.rockBlocks, g5, bands.empty() ? "measure-only" : "ranking");
     if (i51b) std::cout << "experiment\tI51b\n";
     if (copyIndex) {
-        std::cout << "similarity\ti53-index/1\tg4-natural-v1\twindow=16\tmodulo=4\tminpresent=50\tshared>=16\tcontainment>=100\n";
+        std::cout << std::format("similarity\t{}\t{}\t{}\twindow=16\tmodulo=4\tminpresent=50\tshared>=16\tcontainment>=100\n",
+            copyIndexSchema, copyProjection, copyFingerprintKind);
         std::cout << "projection\tGrass,Dirt,Rock,Shore,Water\tLake/River=Water\tabsent=Unknown,Preserve,Other,NoGround,Unmapped,Path,Floor,Bridge\titems/underground=excluded\n";
         for (size_t r = 0; r < 2; ++r) {
             const auto& ref = copyIndex->references[r];

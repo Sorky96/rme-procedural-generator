@@ -42,6 +42,10 @@ def main():
     bad_index = scratch / 'broken.i53'
     bad_index.write_text('i53-index/99\ncorrupt\n')
     run('--copy-index', str(bad_index), code=2)
+    legacy_index = scratch / 'legacy.i53'
+    legacy_index.write_text('i53-index/1 g4-natural-v1\nsynthetic\n')
+    legacy = subprocess.run([str(exe), str(profile), '100', '1729', '1729', '--copy-index', str(legacy_index)], capture_output=True)
+    assert legacy.returncode == 2 and b'i53-index/1' in legacy.stderr and b'rebuild' in legacy.stderr, legacy.stderr
     row = rows(one)[0]
     assert row['seed'] == '1729' and row['surfaceFingerprint'] == '17159159863505677800'
     assert 'mode=measure-only' in one.decode() and b'winner\t' not in one

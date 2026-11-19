@@ -11,6 +11,38 @@
 
 namespace rme::procedural {
 namespace {
+// The hash primitives match G4 similarity (kept private there); I53 combines them into a
+// window value invariant under the eight symmetries of the square.
+constexpr uint64_t base1 = 0x9E3779B97F4A7C15ull, base2 = 0xC2B2AE3D27D4EB4Full;
+constexpr uint64_t emptyCell = 0x51ED270B0B9E6A4Dull;
+constexpr uint64_t mix(uint64_t value) noexcept {
+    value += 0x9E3779B97F4A7C15ull;
+    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ull;
+    value = (value ^ (value >> 27)) * 0x94D049BB133111EBull;
+    return value ^ (value >> 31);
+}
+constexpr uint64_t nameHash(std::string_view name) noexcept {
+    uint64_t h = 0xCBF29CE484222325ull;
+    for (const char c : name) h = (h ^ static_cast<uint8_t>(c)) * 0x100000001B3ull;
+    return mix(h);
+}
+constexpr uint64_t power(uint64_t base, uint32_t exponent) noexcept {
+    uint64_t result = 1;
+    for (uint32_t i = 0; i < exponent; ++i) result *= base;
+    return result;
+}
+constexpr uint64_t geometricSum(uint64_t base, uint32_t count) noexcept {
+    uint64_t sum = 0, term = 1;
+    for (uint32_t i = 0; i < count; ++i) { sum += term; term *= base; }
+    return sum;
+}
+// Multiplicative inverse modulo 2^64 of an odd base (Newton iteration).
+constexpr uint64_t inverse(uint64_t base) noexcept {
+    uint64_t x = base;
+    for (int i = 0; i < 6; ++i) x *= 2 - base * x;
+    return x;
+}
+static_assert(base1 * inverse(base1) == 1 && base2 * inverse(base2) == 1);
 std::string checksum(std::string_view text) {
     Sha256 hash;
     hash.update(std::as_bytes(std::span(text.data(), text.size())));
@@ -39,25 +71,94 @@ std::expected<Fingerprint, SimilarityError> classFingerprint(uint32_t width, uin
     std::span<const uint8_t> classes, std::stop_token stop) try {
     if (!width || !height || width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height != classes.size())
         return std::unexpected(SimilarityError::BadFormat);
-    const FloorBounds bounds{0, 0, 0, int(width), int(height)};
-    auto map = SemanticMap::create(std::span(&bounds, 1), {classes.size()});
-    if (!map) return std::unexpected(SimilarityError::AllocationFailed);
-    std::array<uint16_t, naturalKindCount> keys{};
-    for (size_t k = 0; k < keys.size(); ++k) {
-        const auto key = map->internGroundKey(styleKindName(StyleKind(k)));
-        if (!key) return std::unexpected(SimilarityError::AllocationFailed);
-        keys[k] = *key;
-    }
+    if (stop.stop_requested()) return std::unexpected(SimilarityError::Cancelled);
+    if (std::ranges::any_of(classes, [](uint8_t c) { return c >= naturalKindCount && c != 255; }))
+        return std::unexpected(SimilarityError::BadFormat);
+    const FingerprintOptions options;
+    const uint32_t window = options.window;
+    Fingerprint result;
+    result.options = options;
+    std::array<uint64_t, 256> value;
+    value.fill(emptyCell);
+    for (size_t k = 0; k < naturalKindCount; ++k) value[k] = nameHash(styleKindName(StyleKind(k)));
+    const uint64_t uniformFactor = geometricSum(base1, window) * geometricSum(base2, window);
+    std::array<uint64_t, naturalKindCount + 1> uniform;
+    for (size_t k = 0; k < naturalKindCount; ++k) uniform[k] = mix(value[k] * uniformFactor);
+    uniform[naturalKindCount] = mix(emptyCell * uniformFactor);
+    std::ranges::sort(uniform);
+    if (width < window || height < window) return result;
+
+    // Each of the eight square symmetries maps a window's cells onto the same polynomial with
+    // one base per original axis (which axis carries base1) and an ascending or descending
+    // exponent along each axis. Kind k is the horizontal half: base1/base2, descending/ascending.
+    struct Base { uint64_t b, inv, top, full; };
+    auto makeBase = [&](uint64_t b) { return Base{b, inverse(b), power(b, window - 1), power(b, window)}; };
+    const std::array<Base, 2> bases{makeBase(base1), makeBase(base2)};
+    const uint32_t columns = width - window + 1;
+    const uint64_t minPresent = (uint64_t(window) * window * options.minPresentPercent + 99) / 100;
+    std::vector<uint64_t> ring(size_t(4) * window * columns), descending(size_t(4) * columns), ascending(size_t(4) * columns);
+    std::vector<uint64_t> rowHash(size_t(4) * columns), rowValue(width);
+    std::vector<uint32_t> present(width);
     for (uint32_t y = 0; y < height; ++y) {
         if (stop.stop_requested()) return std::unexpected(SimilarityError::Cancelled);
+        const uint8_t* row = classes.data() + size_t(y) * width;
+        for (uint32_t x = 0; x < width; ++x) rowValue[x] = value[row[x]];
+        for (size_t k = 0; k < 4; ++k) {
+            const Base& h = bases[k / 2];
+            uint64_t* out = rowHash.data() + k * columns;
+            uint64_t acc = 0;
+            if (k % 2 == 0) {
+                for (uint32_t i = 0; i < window; ++i) acc = acc * h.b + rowValue[i];
+                out[0] = acc;
+                for (uint32_t x = 1; x < columns; ++x) out[x] = acc = acc * h.b - rowValue[x - 1] * h.full + rowValue[x + window - 1];
+            } else {
+                for (uint32_t i = window; i-- > 0;) acc = acc * h.b + rowValue[i];
+                out[0] = acc;
+                for (uint32_t x = 1; x < columns; ++x) out[x] = acc = (acc - rowValue[x - 1]) * h.inv + rowValue[x + window - 1] * h.top;
+            }
+        }
+        for (size_t k = 0; k < 4; ++k) {
+            const Base& v = bases[1 - k / 2];
+            const uint64_t entering = y < window ? power(v.b, y) : v.top;
+            uint64_t* slot = ring.data() + (k * window + y % window) * columns;
+            const uint64_t* in = rowHash.data() + k * columns;
+            uint64_t* d = descending.data() + k * columns;
+            uint64_t* a = ascending.data() + k * columns;
+            for (uint32_t x = 0; x < columns; ++x) {
+                if (y < window) {
+                    d[x] = d[x] * v.b + in[x];
+                    a[x] += in[x] * entering;
+                } else {
+                    d[x] = d[x] * v.b - slot[x] * v.full + in[x];
+                    a[x] = (a[x] - slot[x]) * v.inv + in[x] * entering;
+                }
+                slot[x] = in[x];
+            }
+        }
         for (uint32_t x = 0; x < width; ++x) {
-            const auto c = classes[size_t(y) * width + x];
-            if (c == 255) continue;
-            if (c >= keys.size()) return std::unexpected(SimilarityError::BadFormat);
-            if (!map->set(int(x), int(y), 0, keys[c], 0)) return std::unexpected(SimilarityError::BadFormat);
+            present[x] += row[x] != 255;
+            if (y >= window) present[x] -= classes[size_t(y - window) * width + x] != 255;
+        }
+        if (y + 1 < window) continue;
+        uint64_t sum = 0;
+        for (uint32_t i = 0; i < window; ++i) sum += present[i];
+        for (uint32_t x = 0; x < columns; ++x) {
+            if (x > 0) { sum += present[x + window - 1]; sum -= present[x - 1]; }
+            ++result.windows;
+            if (sum < minPresent) { ++result.sparseWindows; continue; }
+            uint64_t canonical = UINT64_MAX;
+            for (size_t k = 0; k < 4; ++k)
+                canonical = std::min({canonical, descending[k * columns + x], ascending[k * columns + x]});
+            const uint64_t hash = mix(canonical);
+            if (hash % options.sampleModulo != 0) continue;
+            ++result.candidateWindows;
+            if (std::ranges::binary_search(uniform, hash)) { ++result.uniformWindows; continue; }
+            result.hashes.push_back(hash);
         }
     }
-    return computeFingerprint(*map, {}, stop);
+    std::ranges::sort(result.hashes);
+    result.hashes.erase(std::unique(result.hashes.begin(), result.hashes.end()), result.hashes.end());
+    return result;
 } catch (const std::bad_alloc&) { return std::unexpected(SimilarityError::AllocationFailed); }
 
 std::expected<CopyAssessment, SimilarityError> assessCopy(const Fingerprint& candidate,
@@ -109,7 +210,8 @@ std::expected<CopyAssessment, SimilarityError> assessCopy(const SurfaceGrid& sur
 }
 
 std::string serializeCopyIndex(const CopyIndex& index) {
-    auto text = std::format("i53-index/1 {}\n{} {} {}\n", copyProjection, index.client, index.otbSha256, index.datSha256);
+    auto text = std::format("{} {} {}\n{} {} {}\n", copyIndexSchema, copyProjection, copyFingerprintKind,
+        index.client, index.otbSha256, index.datSha256);
     for (const auto& r : index.references) {
         const auto fp = serializeFingerprint(r.fingerprint);
         text += std::format("{} {} {} {} {}\n", r.alias, r.sourceSha256, r.semanticSha256, r.keymapSha256, fp.size());
@@ -128,7 +230,8 @@ std::expected<CopyIndex, SimilarityError> parseCopyIndex(std::string_view text) 
         if (end == text.npos) return std::string{};
         std::string value(text.substr(0, end)); text.remove_prefix(end + 1); return value;
     };
-    if (line() != std::format("i53-index/1 {}", copyProjection)) return std::unexpected(SimilarityError::BadFormat);
+    if (line() != std::format("{} {} {}", copyIndexSchema, copyProjection, copyFingerprintKind))
+        return std::unexpected(SimilarityError::BadFormat);
     std::istringstream header(line());
     std::string extra;
     if (!(header >> index.client >> index.otbSha256 >> index.datSha256) || header >> extra ||
@@ -183,4 +286,11 @@ std::expected<CopyIndex, SimilarityError> readCopyIndex(const std::filesystem::p
     index->estimatedBytes = std::max(index->estimatedBytes, bytes * 16 + 65536);
     return index;
 } catch (const std::bad_alloc&) { return std::unexpected(SimilarityError::AllocationFailed); }
+bool copyIndexNeedsRebuild(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    std::string first(32, '\0');
+    file.read(first.data(), std::streamsize(first.size()));
+    first.resize(size_t(file.gcount()));
+    return first.starts_with("i53-index/1 ");
+}
 } // namespace rme::procedural

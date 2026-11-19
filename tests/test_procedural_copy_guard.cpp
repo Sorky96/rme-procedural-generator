@@ -2,6 +2,8 @@
 #include "procedural/core/copy_guard.h"
 #include "procedural/core/reference_header.h"
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 using namespace rme::procedural;
@@ -62,6 +64,62 @@ void projection() {
     std::stop_source cancelled; cancelled.request_stop();
     require(classFingerprint(64, 64, cells, cancelled.get_token()).error() == SimilarityError::Cancelled, "cancel projection");
 }
+std::vector<uint8_t> noise(uint32_t width, uint32_t height, uint64_t seed) {
+    std::vector<uint8_t> cells(size_t(width) * height);
+    for (auto& c : cells) { seed = seed * 6364136223846793005ULL + 1; c = uint8_t((seed >> 32) % 6); if (c == 5) c = 255; }
+    return cells;
+}
+// D10: the eight symmetries of the square, applied to a width x height raster.
+std::vector<uint8_t> transformed(const std::vector<uint8_t>& cells, uint32_t width, uint32_t height, int symmetry,
+    uint32_t& outWidth, uint32_t& outHeight) {
+    const bool swap = symmetry >= 4;
+    outWidth = swap ? height : width; outHeight = swap ? width : height;
+    std::vector<uint8_t> out(cells.size());
+    for (uint32_t y = 0; y < outHeight; ++y) for (uint32_t x = 0; x < outWidth; ++x) {
+        uint32_t sx = swap ? y : x, sy = swap ? x : y;
+        if (symmetry & 1) sx = width - 1 - sx;
+        if (symmetry & 2) sy = height - 1 - sy;
+        out[size_t(y) * outWidth + x] = cells[size_t(sy) * width + sx];
+    }
+    return out;
+}
+void symmetries() {
+    const uint32_t width = 48, height = 80;
+    const auto cells = noise(width, height, 4242);
+    const auto original = classFingerprint(width, height, cells);
+    require(original && original->hashes.size() >= 16, "symmetry fixture sufficient");
+    auto index = fixture(); index.references[1].fingerprint = *original; index.generic.clear();
+    for (int symmetry = 0; symmetry < 8; ++symmetry) {
+        uint32_t w = 0, h = 0;
+        const auto copy = transformed(cells, width, height, symmetry, w, h);
+        require(symmetry == 0 || copy != cells, "transform changes raster");
+        const auto fp = classFingerprint(w, h, copy);
+        require(fp && fp->hashes == original->hashes && fp->windows == original->windows &&
+            fp->sparseWindows == original->sparseWindows && fp->uniformWindows == original->uniformWindows, "symmetry-invariant fingerprint");
+        const auto result = assessCopy(*fp, index);
+        require(result && result->hardFail() && result->permille[1] == 1000, "rotated or mirrored copy detected");
+    }
+    const auto independent = classFingerprint(width, height, noise(width, height, 99));
+    const auto clear = assessCopy(*independent, index);
+    require(clear && clear->state == CopyState::Clear && clear->shared[1] < 16, "independent terrain not a copy");
+}
+void legacy() {
+    const auto good = serializeCopyIndex(fixture());
+    require(good.starts_with("i53-index/2 g4-natural-v1 d4-canonical-v1\n"), "current schema written");
+    auto old = good.substr(0, good.size() - 72);
+    old.replace(0, old.find('\n'), "i53-index/1 g4-natural-v1");
+    Sha256 sum; sum.update(std::as_bytes(std::span(old.data(), old.size())));
+    old += "sha256 " + Sha256::hex(sum.finish()) + '\n';
+    require(!parseCopyIndex(old), "orientation-sensitive index refused even with valid checksum");
+    const auto dir = std::filesystem::temp_directory_path();
+    const auto oldPath = dir / "rme-d10-legacy.i53", goodPath = dir / "rme-d10-current.i53";
+    { std::ofstream(oldPath, std::ios::binary) << old; std::ofstream(goodPath, std::ios::binary) << good; }
+    require(copyIndexNeedsRebuild(oldPath) && !copyIndexNeedsRebuild(goodPath) && !copyIndexNeedsRebuild(dir / "rme-d10-missing.i53"),
+        "rebuild hint only for the superseded format");
+    require(!readCopyIndex(oldPath, "10.98", std::string(64, 'a'), std::string(64, 'b')), "legacy file refused");
+    require(bool(readCopyIndex(goodPath, "10.98", std::string(64, 'a'), std::string(64, 'b'))), "current file accepted");
+    std::filesystem::remove(oldPath); std::filesystem::remove(goodPath);
+}
 void corrupt() {
     auto index = fixture(); const auto good = serializeCopyIndex(index);
     require(!parseCopyIndex(good + "garbage"), "trailing data");
@@ -84,5 +142,5 @@ void corrupt() {
     require(copyWorkingBytes(UINT64_MAX) == UINT64_MAX, "memory estimate saturates");
 }
 }
-int main() try { arithmetic(); projection(); corrupt(); std::cout << "COPY_GUARD_PASS\n"; }
+int main() try { arithmetic(); projection(); symmetries(); legacy(); corrupt(); std::cout << "COPY_GUARD_PASS\n"; }
 catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

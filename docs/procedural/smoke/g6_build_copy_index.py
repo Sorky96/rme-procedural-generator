@@ -1,7 +1,8 @@
 """I53: build an explicit private index from verified G4 SEMANTIC class rasters.
 
 py -I g6_build_copy_index.py COPY_INDEX_EXE G4_BUNDLE PROFILE_DIR SCRATCH_DIR
-Only G4_BUNDLE/M06 and M19 are read. Existing ground-name fingerprint.fp is never read.
+Only G4_BUNDLE/M06 and M19 are read. Window hashes are canonical over the eight
+symmetries of the square (D10); the index format is i53-index/2. Existing ground-name fingerprint.fp is never read.
 Uses Python standard library only; output, class rasters and audit stay in scratchpad.
 """
 import argparse
@@ -70,6 +71,18 @@ def profile(path, alias):
     return client, assets['otb_sha256'], assets['dat_sha256'], keys
 
 
+FINGERPRINT = 'i53-fingerprint/2 d4-canonical-v1'
+INDEX_HEADER = 'i53-index/2 g4-natural-v1 d4-canonical-v1'
+
+
+def copy_index_fp(data):
+    """copy_index output: the D10 version line, then a G4-format fingerprint."""
+    first, _, rest = data.partition(b'\n')
+    if first.rstrip(b'\r').decode('ascii', errors='replace') != FINGERPRINT:
+        raise ValueError('copy_index predates D10 square-symmetry fingerprints; rebuild it')
+    return parse_fp(rest)
+
+
 def parse_fp(data):
     lines = data.decode('ascii').splitlines()
     if lines[0] != 'g4-fingerprint/1 window=16 modulo=4 minpresent=50':
@@ -97,7 +110,7 @@ def scratch(path):
 
 def build(exe, bundle, profiles, output):
     output = scratch(output)
-    audit = {'schema': 'i53-index-audit/1', 'projection': 'g4-natural-v1',
+    audit = {'schema': 'i53-index-audit/2', 'projection': 'g4-natural-v1', 'fingerprint': FINGERPRINT,
              'mapping': 'G4 Grass,Dirt,Rock,Shore,Water present; Lake/River -> Water; all other classes absent; unknown-content mask absent',
              'sources': {}}
     entries, identity = [], None
@@ -146,7 +159,7 @@ def build(exe, bundle, profiles, output):
             result = subprocess.run([str(exe.resolve()), str(path)], capture_output=True, check=True)
             if result.stderr:
                 raise ValueError(result.stderr.decode(errors='replace'))
-            counts, windows = parse_fp(result.stdout)
+            counts, windows = copy_index_fp(result.stdout)
             hashes |= windows
             for k in total:
                 total[k] += counts[k]
@@ -166,7 +179,7 @@ def build(exe, bundle, profiles, output):
             raise ValueError('insufficient reference after generic filter')
     audit['genericUnique'] = len(generic)
     client, otb, dat, _ = identity
-    data = f'i53-index/1 g4-natural-v1\n{client} {otb} {dat}\n'.encode()
+    data = f'{INDEX_HEADER}\n{client} {otb} {dat}\n'.encode()
     for alias, source, sem, keymap, fp, _ in entries:
         data += f'{alias} {source} {sem} {keymap} {len(fp)}\n'.encode() + fp
     data += f'sha256 {digest(data)}\n'.encode()

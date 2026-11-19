@@ -1579,7 +1579,10 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
                 std::expected<CopyIndex, SimilarityError>(std::unexpected(SimilarityError::BadFormat));
             if (!index || index->estimatedBytes >= working_bytes_) {
                 ReleasePreview(); UpdateControlStates();
-                SetStatus("Local similarity index is unreadable, incompatible, insufficient or exceeds the joint budget. Entire series refused.", true);
+                const std::filesystem::path path(copy_index_text_->GetValue().ToStdWstring());
+                SetStatus(copyIndexNeedsRebuild(path) ?
+                    wxstr(std::format("Local similarity {}. Entire series refused.", copyIndexRebuildHint)) :
+                    wxString("Local similarity index is unreadable, incompatible, insufficient or exceeds the joint budget. Entire series refused."), true);
                 return;
             }
             copy_index_ = std::move(*index);
