@@ -1,57 +1,57 @@
-# G1: fingerprint bieżącego katalogu assets generacji
+# G1: fingerprint of the current asset catalog for generation
 
-Nowszy wycinek: [G1_TARGET.md](G1_TARGET.md) składa kontrolę bieżącego żywego celu offline z walidacją wyniku i opcjonalnie rzeczywistego membership. Atomowy commit, reentrancy/historia i GUI nadal pozostają otwarte. Poniższe wyniki katalogu powtórzono w nowym pełnym probe.
+Newer section: [G1_TARGET.md](G1_TARGET.md) composes the check of the current live offline target with result validation and optionally actual membership. Atomic commit, reentrancy/history, and GUI remain open. The catalog results below are reproduced in the new full probe.
 
-Wycinek 2026-11-03 uzupełnia [walidację przygotowanego wyniku](G1_VALIDATION.md). Dotyczy zmian załadowanych definicji, brushy ground i metadanych używanych przez generację, także bez zmiany epoki VersionManager. Pełne G1 pozostaje **IN PROGRESS**.
+The 2026-11-03 excerpt completes [validation of prepared result](G1_VALIDATION.md). It concerns changes to loaded definitions, ground brushes, and metadata used by generation, also without changing the VersionManager epoch. Full G1 remains **IN PROGRESS**.
 
-## Decyzja i zakres
+## Decision and scope
 
-Same liczniki setterów nie obejmują zapisów przez zachowane `mutableEditorData` ani publiczne obiekty reguł. `fingerprintGenerationAssets` w `source/procedural/adapter/generation_assets.{h,cpp}` za każdym wywołaniem odczytuje bieżące wartości. Pracuje tylko na głównym wątku, bez alokacji, yield, zmiany katalogów/RNG/cache, renderowania, dekodowania lub uploadu GL. Dane robocze mają stały rozmiar. Stop jest sprawdzany na wejściu, co najwyżej co 4096 jednostek w nieograniczonych pętlach i przed sukcesem.
+Setter counters alone do not cover writes through retained `mutableEditorData` or public rule objects. `fingerprintGenerationAssets` in `source/procedural/adapter/generation_assets.{h,cpp}` reads current values on each call. It works only on the main thread, with no allocation, yield, directory/RNG/cache changes, rendering, decoding, or GL upload. Working data has fixed size. Stop is checked on entry, at most every 4096 units in unbounded loops, and before success.
 
-Fingerprint obejmuje:
+The fingerprint includes:
 
-- epokę i ID klienta oraz wersje, kolejność/ID i maksymalny ID store;
-- widoczne przez `ItemDefinitionView` identity/group/type, pełną maskę flag, wszystkie obecne 16 `ItemAttributeKey`, teksty/JSON oraz powiązanie editor brush;
-- istniejący `GameSprite` każdego client ID: obecność/tożsamość, publiczne wymiary/patterny/frames, minimapę, light, draw height/offset i `sprite_ids`;
-- cały rejestr brushy: klucze, tożsamości, ID i typ ground; dla każdego GroundBrush także nazwę, friends/hate, look/Z, flagi borderów, optional, randomize, szanse/warianty i uporządkowane reguły/specific cases;
-- globalne i własne AutoBorder z ID/group/ground/13 tile IDs oraz globalne `GroundBrush::border_types`.
+- epoch and client ID, versions, order/ID and max ID store;
+- identity/group/type visible through `ItemDefinitionView`, full flag mask, all current 16 `ItemAttributeKey`, texts/JSON, and editor brush association;
+- existing `GameSprite` for each client ID: presence/identity, public dimensions/patterns/frames, minimap, light, draw height/offset, and `sprite_ids`;
+- the full brush registry: keys, identities, ID and ground type; for each GroundBrush also name, friends/hate, look/Z, border flags, optional, randomize, chances/variants, and ordered rules/specific cases;
+- global and own AutoBorder with ID/group/ground/13 tile IDs and global `GroundBrush::border_types`.
 
-Waga jest obserwowana przez istniejące API atrybutów z jego przeliczeniem do int64; nie hashuje się ukrytej reprezentacji float. Wewnętrzne tablice store mają spełniać kontrakt równych rozmiarów utrzymywany przez append. Nie jest to sanitizer dowolnie uszkodzonych tabel. Gdy `allIds()` zawiera duplikaty, hash obejmuje ich kolejność i wartości rozwiązywane przez aktualne `get(id)`, tak jak ścieżka generacji; nie ma dostępu do przesłoniętych wierszy przez indeks.
+Weight is observed through the existing attribute API with its calculation to int64; it does not hash the hidden float representation. Internal store arrays must satisfy the equal-size contract maintained by append. It is not a sanitizer for arbitrarily corrupted tables. When `allIds()` contains duplicates, the hash includes their order and values resolved by current `get(id)`, just like the generation path; there is no access to shadowed rows by index.
 
-## Własność i tożsamość
+## Ownership and identity
 
-Zapamiętanych surowych linków `ItemEditorData::brush` nie dereferencjonuje się. Są tokenami tożsamości. Niepusty link AutoBorder musi wskazywać własny obiekt `unique_ptr` lub obiekt w aktualnym globalnym rejestrze; potwierdzenie odbywa się przez porównanie wskaźników. Nieznany link, pusty block/case lub nieprawidłowy typ istniejącego sprite oznacza `InvalidAssets`. Własne obiekty i obiekty rejestrów są odczytywane wyłącznie przez ich prawidłowych właścicieli.
+Stored raw `ItemEditorData::brush` links are not dereferenced. They are identity tokens. A non-empty AutoBorder link must point to its own `unique_ptr` object or an object in the current global registry; confirmation is done by pointer comparison. An unknown link, empty block/case, or invalid type of an existing sprite means `InvalidAssets`. Own objects and registry objects are read only by their proper owners.
 
-Jedyna zmiana w klasie GroundBrush to wąskie zaprzyjaźnienie czytnika; nie dodano mutatorów ani publicznych widoków prywatnych danych. Nie zmieniono układu klasy, losowania, draw lub borderowania.
+The only change to the GroundBrush class is narrow reader friendship; no mutators or public views of private data were added. The class layout, randomization, draw, or bordering was not changed.
 
-Fingerprint jest konserwatywny i **lokalny dla procesu**: zawiera tokeny wskaźników i kolejność unordered registry. Nie zapisuje się go do mapy, nie służy jako trwały klucz i nie włącza do deterministycznego fingerprintu wyniku. Niepowiązana z bieżącym regionem zmiana objętej części katalogu także unieważnia preview; przywrócenie identycznych wartości i tożsamości może przywrócić zgodność. To kontrola spójności 64-bit, nie kryptograficzna ochrona przed fałszowaniem pamięci.
+The fingerprint is conservative and **local to the process**: it contains pointer tokens and the order of the unordered registry. It is not saved to the map, does not serve as a persistent key, and is not included in the deterministic fingerprint of the result. A change to a covered part of the catalog unrelated to the current region also invalidates the preview; restoring identical values and identity can restore compliance. This is 64-bit consistency control, not cryptographic protection against memory corruption.
 
-## Integracja
+## Integration
 
-DrawOperations sprawdza i zapamiętuje fingerprint przed budową sandboxa, odmawiając malformed katalogu przed użyciem raw border links. `TerrainPreview::matchesAssets` przelicza go na żądanie. `validatePreparedTerrain` po sprawdzeniu klienta/epoki, a przed kontrolami source/preview mogącymi korzystać z cached links, wymaga zgodności bieżącego katalogu. Niezgodność lub `InvalidAssets` daje `StaleAssets`, stop daje `Cancelled`.
+DrawOperations checks and remembers the fingerprint before building the sandbox, refusing a malformed catalog before using raw border links. `TerrainPreview::matchesAssets` recalculates it on demand. `validatePreparedTerrain`, after checking client/epoch and before checks of source/preview that can use cached links, requires current catalog compliance. Non-compliance or `InvalidAssets` gives `StaleAssets`, stop gives `Cancelled`.
 
-Skan nie jest częścią render hot path ani pętli każdego kafla. Nowy skalar jest objęty istniejącym `sizeof` estymatora: wspólne przygotowanie rośnie o kolejne 16 B bez nowej alokacji per tile. Powiązanie źródła i dotychczasowy konkretny fingerprint wyniku pozostają oddzielne.
+The scan is not part of the render hot path or the loop of each tile. The new scalar is covered by the existing `sizeof` estimator: common preparation grows by another 16 B with no new allocation per tile. Source association and the current concrete fingerprint of the result remain separate.
 
-## Co pozostaje poza kontrolą
+## What remains outside the scope
 
-Nie obejmuje raw pikseli, obrazów, tekstur, atlasu/GPU, runtime animacji, geometry caches ani wnętrza brushy innych niż ground. Nie hashuje doodad/collection/RAW links definicji, których ścieżka G1 terrain nie używa. Odczytuje załadowane dane; nie monitoruje zmian plików na dysku przed ich załadowaniem. Prawidłowa własność samych rejestrów/kontenerów pozostaje wymaganiem C++.
+It does not cover raw pixels, images, textures, atlas/GPU, runtime animation, geometry caches, or the interior of brushes other than ground. It does not hash doodad/collection/RAW links of definitions that the G1 terrain path does not use. It reads loaded data; it does not monitor file changes on disk before they are loaded. Proper ownership of the registries/containers themselves remains a C++ requirement.
 
-Pełne G1 nadal wymaga końcowego guard życia/właściwego edytora i trybu offline, atomowego commitu/awarii/Undo/Redo i membership pustych kafli, niezależnej historii ręcznego rysowania, GUI dialogu/renderowanego preview/Cancel/harmonogramu, budżetu Undo/RSS/innych wyników i GUI/OTBM round-trip 100×100/500×500. Ten wycinek nie zalicza tych wymagań i nie rozpoczyna G2.
+Full G1 still requires final lifetime guard/proper editor and offline mode, atomic commit/failure/Undo/Redo and empty tile membership, independent manual drawing history, GUI dialog/rendered preview/Cancel/schedule, Undo budget/RSS/other results, and GUI/OTBM round-trip 100×100/500×500. This section does not cover these requirements and does not start G2.
 
-## Claude i review
+## Claude and review
 
-Claude wykonał dwa nowe pliki przez bridge, run `14ea4969-9641-4259-add4-6a0b0e291666`: completed/exit 0, brak odmów, pusty stderr, report/stdout zgodne. Tracked diff workera pozostał identyczny z poprzednim run. Codex przejrzał pełne nowe pliki, raport i diff, w tym polling, pointer ownership i zakres każdego pola. Worker nie budował ani nie testował. Pliki skopiowano byte-for-byte; manifest `local-data/procedural-smoke/g1-assets-integration-20261103.json`. Codex wykonał integrację, testy i niezależną weryfikację.
+Claude completed two new files via bridge, run `14ea4969-9641-4259-add4-6a0b0e291666`: completed/exit 0, no refusals, empty stderr, report/stdout aligned. Tracked worker diff remained identical to the previous run. Codex reviewed the full new files, report, and diff, including polling, pointer ownership, and scope of each field. Worker did not build or test. Files were copied byte-for-byte; manifest `local-data/procedural-smoke/g1-assets-integration-20261103.json`. Codex performed integration, testing, and independent verification.
 
-Nie używano forgotten.otbm/companionów, map użytkownika, Dockera, bazy ani świata. Wspólne niezacommitowane zmiany zachowano; bez commit/push.
+forgotten.otbm/companions, user maps, Docker, database, or world were not used. Shared uncommitted changes were kept; no commit/push.
 
-## Niezależne wyniki
+## Independent results
 
-Stan 2026-11-03: **PASS_G1_GENERATION_ASSET_CATALOG_ONLY; pełne G1 IN PROGRESS.**
+Status 2026-11-03: **PASS_G1_GENERATION_ASSET_CATALOG_ONLY; full G1 IN PROGRESS.**
 
-Windows x64 build exit 0, EXE `e17b2f82…`. Pełny probe `g1-assets-rme-20261103`: PASS/exit 0/pusty stderr/normalny shutdown/assets wejściowe bez zmian, 419 aktualnych obiektów i 877 źródeł bazy G0 z dziesięcioma oczekiwanymi różnicami G1. 39 mutacji katalogu bez podbicia epoki odmówiło walidacji; po odtworzeniu wartości wynik znów przechodził. Skan miał zero alokacji. Osobne świeżo linkowane testy border-order i snapshotu również PASS, w tym 24 faultów snapshotu. Powtórzono cały probe 100×100/500×500, 79 faultów sandboxa, 106 przygotowania, maski, walidację oraz selection/Lua/UndoRedo.
+Windows x64 build exit 0, EXE `e17b2f82…`. Full probe `g1-assets-rme-20261103`: PASS/exit 0/empty stderr/normal shutdown/input assets unchanged, 419 current objects and 877 G0 database sources with ten expected G1 differences. 39 catalog mutations without epoch bump refused validation; after restoring values, the result passed again. Scan had zero allocations. Separate freshly linked border-order and snapshot tests also PASS, including 24 snapshot faults. Full probe repeated 100×100/500×500, 79 sandbox faults, 106 preparation, mask, validation, and selection/Lua/UndoRedo.
 
-Pełne hashe EXE: normalny `e17b2f82ce8671737a5b38398d1783f0387574bb9a7aedd2fd40185eef98bd08`, probe `4a61cc1af577f18d93010751039ed1fb6d151923d2dcfd80881977dc7c7ae4f0`. Log kanoniczny: `local-data/procedural-smoke/g1-assets-canonical-20261103.log` (33 kroki). Dowody w `g1-assets-rme-20261103/verification.json`, `current-verification.json`, logu probe i build-manifest. Aktualne focused runs: `g1-assets-border-order-rme-20261103` i `g1-assets-snapshot-rme-20261103`, oba exit 0/pusty stderr; verifier sprawdza ich źródła, obiekty i EXE względem aktualnego builda. Starsze dowody zachowano historycznie.
+Full EXE hashes: normal `e17b2f82ce8671737a5b38398d1783f0387574bb9a7aedd2fd40185eef98bd08`, probe `4a61cc1af577f18d93010751039ed1fb6d151923d2dcfd80881977dc7c7ae4f0`. Canonical log: `local-data/procedural-smoke/g1-assets-canonical-20261103.log` (33 steps). Evidence in `g1-assets-rme-20261103/verification.json`, `current-verification.json`, probe log, and build manifest. Current focused runs: `g1-assets-border-order-rme-20261103` and `g1-assets-snapshot-rme-20261103`, both exit 0/empty stderr; verifier checks their sources, objects, and EXE against the current build. Older evidence kept for history.
 
-Przypadki obejmują wszystkie kategorie wymienione w TEST_PLAN, w tym rzeczywiste wiszące nieowning links w kontrolowanych prywatnych fixture. Skan ma zero obserwowanych new/new[] i jedną próbkę czasu 13.4346 ms na tym załadowanym katalogu. To nie benchmark porównawczy, gwarancja czasu, RSS ani koszt każdego katalogu. Szukanie globalnego ownera linków jest liniowe, koszt może rosnąć z liczbą reguł i borderów. Publiczne rejestry/unique_ptr owners muszą pozostać prawidłowe; nie sprawdzono dowolnej korupcji pamięci, równoległych mutacji, trwałego OOM ani mid-call stop.
+Cases include all categories mentioned in TEST_PLAN, including actual dangling non-owning links in controlled private fixtures. Scan has zero observed new/new[] and one sample time of 13.4346 ms on this loaded catalog. This is not a comparative benchmark, time guarantee, RSS, or cost per catalog. Finding the global owner of links is linear; cost may grow with the number of rules and borders. Public registries/unique_ptr owners must remain valid; arbitrary memory corruption, concurrent mutations, sustained OOM, or mid-call stop were not checked.
 
-Dotychczasowe fingerprinty 100×100/500×500 pozostały identyczne; estymaty i peak new potwierdzono ponownie w raporcie. Podczas startupu prywatnej instancji informacyjny dialog Warnings dotyczący referencyjnych assets obsłużono przez computer-use, bez restartu lub edycji assets. To nie unattended test ani wizualna akceptacja renderowanego preview generatora. Po pełnym przebiegu normalny exit 0 i brak pozostawionych prywatnych okien. git diff --check PASS.
+Previous 100×100/500×500 fingerprints remained identical; estimates and peak new were confirmed again in the report. During startup of a private instance, the informational Warnings dialog about referenced assets was handled via computer-use, without restart or asset editing. This is not an unattended test or visual acceptance of the generator's rendered preview. After full run, normal exit 0 and no dangling private windows. git diff --check PASS.

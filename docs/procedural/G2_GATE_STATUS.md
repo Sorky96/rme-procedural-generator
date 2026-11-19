@@ -1,108 +1,109 @@
-# G2 — stan bramki „Sensowna powierzchnia i border”, 2026-11-07
+# G2 — “sensible surface and borders” gate status, 2026-11-07
 
-**ZAMKNIĘTA decyzją użytkownika 2026-11-07 (PASS z długiem, nie PASS bez zastrzeżeń).** Gate: „teren czytelny w RME i brak znanych krytycznych błędów borderów”. Dowody: testy rdzenia i próbniki na rzeczywistym kliencie 1098-BlackTek (`pairs_without_border=0`, regresje G1 bez zmian), oceny GUI użytkownika (roślinność, Undo/Redo, 500×500, dialog, generowanie obok terenu, seed 7 po poprawkach) oraz zrzuty seedów 4242, 7 i 1 (4242 i 7 sprzed ostatnich poprawek, 1 po nich). Zaakceptowane zastrzeżenia zapisano jako dług: rzeki wciąż głównie po osiach i brak ostatniego przeglądu seeda 4242 (D6, D7), szew obok istniejącego terenu (D5), a także: tylko klient 1098-BlackTek, brak pomiarów wydajności, brak oceny przechodniości z drzewami i kamieniami. Poniższe sekcje są zapisem kolejnych kroków i dowodów w kolejności chronologicznej; część wcześniejszych zdań o statusie „PARTIAL” w tabeli i sekcjach jest historyczna.
+**CLOSED by user decision on 2026-11-07 (PASS with debt, not an unqualified PASS).** Gate: “terrain readable in RME and no known critical border errors”. Evidence: core tests and probes on the real 1098-BlackTek client (pairs_without_border=0, G1 regressions unchanged), user GUI reviews (vegetation, Undo/Redo, 500×500, dialog, generation next to terrain, seed 7 after fixes), and screenshots of seeds 4242, 7 and 1 (4242 and 7 before the final fixes, 1 after them). Accepted qualifications were recorded as debt: rivers still mostly follow axes and seed 4242 has no final review (D6, D7), a seam next to existing terrain (D5), and only client 1098-BlackTek, no performance measurements and no walkability review with trees and stones. The sections below record successive steps and evidence in chronological order. Earlier “PARTIAL” statuses in tables and sections are historical.
 
-**Aktualizacja 2026-11-07 (po zamknięciu G2):** D7 zamknięty decyzją użytkownika; zrzuty seedów 4242, 7 i 1 uznał za OK (ocena użytkownika, nie test). Przeliczenie szacunku pamięci Surface i test płynności szerokości rzeki nie zostały wykonane. D5 i D6 pozostają jako dług ([TECH_DEBT.md](TECH_DEBT.md)).
+**Update 2026-11-07 (after closing G2):** D7 was closed by user decision. The user considered screenshots of seeds 4242, 7 and 1 OK (user review, not a test). Surface memory-estimate recalculation and the river-width smoothness test were not performed. D5 and D6 remain as debt ([TECH_DEBT.md](TECH_DEBT.md)).
 
-## Kryteria z planu G2 i dowody
+## G2 plan criteria and evidence
 
-| Kryterium | Dowód | Status |
+| Criterion | Evidence | Status |
 | --- | --- | --- |
-| Naturalne rzeki | `test_procedural_surface`: każda rzeka kończy się w jeziorze albo na krawędzi obszaru, ma minimum długości, a każdy jej kafel leży w oknie 2×2 złożonym z rzeki lub jeziora (test dodany 2026-11-07, patrz niżej). Ocena wyglądu: użytkownik, po poszerzeniu rzek („Wygląda lepiej”). | PASS rdzeń; wygląd ocena jednego widoku |
-| Jeziora, skały | Te same testy: minimum rozmiaru jeziora i płatu skały, górne limity udziału, 24 seedy 100×100, 6 seedów 250×250, 3 seedy 500×500, każda cecha pojawia się w każdym zbiorze seedów. | PASS rdzeń |
-| Brzegi | Brzeg ma co najwyżej `shoreWidth` kroków od jeziora (test dodany), ląd styka się z jeziorem tylko przez brzeg. Domyślnie 2 kafle po teście GUI. | PASS rdzeń; wygląd: ocena użytkownika, 500×500 |
-| Przejścia biomów | Gładkie przejście trawa/ziemia ze skalą szumu 10 i usuwaniem płatów < 24 komórek (test `transitionBand`: 88 krawędzi twardych vs 246 miękkich). Udział ziemi w otwartym lądzie: 0,24–0,39 (100×100), 0,28–0,32 (250×250), 0,29–0,31 (500×500). | PASS rdzeń; wygląd: ocena użytkownika |
-| Mapowanie semantyczne tylko istniejącym autoborderem | Resolver `--surface`: `pairs_without_border=0` we wszystkich 6 przebiegach (seedy 1–4 przy 100×100, 1729 przy 250×250 i 500×500). Nie dodano własnej logiki borderów. | PASS (klient 1098) |
-| Roślinność i detale zależne od terenu | [G2_VEGETATION.md](G2_VEGETATION.md); test rdzenia: brak dekoracji na wodzie, brzegu i skale, brak drzew przy wodzie; E2E z Undo/Redo. Ocena użytkownika w GUI: „Drzewa wyglądają dobrze”. | PASS testy; wygląd ocena |
-| Testy rozkładów | Powyżej plus dekoracje: udział drzew w lądzie ≈ 3,1% (24 seedy 100×100) i 3,2% (6 seedów 250×250). | PASS |
-| Brak nieobsługiwanych itemów | Resolver i podgląd sprawdzają każdy item (definicja, clientId, nie meta; dekoracje także nie grunt ani border); E2E: dla każdej komórki położone itemy zgodne z planem. | PASS (klient 1098) |
-| Testy wizualne na kilku seedach | **Nie wykonano.** Są tylko pojedyncze widoki użytkownika; brak zrzutów z kilku seedów w repozytorium. | OTWARTE |
-| Brak znanych krytycznych błędów borderów | `pairs_without_border=0`; D5 (bordery poza obszarem przy cudzym sąsiedzie) rozwiązany dla Surface przez pozostawienie pustych komórek przy istniejącym gruncie, test `SURFACE_NEXT_TO_TERRAIN_PASS`. | PASS testy (klient 1098); wygląd szwu nieoceniony |
+| Natural rivers | test_procedural_surface: every river ends in a lake or at the area edge, has a minimum length, and every river tile lies in a 2×2 window made of river or lake (test added 2026-11-07, see below). Appearance review: user, after rivers were widened (“Looks better”). | PASS core; appearance assessed from one view |
+| Lakes, rocks | Same tests: minimum lake and rock-patch size, upper share limits, 24 seeds 100×100, 6 seeds 250×250, 3 seeds 500×500, every feature appears in every seed set. | PASS core |
+| Shores | Shore is at most shoreWidth steps from the lake (test added), and land touches a lake only through shore. Default is two tiles after GUI test. | PASS core; appearance: user review, 500×500 |
+| Biome transitions | Smooth grass/dirt transition with noise scale 10 and removal of patches below 24 cells (transitionBand test: 88 hard versus 246 soft edges). Dirt share in open land: 0.24–0.39 (100×100), 0.28–0.32 (250×250), 0.29–0.31 (500×500). | PASS core; appearance: user review |
+| Semantic mapping with the existing autoborder only | --surface resolver: pairs_without_border=0 in all six runs (seeds 1–4 at 100×100, 1729 at 250×250 and 500×500). No custom border logic was added. | PASS (1098 client) |
+| Vegetation and terrain-dependent details | [G2_VEGETATION.md](G2_VEGETATION.md); core test: no decoration on water, shore or rock, no trees near water; E2E with Undo/Redo. User GUI review: “Trees look good”. | PASS tests; appearance assessed |
+| Distribution tests | Above plus decoration: tree share on land ≈3.1% (24 seeds 100×100) and 3.2% (6 seeds 250×250). | PASS |
+| No unsupported items | Resolver and preview check every item (definition, clientId, not meta; decorations also not ground or border); E2E: placed items match the plan for every cell. | PASS (1098 client) |
+| Visual tests on several seeds | **Not performed.** Only individual user views exist; no screenshots from several seeds are in the repository. | OPEN |
+| No known critical border errors | pairs_without_border=0. D5 (borders outside the area next to an external neighbor) was solved for Surface by leaving cells next to existing ground empty, with test SURFACE_NEXT_TO_TERRAIN_PASS. | PASS tests (1098 client); seam appearance not assessed |
 
-## Co zmieniono w tym kroku
+## Changes in this step
 
-- Nowe kontrole w teście rdzenia: szerokość rzeki i górna granica szerokości brzegu, oraz przegląd 500×500 (3 seedy).
-- Kontrola szerokości rzeki znalazła jednokaflowy ogonek na źródle rzeki (seed 1, 100×100, komórka 51,50): rozszerzenie dodawało tylko sąsiada wschodniego i południowego, więc ostatnia komórka trasy nie miała pełnego bloku 2×2. Teraz każda komórka trasy dodaje też południowo-wschodnią (lakes bez zmian). Skutek uboczny: rzeki są lekko grubsze na przekątnych. Przypięty odcisk Seed 1729 100×100 zmieniono z 4385766052247269449 na 13556304753518616142. Wersja algorytmu pozostaje 2 (niewydana).
+- Added core-test checks for river width and the upper shore-width bound, plus a 500×500 review (three seeds).
+- The river-width check found a one-tile tail at the river source (seed 1, 100×100, cell 51,50). Expansion added only the eastern and southern neighbors, so the final route cell lacked a full 2×2 block. Each route cell now also adds the south-eastern neighbor (lakes unchanged). Side effect: rivers are slightly thicker on diagonals. The pinned Seed 1729 100×100 fingerprint changed from 4385766052247269449 to 13556304753518616142. Algorithm version remains 2 (unreleased).
 
-## Zmiany po teście GUI na kilku seedach (2026-11-07)
+## Changes after GUI review on several seeds (2026-11-07)
 
-Użytkownik: wygląd ok; rzeki powinny się pogrubiać po zlaniu i zwężać ku źródłu, nie wypływać „z pustych miejsc”, a brushe mają być wybierane z list, nie wpisywane.
+User feedback: appearance was OK. Rivers should thicken after merges and narrow toward their source, must not flow from “empty places”, and brushes should be selected from lists rather than typed.
 
-- **Źródła rzek:** tylko komórki skały. Trasa startuje od pierwszej komórki nieskalnej w dół od skały, więc rzeka wychodzi z krawędzi skały; bez skały nie ma rzek. Test: każda rzeka styka się ze skałą.
-- **Szerokość rzeki (druga wersja, po zrzucie użytkownika: „rzeki nadal nie poprawione”):** pierwsza wersja pogrubiała rzekę tylko po zlewie dopływów, więc pojedyncza rzeka miała równe 2 kafle. Teraz rozmiar kafla to liczba komórek przebytych od najdalszego źródła plus 15 za każdą wpadającą trasę: poniżej 20 → 2 kafle, poniżej 45 → 3, od 45 → 4. Źródło przy skale jest najcieńsze, rzeka rośnie stopniowo ku ujściu, a zlew dodaje skokowo. Dopływy tylko wpadają, rzeka nie rozwidla się w dół. Kafle rzeki w pełnym bloku 3×3: 1232 z 4971 (24 seedy 100×100), 453 z 1869 (6 seedów 250×250), 183 z 735 (3 seedy 500×500). Skała i jeziora nie są nadpisywane, więc tuż przy skale blok może być przycięty (test to dopuszcza). Szacunek pamięci roboczej (40 B/komórkę) nie był przeliczany po dodaniu dwóch wektorów uint16 na komórkę.
-- **Odcisk** Seed 1729 100×100: 1951698793224813922 (poprzednio 13556304753518616142). Rzeki są teraz w 24 z 24 seedów 100×100 (poprzednio 23).
-- **Dialog:** pola brushy to listy rozwijane tylko do wyboru (brushe gruntu dla trawy/ziemi/wody/skały/brzegu, doodady dla drzew/krzaków/kamieni), z domyślnym wyborem `grass`, `dirt`, `clear water`, `rocky ground`, `sand`, `trees`, `bushes`, `small rocks`, jeśli istnieją w załadowanym kliencie. Lista nie sprawdza, czy brush jest sensowny dla roli (np. woda jako trawa); to nadal waliduje resolver.
-- Próbniki po zmianie: `g2d3-surface-160136`, `g2d3-commit-160136` (`--surface` zapisuje `passed: false` tylko przez D1; kod wyjścia 0, stderr pusty), wiersze commitu G1 bez zmian, `pairs_without_border=0`, `halo_tiles_modified` 101 (100×100 seed 1) i 55 (250×250), pozostałe 0 (D5).
-- **Wolne otwieranie dialogu (potwierdzone przez użytkownika jako dialog):** dane zawierają 15741 brushy doodad i 4756 gruntu (liczone z XML w `brushes/` i `data/`), a osiem list było wypełnianych przy każdym otwarciu, łącznie ok. 70 tysięcy pozycji. Listy to teraz `wxComboBox` tylko do wyboru: do rozwinięcia zawierają jedną pozycję (domyślną albo pierwszą), pełna lista ładuje się przy pierwszym rozwinięciu. Lista doodadów jest ograniczona do brushy z pojedynczymi itemami wariantu 0, bo tylko takie resolver akceptuje. Czasu otwarcia nie mierzono przed ani po zmianie; zmiana jest oparta na liczbie pozycji, nie na pomiarze, a lazy ładowanie w zdarzeniu rozwinięcia nie było sprawdzone w natywnym RME (możliwe migotanie lub opóźnienie przy pierwszym rozwinięciu listy 15 tysięcy pozycji).
-- **Test GUI użytkownika po lazy ładowaniu:** „Jest ok” (dialog otwiera się bez problemu, listy działają); bez pomiaru czasu i bez osobnej oceny rzek na seedach 1, 7, 4242.
-- **Niezweryfikowane:** wygląd nowych rzek i działanie list w natywnym RME; dialog z klientem, który nie ma domyślnych nazw (pierwsza pozycja listy); wydajność dialogu przy dużej liczbie brushy.
+- **River sources:** rock cells only. The route starts at the first non-rock cell below rock, so a river exits the rock edge. Without rock there are no rivers. Test: every river touches rock.
+- **River width (second version, after user screenshot: “rivers still not fixed”):** the first version thickened a river only after tributary merges, so a single river had exactly two tiles. Tile size is now the number of cells traveled from the farthest source plus 15 for each incoming route: below 20 → 2 tiles, below 45 → 3, from 45 → 4. The source at rock is thinnest, the river grows gradually toward its mouth and a merge adds a step. Tributaries only flow in, the river does not split downstream. River tiles in a full 3×3 block: 1232 of 4971 (24 seeds 100×100), 453 of 1869 (6 seeds 250×250), 183 of 735 (3 seeds 500×500). Rock and lakes are not overwritten, so a block can be clipped next to rock (the test allows this). Working-memory estimate (40 B/cell) was not recalculated after adding two uint16 vectors per cell.
+- **Fingerprint:** Seed 1729 100×100: 1951698793224813922 (previously 13556304753518616142). Rivers now occur in 24 of 24 100×100 seeds (previously 23).
+- **Dialog:** brush fields are dropdown lists for selection only (ground brushes for grass/dirt/water/rock/shore, doodads for trees/bushes/stones), with default choices grass, dirt, clear water, rocky ground, sand, trees, bushes and small rocks when present in the loaded client. The list does not check whether a brush makes sense for its role (for example, water as grass); the resolver still validates this.
+- Probes after the change: g2d3-surface-160136 and g2d3-commit-160136 (--surface records passed: false only because of D1; exit code 0, empty stderr), G1 commit rows unchanged, pairs_without_border=0, halo_tiles_modified 101 (100×100 seed 1) and 55 (250×250), 0 in the other runs (D5).
+- **Slow dialog opening (confirmed by the user as a dialog issue):** data contains 15 741 doodad brushes and 4 756 ground brushes (counted from XML in brushes/ and data/), and eight lists were filled on every opening, about 70 000 entries in total. Lists are now wxComboBox controls for selection only: before expansion they contain one item (the default or first), and the full list loads on first expansion. The doodad list is limited to brushes with single variant-0 items because only those are accepted by the resolver. Opening time was not measured before or after. The change is based on item counts, not measurement, and lazy loading on expansion was not checked in native RME (there may be flicker or a delay when first expanding a 15 000-entry list).
+- **User GUI test after lazy loading:** “It is OK” (dialog opens without problems and lists work), with no timing measurement and no separate river review for seeds 1, 7 and 4242.
+- **Not verified:** appearance of new rivers and list behavior in native RME; a dialog with a client lacking the default names (first list item); dialog performance with many brushes.
 
-## D5: generowanie obok istniejącego terenu (2026-11-07)
+## D5: generation next to existing terrain (2026-11-07)
 
-- **Przyczyna:** po położeniu gruntu `GroundBorderCalculator` liczy bordery także dla kafli sąsiednich (halo, a przy dziurach w selekcji i chronionych kaflach także w obszarze). Gdy brzeg obszaru ma brush o wyższym priorytecie niż istniejący sąsiad, border ląduje na kaflu sąsiada, a potok G1 odrzuca każdą zmianę poza zapisywalnym obszarem (celowo, bez przycinania).
-- **Odtworzenie (przed poprawką):** nowy test `nextToTerrain` w `--surface` (obszar 100×100 seed 1 otoczony trawą) zakończył się odmową przygotowania, a po pierwszej połowie poprawki odmową `InvalidPlan` (preview wymaga ścisłej równości „item istnieje ⇔ komórka zapisywalna”).
-- **Rozwiązanie (tylko Surface):** `surfaceKeepClear(snapshot)` wskazuje komórki zapisywalne, które mają w 8-sąsiedztwie komórkę niezapisywalną (poza obszarem, poza maską lub chronioną) z gruntem. Te komórki zostają puste (`Preserve` w generatorze i resolverze, bez itemu), więc kafle z borderami są ≥2 kroki od cudzego terenu. Preview dopuszcza pustą zapisywalną komórkę tylko wtedy, gdy ta sama funkcja ją wskazuje (ścisła równość zachowana). Classic i test G1 `OutOfMask` bez zmian. Przy pustej mapie i pustym otoczeniu wynik jest identyczny jak wcześniej (próbniki, odciski).
-- **Wynik testu** (`d5d-surface-162711`): `SURFACE_NEXT_TO_TERRAIN_PASS` dla 100×100 seed 1 (szew 396 komórek, 9604 położone), 100×100 seed 1 z istniejącym kaflem w środku (404 / 9595) i 250×250 seed 1729 (996 / 61504): przygotowanie i walidacja przechodzą, komórki obok istniejącego gruntu są puste, wszystkie pozostałe położone, istniejący teren bez zmian po commicie, Undo i Redo. Regresje: `--preview`, `--commit` PASS (`d5e-*-162844`), wiersze commitu G1 bez zmian, test rdzenia PASS.
-- **Koszt:** 1-kaflowy pusty szew przy istniejącym terenie (trzeba go wypełnić ręcznie), brak płynnego przejścia na stronie sąsiada. Szacunek pamięci przygotowania Surface wzrósł o 2 bajty na komórkę plus narzut (`bytes` w `SURFACE_E2E_PASS` 100×100: 13385154 → 13405218).
-- **Test GUI użytkownika (2026-11-07):** generowanie obok istniejącego terenu, „Wygląda dobrze” (ocena wizualna; Undo/Redo na GUI nie raportowane osobno).
-- **Niezweryfikowane:** połączenie z roślinnością obok terenu (nie testowane); inne typy sąsiadów niż trawa (ring w teście to `grass`); kafle z samymi itemami bez gruntu (nie liczą się jako sąsiad); klienty inne niż 1098-BlackTek.
+- **Cause:** after ground is placed, GroundBorderCalculator also calculates borders for neighboring tiles (the halo, and with selection holes and protected tiles, inside the area too). If the area edge has a higher-priority brush than the existing neighbor, the border lands on the neighbor tile and the G1 pipeline intentionally rejects every change outside the writable area, without clipping.
+- **Reproduction (before the fix):** the new nextToTerrain test in --surface (100×100 seed 1 surrounded by grass) refused preparation, and after the first half of the fix it refused InvalidPlan (preview requires strict equality: “item exists ⇔ cell is writable”).
+- **Solution (Surface only):** surfaceKeepClear(snapshot) identifies writable cells with a ground-bearing, non-writable cell in their 8-neighborhood (outside the area, outside the mask or protected). Those cells remain empty (Preserve in generator and resolver, without an item), so border tiles are at least two steps from external terrain. Preview allows an empty writable cell only when the same function identifies it (strict equality preserved). Classic and the G1 OutOfMask test are unchanged. With an empty map and empty surroundings, output is identical to before (probes, fingerprints).
+- **Test result** (d5d-surface-162711): SURFACE_NEXT_TO_TERRAIN_PASS for 100×100 seed 1 (396 seam cells, 9604 placed), 100×100 seed 1 with an existing center tile (404 / 9595) and 250×250 seed 1729 (996 / 61504). Preparation and validation pass, cells next to existing ground are empty, all remaining cells are placed, existing terrain is unchanged after commit, Undo and Redo. Regressions: --preview and --commit PASS (d5e-*-162844), G1 commit rows unchanged, core test PASS.
+- **Cost:** a one-tile empty seam next to existing terrain (must be filled manually), with no smooth transition at the neighbor side. Surface preparation memory estimate increased by 2 bytes per cell plus overhead (bytes in SURFACE_E2E_PASS 100×100: 13385154 → 13405218).
+- **User GUI test (2026-11-07):** generation next to existing terrain, “Looks good” (visual review; GUI Undo/Redo not reported separately).
+- **Not verified:** interaction with vegetation next to terrain (not tested); neighbor types other than grass (test ring is grass); tiles containing only items without ground (not counted as a neighbor); clients other than 1098-BlackTek.
 
-## Nieregularny brzeg (2026-11-07, uwaga zewnętrznego recenzenta)
+## Irregular shore (2026-11-07, external reviewer note)
 
-Uwaga: koncepcja dobra, piasek nieregularny, miejscami trawa powinna się wcinać; wygląda „jak losowe”. Interpretacja: pas piasku wokół jeziora miał stałą szerokość (obrys jeziora), a naturalna plaża powinna się zwężać i poszerzać.
+Note: concept good, irregular sand, grass should intrude in places; it looks “random”. Interpretation: sand around a lake had constant width (lake outline), while a natural beach should narrow and widen.
 
-- **Zmiana:** `shoreWidth` domyślnie 3 (poprzednio 2). Pierwszy pierścień przy jeziorze zawsze jest piaskiem; każdy dalszy pierścień powstaje tylko tam, gdzie gładki szum (siatka co 6 komórek, osobny strumień `shore_s2`) przekracza próg rosnący z pierścieniem (35%, 65%, 95% zakresu). Efekt: plaża szeroka w jednych miejscach, a gdzie indziej trawa wcina się do pierwszego pierścienia.
-- **Rozkład** (liczba kafli piasku 1/2/3 kroki od wody): 4253/3290/1273 (24 seedy 100×100), 6126/4763/1863 (6 seedów 250×250), 12984/10185/4085 (3 seedy 500×500). Test wymaga, żeby pierścienie 2 i 3 istniały i były rzadsze niż poprzednie.
-- Odcisk Seed 1729 100×100: 7666204984290374682. Test rdzenia, `--surface` (z `SURFACE_NEXT_TO_TERRAIN_PASS`) i `--commit` PASS (`g2f-surface-171132`, `g2f-commit-171132`), `pairs_without_border=0`, wiersze commitu G1 bez zmian.
-- **Niezweryfikowane:** wygląd w RME i czy to odpowiada intencji uwagi („kępy trawy w piasku” mogły oznaczać też izolowane kępy trawy wewnątrz piasku, czego ta zmiana nie robi: trawa wcina się tylko od zewnątrz); wpływ na roślinność (drzewa trzymają 2 kroki od brzegu, więc teren z szerszym piaskiem ma mniej drzew przy wodzie).
+- **Change:** shoreWidth defaults to 3 (previously 2). The first ring at a lake is always sand. Each later ring appears only where smooth noise (grid every 6 cells, separate shore_s2 stream) exceeds a threshold that grows with the ring (35%, 65%, 95% of the range). Result: the beach is wide in some places and grass intrudes to the first ring elsewhere.
+- **Distribution** (sand tile count 1/2/3 steps from water): 4253/3290/1273 (24 seeds 100×100), 6126/4763/1863 (6 seeds 250×250), 12984/10185/4085 (3 seeds 500×500). The test requires rings 2 and 3 to exist and be rarer than the previous rings.
+- Seed 1729 100×100 fingerprint: 7666204984290374682. Core test, --surface (with SURFACE_NEXT_TO_TERRAIN_PASS) and --commit PASS (g2f-surface-171132, g2f-commit-171132), pairs_without_border=0, G1 commit rows unchanged.
+- **Not verified:** appearance in RME and whether it matches the review intent (“grass clumps in sand” could also mean isolated grass clumps inside sand, which this change does not make: grass intrudes only from outside); effect on vegetation (trees stay two steps from shore, so wider sand means fewer trees near water).
 
-## Przegląd wizualny kilku seedów (2026-11-07, zrzuty użytkownika)
+## Visual review of several seeds (2026-11-07, user screenshots)
 
-Zrzuty 250×250, „Natural surface”, roślinność włączona, zoom ok. 44–46%, kolejność 4242, 7, 1: [seed 4242](screenshots/g2-surface-seed-4242-20261107.webp), [seed 7](screenshots/g2-surface-seed-7-20261107.webp), [seed 1](screenshots/g2-surface-seed-1-20261107.webp). Użytkownik przesłał zrzuty bez oceny; poniżej obserwacje asystenta z samych zrzutów (nie ocena użytkownika, kryterium wizualne **nie jest zaliczone**).
+Screenshots 250×250, Natural surface, vegetation enabled, zoom about 44–46%, order 4242, 7, 1: [seed 4242](screenshots/g2-surface-seed-4242-20261107.webp), [seed 7](screenshots/g2-surface-seed-7-20261107.webp), [seed 1](screenshots/g2-surface-seed-1-20261107.webp). The user sent screenshots without a review. The observations below are from the screenshots alone and are not a user assessment. The visual criterion is **not passed**.
 
-Widać dobrze: nieregularny, miejscami wcinający się piasek; drzewa trzymają się z dala od wody; źródła rzek przy skale (4242, 1); gładkie przejścia trawa/ziemia i bordery skały bez widocznych szczelin.
+Good: irregular sand that intrudes in places; trees stay away from water; river sources at rock (4242, 1); smooth grass/dirt transitions and rock borders without visible gaps.
 
-Widać do poprawy:
-- **Seed 7:** mały kwadrat piasku (ok. 2×2 kafle) pośrodku dużego jeziora (wyspa z jednej komórki lądu otoczonej jeziorem dostaje pierścień brzegu); małe stawy (seed 7 i 1, lewa strona) mają pierścień piasku większy niż sama woda.
-- **Seed 1:** rzeka skręca pod kątem prostym i okrąża zieloną wyspę przy skale; szerokość zmienia się skokowo blokami (2 → 3 → 4), co wygląda prostokątnie, a nie jak koryto.
-- Rzeka na seedzie 1 wychodzi poza prawą krawędź widoku (widok nie obejmuje całego obszaru, więc jej początku nie oceniono).
+Needs improvement:
 
-## Poprawki po zrzutach seedów 4242, 7, 1 (2026-11-07)
+- **Seed 7:** a small sand square (about 2×2 tiles) in the middle of a large lake (a one-cell land island surrounded by lake gets a shore ring); small ponds (seed 7 and 1, left side) have a sand ring larger than the water itself.
+- **Seed 1:** a river turns at a right angle and circles a green island by rock; width changes in block steps (2 → 3 → 4), looking rectangular rather than like a channel.
+- The river on seed 1 leaves the right edge of the view (the view does not include the whole area, so its start was not assessed).
 
-- **Wyspy w jeziorach:** płat lądu w pełni otoczony jeziorem (nie dotyka krawędzi obszaru) i mniejszy niż 24 komórki zmienia się w jezioro (`islandCells`). Test: każdy płat lądu w jeziorze ma ≥24 komórek albo dotyka krawędzi.
-- **Pierścienie brzegu zależne od jeziora:** pierścień r ≥ 1 wymaga jeziora o co najmniej 30·3^(r−1) komórek (30, 90, 270), więc małe stawy mają wąską plażę (rozmiar jeziora jest propagowany po pierścieniach, nasycony na 65535).
-- **Rzeki gładsze:** trasa jest wygładzana średnią ruchomą (do 4 komórek na stronę, arytmetyka stałoprzecinkowa 1/16 komórki, bez wygładzania na końcach i w komórkach zlewu, więc dopływ styka się z rzeką), a wokół każdego punktu rysowany jest kwadrat o półboku 1–2 komórki rosnący płynnie z rozmiarem rzeki (przebyte komórki plus 15 za każdą wpadającą trasę, pełny zakres po 60). Skutek: skręty nie są kątami prostymi, szerokość rośnie stopniowo. Rzeka może przeciąć skałę (inaczej przecięłaby się na dwie części); ukośne odcinki są poziomo szersze niż proste (kwadratowy stempel).
-- **Błędy na drodze:** pierwsza wersja zerwała połączenie dopływu z rzeką (test „River ends inside the land”), naprawione przypięciem komórek zlewu i pozwoleniem na przecięcie skały.
-- Odcisk Seed 1729 100×100: 6783381837833077004. Test rdzenia PASS (206 punktów alokacji z wstrzykniętą awarią, wszystkie zgłoszone; 24+6+3 seedy); `--surface` (z `SURFACE_NEXT_TO_TERRAIN_PASS`) i `--commit` PASS (`g2g-surface-182831`, `g2g-commit-182831`), `pairs_without_border=0`, wiersze commitu G1 bez zmian. Dodatkowo obejrzany zrzut ASCII jednego seeda: rzeki ukośne bez kątów prostych (tymczasowy kod, usunięty).
-- **Niezweryfikowane:** wygląd w RME po tej zmianie (zrzuty powyżej są sprzed niej); `rme.exe` nie został przebudowany w tym kroku, bo działający RME blokował plik; szacunek pamięci roboczej (40 B/komórkę) nie był przeliczany po dodaniu wektorów (rozmiary jezior, trasy, zlewy); rozkład szerokości rzeki (płynność) nie jest mierzony testem.
+## Fixes after screenshots of seeds 4242, 7 and 1 (2026-11-07)
 
-## Ponowny test GUI po poprawkach (2026-11-07, `rme.exe` przebudowany)
+- **Islands in lakes:** a land patch fully surrounded by a lake (not touching the area edge) and smaller than 24 cells becomes lake (islandCells). Test: every land patch in a lake has at least 24 cells or touches the edge.
+- **Lake-dependent shore rings:** ring r ≥ 1 requires a lake with at least 30·3^(r−1) cells (30, 90, 270), so small ponds get a narrow beach (lake size propagates through rings and saturates at 65535).
+- **Smoother rivers:** the route is smoothed with a moving average (up to four cells per side, fixed-point 1/16-cell arithmetic, no smoothing at ends or merge cells, so a tributary touches the river), and a square with half-side 1–2 cells is drawn around each point, growing smoothly with river size (traveled cells plus 15 for each incoming route, full range at 60). Turns are no longer right angles and width grows gradually. A river may cross rock, otherwise it would split into two parts. Diagonal sections are wider horizontally than straight sections due to the square stamp.
+- **Bugs along the way:** the first version broke the tributary connection to the river (test “River ends inside the land”), fixed by pinning merge cells and allowing rock crossing.
+- Seed 1729 100×100 fingerprint: 6783381837833077004. Core test PASS (206 allocation points with injected failure, all reported; 24+6+3 seeds); --surface (with SURFACE_NEXT_TO_TERRAIN_PASS) and --commit PASS (g2g-surface-182831, g2g-commit-182831), pairs_without_border=0, G1 commit rows unchanged. An ASCII screenshot of one seed also reviewed: diagonal rivers without right angles (temporary code, removed).
+- **Not verified:** appearance in RME after this change (screenshots above predate it); rme.exe was not rebuilt in this step because a running RME locked the file; working-memory estimate (40 B/cell) was not recalculated after adding vectors (lake sizes, routes, merges); river-width distribution and smoothness are not measured by a test.
 
-Użytkownik: „7 wygląda ok, 1 tak jak na screeni”; seeda 4242 nie raportował. Zrzut seeda 1: [seed 1 po poprawkach](screenshots/g2-surface-seed-1-after-fixes-20261107.webp) (zoom 37%). Seed 7 ocena słowna, bez zrzutu.
+## GUI retest after fixes (2026-11-07, rme.exe rebuilt)
 
-Obserwacje asystenta ze zrzutu seeda 1: wyspy w jeziorach nie ma, małe stawy po lewej mają wąski pierścień piasku, skręty rzeki są zaokrąglone, a szerokość rośnie ku ujściu (ok. 2 → 4 kafli), dopływ styka się z rzeką. Nadal widać długie proste odcinki poziome i pionowe (np. poziomy odcinek przy skale w prawym górnym rogu i pionowy odcinek w środku), czyli rzeka jest mniej kanciasta niż wcześniej, ale wciąż poprowadzona głównie po osiach. Nie wiadomo, czy użytkownik uznaje to za akceptowalne („tak jak na screeni” może znaczyć zarówno „dobrze”, jak i „bez zmian”).
+User: “7 looks OK, 1 like on the screen”; no report for seed 4242. Screenshot of seed 1: [seed 1 after fixes](screenshots/g2-surface-seed-1-after-fixes-20261107.webp) (zoom 37%). Seed 7 is a verbal assessment without screenshot.
 
-Status kryterium wizualnego: seed 7 ok (ocena użytkownika), seed 1 oceny jednoznacznej brak, seed 4242 po poprawkach nieoceniony.
+Assistant observations from seed-1 screenshot: no island in the lake, small ponds on the left have a narrow sand ring, river turns are rounded and width grows toward the mouth (about 2 → 4 tiles), and the tributary touches the river. Long straight horizontal and vertical sections remain (for example, horizontal section by rock in the upper right and a vertical section in the center). The river is less angular than before but still mainly follows axes. It is unknown whether the user considers this acceptable (“like on the screen” can mean either “good” or “unchanged”).
 
-## Wyniki prób (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
+Visual criterion status: seed 7 OK (user assessment), no unambiguous assessment for seed 1, seed 4242 after fixes not assessed.
 
-| Próbnik | Przebieg | Wynik |
+## Probe results (profile g0-reference-profile-20261030, private runs, hidden window)
+
+| Probe | Run | Result |
 | --- | --- | --- |
-| rdzeń | `test_procedural_surface` | PASS; 151 punktów alokacji z wstrzykniętą awarią (wszystkie zgłoszone), 7 dla dekoracji |
-| `--surface` | `g2d-surface-153056` | wszystkie znaczniki PASS (`SURFACE_RESOLVER_SIZE_PASS`, `SURFACE_E2E_PASS`, `SURFACE_VEGETATION_E2E_PASS`, `SURFACE_RESOLVER_PASS`); runner zapisał `passed: false` z powodu stderr (D1), kod wyjścia 0 |
-| `--preview` | `g2d-preview-153056` | `passed: true` |
-| `--commit` | `g2d-commit-153056` | `passed: true`; wiersze `TERRAIN_COMMIT_SIZE_PASS` 100×100 (8881480 / 3965894 / 80195 / 6608263949644166501) i 500×500 (218763816 / 98785798 / 1987447 / 173161415496114986) identyczne jak w [G1_COMMIT.md](G1_COMMIT.md) |
+| core | test_procedural_surface | PASS; 151 allocation points with injected failure (all reported), 7 for decoration |
+| --surface | g2d-surface-153056 | all PASS markers (SURFACE_RESOLVER_SIZE_PASS, SURFACE_E2E_PASS, SURFACE_VEGETATION_E2E_PASS, SURFACE_RESOLVER_PASS); runner recorded passed: false because of stderr (D1), exit code 0 |
+| --preview | g2d-preview-153056 | passed: true |
+| --commit | g2d-commit-153056 | passed: true; TERRAIN_COMMIT_SIZE_PASS rows 100×100 (8881480 / 3965894 / 80195 / 6608263949644166501) and 500×500 (218763816 / 98785798 / 1987447 / 173161415496114986) identical to [G1_COMMIT.md](G1_COMMIT.md) |
 
-Statystyki borderów: `halo_tiles_modified` = 95 (100×100, seed 1) i 50 (250×250, seed 1729), pozostałe 0.
+Border statistics: halo_tiles_modified = 95 (100×100, seed 1) and 50 (250×250, seed 1729), 0 in the other runs.
 
-## Czego nie zweryfikowano
+## Not verified
 
-- Przeglądu wizualnego kilku seedów w RME (krok dla użytkownika poniżej).
-- Dialogu i wyglądu po ostatniej zmianie rzek (rzeki jeszcze nieoglądane po poszerzeniu o komórkę południowo-wschodnią).
-- Klientów innych niż 1098-BlackTek.
-- D5, wpływu drzew i kamieni na przechodniość, pomiarów wydajności poza jednorazowymi liczbami z testu rdzenia (`generation_ms`, to nie jest porównanie przed/po).
-- Dokładnej dolnej granicy szerokości brzegu (test sprawdza tylko górną; brzeg może być węższy tam, gdzie lądem jest skała lub rzeka).
+- Visual review of several seeds in RME (user step below).
+- Dialog and appearance after the latest river change (rivers have not yet been viewed after adding the south-eastern cell).
+- Clients other than 1098-BlackTek.
+- D5, effects of trees and stones on walkability, and performance measurements beyond one-off core-test numbers (generation_ms is not a before/after comparison).
+- Exact lower shore-width bound (the test checks only the upper bound; shore may be narrower where land is rock or river).
 
-## Test GUI do wykonania (kilka seedów)
+## GUI test to perform (several seeds)
 
-Dla seedów 1, 7 i 4242, rozmiar 250×250, „Natural surface”, roślinność włączona: zrób podgląd i wygeneruj, a potem oceń rzeki (czy nigdzie nie ma pojedynczego kafla), brzegi jezior, przejścia trawa/ziemia, skały i bordery. Zrzut każdego seeda do `docs/procedural/screenshots/`, po czym ten dokument można zaktualizować do PASS dla kryterium wizualnego.
+For seeds 1, 7 and 4242, size 250×250, Natural surface, vegetation enabled: preview and generate, then assess rivers (no isolated single tile), lake shores, grass/dirt transitions, rock and borders. Save each seed screenshot to docs/procedural/screenshots/, then this document can be updated to PASS for the visual criterion.

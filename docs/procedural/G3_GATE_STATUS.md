@@ -1,29 +1,32 @@
-# G3 — stan bramki „Import i analiza map referencyjnych”, 2026-11-07
+# G3 — reference-map import and analysis gate status, 2026-11-07
 
-**ZAMKNIĘTA decyzją użytkownika 2026-11-07 (PASS z długiem, nie PASS bez zastrzeżeń).** Kryterium bramki jest spełnione dla 20 map (19 zwykłego 10.98 i jednej BlackTek), ale zakres z planu nie jest wykonany w całości; luki poniżej zaakceptowano jako dług (D9–D11 w [TECH_DEBT.md](TECH_DEBT.md), D8 z resztkami).
+**CLOSED by user decision on 2026-11-07 (PASS with debt, not an unqualified PASS).** The gate criterion is satisfied for 20 maps (19 ordinary 10.98 and one BlackTek), but the planned scope is not complete. The gaps below were accepted as debt (D9–D11 in TECH_DEBT.md, with remaining D8).
 
-**Bramka z planu:** „dla każdej mapy referencyjnej generowany jest powtarzalny raport, statystyki i mapa semantyczna.”
+**Planned gate:** “A repeatable report, statistics and semantic map are generated for every reference map.”
 
-## Kryteria i dowody
-| Kryterium | Dowód | Status |
+## Criteria and evidence
+
+| Criterion | Evidence | Status |
 | --- | --- | --- |
-| Powtarzalny raport | Dwie pełne serie 19 map: 190 plików (3 raporty JSON + 7 plików analizy na mapę) bajtowo identycznych, 0 różnic ([G3_REFERENCES.md](G3_REFERENCES.md)); `forgotten.otbm` identyczny przed i po zmianach ([G3_FEATURES.md](G3_FEATURES.md)) | PASS (jedna maszyna, jeden EXE, bez testu innego locale) |
-| Statystyki | Zgodność z niezależnym oknem Map → Statistics w RME: kafle, itemy i kafle nieprzechodnie identyczne dla `forgotten.otbm` ([G3_REFERENCES.md](G3_REFERENCES.md#kontrola-niezależna-statystyki-rme-gui-ścieżka-edytora)). Import, `unknown` z pokryciem, cechy per piętro, regiony i składowe, sąsiedztwo gruntów, bloki 16/32/64, cechy vs odległość od gruntu nieprzechodniego; JSON, MD, CSV ([G3_NORMALIZER.md](G3_NORMALIZER.md), [G3_TOPOLOGY.md](G3_TOPOLOGY.md), [G3_FEATURES.md](G3_FEATURES.md)) | PASS w opisanym zakresie |
-| Mapa semantyczna | `SemanticMap` w pamięci i zapisywany artefakt: deterministyczny PNG na piętro + `legend.json` ([G3_SEMANTIC_MAP.md](G3_SEMANTIC_MAP.md)). Weryfikator niezależny od kodu: 20 map × wszystkie piętra, wszystkie kontrole PASS; dwie serie 105 plików bajtowo identycznych | PASS |
-| Lokalny import OTBM, zgodność item/asset | [G3_IMPORT.md](G3_IMPORT.md); osobni klienci „10.98” i „1098-BlackTek”, runner i próbnik odmawiają niewłaściwego klienta | PASS |
-| `unknown` bez zgadywania | Fixture z brakującymi id (8/8) oraz prawdziwe `unknown` na M01 i M06, wyjaśnione: 14 id spoza items.otb i 15 id „deprecated” ([G3_REFERENCES.md](G3_REFERENCES.md)) | PASS |
-| Import tylko do odczytu, mapy prywatne | Hashe map i `Tibia.dat/spr` przed i po każdym przebiegu; raporty tylko w `local-data/` (git-ignored); w repo agregaty | PASS |
-| Limity pamięci, anulowanie od początku | D8 zamknięty z długiem resztkowym: limit egzekwowany także w trakcie ładowania (hak w `IOMapOTBM`), anulowanie w ładowaniu 78–310 ms; ładowanie `Map` to 94 % szczytu; ścieżka edytora sprawdzona ręcznie przez użytkownika | PASS z długiem |
+| Repeatable report | Two complete series of 19 maps: 190 files (3 JSON reports + 7 analysis files per map) byte-identical, 0 differences (G3_REFERENCES.md); forgotten.otbm identical before and after changes (G3_FEATURES.md) | PASS (one machine, one EXE, no other-locale test) |
+| Statistics | Matches the independent Map → Statistics window in RME: tiles, items and non-walkable tiles identical for forgotten.otbm (G3_REFERENCES.md#independent-rme-gui-editor-statistics-check). Import, unknown with coverage, per-floor features, regions and components, ground adjacency, 16/32/64 blocks, features versus distance from non-walkable ground; JSON, MD and CSV (G3_NORMALIZER.md, G3_TOPOLOGY.md, G3_FEATURES.md) | PASS within the described scope |
+| Semantic map | SemanticMap in memory and a written artifact: deterministic PNG per floor plus legend.json (G3_SEMANTIC_MAP.md). Code-independent verifier: 20 maps × all floors, every check PASS; two series of 105 files byte-identical | PASS |
+| Local OTBM import and item/asset compatibility | G3_IMPORT.md; separate “10.98” and “1098-BlackTek” clients, with runner and probe refusing the wrong client | PASS |
+| unknown without guessing | Fixture with missing IDs (8/8) and real unknown values on M01 and M06, explained by 14 IDs outside items.otb and 15 deprecated IDs (G3_REFERENCES.md) | PASS |
+| Read-only import, private maps | Map and Tibia.dat/spr hashes before and after every run; reports only in git-ignored local-data/; repository contains aggregates | PASS |
+| Memory limits, cancellation from the start | D8 closed with residual debt: limit enforced during loading too (hook in IOMapOTBM), cancellation during loading 78–310 ms; Map loading is 94% of the peak; editor path checked manually by the user | PASS with debt |
 
-## Luki (zaakceptowane jako dług)
-- **Cechy z sekcji 4.2 planu:** brak rzek (długość, krętość, szerokość, rozwidlenia), jaskiń (komory, korytarze, cykle, przewężenia), lasu (klastry), gór (ściany do plateau), szlaków i mostów, osad i budowli, mikrostruktur, wąskich gardeł oraz połączeń między piętrami. Regiony gruntu to nie nazwane biomy (nazwy byłyby zgadywaniem).
-- **Test podobieństwa/memoryzacji** (plan 4.3) i podział train/validation/test (4.4): nie wykonano; to wejście dla G4.
-- **Ocena sensowności:** cechy i mapy semantyczne są mierzone; poza jednym obejrzanym obrazem (piętro 7 `forgotten.otbm`) nie oceniano ich wizualnie ani merytorycznie.
-- **HTML** jako format raportu: nie ma (wybrano JSON, MD, CSV).
-- **Pliki towarzyszące** (house, spawn, zones) nie są wczytywane; itemy w kontenerach nie wnoszą cech.
-- **Items.otb:** nie potwierdzono, że `data/1098/items.otb` to dokładnie plik, z którym powstały mapy zwykłego 10.98 (zgodność wskazuje na to, nie dowodzi).
-- **Dług techniczny z tego etapu:** D8 (resztki: ładowanie `Map` 94 % szczytu, anulowanie przy normalizacji ok. 1,2 s), patrz [TECH_DEBT.md](TECH_DEBT.md). Powtarzalność sprawdzono na jednej maszynie.
-- **Commity i PR:** zmiany G3 są w commitach na gałęzi `feature/procedural-g3-reference-analysis`; CI jest wyłączone, a commity pośrednie nie były budowane osobno.
+## Gaps accepted as debt
 
-## Wymagany test w GUI (użytkownik)
-G3 nie zmienia interfejsu RME, więc nie ma testu GUI w tym etapie. Do oceny przez użytkownika są pliki PNG w `local-data/…/run/analysis/semantic/` (piętra) wraz z `legend.json`; można je otworzyć dowolnym przeglądarką obrazów.
+- **Features from plan section 4.2:** missing rivers (length, tortuosity, width, branching), caves (chambers, corridors, cycles, bottlenecks), forest (clusters), mountains (walls to plateau), routes and bridges, settlements and buildings, microstructures, bottlenecks and connections between floors. Ground regions are not named biomes because names would be guesses.
+- **Similarity/memorization test** (plan 4.3) and train/validation/test split (4.4): not done, input for G4.
+- **Reasonableness review:** features and semantic maps are measured. Apart from one viewed image (floor 7 of forgotten.otbm), they were not assessed visually or substantively.
+- **HTML** report format: absent (JSON, MD and CSV were selected).
+- **Companion files** (house, spawn, zones) are not loaded. Items in containers contribute no features.
+- **Items.otb:** it was not confirmed that data/1098/items.otb is exactly the file used to create the ordinary 10.98 maps (matching suggests it, but does not prove it).
+- **Technical debt from this stage:** D8 (remaining: Map loading 94% of peak, cancellation during normalization about 1.2 s), see TECH_DEBT.md. Repeatability was checked on one machine.
+- **Commits and PR:** G3 changes are in commits on feature/procedural-g3-reference-analysis. CI is disabled, and intermediate commits were not built separately.
+
+## Required GUI test (user)
+
+G3 does not change the RME interface, so this stage has no GUI test. The user should review the PNG files in local-data/…/run/analysis/semantic/ (floors) together with legend.json. They can be opened in any image viewer.

@@ -1,22 +1,22 @@
-# G1 — zmiana wejścia i zamknięcie aktywnego Preview
+# G1 — Changing inputs and closing an active Preview
 
-2026-11-04. **PARTIAL_G1_GUI_PREVIEW_INVALIDATION_FOCUS_WARNING**. Oba scenariusze i ponowienia przeszły funkcjonalnie. RME zakończył pracę z kodem 0. Stderr zawierał pojedyncze ostrzeżenie wxWidgets `SetFocus` z kodem `0x00000057`. Przebieg nie otwierał pliku mapy ani komunikatu importu kreatur, więc do odtworzenia ostrzeżenia nie są konieczne.
+2026-11-04. **PARTIAL_G1_GUI_PREVIEW_INVALIDATION_FOCUS_WARNING**. Both scenarios and retries behaved as expected. RME exited with code 0. Stderr contained one wxWidgets `SetFocus` warning with code `0x00000057`. The run opened neither a map file nor the creature import prompt, so neither is required to reproduce the warning.
 
-Prywatny obserwator RME sprawdza dwie ścieżki usunięcia zadania Preview 500×500. Rozpoznaje natywne zdarzenia edycji seeda i zamknięcia okna przed ich obsługą. Wymaga wtedy stanu „Preparing preview”. Polecenia wprowadza operator. Po obu operacjach obserwator sprawdza przez dwie sekundy brak ponownej publikacji wyniku.
+The private RME observer checks two ways to discard a 500×500 Preview task. It detects native seed-edit and window-close events before the handlers run and requires the “Preparing preview” state at that point. The operator enters the commands. After each operation, the observer watches for any republication of the result for two seconds.
 
-Mapa syntetyczna zawiera jeden kafel kontrolny poza obszarem generacji. Przez całą próbę obserwator porównuje jego stan, tożsamość edytora, rewizję mapy, flagę dirty i pustą historię. Ponowienie w tym samym oknie ma pokazać seed 1728. Po zamknięciu drugiego dialogu w trakcie pracy nowy dialog ma pokazać domyślne 100×100 z seedem 1729.
+The synthetic map has one sentinel tile outside the generation area. Throughout the run, the observer compares its state, editor identity, map revision, dirty flag, and empty undo history. Retrying in the same window must show seed 1728. After closing the second dialog during Preview, the next dialog must show the default 100×100 area with seed 1729.
 
-Pierwsza próba wejścia w tym procesie zmieniła seed bez potwierdzenia stanu „Preparing preview”, więc nie została zaliczona. Szybsze powtórzenie zarejestrowało `INVALIDATION_EDIT_IN_FLIGHT`, a następnie przez dwie sekundy Validate i Place pozostawały wyłączone. Ponowienie pokazało 250 000 zmian dla seeda 1728. Kolejna próba zarejestrowała `INVALIDATION_CLOSE_IN_FLIGHT` podczas Alt+F4, po którym dialog się zamknął. Po dwóch sekundach nowy dialog pokazał własny podgląd 10 000 kafli dla seeda 1729.
+The first seed edit in this process lacked confirmation of the “Preparing preview” state and was excluded. The faster retry logged `INVALIDATION_EDIT_IN_FLIGHT`. Validate and Place remained disabled for the next two seconds, and retry displayed 250,000 changes for seed 1728. The next attempt logged `INVALIDATION_CLOSE_IN_FLIGHT` on Alt+F4 and closed the dialog. After two seconds, the new dialog showed its own 10,000-tile preview for seed 1729.
 
-![RME po edycji seeda podczas przygotowania Preview 500×500](screenshots/g1-invalidation-edit-20261104.jpg)
+![RME after editing the seed during a 500×500 Preview](screenshots/g1-invalidation-edit-20261104.jpg)
 
-`build_ninja.bat` przeszedł, bez zmian binarium produkcyjnego. Verifier przebiegu `g1-invalidation-rme-20261104` potwierdził pełną kolejność markerów, 421 obiektów, 421 wejść kompilacji i niezmienione wejściowe assets. Wynik obejmuje edycję seeda i zamknięcie Alt+F4 na jednej mapie. Inne przypadki unieważnienia celu, gęste mapy i testy wycieków pozostają poza zakresem. Pełne **G1 IN PROGRESS**.
+`build_ninja.bat` passed with the production binary unchanged. The verifier for `g1-invalidation-rme-20261104` confirmed the full marker sequence, 421 objects, 421 compilation inputs, and unchanged input assets. This result covers seed edits and Alt+F4 on one map. Other target invalidation cases, dense maps, and leak tests remain outside its scope. Overall status is **G1 IN PROGRESS**.
 
-## Odtworzenie
+## Reproduction
 
 ```text
 rtk proxy <PY> docs/procedural/smoke/g1_run_dialog_probe.py local-data/procedural-smoke/NEW_RUN local-data/procedural-smoke/g0-reference-profile-20261030/data local-data/procedural-smoke/g0-reference-profile-20261030/config.toml --invalidation
 rtk proxy <PY> docs/procedural/smoke/g1_verify_dialog_probe.py local-data/procedural-smoke/NEW_RUN --invalidation
 ```
 
-`<PY>` to `C:/Users/Sorky/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -X utf8`. Po `INVALIDATION_FIXTURE_READY` otwórz Map → Generate terrain, ustaw 500×500, uruchom Preview i szybko zmień seed z 1729 na 1728. Po `INVALIDATION_EDIT_PASS` uruchom Preview ponownie. Po `INVALIDATION_EDIT_RETRY_PASS` zamknij dialog i otwórz go ponownie. Ustaw 500×500, uruchom Preview i zamknij okno w trakcie pracy przez Alt+F4. Po `INVALIDATION_CLOSE_PASS` otwórz nowy dialog i wykonaj domyślne Preview. Zamknij dialog, a po `INVALIDATION_PASS` zamknij prywatną aplikację.
+`<PY>` is `C:/Users/Sorky/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -X utf8`. After `INVALIDATION_FIXTURE_READY`, open Map → Generate terrain, set a 500×500 area, start Preview, and quickly change the seed from 1729 to 1728. After `INVALIDATION_EDIT_PASS`, run Preview again. After `INVALIDATION_EDIT_RETRY_PASS`, close and reopen the dialog. Set 500×500, start Preview, and close the window with Alt+F4 while it runs. After `INVALIDATION_CLOSE_PASS`, open a new dialog and run Preview with the defaults. Close the dialog, then close the private application after `INVALIDATION_PASS`.

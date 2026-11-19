@@ -1,52 +1,56 @@
-# G1 — diagnostyka ostrzeżenia SetFocus
+# G1 — SetFocus warning diagnostics
 
-2026-11-04. W przebiegu `g1-focus-chain-rme-20261104` zapisano dwa stosy wywołań dla błędu Win32 `0x00000057` na głównym wątku.
+2026-11-04. In run `g1-focus-chain-rme-20261104` two call stacks recorded for Win32 error `0x00000057` on main thread.
 
-| Zdarzenie | Ścieżka do błędnego wywołania |
+| Event | Path to error call |
 |---|---|
-| Aktywacja okna przy otwartym generatorze | `MainMenuBar::OnProceduralTerrain` → `wxDialog::ShowModal` → pętla zdarzeń → `wxTopLevelWindowMSW::OnActivate` → `DoRestoreLastFocus` → `wxSetFocusToChild` → `wxWindow::SetFocus` |
-| Zamykanie aplikacji z dwiema kartami | `MainFrame::OnExit` → `DoQuerySave` → `EditorManager::CloseCurrentEditor` → `MapTabbook::DeleteTab` → `wxAuiNotebook::DoRemovePage` → `DoModifySelection` → `wxSetFocusToChild` → `wxWindow::SetFocus` |
+| Window activation with generator open | `MainMenuBar::OnProceduralTerrain` → `wxDialog::ShowModal` → event loop → `wxTopLevelWindowMSW::OnActivate` → `DoRestoreLastFocus` → `wxSetFocusToChild` → `wxWindow::SetFocus` |
+| Application close with two tabs | `MainFrame::OnExit` → `DoQuerySave` → `EditorManager::CloseCurrentEditor` → `MapTabbook::DeleteTab` → `wxAuiNotebook::DoRemovePage` → `DoModifySelection` → `wxSetFocusToChild` → `wxWindow::SetFocus` |
 
-Pierwszy stos pochodzi z przywracania fokusu po aktywacji, drugi z wyboru pozostałej karty przy usuwaniu aktywnej. W obu przypadkach samo wywołanie `SetFocus` pochodzi z wxWidgets. Stosy nie zawierają obsługi kroków przygotowania Preview. Nie identyfikują wadliwego HWND ani przyczyny wcześniejszego ostrzeżenia przy round-trip.
+First stack from focus restore after activation, second from tab selection when removing active. In both cases `SetFocus` call itself comes from wxWidgets. Stacks contain no Preview step handling. Do not identify faulty HWND nor cause of earlier round-trip warning.
 
-Obserwator zapisał wszystkie dziewięć markerów unieważnienia, w tym poprawne ponowienie i nowy dialog. Runner przekroczył limit oczekiwania przed dokończeniem sekwencji w GUI. Po wznowieniu proces zamknięto ręcznie, a log aplikacji pokazuje zamknięcie kart i zwolnienie zasobów. Runner nie zapisał kodu wyjścia ani końcowego manifestu wykonania. Próbę zaliczono jako diagnostykę stosów. Dotychczasowe wyniki funkcjonalne pozostają częściowe. Interposer zapisuje każdy stos raz, natomiast łańcuch logowania wypisał każdy komunikat dwukrotnie do stderr.
+Observer recorded all nine invalidation markers, including correct retry and new dialog. Runner exceeded wait limit before finishing GUI sequence. After resume process closed manually, and app log shows tab closing and resource cleanup. Runner did not record exit code or final execution manifest. Trial passed as stack diagnostics. Earlier functional results remain partial. Interposer records each stack once, while logging chain output each message twice to stderr.
 
-Surowy dowód jest w `local-data/procedural-smoke/g1-focus-chain-rme-20261104/run/focus-trace.log`. Kod produkcyjny i vendored wxWidgets pozostały bez zmian. Pierwsza próba builda zatrzymała się na niedostępnej deklaracji SDK, a kolejną prywatną instancję wyłączono po zastąpieniu jej właściwym wariantem loggera.
+Raw proof in `local-data/procedural-smoke/g1-focus-chain-rme-20261104/run/focus-trace.log`. Product code and vendored wxWidgets unchanged. First build attempt stopped at unavailable SDK declaration, and next private instance disabled after replacing with correct logger variant.
 
-Próba korzysta z prywatnej instancji RME i syntetycznej mapy używanej w [teście unieważniania Preview](G1_INVALIDATION.md). Opcjonalny obserwator nasłuchuje logu wxWidgets, zapisuje stos wywołań ostrzeżenia `SetFocus` w `run/focus-trace.log` i przekazuje komunikat dalej. Linker tworzy osobny PDB dla binarium testowego. DbgHelp używa symboli lokalnych z tego katalogu i z zainstalowanych bibliotek wxWidgets.
+Trial uses private RME instance and synthetic map used in [Preview invalidation test](G1_INVALIDATION.md). Optional observer listens to wxWidgets log, records `SetFocus` warning call stack in `run/focus-trace.log`, and passes message on. Linker creates separate PDB for test binary. DbgHelp uses local symbols from that directory and installed wxWidgets libraries.
 
 ```text
 rtk proxy <PY> docs/procedural/smoke/g1_run_dialog_probe.py local-data/procedural-smoke/NEW_RUN local-data/procedural-smoke/g0-reference-profile-20261030/data local-data/procedural-smoke/g0-reference-profile-20261030/config.toml --invalidation --focus-trace
 ```
 
-`<PY>` to `C:/Users/Sorky/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -X utf8`.
+`<PY>` is `C:/Users/Sorky/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -X utf8`.
 
-## Stan okien przy błędzie w przebiegu odmów (2026-11-06)
+<a id="stan-okien-przy-błędzie-w-przebiegu-odmów-2026-11-06"></a>
 
-Win32 `SetFocus` kończy się błędem 87 (`0x57`), gdy okno docelowe albo jego przodek jest wyłączony. Sprawdzono to osobnym testem: wyłączone okno najwyższego poziomu, wyłączony panel nadrzędny i wyłączone okno docelowe dają 87, ukryty panel lub ukryte okno nie dają błędu, a zniszczone okno daje 1400.
+## Window state at error in refusal run (2026-11-06)
 
-`ProceduralFocusTrace` zapisuje teraz przy błędzie także stan okien (foreground, active, focus i jego przodkowie, wszystkie okna najwyższego poziomu). Przebieg `g1-focus-state-b-20261106` (`--refusals --focus-trace`, operator: menu i dialog) dał sześć markerów `REFUSAL_CASE_PASS`, `REFUSAL_PASS` i jedno zapisane ostrzeżenie `SetFocus` (stderr wypisuje je dwukrotnie przez łańcuch logowania). W chwili błędu:
+Win32 `SetFocus` fails with error 87 (`0x57`) when target window or its ancestor is disabled. Checked via separate test: disabled top-level window, disabled parent panel, and disabled target window give 87, hidden panel or hidden window do not error, destroyed window gives 1400.
 
-| Okno | Stan |
+`ProceduralFocusTrace` now also records window state on error (foreground, active, focus and its ancestors, all top-level windows). Run `g1-focus-state-b-20261106` (`--refusals --focus-trace`, operator: menu and dialog) gave six `REFUSAL_CASE_PASS`, `REFUSAL_PASS` markers and one recorded `SetFocus` warning (stderr prints it twice via logging chain). At error moment:
+
+| Window | State |
 |---|---|
-| główna ramka (`wxFrame`) | `wx_enabled=0`, widoczna |
-| `Generate Terrain` | `modal=1`, włączone, foreground i active |
-| fokus | przycisk w dialogu generatora |
+| main frame (`wxFrame`) | `wx_enabled=0`, visible |
+| `Generate Terrain` | `modal=1`, enabled, foreground and active |
+| focus | button in generator dialog |
 
-Stos wskazuje źródło: `LoadVersion` → `LayoutManager::LoadPerspective` → `PaletteManager::CreatePalette` → `GUI::SelectBrushInternal` → `wxWindow::SetFocus`, wywołane z zegara próbnika podczas `ShowModal` dialogu generatora. To krok 4 próbnika odmów (`loadClient()` po `UnloadVersion`), który ładuje klienta przy wyłączonej ramce. Ostrzeżenie w tym przebiegu pochodzi więc z kroku próbnika, a nie z obsługi Preview, Validate czy Place. W normalnej pracy klient nie ładuje się, gdy otwarty jest modalny dialog generatora.
+Stack points to source: `LoadVersion` → `LayoutManager::LoadPerspective` → `PaletteManager::CreatePalette` → `GUI::SelectBrushInternal` → `wxWindow::SetFocus`, called from probe timer during `ShowModal` of generator dialog. This is step 4 of refusal probe (`loadClient()` after `UnloadVersion`), which loads client with frame disabled. Warning in this run thus comes from probe step, not Preview, Validate, or Place handling. In normal use client does not load while modal generator dialog open.
 
-Czego to **nie** pokazuje: dwa wcześniejsze stosy (aktywacja ramki przy otwartym generatorze oraz usuwanie karty przy zamykaniu) nie mają zapisanego stanu okien, więc dla nich wyłączone okno jest hipotezą zgodną z testem Win32, nie ustaleniem. Nie sprawdzono, czy bez kroku 4 przebieg odmów jest wolny od ostrzeżenia, ani czy fokus wraca poprawnie po zamknięciu dialogu. Runner zakończył się kodem 1 z powodu niepustego stderr, tak jak w poprzednich przebiegach odmów.
+What this **does not** show: two earlier stacks (frame activation with generator open and tab removal on close) have no recorded window state, so for them disabled window is hypothesis consistent with Win32 test, not finding. Not checked whether without step 4 refusal run is free of warning, nor whether focus returns correctly after dialog close. Runner ended code 1 due to non-empty stderr, as in previous refusal runs.
 
 ```text
 rtk proxy <PY> docs/procedural/smoke/g1_run_dialog_probe.py local-data/procedural-smoke/NEW_RUN local-data/procedural-smoke/g0-reference-profile-20261030/data local-data/procedural-smoke/g0-reference-profile-20261030/config.toml --refusals --focus-trace
 ```
 
-## Zamykanie aplikacji i kod wyjścia próbników (2026-11-06)
+<a id="zamykanie-aplikacji-i-kod-wyjścia-próbników-2026-11-06"></a>
 
-Przebieg `g1-focus-rt-20261106` (`--roundtrip --focus-trace`, 100×100) zakończył się `ROUNDTRIP_PASS` i jednym ostrzeżeniem `SetFocus` (stderr wypisuje je dwukrotnie przez łańcuch logowania). Stos: File → Exit → `MainFrame::DoQuerySave` → `EditorManager::CloseCurrentEditor` → `MapTabbook::DeleteTab` → `wxAuiNotebook::DoRemovePage` → `DoModifySelection` → `wxWindow::SetFocus`. Stan okien w tej chwili: główna ramka wyłączona (`wx_enabled=0`), widoczne okno „Closing” (włączone, foreground, niemodalne w sensie `IsModal`). Zgodnie z testem Win32 z sekcji powyżej (cel lub przodek wyłączony daje błąd 87) jest to ten sam mechanizm: wx wybiera kolejną kartę po usunięciu aktywnej i ustawia fokus w ramce, którą okno „Closing” wyłączyło na czas zamykania. Aplikacja się kończy, więc fokus nie ma tu skutku; nie zbadano, czy poza zamykaniem zachowuje się inaczej.
+## Application exit and probe exit codes (2026-11-06)
 
-Przebieg powtórzono z dodatkowym zapisem stanu okien w `g1-focus-rt-c-20261106`: pełny `ROUNDTRIP_PASS`, to samo jedno ostrzeżenie z tym samym stosem.
+Run `g1-focus-rt-20261106` (`--roundtrip --focus-trace`, 100×100) ended `ROUNDTRIP_PASS` and one `SetFocus` warning (stderr prints it twice via logging chain). Stack: File → Exit → `MainFrame::DoQuerySave` → `EditorManager::CloseCurrentEditor` → `MapTabbook::DeleteTab` → `wxAuiNotebook::DoRemovePage` → `DoModifySelection` → `wxWindow::SetFocus`. Window state at that moment: main frame disabled (`wx_enabled=0`), visible "Closing" window (enabled, foreground, non-modal in `IsModal` sense). By Win32 test from section above (target or ancestor disabled gives error 87) this is same mechanism: wx selects next tab after removing active and sets focus in frame that "Closing" window disabled during shutdown. Application exits so focus has no effect; not investigated whether outside shutdown it behaves differently.
 
-**Kod wyjścia próbników ze śladem.** Dwa przebiegi ze śladem (`g1-focus-state-b-20261106` i `g1-focus-rt-20261106`) kończyły się kodem `0xC0000374` (uszkodzenie sterty) po końcowym markerze, a przebiegi bez śladu kodem 0. Przyczyna po lekturze kodu wx: `ProceduralFocusTrace` jest aktywnym celem logowania, a wx przy zamykaniu wykonuje `delete wxLog::SetActiveTarget(nullptr)` (`init.cpp`), podczas gdy próbnik usuwał ten sam obiekt przez `unique_ptr` (podwójne usunięcie). Próbniki zwalniają teraz własność (`trace.release()`). Przebieg `g1-focus-rt-c-20261106` po tej zmianie ma pełny `ROUNDTRIP_PASS` i kod wyjścia 0. Wniosek opiera się na dwóch przebiegach z uszkodzeniem i jednym bez po zmianie; to był błąd próbnika diagnostycznego, produkcyjny EXE nie zawiera tego kodu. Przebiegi z kodem `0xC0000374` zachowano bez zaliczenia.
+Run repeated with added window state recording in `g1-focus-rt-c-20261106`: full `ROUNDTRIP_PASS`, same single warning with same stack.
 
-Niewyjaśniony pozostaje stos z 2026-11-04 (aktywacja ramki przy otwartym generatorze w przebiegu unieważniania): nie ma dla niego zapisanego stanu okien, a dzisiejsze przebiegi go nie odtworzyły.
+**Probe exit codes with trace.** Two trace runs (`g1-focus-state-b-20261106` and `g1-focus-rt-20261106`) ended with code `0xC0000374` (heap corruption) after final marker, and non-trace runs with code 0. Cause after reading wx code: `ProceduralFocusTrace` is active logging target, and wx on shutdown does `delete wxLog::SetActiveTarget(nullptr)` (`init.cpp`), while probe deleted same object via `unique_ptr` (double delete). Probes now release ownership (`trace.release()`). Run `g1-focus-rt-c-20261106` after this change has full `ROUNDTRIP_PASS` and exit code 0. Conclusion rests on two runs with corruption and one without after change; this was diagnostic probe error, production EXE does not contain this code. Runs with code `0xC0000374` kept without pass.
+
+Unexplained remains stack from 2026-11-04 (frame activation with open generator in invalidation run): no window state recorded for it, and today's runs did not reproduce it.

@@ -1,22 +1,25 @@
-# G3 — eksport mapy semantycznej, 2026-11-07
+# G3 — semantic-map export, 2026-11-07
 
-**PASS dla 20 map (zakres opisany niżej); G3 jako całość: patrz [G3_GATE_STATUS.md](G3_GATE_STATUS.md).**
+**PASS for 20 maps within the scope below; for G3 overall, see G3_GATE_STATUS.md.**
 
-## Co jest
-- Rdzeń `source/procedural/core/png_writer.*` (bez zależności): koder 8-bitowego indeksowanego PNG ze „stored” blokami deflate. Wynik zależy tylko od wejścia, więc te same dane dają te same bajty; plik ma rozmiar zbliżony do surowych pikseli.
-- Rdzeń `source/procedural/core/semantic_image.*`: `renderSemanticImages` zamienia `SemanticMap` i `TopologyReport` w jeden PNG na piętro (jeden piksel na kafel, piksel (0,0) to róg prostokąta piętra) i legendę. Klasy w kolejności priorytetu: nieznana zawartość, ściana, drzwi, teleport, zmiana piętra, blokada przedmiotem na przechodnim gruncie, potem kolor klucza gruntu (klucze nieprzechodnie ciemniejsze), kafel bez gruntu, grunt bez pędzla, brak kafla. Kolory z całkowitoliczbowego HSV, więc paleta jest dokładna. Powyżej 247 kluczy gruntu sloty się powtarzają, a legenda wymienia każdy klucz przy jego slocie.
-- `renderSemanticLegendJson`: legenda, rozmiary i przesunięcia prostokątów pięter (współrzędne mapy: tylko do użytku lokalnego, nie do repo). Anulowanie `stop_token` co wiersz; pamięć robocza ok. 2 B na komórkę największego piętra (wliczona w `analysisWorkingBytes`, teraz 16 B na komórkę największego piętra).
-- Próbnik zapisuje `analysis/semantic/floor-NN.png` i `legend.json`.
+## Included
 
-## Testy i dowody
-- `test_procedural_semantic_image` PASS: koder sprawdzony niezależnymi implementacjami CRC i Adler w teście (znana wartość CRC dla `IEND`), obraz wielobłokowy (>65 535 B), odmowy (zły rozmiar, paleta, indeks poza paletą), ręcznie policzona siatka 7×4 z każdą klasą, przesunięcie z ujemnym x, ponowne użycie slotów przy 250 kluczach, anulowanie, niezgodna topologia, powtarzalność.
-- `g3_verify_semantic_png.py` dekoduje PNG biblioteką standardową Pythona (`zlib`, `struct`), a nie kodem, który jest testowany, i porównuje z raportem: CRC wszystkich chunków, filtry, wymiary równe prostokątowi piętra, piksele niepuste = kafle, piksele „unknown” = komórki unknown, piksele ścian/drzwi/teleportów/zmian pięter nie przekraczają liczników cech, paleta zgodna z legendą. Wynik: wszystkie kontrole PASS dla 19 map zwykłego 10.98 (łącznie 707 kontroli, od 9 do 129 na mapę) i `forgotten.otbm` (129/129).
-- Dwie pełne serie (19 map): 105 plików w `semantic/` bajtowo identycznych. Pozostałe raporty (190 plików) bez zmian względem serii sprzed eksportu.
-- Szczyt pamięci mapy 71 MiB po dodaniu eksportu: 1 899 MiB (bez zmiany względem 1 898–1 899 MiB wcześniej, w granicach pomiaru).
-- Obejrzano jeden obraz (piętro 7 `forgotten.otbm`): czytelne wyspy, morze jako obszar nieprzechodni, budynki i oznaczone elementy.
+- Core source/procedural/core/png_writer.* (no dependencies): an 8-bit indexed PNG encoder with stored deflate blocks. Output depends only on the input, so identical data produces identical bytes; file size is close to raw pixels.
+- Core source/procedural/core/semantic_image.*: renderSemanticImages converts SemanticMap and TopologyReport into one PNG per floor (one pixel per tile, pixel (0,0) is the floor rectangle corner) and a legend. Classes in priority order: unknown content, wall, door, teleport, floor change, item blocking on walkable ground, then ground-key color (non-walkable keys are darker), tile without ground, ground without brush, no tile. Colors use integer HSV, so the palette is exact. Above 247 ground keys, slots repeat and the legend lists each key at its slot.
+- renderSemanticLegendJson: legend, floor-rectangle sizes and offsets (map coordinates are for local use only, not the repository). stop_token cancellation per row; working memory about 2 B per cell of the largest floor (included in analysisWorkingBytes, now 16 B per cell of the largest floor).
+- The probe writes analysis/semantic/floor-NN.png and legend.json.
 
-## Czego NIE zweryfikowano
-- Wizualnie obejrzano tylko jedno piętro jednej mapy; pozostałych obrazów nie oceniano. Poprawność klasyfikacji pikseli potwierdza zgodność liczników i test ręczny, nie ocena wzrokowa.
-- Niezależny weryfikator sprawdza sumy i strukturę, nie położenie pojedynczych pikseli na prawdziwych mapach (to sprawdza tylko test ręcznie policzonej siatki).
-- PNG ma rozmiar zbliżony do surowych pikseli (bez kompresji): mapy 5000×5000 dają ok. 25 MB na piętro; nie badano, czy to przeszkadza przy większych mapach.
-- Powtarzalność: jedna maszyna, jeden EXE.
+## Tests and evidence
+
+- test_procedural_semantic_image PASS: encoder checked with independent CRC and Adler implementations in the test (known IEND CRC), multi-block image (>65 535 B), refusals (bad size, palette, index outside palette), manually calculated 7×4 grid with every class, negative-x offset, slot reuse at 250 keys, cancellation, incompatible topology, repeatability.
+- g3_verify_semantic_png.py decodes PNG with Python's standard library (zlib, struct), rather than the tested code, and compares it with the report: CRC of all chunks, filters, dimensions equal to the floor rectangle, non-empty pixels = tiles, “unknown” pixels = unknown cells, wall/door/teleport/floor-change pixels do not exceed feature counts, palette matches the legend. Result: all checks PASS for 19 ordinary 10.98 maps (707 checks total, 9 to 129 per map) and forgotten.otbm (129/129).
+- Two complete series (19 maps): 105 files in semantic/ are byte-identical. The remaining reports (190 files) are unchanged from the series before export.
+- Map memory peak of 71 MiB after adding export: 1 899 MiB (unchanged from 1 898–1 899 MiB previously, within measurement range).
+- One image was viewed (floor 7 of forgotten.otbm): clear islands, sea as a non-walkable area, buildings and marked elements.
+
+## Not verified
+
+- Only one floor of one map was viewed. Other images were not assessed. Pixel-classification correctness is confirmed by matching counts and a manually calculated test, not visual review.
+- The independent verifier checks sums and structure, not individual-pixel positions on real maps (only the manually calculated grid checks that).
+- PNG size is close to raw pixels (without compression): 5000×5000 maps produce about 25 MB per floor. It was not checked whether this causes problems for larger maps.
+- Repeatability was checked on one machine and one EXE.

@@ -1,77 +1,74 @@
-# D1 — ostrzeżenie SetFocus przy zamykaniu kart i programu
+# D1 — SetFocus warning while closing tabs and the application
 
-2026-11-19. Kryteria: [G6_METRICS.md](../G6_METRICS.md), sekcja „D1 i D4”
-(commit `04b03de`). Wynik: **przypadek odtworzony, poprawiony, sprawdzony 2/2 przebiegami**.
+2026-11-19. Criteria: [G6_METRICS.md](../G6_METRICS.md), “D1 and D4” section
+(commit `04b03de`). Result: **case reproduced, fixed and checked in 2/2 runs**.
 
-## Przyczyna
+## Cause
 
-`EditorManager::CloseCurrentEditor` usuwał kartę wewnątrz `ScopedInfoBar("Closing map...")`.
-Okno „Closing” tworzy `wxWindowDisabler`, więc ramka jest wyłączona. W wxWidgets 3.3.1
-`wxAuiNotebook::DoRemovePage` po usunięciu strony wywołuje `SetSelectionToWindow` →
-`DoModifySelection`, które ustawia fokus na pozostałej stronie (`auibook.cpp:4220`).
-Win32 `SetFocus` w oknie z wyłączonym przodkiem kończy się błędem 87 (0x57).
-Dotyczy to każdego zamknięcia bieżącej karty, gdy zostaje inna karta: File → Exit,
-File → Close i przycisk zamknięcia karty. Nie tylko wyjścia z programu.
+`EditorManager::CloseCurrentEditor` removed the tab inside `ScopedInfoBar("Closing map...")`.
+The “Closing” window creates a `wxWindowDisabler`, so the frame is disabled. In wxWidgets 3.3.1,
+`wxAuiNotebook::DoRemovePage` calls `SetSelectionToWindow` after removing a page, then
+`DoModifySelection` focuses the remaining page (`auibook.cpp:4220`). Win32 `SetFocus`
+on a window with a disabled ancestor returns error 87 (0x57). This affected every close of
+the current tab when another tab remained: File → Exit, File → Close and the tab-close button.
+It was not limited to application exit.
 
-## Poprawka
+## Fix
 
-`MapTabbook::DetachTab` usuwa stronę z notebooka bez jej niszczenia, a
-`MapTabbook::DestroyDetachedTab` ją niszczy. `CloseCurrentEditor` odłącza stronę przed
-pokazaniem okna „Closing”, czyli przy włączonej ramce. Zwolnienie mapy i zasobów GL
-(kosztowna część) nadal odbywa się pod tym oknem. `DeleteTab` składa obie operacje,
-więc `CloseAllEditors` i `CloseLiveEditors` działają jak dotąd (bez okna „Closing”).
-Kolejność palet i zdarzeń zmiany strony jest taka sama jak w `DeletePage`. Różnica:
-`DestroyDetachedTab` usuwa też wpis z mapy `conv`, który wcześniej zostawał.
+`MapTabbook::DetachTab` removes a page from the notebook without destroying it, while
+`MapTabbook::DestroyDetachedTab` destroys it. `CloseCurrentEditor` detaches the page before
+showing the “Closing” window, while the frame is still enabled. Map and GL resources (the
+expensive part) are still released under that window. `DeleteTab` composes both operations,
+so `CloseAllEditors` and `CloseLiveEditors` keep their existing behavior without a “Closing” window.
+Palette order and page-change events remain the same as in `DeletePage`. The difference is that
+`DestroyDetachedTab` also removes the `conv` map entry that previously remained.
 
-## Sonda
+## Probe
 
-- `g6_d1_close_probe.cpp`: prywatny moduł wx z normalnym wejściem aplikacji, budowany przez
+- `g6_d1_close_probe.cpp`: private wx module with the normal application entry, built with
   `g1_build_input_probe.py --application-entry --symbols`, z `ProceduralFocusTrace`.
-- `g6_d1_run_close_probe.py OUTPUT PROFILE_DATA CONFIG [--case …]`: każdy przypadek w nowym
-  procesie i kopii profilu. PASS wymaga kodu 0, markerów w kolejności, niezmienionych
-  assets i pustego stderr.
+- `g6_d1_run_close_probe.py OUTPUT PROFILE_DATA CONFIG [--case …]`: each case runs in a new
+  process and profile copy. PASS requires exit code 0, ordered markers, unchanged assets and empty stderr.
 
-Przypadki (karta startowa jest pierwszą kartą):
+Cases (the startup tab is the first tab):
 
-| Przypadek | Przebieg |
+| Case | Run |
 |---|---|
-| `exit` | 2 czyste karty, File → Exit |
-| `cancel` | pierwsza karta brudna (1 pole), bieżąca czysta; File → Exit zamyka czystą, na „Save changes” Cancel; sprawdzenie, że została brudna karta z 1 polem; odrzucenie zmian i ponowne Exit |
-| `tab-close` | 3 karty; File → Close; zdarzenie `PAGE_CLOSE` bieżącej karty (ta sama obsługa co przycisk); File → Exit |
+| `exit` | 2 clean tabs, File → Exit |
+| `cancel` | first tab dirty (1 tile), current tab clean; File → Exit closes the clean tab, then Cancel on “Save changes”; check that the dirty tab with 1 tile remains; discard changes and Exit again |
+| `tab-close` | 3 tabs; File → Close; `PAGE_CLOSE` for the current tab (same handler as the button); File → Exit |
 
-Klient 10.98 (`1098-BlackTek`) z profilu `g0-reference-profile-20261030`. Start programu
-ładuje klienta i pokazuje modalną listę 22 ostrzeżeń tilesetów (`missing_id`,
-`inverted_range`). W starych przebiegach zamykał ją operator. Sonda zapisuje jej treść
-i zamyka ją przez `EndModal(wxID_OK)`.
+Client 10.98 (`1098-BlackTek`) from profile `g0-reference-profile-20261030`. Startup loads
+the client and shows a modal list of 22 tileset warnings (`missing_id`, `inverted_range`).
+In older runs an operator closed it. The probe records its contents and closes it with `EndModal(wxID_OK)`.
 
-## Wyniki
+## Results
 
 | Przebieg | EXE `rme.exe` | exit | cancel | tab-close |
 |---|---|---|---|---|
-| przed poprawką (`04b03de`) | `80cba5b9…` | FOCUS_WARNING, 1 błąd | FOCUS_WARNING, 1 błąd | FOCUS_WARNING, 2 błędy |
+| before fix (`04b03de`) | `80cba5b9…` | FOCUS_WARNING, 1 error | FOCUS_WARNING, 1 error | FOCUS_WARNING, 2 errors |
 | po poprawce, przebieg 1 | `fb12d483…` | PASS | PASS | PASS |
 | po poprawce, przebieg 2 | `fb12d483…` | PASS | PASS | PASS |
 
-Przed poprawką każdy błąd ma stos `MainFrame::OnExit` lub obsługę menu/karty →
+Before the fix, every error had a stack from `MainFrame::OnExit` or a menu/tab handler →
 `DoQuerySave` → `CloseCurrentEditor` → `MapTabbook::DeleteTab` → `wxAuiNotebook::DoRemovePage`
-→ `DoModifySelection` → `SetFocus`. Stan okien w chwili błędu: ramka `wx_enabled=0`,
-widoczne okno „Closing”. To ten sam stos co w [G1_FOCUS_TRACE.md](../G1_FOCUS_TRACE.md).
-Każdy błąd wx wypisuje dwukrotnie do stderr. We wszystkich przebiegach kod wyjścia
-wynosił 0, a markery były kompletne. Po poprawce stderr i `focus-trace.log` są puste.
-Anulowanie zachowuje proces, brudną kartę, jej pole i stan `ShouldSave`.
+→ `DoModifySelection` → `SetFocus`. Window state at the error: frame `wx_enabled=0`, with the
+“Closing” window visible. This is the same stack as in [G1_FOCUS_TRACE.md](../G1_FOCUS_TRACE.md).
+Each wx error was written twice to stderr. All runs exited with code 0 and complete markers.
+After the fix, stderr and `focus-trace.log` are empty. Cancellation preserves the process,
+dirty tab, tile and `ShouldSave` state.
 
-Odrzucone próby przygotowawcze zachowano prywatnie. W pierwszej sonda czekała na
-startowy dialog ostrzeżeń, a przypadki przekroczyły limit czasu. W drugiej sonda
-startowała w pętli tego dialogu, przed utworzeniem karty startowej. Dało to 3 lub 4
-karty zamiast 2 lub 3, ale ostrzeżenie odtworzyło się tak samo.
+Rejected setup attempts were retained privately. In the first, the probe waited for the startup
+warning dialog and the cases timed out. In the second, the probe looped in that dialog before
+creating the startup tab. This produced 3 or 4 tabs instead of 2 or 3, but reproduced the same warning.
 
-## Granice
+## Limits
 
-- Polecenia są zdarzeniami `wxEVT_MENU` i `PAGE_CLOSE` w kolejce produkcyjnych handlerów,
-  a nie kliknięciami myszą. Cancel to `WM_CLOSE` na natywnym oknie „Save changes”, które
-  zwraca IDCANCEL, a nie kliknięcie przycisku.
-- Mapy są puste i syntetyczne. Nie mierzono czasu zamykania dużej mapy ani nie oglądano
-  okna „Closing”. Nie sprawdzono wizualnie, która kontrolka ma fokus po zamknięciu.
-- Nie badano innych źródeł SetFocus: D2 (stos aktywacji przy generatorze) i ostrzeżeń
-  `LoadVersion` przy wyłączonej ramce w próbniku odmów.
-- Nie uruchomiono testów CTest, zestawu G5 ani testów Lua. Regresję wykonuje koordynator.
+- Commands are `wxEVT_MENU` and `PAGE_CLOSE` events queued through production handlers,
+  not mouse clicks. Cancel is `WM_CLOSE` on the native “Save changes” window, returning
+  IDCANCEL rather than simulating a button click.
+- Maps are empty and synthetic. Large-map close time was not measured, and the “Closing”
+  window was not visually inspected. The focused control after closing was not checked visually.
+- Other SetFocus sources were not investigated, including D2 (generator activation stack) and
+  `LoadVersion` warnings with a disabled frame in the refusal probe.
+- CTest, the G5 suite and Lua tests were not run. The coordinator runs the regression.

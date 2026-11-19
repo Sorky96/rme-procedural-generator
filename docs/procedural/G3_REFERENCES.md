@@ -1,94 +1,108 @@
-# G3-E — powtarzalność na zestawie referencji, 2026-11-07
+# G3-E — repeatability on the reference set, 2026-11-07
 
-**PARTIAL (G3-E).** Cały pipeline G3-A…D uruchomiono na 19 mapach zwykłego klienta 10.98 oraz wcześniej na jednej mapie BlackTek. Raporty są powtarzalne (dwie pełne serie bajtowo identyczne). Pamięć zmierzono, a dla największej mapy (blisko budżetu 2 GB) wprowadzono limit i anulowanie, także w trakcie ładowania (D8, z długiem resztkowym). Bramka G3 jest spełniona dla tych map w opisanym zakresie, ale G3 nie zamykam: patrz „Czego NIE zweryfikowano”.
+**PARTIAL (G3-E).** The complete G3-A…D pipeline was run on 19 maps from the ordinary 10.98 client and earlier on one BlackTek map. Reports are repeatable (two complete byte-identical series). Memory was measured, and a limit and cancellation were added for the largest map (near the 2 GB budget), including during loading (D8, with residual debt). The G3 gate is satisfied for these maps within the described scope, but G3 is not closed. See “Not verified”.
 
-## Dwa różne klienty (ważne)
-„10.98” (zwykły) i „1098-BlackTek” to **różne** zestawy danych: `Tibia.dat` zwykłego 10.98 ma 23 725 itemów, BlackTek 26 381 (sygnatury nagłówków są takie same, `42A3`/`57BBD603`, więc nie wolno ich rozróżniać po sygnaturze). Mapy zwykłego 10.98 analizowano wyłącznie z `Tibia.dat/spr` z folderu tych map i wpisem „10.98” (`dat_otb`); `forgotten.otbm` wyłącznie z BlackTek. Assety nigdy nie były mieszane.
+## Two different clients (important)
 
-Błąd w moim pierwszym podejściu (zgłoszony przez użytkownika): profil G0 miał `clients.toml` z jednym wpisem (BlackTek), więc wpis „10.98” z `config.toml` nie miał odpowiednika, a start RME wracał do pierwszego klienta (BlackTek) i próbował go ładować. Naprawa: profil dla zwykłego 10.98 to katalog `data/` z repo (ma wpis „10.98”); runner odmawia, gdy żądany klient nie występuje w `clients.toml`, a próbnik odmawia, gdy załadowany klient różni się od żądanego (`CLIENT_MISMATCH`).
+“10.98” (ordinary) and “1098-BlackTek” are **different data sets**: ordinary 10.98 Tibia.dat has 23 725 items, BlackTek has 26 381 (header signatures are identical, 42A3/57BBD603, so they must not be distinguished by signature). Ordinary 10.98 maps were analyzed only with the Tibia.dat/spr from their folder and the “10.98” dat_otb entry. forgotten.otbm was analyzed only with BlackTek. Assets were never mixed.
 
-## Zestaw (klient 10.98, 19 map)
-Mapy prywatne; poniżej aliasy (mapowanie na nazwy tylko lokalnie w `local-data/`). Wszystkie: OTBM 3, items 3.57, przebiegi kończą się same, `stderr` i `wx-log.txt` puste (38 przebiegów).
+An error in my first approach (reported by the user): the G0 profile had one BlackTek entry in clients.toml, so the “10.98” entry from config.toml had no match and RME startup fell back to the first client (BlackTek) and tried to load it. Fix: the ordinary 10.98 profile is the repository data/ directory (it has the “10.98” entry). The runner refuses when the requested client is absent from clients.toml, and the probe refuses when the loaded client differs from the requested one (CLIENT_MISMATCH).
 
-| id | plik MiB | wymiary nagłówka | kafle | itemy | unknown ground/items | różne id unknown | pokrycie | pięter | klucze gruntu | szczyt pamięci MiB |
+## Set (10.98 client, 19 maps)
+
+Maps are private. Aliases below map to names only locally in local-data/. All are OTBM 3 with items 3.57, runs finish unattended, and stderr and wx-log.txt are empty (38 runs).
+
+| id | file MiB | header dimensions | tiles | items | unknown ground/items | distinct unknown IDs | coverage | floors | ground keys | peak memory MiB |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M01 | 0,44 | 256×256 | 38 588 | 60 435 | 43 / 47 | 14 | 99,8 % | 11 | 6 | 244 |
-| M02 | 0,01 | 2048² | 393 | 554 | 0 / 0 | 0 | 100 % | 4 | 1 | 236 |
-| M03 | 0,01 | 2048² | 503 | 1 225 | 0 / 0 | 0 | 100 % | 1 | 8 | 236 |
-| M04 | 0,03 | 2048² | 2 218 | 4 278 | 0 / 0 | 0 | 100 % | 3 | 12 | 236 |
-| M05 | 0,22 | 2048² | 24 832 | 29 815 | 0 / 0 | 0 | 100 % | 5 | 27 | 242 |
-| M06 | 71,08 | 2000² | 7 835 705 | 8 520 654 | 0 / 48 | 15 | 100 % | 16 | 74 | **1 899** |
-| M07 | 5,97 | 5000² | 760 126 | 792 422 | 0 / 0 | 0 | 100 % | 1 | 2 | 451 |
-| M08 | 10,27 | 5000² | 1 322 539 | 1 354 835 | 0 / 0 | 0 | 100 % | 1 | 2 | 555 |
-| M09 | 5,97 | 5000² | 760 126 | 792 422 | 0 / 0 | 0 | 100 % | 1 | 2 | 452 |
-| M10 | 10,12 | 5000² | 1 322 539 | 1 322 539 | 0 / 0 | 0 | 100 % | 1 | 2 | 553 |
-| M11 | 0,05 | 2048² | 4 388 | 6 930 | 0 / 0 | 0 | 100 % | 4 | 10 | 238 |
-| M12 | 0,21 | 2048² | 23 729 | 30 041 | 0 / 0 | 0 | 100 % | 2 | 3 | 241 |
-| M13 | 0,13 | 2048² | 14 343 | 17 323 | 0 / 0 | 0 | 100 % | 2 | 1 | 240 |
-| M14 | 0,06 | 2048² | 5 245 | 8 077 | 0 / 0 | 0 | 100 % | 4 | 8 | 238 |
-| M15 | 0,07 | 2048² | 6 718 | 9 329 | 0 / 0 | 0 | 100 % | 2 | 4 | 238 |
-| M16 | 0,07 | 2048² | 7 422 | 9 268 | 0 / 0 | 0 | 100 % | 4 | 6 | 237 |
-| M17 | 0,21 | 2048² | 19 005 | 29 667 | 0 / 0 | 0 | 100 % | 5 | 2 | 241 |
-| M18 | 0,02 | 2048² | 1 907 | 3 393 | 0 / 0 | 0 | 100 % | 3 | 8 | 237 |
-| M19 | 19,35 | 2048² | 1 888 858 | 2 630 326 | 0 / 0 | 0 | 100 % | 16 | 104 | 717 |
+| M01 | 0.44 | 256×256 | 38 588 | 60 435 | 43 / 47 | 14 | 99.8% | 11 | 6 | 244 |
+| M02 | 0.01 | 2048² | 393 | 554 | 0 / 0 | 0 | 100% | 4 | 1 | 236 |
+| M03 | 0.01 | 2048² | 503 | 1 225 | 0 / 0 | 0 | 100% | 1 | 8 | 236 |
+| M04 | 0.03 | 2048² | 2 218 | 4 278 | 0 / 0 | 0 | 100% | 3 | 12 | 236 |
+| M05 | 0.22 | 2048² | 24 832 | 29 815 | 0 / 0 | 0 | 100% | 5 | 27 | 242 |
+| M06 | 71.08 | 2000² | 7 835 705 | 8 520 654 | 0 / 48 | 15 | 100% | 16 | 74 | **1 899** |
+| M07 | 5.97 | 5000² | 760 126 | 792 422 | 0 / 0 | 0 | 100% | 1 | 2 | 451 |
+| M08 | 10.27 | 5000² | 1 322 539 | 1 354 835 | 0 / 0 | 0 | 100% | 1 | 2 | 555 |
+| M09 | 5.97 | 5000² | 760 126 | 792 422 | 0 / 0 | 0 | 100% | 1 | 2 | 452 |
+| M10 | 10.12 | 5000² | 1 322 539 | 1 322 539 | 0 / 0 | 0 | 100% | 1 | 2 | 553 |
+| M11 | 0.05 | 2048² | 4 388 | 6 930 | 0 / 0 | 0 | 100% | 4 | 10 | 238 |
+| M12 | 0.21 | 2048² | 23 729 | 30 041 | 0 / 0 | 0 | 100% | 2 | 3 | 241 |
+| M13 | 0.13 | 2048² | 14 343 | 17 323 | 0 / 0 | 0 | 100% | 2 | 1 | 240 |
+| M14 | 0.06 | 2048² | 5 245 | 8 077 | 0 / 0 | 0 | 100% | 4 | 8 | 238 |
+| M15 | 0.07 | 2048² | 6 718 | 9 329 | 0 / 0 | 0 | 100% | 2 | 4 | 238 |
+| M16 | 0.07 | 2048² | 7 422 | 9 268 | 0 / 0 | 0 | 100% | 4 | 6 | 237 |
+| M17 | 0.21 | 2048² | 19 005 | 29 667 | 0 / 0 | 0 | 100% | 5 | 2 | 241 |
+| M18 | 0.02 | 2048² | 1 907 | 3 393 | 0 / 0 | 0 | 100% | 3 | 8 | 237 |
+| M19 | 19.35 | 2048² | 1 888 858 | 2 630 326 | 0 / 0 | 0 | 100% | 16 | 104 | 717 |
 
-Szczyt pamięci to maksimum `PeakWorkingSetSize` całego procesu (zawiera klienta, assety i GUI, ok. 235 MiB samego startu), odczytywane co 50 ms; seria B dała wartości w granicach ±1 MiB.
+Peak memory is the maximum PeakWorkingSetSize of the complete process (including client, assets and GUI, about 235 MiB for startup alone), read every 50 ms. Series B values were within ±1 MiB.
 
-## Co to dowodzi
-- **Powtarzalność:** dwie pełne serie, 190 plików (3 raporty JSON i 7 plików analizy na mapę) bajtowo identycznych, 0 różnic. Źródłowe mapy i `Tibia.dat/spr` mają identyczne hashe przed i po każdym przebiegu (runner przerywa przy różnicy).
-- **Ścieżka `unknown` na prawdziwej mapie:** M01 ma 43 nieznane grunty i 47 nieznanych itemów (14 różnych id), M06 ma 48 nieznanych itemów (15 id); raporty podają id i liczności, pokrycie analizy wynosi 99,8 % dla M01. To zamyka lukę z G3_NORMALIZER.md („unknown tylko na fixture”). Przyczyny wyjaśniono w sekcji „Dlaczego te id są nieznane”.
-- **Skala:** 7,8 mln kafli i 16 pięter (M06) w 7,1 s wall całego przebiegu.
+## What this proves
 
-## Dlaczego te id są nieznane
-Sprawdzono każde z 29 nieznanych id w `data/1098/items.otb` (`tools/tibia_data.py`): wszystkie 14 id z M01 (30 845–41 132) **nie istnieje w items.otb** (to id nowsze niż ten klient, otb ma 26 282 pozycji), a wszystkie 15 id z M06 (4 422–4 437) **mają w items.otb grupę „deprecated”** (pozycje bez id klienta). Czyli `unknown` pochodzi z danych map, nie z błędu importera ani niezgodnego klienta; raport podaje te id i liczności, a normalizator nie zgaduje ich klasy.
+- **Repeatability:** two complete series, 190 files (3 JSON reports and 7 analysis files per map) byte-identical, 0 differences. Source maps and Tibia.dat/spr have identical hashes before and after every run (the runner stops on a difference).
+- **Unknown path on a real map:** M01 has 43 unknown grounds and 47 unknown items (14 distinct IDs), M06 has 48 unknown items (15 IDs). Reports include IDs and counts, and M01 analysis coverage is 99.8%. This closes the gap in G3_NORMALIZER.md (“unknown only on fixture”). Causes are explained in “Why these IDs are unknown”.
+- **Scale:** 7.8 million tiles and 16 floors (M06) in 7.1 s wall time for the complete run.
 
-## Limit pamięci i anulowanie (D8)
-Dług D8 (brak limitu pamięci i anulowania importu) zamknięto 2026-11-07 w dwóch krokach; poniżej stan końcowy z porównaniem „przed → po” (klient 10.98, M06 = mapa 71 MiB, 7,8 mln kafli, jeden przebieg na pomiar, ten sam EXE i maszyna).
+## Why these IDs are unknown
 
-**Limit pamięci procesu** (`ReferenceImportLimits.maxProcessBytes`, domyślnie 2 048 MiB w runnerze) działa w trzech miejscach:
-1. **Przed ładowaniem:** bieżący working set + dolne ograniczenie `estimateLoadBytes` (rozmiar nieskompresowanego pliku × 16; dla gzip rozmiar z trailera ISIZE). Odmawia tylko mapy, które nie zmieszczą się nawet przy najniższej zaobserwowanej gęstości (zmierzone 23,4–36,1 B na bajt dla plików ≥ 5 MiB, nigdy poniżej 18). Pierwsza wersja używała górnego ograniczenia 40 B/B i odrzucała M06 przy 2 GiB, choć mieści się.
-2. **W trakcie ładowania (nowe):** loader `IOMapOTBM` ma opcjonalny predykat przerwania (`setAbortCheck`), który wątek wywołujący sprawdza co 5 ms; wątki robocze kończą na następnym kaflu. Predykat zwraca prawdę przy zgłoszeniu `stop_token` albo gdy working set przekroczy limit. Dzięki temu limit obowiązuje także podczas ładowania.
-3. **Przed zbudowaniem modelu semantycznego:** zmierzony working set + `analysisWorkingBytes` (6 B/komórkę + 16 B/komórkę największego piętra).
+Every one of the 29 unknown IDs was checked in data/1098/items.otb with tools/tibia_data.py. All 14 IDs from M01 (30 845–41 132) **do not exist in items.otb** (they are newer than this client, whose OTB has 26 282 entries), and all 15 IDs from M06 (4 422–4 437) have a “deprecated” group in items.otb (entries without a client ID). Therefore unknown comes from map data, not an importer or client mismatch. The report includes the IDs and counts, and the normalizer does not guess their class.
 
-| przypadek | przed (górny szacunek, bez przerwania) | po (dolny szacunek + przerwanie w ładowaniu) |
+<a id="limit-pamięci-i-anulowanie-d8"></a>
+## Memory limit and cancellation (D8)
+
+D8 (no import memory limit or cancellation) was closed on 2026-11-07 in two steps. The final state and before → after comparison follow (10.98 client, M06 = 71 MiB map, 7.8 million tiles, one run per measurement, same EXE and machine).
+
+**Process memory limit** (ReferenceImportLimits.maxProcessBytes, 2 048 MiB by default in the runner) works in three places:
+
+1. **Before loading:** current working set plus the lower estimate estimateLoadBytes (uncompressed file size × 16; for gzip, the ISIZE trailer size). It refuses only maps that cannot fit even at the lowest observed density (23.4–36.1 B per byte for files ≥ 5 MiB, never below 18). The first version used an upper bound of 40 B/B and rejected M06 at 2 GiB even though it fits.
+2. **During loading (new):** IOMapOTBM has an optional abort predicate (setAbortCheck) checked by the calling thread every 5 ms; worker threads stop at the next tile. The predicate returns true when stop_token is requested or working set exceeds the limit. The limit therefore also applies during loading.
+3. **Before building the semantic model:** measured working set plus analysisWorkingBytes (6 B/cell + 16 B/cell for the largest floor).
+
+| case | before (upper estimate, no interruption) | after (lower estimate + loading interruption) |
 |---|---|---|
-| M06, limit 2 048 MiB | odmowa przed ładowaniem | **PASS**, szczyt 1 900 MiB (ładowanie 614 ms, normalizacja 1 303 ms) |
-| M06, limit 1 500 MiB | (nie dotyczy: szacunek odrzucał wcześniej) | przerwane w ładowaniu: `memory_budget_exceeded`, szczyt **1 503 MiB**, ładowanie 503 ms |
-| M06, limit 1 000 MiB | odmowa przed ładowaniem | odmowa przed ładowaniem (dolny szacunek 1 137 MiB + 234 MiB) |
-| M06, estymator zaniżony do 1 B/B, limit 1 200 MiB (test samej kontroli w ładowaniu) | (z limitem 1 500 MiB) szczyt **1 793 MiB**, czyli nadwyżka ok. 293 MiB | przerwane w ładowaniu, szczyt **1 221 MiB**, czyli nadwyżka 21 MiB |
+| M06, limit 2 048 MiB | refusal before loading | **PASS**, peak 1 900 MiB (loading 614 ms, normalization 1 303 ms) |
+| M06, limit 1 500 MiB | (not applicable: estimate rejected it earlier) | interrupted during loading: memory_budget_exceeded, peak **1 503 MiB**, loading 503 ms |
+| M06, limit 1 000 MiB | refusal before loading | refusal before loading (lower estimate 1 137 MiB + 234 MiB) |
+| M06, estimator reduced to 1 B/B, limit 1 200 MiB (loading-control test only) | (with 1 500 MiB limit) peak **1 793 MiB**, excess about 293 MiB | interrupted during loading, peak **1 221 MiB**, excess 21 MiB |
 
-**Anulowanie** (`stop_token`): sprawdzane przed i po haszowaniu, w trakcie ładowania (co 5 ms, predykatem), po ładowaniu, co 4 096 kafli w normalizacji, co wiersz w topologii, cechach i obrazach. Opóźnienie od żądania do powrotu z `normalizeReference` na M06 (jeden przebieg na punkt):
-| żądanie po | etap | przed | po |
+**Cancellation** (stop_token) is checked before and after hashing, during loading (every 5 ms by the predicate), after loading, every 4 096 tiles during normalization, and every row in topology, features and images. Delay from request to return from normalizeReference on M06 (one run per point):
+
+| request after | stage | before | after |
 |---|---|---|---|
-| 0–150 ms | przed ładowaniem (haszowanie) | 154–304 ms | 150–300 ms |
-| 300–600 ms | **w trakcie ładowania** | 1 433–1 713 ms | **78–310 ms** |
-| 700 ms | ładowanie (koniec) | 1 433 ms | 650 ms |
-| 1 000–2 200 ms | normalizacja | 1 196–1 217 ms | 1 164–1 207 ms |
-| 3 000 ms | topologia | 428 ms | 557 ms |
-| 4 500 ms | topologia | 5 ms | 5 ms |
-W importie opóźnienie zawiera zniszczenie wczytanej mapy przy powrocie (ok. 1,2 s dla w pełni wczytanej mapy 7,8 mln kafli); przerwanie w ładowaniu niszczy tylko część mapy, stąd mniejsze wartości. Przy normalizacji zostaje ok. 1,2 s.
+| 0–150 ms | before loading (hashing) | 154–304 ms | 150–300 ms |
+| 300–600 ms | **during loading** | 1 433–1 713 ms | **78–310 ms** |
+| 700 ms | loading (end) | 1 433 ms | 650 ms |
+| 1 000–2 200 ms | normalization | 1 196–1 217 ms | 1 164–1 207 ms |
+| 3 000 ms | topology | 428 ms | 557 ms |
+| 4 500 ms | topology | 5 ms | 5 ms |
 
-**Regresja:** po zmianach pełny zestaw 19 map przy domyślnym limicie 2 048 MiB (M06 też przechodzi) dał 295 plików (190 analiz i 105 plików semantycznych) bajtowo identycznych z serią sprzed zmian w loaderze, a weryfikator PNG przeszedł 100 % kontroli; `forgotten.otbm` (BlackTek) bez zmian; stderr i `wx-log.txt` puste. **Ścieżka edytora (bez haka):** to samo wczytanie bez predykatu daje identyczną liczbę kafli jak import z hakiem na 5 mapach (M19 1 888 858, 5000×5000 z wodą 1 322 539, mapa 19 005, mapa 38 588, `forgotten.otbm` 340 595).
+In import, delay includes destroying the loaded map on return (about 1.2 s for a fully loaded 7.8-million-tile map). An interruption during loading destroys only a partial map, hence the lower values. About 1.2 s remains during normalization.
 
-**Dług resztkowy (D8 w `TECH_DEBT.md`):** (1) samo ładowanie to nadal ok. 94 % szczytu (1 793 z 1 900 MiB dla M06), więc mapa wiele większa niż 71 MiB nie zmieści się w 2 GiB; zmiana tego wymaga innego sposobu wczytywania niż `Map` (np. strumieniowy importer bezpośrednio do modelu semantycznego), czego nie zrobiono; (2) opóźnienie anulowania przy normalizacji to ok. 1,2 s (zniszczenie wczytanej mapy); (3) dolne ograniczenie szacunku sprawia, że mapa rzadka i duża jest ładowana aż do limitu, zanim zostanie przerwana (strata czasu, nie pamięci: nadwyżka 3–21 MiB); (4) kalibracja na 19 mapach jednego klienta, pomiar pamięci tylko na Windows, pojedyncze przebiegi; (5) zmiana w `source/io` dotyczy też edytora (ścieżka bez haka): zweryfikowana tylko równością liczby kafli, nie ręcznym testem w GUI.
+**Regression:** after the changes, the full 19-map set with the default 2 048 MiB limit (M06 also passes) produced 295 files (190 analysis and 105 semantic files) byte-identical to the series before the loader changes. The PNG verifier passed 100% of checks, forgotten.otbm (BlackTek) was unchanged, and stderr and wx-log.txt were empty. **Editor path (without the hook):** the same loading without a predicate produced the same tile count as hooked import on five maps (M19 1 888 858, 5000×5000 water map 1 322 539, maps 19 005 and 38 588, forgotten.otbm 340 595).
 
-## Kontrola niezależna: statystyki RME (GUI, ścieżka edytora)
-Użytkownik otworzył `forgotten.otbm` w zwykłym RME (po zmianie w loaderze, bez haka przerwania) i podał okno **Map → Statistics** (2026-11-07). Zestawienie z raportami tego pipeline'u (klient BlackTek):
-| wielkość | RME (edytor) | pipeline G3 |
+**Residual debt (D8 in TECH_DEBT.md):** (1) loading alone is still about 94% of the peak (1 793 of 1 900 MiB for M06), so a map much larger than 71 MiB will not fit in 2 GiB; changing this requires a different loading method than Map (for example, a streaming importer directly into the semantic model), which was not implemented; (2) cancellation delay during normalization is about 1.2 s (destroying the loaded map); (3) the lower estimate means a sparse, large map can load up to the limit before interruption (time loss, not memory: excess 3–21 MiB); (4) calibration uses 19 maps from one client, memory measured only on Windows and single runs; (5) the source/io change also affects the editor (path without hook), verified only by equal tile counts, not by a manual GUI test.
+
+<a id="kontrola-niezależna-statystyki-rme-gui-ścieżka-edytora"></a>
+## Independent check: RME statistics (GUI, editor path)
+
+The user opened forgotten.otbm in ordinary RME (after the loader change, without the abort hook) and supplied the **Map → Statistics** window (2026-11-07). Comparison with this pipeline's reports (BlackTek client):
+
+| quantity | RME (editor) | G3 pipeline |
 |---|---|---|
-| kafle | 340 595 | 340 595 |
-| itemy | 429 037 | 429 037 |
-| kafle nieprzechodnie (RME) / kafle z cechą `blocking` | 244 283 | 244 283 |
-| kafle przechodnie (RME) / pola przechodnie wg G3 | 96 312 | 95 103 |
-| przedmioty przesuwalne (RME liczy itemy) / kafle z `loose_item` | 1 361 | 1 238 |
-| kontenery niepuste (RME) / kafle z `container` (też puste) | 5 | 431 |
-Trzy pierwsze wartości są identyczne, co jest niezależnym potwierdzeniem importu, liczenia itemów i cechy `blocking` oraz tego, że wczytanie przez edytor po zmianie loadera działa. Różnice w pozostałych wierszach wynikają z innych definicji, nie z błędu: RME uznaje za przechodni każdy kafel bez blokady, a G3 wymaga jeszcze gruntu i braku nieznanej zawartości (96 312 − 95 103 = 1 209 kafli bez gruntu i bez blokady; tych kafli nie sprawdzałem pojedynczo); RME liczy itemy przesuwalne, G3 kafle z takim itemem; RME liczy tylko kontenery z zawartością, G3 każdy kontener. Nie porównano pozostałych pozycji (kafle „detailed” 39 085, depoty 42, itemy z Action/Unique ID, domy i miasta), bo pipeline ich nie liczy.
+| tiles | 340 595 | 340 595 |
+| items | 429 037 | 429 037 |
+| non-walkable tiles (RME) / tiles with blocking feature | 244 283 | 244 283 |
+| walkable tiles (RME) / walkable fields by G3 | 96 312 | 95 103 |
+| movable items (RME counts items) / tiles with loose_item | 1 361 | 1 238 |
+| non-empty containers (RME) / tiles with container (including empty) | 5 | 431 |
 
-## Czego NIE zweryfikowano
-- Nie oceniano, czy klasyfikacje są sensowne dla tych map (np. czy cechy odróżniają style), ani nie oglądano ich w RME. Cechy i raporty są mierzone, nie ocenione.
-- Nie sprawdzono, czy `data/1098/items.otb` jest dokładnie tym `items.otb`, z którym te mapy powstały; wskazuje na to zgodność (OTBM 3, items 3.57, 0 unknown na 17 z 19 map), nie dowód. Id unknown w M01 i M06 wyjaśniono osobno (sekcja „Dlaczego te id są nieznane”), co nie wyklucza niedopasowania `items.otb` na innych mapach.
-- Wyniki z dwóch serii pochodzą z jednej maszyny i jednego EXE; nie testowano innego locale systemu.
-- Czasy to jeden komplet pomiarów (dwie serie, ten sam wynik w granicach 0,1 s dla wall), nie benchmark przed/po; nie wydzielono czasu poszczególnych etapów.
-- Anulowanie importu: przerywalne w ładowaniu (hak w loaderze), opóźnienie zmierzone; ok. 1,2 s przy normalizacji (zniszczenie mapy) zostaje (patrz „Limit pamięci i anulowanie”).
-- Brak części cech z sekcji 4.2 planu (rzeki, jaskinie, szlaki, osady, mikrostruktury, test podobieństwa); patrz G3_FEATURES.md. Nie wykonano podziału train/validation/test ani oceny podobieństwa między mapami (zakres G4).
-- Pliki towarzyszące (house, spawn, zones) nie są wczytywane.
+The first three values are identical, independently confirming import, item counting and the blocking feature, and that editor loading works after the loader change. Differences in the remaining rows come from different definitions, not an error: RME considers every unblocked tile walkable, while G3 also requires ground and no unknown content (96 312 − 95 103 = 1 209 tiles without ground and without blocking; these were not checked individually). RME counts movable items, G3 counts tiles containing such an item. RME counts only containers with content, G3 every container. Remaining entries (39 085 detailed tiles, 42 depots, Action/Unique ID items, houses and towns) were not compared because the pipeline does not count them.
+
+## Not verified
+
+- Whether classifications are sensible for these maps (for example, whether features distinguish styles) was not assessed, and they were not viewed in RME. Features and reports are measured, not evaluated.
+- It was not checked whether data/1098/items.otb is exactly the items.otb used to create these maps. Compatibility (OTBM 3, items 3.57, 0 unknown on 17 of 19 maps) suggests it, but is not proof. Unknown IDs in M01 and M06 are explained separately above, which does not rule out an items.otb mismatch on other maps.
+- Results from both series are from one machine and one EXE. Another system locale was not tested.
+- Times are one complete set of measurements (two series, the same result within 0.1 s wall), not a before/after benchmark. Individual stages were not separated.
+- Import cancellation is interruptible during loading (loader hook), and delay was measured. About 1.2 s during normalization remains (map destruction), as described above.
+- Features from section 4.2 of the plan are still missing (rivers, caves, routes, settlements, microstructures, similarity test). No train/validation/test split or inter-map similarity evaluation was performed (G4 scope).
+- Companion files (house, spawn, zones) are not loaded.

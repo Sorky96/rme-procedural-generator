@@ -1,126 +1,103 @@
-# I54 — lokalny feedback i historia wersji
+# I54 — local feedback and version history
 
-Prerejestracja: `e9ca540`, sekcja I54 w `G6_METRICS.md`. Raport wykonawcy;
-nie zamyka G6 ani nie zastępuje niezależnego przeglądu i regresji integratora.
+Prerecorded at `e9ca540`, I54 section in `G6_METRICS.md`. Executor report;
+it does not close G6 or replace the integrator's independent review and regression.
 
-## Implementacja
+## Implementation
 
-Surface udostępnia Approve / Reject / Adjust dla wybranego, przygotowanego
-kandydata. Wybór w galerii nie zapisuje ocen. Approve i Adjust wymagają
-dopuszczalnego wyniku; Reject działa również dla hardFail. Handler sprawdza
-aktualność mapy, zasobów, ustawień i odcisków przygotowanego kandydata także
-przy wymuszonym wywołaniu. Notatka ma limit 1024 **bajtów UTF-8**, z widocznym
-błędem przy zapisie i zachowaniem tekstu do poprawy.
+Surface provides Approve / Reject / Adjust for the selected prepared
+candidate. Selecting a gallery item does not save ratings. Approve and Adjust require
+an acceptable result; Reject also works for hardFail. The handler checks
+map, assets, settings and prepared-candidate fingerprints, including forced calls.
+Notes are limited to 1024 **UTF-8 bytes**, with a visible save error and the text kept for correction.
 
-`procedural/styles/history.json` w lokalnym katalogu profili użytkownika
-zawiera format `g6-style-history/1`, oceny, wersje i aktywną wersję. Wpis ma
-losowy identyfikator SHA-256, klienta i hashe jego zasobów, odcisk bazowego
-profilu, lokalną wersję lub ustawienia wbudowane, politykę rankingu, indeks
-kandydata, seed użytkownika/początkowy/rzeczywisty oraz pięć odcisków pięter.
-Zapisuje pełne ustawienia Surface i dekoracji użyte przy generacji. Nie
-zbiera ścieżek/nazw map, współrzędnych ani zawartości kafli. Notatka jest
-jawnym tekstem wpisanym przez użytkownika, nie automatyczną telemetrią.
+`procedural/styles/history.json` in the user's local profile directory
+contains format `g6-style-history/1`, ratings, versions and the active version. An entry has
+a random SHA-256 identifier, client and asset hashes, base-profile fingerprint, local version
+or built-in settings, ranking policy, candidate index, user/initial/actual seed and five floor
+fingerprints. It stores the complete Surface and decoration settings used for generation. It
+does not collect map paths/names, coordinates or tile contents. A note is text explicitly entered
+by the user, not automatic telemetry.
 
-Adjust zapisuje nową migawkę z rodzicem i **wyłącznie** następującą poprawką
-stylu: pathLength, buildingDensity, ruinPercent, campCount, fordLength,
-rockPasses, shoreSmoothing (0 lub 2) i repairReach. Zakres jest wypisany
-w GUI. Nie zapisuje edytowanych pędzli, geometrii gór/jaskiń ani pozostałych
-kontrolek. Bazowe strojenie, pochodzenie pasm, ograniczenia klienta, paleta,
-statystyki i dekoracje profilu pozostają w zachowanej migawce. Pliki
-wejściowe `*.profile` pozostają tylko do odczytu; ich format i parser nie
-zmieniły się. Brak profilu wyłącza Adjust, ale pozwala oceniać wynik.
+Adjust stores a new snapshot with its parent and **only** these style changes:
+pathLength, buildingDensity, ruinPercent, campCount, fordLength, rockPasses,
+shoreSmoothing (0 or 2) and repairReach. The scope is shown in the GUI. It does not
+store edited brushes, mountain/cave geometry or the other controls. Base tuning, band
+provenance, client constraints, palette, statistics and profile decorations remain in
+the retained snapshot. Input `*.profile` files remain read-only. Their format and parser
+are unchanged. Without a profile, Adjust is disabled but the result can still be rated.
 
-Pierwszy Adjust zachowuje także bazową wersję. Jawne Activate / rollback
-wybiera zgodną wersję i unieważnia serię. Kolejny Adjust wskazuje tę wersję
-jako rodzica, zachowując młodsze gałęzie. Ponowne otwarcie okna/aplikacji
-wczytuje oceny, historię i ostatnią aktywowaną lokalną wersję. Bazowa wersja
-bez poprawki zachowuje zachowanie dawnego profilu i domyślne kontrolki GUI.
+The first Adjust also preserves the base version. Explicit Activate / rollback selects a
+compatible version and invalidates the series. A later Adjust names that version as its parent,
+preserving younger branches. Reopening the window/application loads ratings, history and the
+last activated local version. The unmodified base version keeps the old profile behavior and
+default GUI controls.
 
-Odczyt ma limity: 8 MiB, 4096 ocen, 256 wersji, głębokość JSON 16; sprawdza
-typy, zakresy, UTF-8, rodziców, zgodność migawek i aktywną wersję. Nieznany
-format lub uszkodzenie blokuje zapis, bez resetowania pliku. Zapis sprawdza
-bajtową migawkę wczytanego pliku pod blokadą katalogową, opróżnia bufor
-pliku tymczasowego i atomowo podmienia plik przez Windows MoveFileExW.
-Konflikt i błąd zapisu zachowują wcześniejsze dane. Blokada po awarii nie
-jest automatycznie usuwana; użytkownik otrzymuje błąd zamiast nadpisania.
-Historia osiągająca limit jest odrzucana bez usuwania wcześniejszych ocen.
+Reading is limited to 8 MiB, 4096 ratings, 256 versions and JSON depth 16. It checks
+types, ranges, UTF-8, parents, snapshot compatibility and active version. Unknown format or
+corruption blocks saving without resetting the file. Saving checks the byte snapshot of the
+loaded file under a directory lock, flushes the temporary file and atomically replaces it with
+Windows MoveFileExW. Conflicts and write errors preserve previous data. A lock left after a
+failure is not removed automatically, so the user receives an error instead of an overwrite.
+A history that reaches a limit is rejected without deleting earlier ratings.
 
-Kontrolki korzystają z wxWidgets, fontu i kolorów Theme oraz Theme::Grid.
-Mają nazwy dostępności, widoczne etykiety i natywną obsługę klawiatury.
-Feedback i historia nie wywołują operacji na mapie ani kolejce Undo.
-Generator, mountain, ranking A, blokady I52/I53, format map i pojedynczy
-Action dla Place pozostają bez zmian. Nie dodano item IDs, synchronizacji,
-uczenia ani automatycznej zmiany rankingu.
+Controls use wxWidgets, the Theme font and colors, and Theme::Grid. They have accessible
+names, visible labels and native keyboard handling. Feedback and history do not call map
+operations or the Undo queue. The generator, mountain, ranking A, I52/I53 gates, map format
+and single Action for Place remain unchanged. No item IDs, synchronization, learning or
+automatic ranking changes were added.
 
-## Walidacja wykonawcy
+## Executor validation
 
-- Windows x64 Release, `build_ninja.bat`: **PASS**. Użyto istniejącego
-  `vcpkg_installed` głównego checkoutu, z `VCPKG_MANIFEST_INSTALL=OFF`, oraz
-  Ninja 1.13.2 wskazanego w zleceniu. Log: `scratchpad/i54-validation.log`.
-- `g5_run_suite.py` bez `--probes`: **22/22, SUITE_PASS**. To wynik rdzenia,
-  nie pełna bramka z sondami Commit/Surface. Test Surface potwierdza
+- Windows x64 Release, `build_ninja.bat`: **PASS**. Used the existing
+  `vcpkg_installed` in the main checkout with `VCPKG_MANIFEST_INSTALL=OFF` and
+  Ninja 1.13.2 specified in the task. Log: `scratchpad/i54-validation.log`.
+- `g5_run_suite.py` without `--probes`: **22/22, SUITE_PASS**. This is the core result,
+  not the full gate with Commit/Surface probes. The Surface test confirms
   `1729`, `100×100 = 17159159863505677800`.
-- CTest dla store'u, profilu, oferty, Surface, rankingu kandydatów, serii
-  i copy guard: **7/7 PASS**.
-- Prywatne `g1_run_resolver_probe.py ... --series`: **PASS**, exit 0,
-  `input_assets_unchanged=true`, `CANDIDATE_DIALOG_PASS`. Wynik i manifest
-  źródeł: `scratchpad/i54-client/verification.json` i `build-manifest.json`.
-  Wyniki I54 mają markery `I54_BUILTIN_FEEDBACK_NO_BASE_ADJUST_DISABLED_PASS`
-  oraz `I54_SELECTED_FEEDBACK_UTF8_ADJUST_ROLLBACK_BRANCH_REOPEN_STALE_NO_MUTATION_PASS`.
-  Sonda sprawdziła również odmowę Approve/Adjust i zapis Reject dla hardFail.
-  Wynik M06 po historii miał wybranego kandydata #2 i zachował pojedyncze
-  Place/Undo/Redo. Przeszły dotychczasowe przypadki N=1/4/16, oba profile,
-  anulowanie, aktualność i sześć przypadków I53.
-- `git diff --check`: **PASS**. Nie wykonywano pomiaru ani twierdzeń
-  o poprawie wydajności lub jakości rankingu.
+- CTest for the store, profile, offer, Surface, candidate ranking, series
+  and copy guard: **7/7 PASS**.
+- Private `g1_run_resolver_probe.py ... --series`: **PASS**, exit 0,
+  `input_assets_unchanged=true`, `CANDIDATE_DIALOG_PASS`. Result and source manifest:
+  `scratchpad/i54-client/verification.json` and `build-manifest.json`.
+  I54 results carry markers `I54_BUILTIN_FEEDBACK_NO_BASE_ADJUST_DISABLED_PASS`
+  and `I54_SELECTED_FEEDBACK_UTF8_ADJUST_ROLLBACK_BRANCH_REOPEN_STALE_NO_MUTATION_PASS`.
+  The probe also checked Approve/Adjust refusal and Reject saving for hardFail.
+  After history, the M06 result selected candidate #2 and preserved one
+  Place/Undo/Redo. Existing N=1/4/16 cases, both profiles, cancellation, freshness
+  and six I53 cases passed.
+- `git diff --check`: **PASS**. No measurements or claims of improved performance
+  or ranking quality were made.
 
-Log linkera sondy zawiera znane ostrzeżenia wxWidgets C4723 w zewnętrznym
-`gdiimage.h` oraz komunikat środowiska vcvars o `vswhere.exe`; kompilacja
-i linkowanie zakończyły się kodem 0. Na stderr uruchomionej sondy były
-wyłącznie tolerowane przez istniejący runner komunikaty wx o SetFocus.
+The probe linker log contains known wxWidgets C4723 warnings in external
+`gdiimage.h` and a vcvars environment message about `vswhere.exe`; compilation
+and linking exited with code 0. The probe stderr contained only wx SetFocus
+messages tolerated by the existing runner.
 
-Test `test_procedural_style_history` obejmuje wszystkie akcje, dokładny
-powrót uint64 i UTF-8, limit notatki, niedozwolony UTF-8, brak bazy,
-hardFail, zgodność klienta/zasobów, restart, rollback i gałąź, konflikt
-dwóch store'ów, zewnętrzną zmianę pliku, blokadę, błąd utworzenia pliku
-tymczasowego, uszkodzony/obcy format, błędne liczby i drzewo oraz limit
-rozmiaru. Testy profili kontrolują dotychczasowy odczyt i ofertę profili.
+Test `test_procedural_style_history` covers all actions, exact uint64 and UTF-8
+round trips, note limit, invalid UTF-8, missing base, hardFail, client/asset
+compatibility, restart, rollback and branching, two-store conflict, external file
+change, lock, temporary-file creation error, corrupt/foreign format, invalid numbers
+and tree, and size limit. Profile tests cover existing profile reading and offers.
 
-Rozszerzenie prywatnej sondy `--series` korzysta z rzeczywistego klienta,
-produkcyjnych kontrolek/handlerów i ActionQueue, na syntetycznych mapach.
-Sprawdza ocenę innego kandydata, notatkę, Adjust, rollback, gałąź,
-ponowne otwarcie okna, odmowę starego wyniku i hardFail oraz Place → jedno
-Undo → Redo z porównaniem do niezależnie przygotowanego wyniku.
+The private `--series` probe extension uses the real client, production controls/handlers
+and ActionQueue on synthetic maps. It checks rating another candidate, notes, Adjust,
+rollback, branching, window reopen, stale-result and hardFail refusal, and Place → one
+Undo → Redo against an independently prepared result.
 
-Prywatne historie, profile testowe, konfiguracja klienta i logi są wyłącznie
-w `scratchpad/`; nie należą do commitu. Nie instalowano zależności,
-nie zmieniano `C:/repo/vcpkg/buildtrees` i nie wykonywano push.
+Private histories, test profiles, client configuration and logs are only in
+`scratchpad/` and are not part of the commit. No dependencies were installed,
+`C:/repo/vcpkg/buildtrees` was not changed and nothing was pushed.
 
-## Kroki ręcznego odbioru GUI
+## Manual GUI acceptance steps
 
-1. W prywatnym profilu aplikacji załaduj zgodnego klienta i bazowy profil
-   `*.profile`. Otwórz nową mapę i generator Natural surface; wybierz profil.
-2. Wygeneruj czterech kandydatów. Strzałkami wybierz innego niż rekomendowany.
-   Sprawdź etykietę Selected, seed i stan walidacji.
-3. Wpisz notatkę z polskimi znakami, kliknij Approve, potem Reject. Sprawdź
-   komunikaty i brak zmian mapy/Undo. Przekrocz 1024 bajty; zapis ma odmówić
-   i pozostawić tekst do poprawy.
-4. Zmień obsługiwany parametr stylu. Stary podgląd ma utracić możliwość
-   oceny. Wygeneruj nowy dopuszczalny wynik, sprawdź wypisany zakres Adjust
-   i kliknij Adjust. Powinna powstać lokalna wersja, a seria zniknąć.
-5. W historii wybierz bazę i kliknij Activate / rollback. Wygeneruj nowy
-   wynik i zrób Adjust. Sprawdź rodzica nowej gałęzi oraz obecność poprzedniej.
-6. Zamknij i ponownie otwórz aplikację z tym samym klientem. Sprawdź
-   zachowanie ocen, gałęzi i aktywnej lokalnej wersji. Inny klient lub inne
-   zasoby nie mogą oferować tych lokalnych wersji.
-7. Otwórz dwa okna ze wspólnym snapshotem historii. Zapisz w pierwszym,
-   następnie w drugim: drugie ma zgłosić konflikt bez utraty pierwszego zapisu.
-8. Wygeneruj dopuszczalny wynik i wykonaj Place, Undo, Redo. Place ma mieć
-   jeden wpis Undo. Sprawdź stan hardFail: Reject dostępny, Approve/Adjust
-   i Place niedostępne. Sprawdź fokus i tabulację oraz jasny/ciemny Theme.
+1. In the private application profile, load a compatible client and base `*.profile`. Open a new map and the Natural surface generator, then choose the profile.
+2. Generate four candidates. Use the arrows to choose one other than the recommendation. Check the Selected label, seed and validation state.
+3. Enter a note containing non-ASCII characters, click Approve, then Reject. Check the messages and that the map and Undo remain unchanged. Exceed 1024 bytes. Saving must refuse and keep the text for correction.
+4. Change a supported style parameter. The old preview must lose its rating ability. Generate a new acceptable result, check the displayed Adjust scope and click Adjust. A local version should be created and the series should disappear.
+5. In history, select the base and click Activate / rollback. Generate a new result and Adjust it. Check the new branch parent and the previous branch.
+6. Close and reopen the application with the same client. Check ratings, branches and the active local version. Another client or assets must not offer these local versions.
+7. Open two windows sharing a history snapshot. Save in the first and then in the second. The second must report a conflict without losing the first save.
+8. Generate an acceptable result and run Place, Undo and Redo. Place must have one Undo entry. Check hardFail state: Reject available, Approve/Adjust and Place unavailable. Check focus, tab order and light/dark Theme.
 
-Ręczny odbiór wizualny/klawiatury i ponowne uruchomienie całego procesu
-przez człowieka pozostają niewykonane; automatyczna sonda ponownie otwiera
-store i okno. Ślepy test jakości I55 pozostaje osobnym zadaniem. Integrator
-wykonuje własny build, pełny SUITE_PASS z sondami, G5 `--i47` (m06=0,
-m19=1), aktualizuje `G6_GATE_STATUS` i usuwa build-ninja tego worktree.
+Manual visual/keyboard acceptance and a human rerun of the complete process remain outstanding. The automated probe reopens the store and window. The I55 blind quality test remains a separate task. The integrator runs its own build, full SUITE_PASS with probes and G5 `--i47` (m06=0, m19=1), updates `G6_GATE_STATUS` and removes this worktree's build-ninja.

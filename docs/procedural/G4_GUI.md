@@ -1,48 +1,59 @@
-# G4 — profile stylu w oknie generatora, 2026-11-08
+# G4 — style profile in the generator window, 2026-11-08
 
-**PARTIAL: kod zbudowany i sprawdzony bez GUI, test ręczny w RME czeka na użytkownika.**
+**PARTIAL: code built and checked without GUI; manual RME testing is waiting for the user.**
 
-## Co jest
-- Okno **Map → Generate terrain…** ma nową listę **Style profile** (pod „Terrain style”). Pozycja „Built-in (manual settings)” to dotychczasowe zachowanie. Lista jest aktywna tylko dla stylu „Natural surface”.
-- Profile to pliki `*.profile` (`g4-profile/3`) w folderze `procedural/styles` w lokalnym katalogu danych RME (`FileSystem::GetLocalDataDirectory()`); dokładną ścieżkę pokazuje podpowiedź (tooltip) nad listą. Okno **nic nie zapisuje** i nie tworzy tego folderu (tworzy tylko istniejący już lokalny katalog danych, jak reszta RME).
-- Profil jest oferowany tylko jeśli został nauczony dla **dokładnie tego klienta i tych assetów**: nazwa klienta, SHA-256 `items.otb` (z modularnych danych klienta) i SHA-256 metadanych klienta (`Tibia.dat`) muszą się zgadzać z profilem, profil musi dotyczyć powierzchni z fitowanym strojeniem, a wartości muszą mieścić się w zakresach generatora. Niepasujące profile nie są listowane; tooltip podaje, ile ukryto i dlaczego.
-- Wybrany profil ustawia `GenerationConfig::surface` (strojenie powierzchni) i `GenerationConfig::decor` (szanse drzew, krzaków i kamieni; ma znaczenie przy zaznaczonej wegetacji). Dostały je istniejące ścieżki: podgląd, walidacja, Place, Undo. Zmiana profilu unieważnia podgląd jak każda inna zmiana ustawień.
-- `DecorTuning` przeniesiony do `generation.h`, `GenerationConfig::decor` dodany. Odcisk podglądu (fingerprint) obejmuje strojenie dekoracji **tylko gdy różni się od wbudowanego** (i jest wegetacja), więc odciski dla dotychczasowych konfiguracji są bez zmian.
-- Narzędzie `style_styles --profiles-out` zapisuje profile stylów (osiem dla 10.98: `caves`, `m01`, `m05`, `m06`, `m15`, `m19`, `swamp`, `winter`) w katalogu lokalnym `local-data/procedural-smoke/g4-profiles/10.98/` (nie w repo).
+## Included
 
-## Co sprawdzono
-- `rme.exe` buduje się bez błędów.
-- Testy rdzenia PASS: `test_procedural_core`, `…_surface` (domyślne strojenie dekoracji bez zmian wyniku), `…_decor`, `…_style_profile`, `…_style_profile_set` (oferta: zgodny klient/assets, odrzucenia: inny klient, inne `items.otb`, inne `Tibia.dat`, podziemia, brak strojenia, strojenie poza zakresem, śmieci, pusty plik), `…_style_fit`, `…_similarity`.
-- Te same funkcje, które wywołuje okno (`loadedClientAssetIds`, `scanStyleProfiles`), uruchomione w próbniku z prawdziwie załadowanym klientem 10.98: hashe `items.otb` i `Tibia.dat` zgodne z hashami profili, **8 z 8 profili oferowanych**, 0 ukrytych (`g4-offer-20261108a`).
-- Raporty G3 nie zmieniane tą zmianą.
+- **Map → Generate terrain…** has a **Style profile** list below “Terrain style”. “Built-in (manual settings)” preserves previous behavior. The list is active only for “Natural surface”.
+- Profiles are *.profile files (g4-profile/3) in procedural/styles under RME's local data directory (FileSystem::GetLocalDataDirectory()). The tooltip above the list shows the exact path. The window does not save anything or create this folder, only the already existing local data directory as elsewhere in RME.
+- A profile is offered only when learned for **exactly this client and these assets**: client name, SHA-256 of items.otb (from modular client data) and SHA-256 of client metadata (Tibia.dat) must match, the profile must describe a surface with fitted tuning, and values must be within generator ranges. Incompatible profiles are not listed. The tooltip gives the count and reason for hidden profiles.
+- The selected profile sets GenerationConfig::surface (surface tuning) and GenerationConfig::decor (tree, bush and stone chances, relevant when vegetation is selected). Existing preview, validation, Place and Undo paths receive them. Changing a profile invalidates the preview like any other setting change.
+- DecorTuning moved to generation.h and GenerationConfig::decor was added. The preview fingerprint includes decoration tuning **only when it differs from built-in values** and vegetation is enabled, so fingerprints for previous configurations are unchanged.
+- style_styles --profiles-out writes eight style profiles for 10.98 (caves, m01, m05, m06, m15, m19, swamp, winter) to local-data/procedural-smoke/g4-profiles/10.98/ (not the repository).
 
-## Paleta brushy w profilu (schemat `g4-profile/4`, po uwadze z testu ręcznego)
-Pierwszy test w RME pokazał, że profile różnią się tylko rozkładem rodzajów gruntu, a wyglądem prawie wcale (winter i swamp podobne, caves to jeden grunt). Profil niesie teraz także **paletę**: dla każdego z pięciu rodzajów brush, którego dany styl używał najczęściej na powierzchni. Wybór profilu w oknie wpisuje te brushe w pola brushy (pola nadal można zmienić); brush, którego klient nie ma, jest pominięty i wymieniony w statusie, niczego się nie zgaduje.
-- Zasady wyboru, zapisane z góry: brush z kluczem bez prefiksu `item ` (czyli prawdziwy brush, nie ground item bez brusha), co najmniej 200 kafli, co najmniej 25 % kafli tego rodzaju w stylu; inaczej brak wpisu (pole brusha zostaje bez zmian). Dane: kafle na klucz dla z ≤ 7 z map niosących cel stylu.
-- Wynik dla 10.98: `m06` (trawa, `jungle dirt`, `mountain top ground`, `sand`, `sea`), `m19` (`grass`, `dirt`, `mountain`, `sand`, `sea`), `m05` (`grass`, `mountain`), `winter` (`snowy mountain`, `sea`), `caves` (`earth`); **`swamp`, `m01`, `m15` bez palety**: ich grunty to prawie wyłącznie ground items bez brusha (D13), więc nie da się ich wyrazić brushami. Różnica widoczna po wyborze profilu jest więc skromna: wyraźna dla zimy (`snowy mountain`), mała dla reszty, żadna dla bagna.
-- Zmiana schematu na v4 unieważnia pliki v3 (okno ukryje je jako „unusable”); trzeba skopiować nowe.
-- Palety nie zmieniają statystyk, dopasowania ani wyników iteracji G4-F (raport `style_styles` bajtowo identyczny).
-- Testy: `test_procedural_style_profile` (wybór palety, remisy, kolejność, próg udziału i kafli, zapis i odczyt) PASS; oferta v4 w próbniku 8 z 8.
+## Checked
 
-## Błąd z testu ręcznego: „Borders would extend outside the allowed area” (2026-11-08)
-Po wyborze profilu każdy Preview kończył się tym błędem. Dwie przyczyny:
-1. **Brushe z palety, których generator nie umie położyć.** Pełne przygotowanie (to samo, co robi okno) na pustej mapie 10.98 odrzuca (`PreviewError::OutOfMask`) brushe `earth`, `earth (stone border)`, `mountain`, `snowy mountain`, `icy mountain`, `dirt mountain ground` (+ thick border), `frozen mud (thick border)`, `grass (alternate border)`, `sand (thick border)`: ich krawędzie wychodzą poza wygenerowany obszar, a okno zmienia tylko dozwolony obszar. `snowy mountain` jest dodatkowo pustym stubem w danych (bez itemów). Przechodzą m.in. `grass`, `jungle grass`, `dirt`, `jungle dirt`, `mountain top ground`, `rocky ground`, `sand`, `sea`, `clear water`. Dotyczy to też ręcznego wyboru tych brushy w dotychczasowym oknie (lista ich nie odfiltrowuje).
-2. **Brushe poprzedniego profilu zostawały w polach** po zmianie profilu (np. `snowy mountain` z `winter` psuło `swamp`).
-Poprawki: (a) każdy wybór profilu (także „Built-in”) zaczyna od brushy domyślnych, a dopiero potem wpisuje paletę; wpis stosowany tylko, gdy klient ma brush i ma on itemy; (b) narzędzie dobiera paletę wyłącznie spośród brushy, które przeszły to samo przygotowanie na tym kliencie (lista 21 brushy, `--usable-brushes`, wynik próbnika `--palette-probe`); wynik: dla wszystkich 8 profili pełne przygotowanie przechodzi (`ok`), oferta 8 z 8.
-**Skutek uboczny:** po tym filtrze palety prawie nie różnicują stylów. `m06`: `grass`, `jungle dirt`, `mountain top ground`, `sand`, `sea`; `m19`: `grass`, `dirt`, `sand`, `sea`; `m05`: `grass`; `winter`: `sea`; `caves`, `m01`, `m15`, `swamp`: brak. Zima nie dostanie `snowy mountain`, bo generator takiego brusha nie położy. Prawdziwe zróżnicowanie wyglądu wymagałoby albo zmiany zasady „zmieniamy tylko dozwolony obszar” dla krawędzi brushy z zewnętrznymi bordurami (decyzja poza tym etapem), albo nowych rodzajów gruntu.
+- rme.exe builds without errors.
+- Core tests PASS: test_procedural_core, …_surface (default decoration tuning leaves the result unchanged), …_decor, …_style_profile, …_style_profile_set (offer: matching client/assets; refusals: other client, other items.otb, other Tibia.dat, underground, missing tuning, out-of-range tuning, garbage, empty file), …_style_fit and …_similarity.
+- The same functions used by the window (loadedClientAssetIds, scanStyleProfiles) ran in a probe with a genuinely loaded 10.98 client: items.otb and Tibia.dat hashes match profile hashes, **8 of 8 profiles offered**, 0 hidden (g4-offer-20261108a).
+- G3 reports were not changed.
 
-## Brushe z zewnętrzną bordurą i paleta dekoracji (schemat `g4-profile/5`, 2026-11-08)
-**Korekta wcześniejszego wniosku:** napisałem, że `snowy mountain` jest pustym stubem. To nieprawda: wpis w `brushes.xml` to deklaracja wprzód, a itemy brush dostaje z innych plików; po poprawce poniżej przechodzi pełne przygotowanie jak inne.
-- **Przyczyna odrzucania brushy** (`earth`, `mountain`, `snowy mountain`, `icy mountain`, `dirt mountain ground`, `frozen mud (thick border)`, `grass (alternate border)`, `sand (thick border)` i inne): brush z „zewnętrzną bordurą do niczego” (`hasOuterZilchBorder`) rysuje krawędź na pustych sąsiednich kaflach, a dla generowanego obszaru to kafle poza nim, więc strażnik maski odrzucał wynik (`OutOfMask`).
-- **Poprawka (część 2):** gdy któryś brush profilu ma taką bordurę (`profileNeedsEdgeClearance`), `surfaceKeepClear` zostawia puste także pola przylegające do niezapisywalnego sąsiada bez gruntu (dla prostokąta: zewnętrzny pierścień o szerokości 1 kafla; dla zaznaczenia: też otwory maski). Bordura ląduje wtedy na tych pustych polach, które są **w** dozwolonym obszarze, więc nic poza nim się nie zmienia. Odcisk podglądu przyjmuje takie kafle (bez gruntu, tylko z borderem). Dla profili bez takich brushy nic się nie zmienia (flaga domyślnie wyłączona), regresja G1 `--surface` i `--commit` PASS.
-- **Skutek wizualny:** przy brushach z tą bordurą wynik ma wokół obszaru pierścień 1 kafla samych borderów bez gruntu (szew podobny do D5); to nie jest błąd.
-- **Sprawdzenie:** pełne przygotowanie na pustej mapie 10.98 dla 31 brushy gruntu (każdy w swoim slocie): przed 21 z 31 `ok`, po 31 z 31 (`g4-palette-20261108e`).
-- **Paleta dekoracji (część 1):** profil niesie też drzewo, krzak i kamień, których styl używał najczęściej (zasady z góry jak dla gruntu: klasyfikacja po nazwie, udział ≥ 25 % rodzaju, minimum **30** sztuk, bo mapy próbek mają mało dekoracji; próg 100 odrzucał prawie wszystko, więc został obniżony po obejrzeniu liczności; tylko brushe, które przeszły pełne przygotowanie z wegetacją: 41 z 45). Dane ze wszystkich map stylu rodziny. Okno wpisuje je w pola Tree, Bush, Stone brush; pole wegetacji zostawia tak, jak ustawił użytkownik.
-- **Wynik dla 10.98:** grunt: `caves` (`earth`), `m05` (`grass`, `mountain`), `m06` (`grass`, `jungle dirt`, `mountain top ground`, `sand`, `sea`), `m19` (`grass`, `dirt`, `mountain`, `sand`, `sea`), `winter` (`snowy mountain`, `sea`); `swamp`, `m01`, `m15` bez gruntu. Dekoracje: `caves` (`dead mangrove tree`, `small rocks`), `m05` (`trees`, `grass tufts`, `small rocks`), `m06` (`trees`, `bushes`, `kamienie`), `m19` (`trees`, `grass tufts`, `small rocks`), `swamp` (`swamp plants` jako krzak), `winter` (`small snowy rocks`); `m01`, `m15` bez dekoracji.
-- Wszystkie 8 profili z pełną paletą przechodzi pełne przygotowanie na pustej mapie z włączoną wegetacją (`g4-final-20261108a`), oferta 8 z 8. Raport `style_styles` (statystyki, dopasowanie, wyniki G4-F) bajtowo identyczny.
+## Brush palette in the profile (g4-profile/4, after manual-test feedback)
 
-## Czego NIE sprawdzono
-- Samego okna (układ, kolejność tabulacji, mnemoniki, tooltip, zachowanie przy braku folderu), pełnej ścieżki Preview → Validate → Place → Undo/Redo z profilem, ani oferty dla klienta BlackTek (pokryta tylko testem jednostkowym).
-- Wyglądu wyniku (rzeki wciąż prowadzą głównie po osiach, D6; profile sięgają krańców siatek parametrów).
-- Że profil poprawia wynik na mapach niewidzianych (nie: patrz [G4_GATE_STATUS.md](G4_GATE_STATUS.md); to są profile dopasowane do własnych stylów).
-- Foldery i profile nie są wersjonowane w repo (pochodzą z prywatnych map); instrukcja ich uzyskania to uruchomienie narzędzi z `docs/procedural/smoke` i `style_styles`.
+The first RME test showed that profiles differed only in ground-kind distribution and looked almost identical (winter and swamp were similar, caves had one ground). A profile now also carries a **palette**: the most-used brush for each of the five brush kinds on that style's surface. Selecting a profile fills brush fields (fields remain editable). A brush missing from the client is skipped and named in status. Nothing is guessed.
+
+- Selection rules recorded in advance: brush key without item prefix (a real brush, not a ground item without brush), at least 200 tiles and at least 25% of that kind in the style. Otherwise the entry is absent and the brush field remains unchanged. Data uses tiles per key at z≤7 from maps carrying the style target.
+- 10.98 result: m06 (grass, jungle dirt, mountain top ground, sand, sea), m19 (grass, dirt, mountain, sand, sea), m05 (grass, mountain), winter (snowy mountain, sea), caves (earth); **swamp, m01 and m15 have no palette** because their grounds are almost entirely ground items without brushes (D13). Visible profile differences are modest: clear for winter (snowy mountain), small for the rest and none for swamp.
+- Schema v4 invalidates v3 files. The window hides them as unusable and new files must be copied.
+- Palettes do not change statistics, fit or G4-F iteration results (style_styles report byte-identical).
+- Tests: test_procedural_style_profile (palette selection, ties, order, share/tile thresholds, save and load) PASS; v4 probe offer 8 of 8.
+
+## Manual-test error: “Borders would extend outside the allowed area” (2026-11-08)
+
+After selecting a profile, every Preview ended with this error. Causes:
+
+1. **Palette brushes the generator cannot place.** Full preparation, the same as the window, on an empty 10.98 map rejected (PreviewError::OutOfMask) earth, earth (stone border), mountain, snowy mountain, icy mountain, dirt mountain ground (+ thick border), frozen mud (thick border), grass (alternate border) and sand (thick border). Their edges extend outside the generated area, while the window changes only the allowed area. snowy mountain was additionally an empty data stub (no items). Brushes that pass include grass, jungle grass, dirt, jungle dirt, mountain top ground, rocky ground, sand, sea and clear water. Manual selection of these brushes in the old window has the same issue because the list does not filter them.
+2. **Previous-profile brushes remained in fields** after changing profile, for example snowy mountain from winter broke swamp.
+
+Fixes: (a) every profile selection, including Built-in, starts with default brushes and then applies the palette. An entry is applied only when the client has the brush and it has items. (b) The tool selects palettes only from brushes that pass the same preparation on this client (21-brush list, --usable-brushes, --palette-probe). All eight profiles now pass full preparation (ok), with 8 of 8 offered.
+
+**Side effect:** after filtering, palettes barely differentiate styles. m06: grass, jungle dirt, mountain top ground, sand, sea; m19: grass, dirt, sand, sea; m05: grass; winter: sea; caves, m01, m15, swamp: none. Winter does not get snowy mountain because the generator cannot place that brush. Meaningful visual differentiation would require changing the rule that only the allowed area changes for brushes with external borders, a decision outside this stage, or adding new ground kinds.
+
+## External-border brushes and decoration palette (g4-profile/5, 2026-11-08)
+
+**Correction to the earlier conclusion:** I wrote that snowy mountain was an empty stub. That was wrong. The brushes.xml entry is a forward declaration and brush items come from other files. After the fix below it passes full preparation like the others.
+
+- **Cause of brush refusal** (earth, mountain, snowy mountain, icy mountain, dirt mountain ground, frozen mud (thick border), grass (alternate border), sand (thick border) and others): a brush with an external “border to nothing” (hasOuterZilchBorder) draws an edge on empty neighboring tiles. For the generated area these tiles are outside it, so the mask guard rejected the result (OutOfMask).
+- **Fix (part 2):** when a profile brush has that border (profileNeedsEdgeClearance), surfaceKeepClear also leaves empty fields next to an unwritable neighbor without ground (for a rectangle, an outer one-tile ring; for a selection, mask holes too). The border lands on empty fields **inside** the allowed area, so nothing outside changes. The preview fingerprint accepts those tiles (no ground, border only). Profiles without these brushes are unchanged (flag disabled by default), and G1 --surface and --commit regressions PASS.
+- **Visual effect:** brushes with that border produce a one-tile ring of borders without ground around the area (a seam similar to D5). This is expected.
+- **Check:** full preparation on an empty 10.98 map for 31 ground brushes (each in its slot): 21 of 31 ok before, 31 of 31 after (g4-palette-20261108e).
+- **Decoration palette (part 1):** a profile also carries the tree, bush and stone most used by its style. Rules as for ground: name classification, at least 25% of the kind and at least **30** items because sample maps contain little decoration. A threshold of 100 rejected almost everything and was lowered after counts were reviewed. Only brushes passing full preparation with vegetation are eligible: 41 of 45. Data uses all style-family maps. The window fills Tree, Bush and Stone brush fields and leaves the vegetation checkbox as set by the user.
+- **10.98 result:** ground: caves (earth), m05 (grass, mountain), m06 (grass, jungle dirt, mountain top ground, sand, sea), m19 (grass, dirt, mountain, sand, sea), winter (snowy mountain, sea); swamp, m01 and m15 have no ground. Decorations: caves (dead mangrove tree, small rocks), m05 (trees, grass tufts, small rocks), m06 (trees, bushes, kamienie), m19 (trees, grass tufts, small rocks), swamp (swamp plants as bush), winter (small snowy rocks); m01 and m15 have no decoration.
+- All eight full-palette profiles pass full preparation on an empty map with vegetation enabled (g4-final-20261108a), offer 8 of 8. The style_styles report (statistics, fit, G4-F results) is byte-identical.
+
+## Not checked
+
+- The window itself (layout, tab order, mnemonics, tooltip, behavior when the folder is absent), the full Preview → Validate → Place → Undo/Redo path with a profile, or offering for BlackTek (covered only by unit tests).
+- Result appearance (rivers still mainly follow axes, D6; profiles reach parameter-grid edges).
+- That a profile improves results on unseen maps. See G4_GATE_STATUS.md: these profiles are fitted to their own styles.
+- Folders and profiles are not versioned in the repository because they come from private maps. Instructions for obtaining them are to run tools from docs/procedural/smoke and style_styles.

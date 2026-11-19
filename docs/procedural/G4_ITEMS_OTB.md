@@ -1,24 +1,26 @@
-# G4-0 — zgodność `data/1098/items.otb` z klientem zwykłego 10.98 (D11, część), 2026-11-07
+# G4-0 — compatibility of data/1098/items.otb with the ordinary 10.98 client (D11, part), 2026-11-07
 
-**PARTIAL.** Zgodność `items.otb` z `Tibia.dat` zmierzona i spójna; nie dowodzi, że mapy powstały dokładnie z tym plikiem. Decyzja o zamknięciu tej części D11 należy do użytkownika.
+**PARTIAL.** items.otb and Tibia.dat compatibility was measured and is consistent. This does not prove that the maps were created with exactly this file. The user decides whether to close this part of D11.
 
-## Co zmierzono
-Skrypt [g4_check_items_otb.py](smoke/g4_check_items_otb.py) (tylko do odczytu, używa `tools/tibia_data.py`, niezależny od edytora) porównuje każdy item OTB, który ma client id, z rekordem tego client id w `Tibia.dat` zwykłego 10.98.
+## Measured
 
-| Pozycja | Wynik |
+The read-only [g4_check_items_otb.py](smoke/g4_check_items_otb.py) script, using tools/tibia_data.py and independent of the editor, compares every OTB item with a client ID to the record for that client ID in ordinary 10.98 Tibia.dat.
+
+| Item | Result |
 | --- | --- |
-| `items.otb` (SHA-256) | `9f73f8bf…67ee`, nagłówek OTB 3.57.62-10.98, 26 282 itemów, 734 „deprecated” |
-| `Tibia.dat` (SHA-256) | `abb36b19…d8338`, 23 725 itemów (zakres 100–23 725) |
-| Itemy OTB porównane z DAT | 25 548 (reszta: deprecated) |
-| Itemy OTB bez client id / z client id poza zakresem DAT | 0 / 0 |
-| Niezgodności: ground, unpassable, stackable, container, blockMissiles, pickupable | 0, 0, 0, 0, 0, 0 |
-| Nagłówek 19 map (items major.minor) | 3.57 na wszystkich 19, wszystkie `compatible` |
-| `unknown` na mapach | tylko M01 (43 ground + 47 itemów, 14 id) i M06 (48 itemów, 15 id „deprecated”); pozostałe 17 map: 0 |
+| items.otb (SHA-256) | 9f73f8bf…67ee, OTB 3.57.62-10.98 header, 26 282 items, 734 deprecated |
+| Tibia.dat (SHA-256) | abb36b19…d8338, 23 725 items (range 100–23 725) |
+| OTB items compared with DAT | 25 548 (remainder: deprecated) |
+| OTB items without client ID / with client ID outside DAT range | 0 / 0 |
+| Mismatches: ground, unpassable, stackable, container, blockMissiles, pickupable | 0, 0, 0, 0, 0, 0 |
+| Headers of 19 maps (items major.minor) | 3.57 on all 19, all compatible |
+| unknown on maps | only M01 (43 ground + 47 items, 14 IDs) and M06 (48 items, 15 deprecated IDs); other 17 maps: 0 |
 
-Dwie serie skryptu dały bajtowo identyczny JSON (jedna maszyna).
+Two script series produced byte-identical JSON (one machine).
 
-## Wniosek i granice
-- OTB i DAT są ze sobą spójne w sześciu testowanych cechach dla wszystkich 25 548 itemów. Przesunięty lub cudzy OTB dałby masowe niezgodności; zero niezgodności mocno wskazuje, że to właściwa para.
-- **Nie zweryfikowano:** że mapy zostały zapisane z tym konkretnym `items.otb`. Obok map nie ma innego OTB do porównania; dowodem pośrednim jest wersja 3.57 w nagłówku wszystkich map oraz brak `unknown` na 17 mapach. Mapa zapisana z innym OTB o tych samych flagach, ale innych id, nie zostałaby wykryta.
-- Nie sprawdzono innych cech (np. floorChange, hangable, elevation), nazw ani atrybutów XML.
-- Nadal otwarte w D11: pliki towarzyszące, kontenery, HTML, druga maszyna.
+## Conclusion and limits
+
+- OTB and DAT are consistent in six tested features for all 25 548 items. A shifted or unrelated OTB would produce mass mismatches, so zero mismatches strongly indicates the correct pair.
+- **Not verified:** that the maps were saved with this specific items.otb. There is no other OTB beside the maps for comparison. Indirect evidence is version 3.57 in every header and no unknown values on 17 maps. A map saved with another OTB having the same flags but different IDs would not be detected.
+- Other features (for example floorChange, hangable and elevation), names and XML attributes were not checked.
+- D11 remains open for companion files, containers, HTML and a second machine.

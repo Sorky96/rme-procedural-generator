@@ -1,20 +1,22 @@
-# G4-B — schemat profilu stylu i mapowanie klucz gruntu → rodzaj, 2026-11-07
+# G4-B — style-profile schema and ground-key → kind mapping, 2026-11-07
 
-**PARTIAL.** Schemat, walidacja, serializacja, odmowa niezgodnego klienta/assetów/poziomu i projekcja statystyk przez mapowanie są zbudowane i przetestowane. **Propozycja mapowania dla 10.98 czeka na Twoją akceptację** (lista niżej); do czasu akceptacji nie jest to dane, na których wolno dopasowywać generator. Profile nie są jeszcze wypełniane z referencji (to G4-C).
+**PARTIAL.** Schema, validation, serialization, rejection of incompatible client/assets/level and statistic projection through mapping are built and tested. **The 10.98 mapping proposal awaits your approval** (list below). Until approved it is not data on which the generator may be fitted. Profiles are not yet populated from references (that is G4-C).
 
-## Co jest
-- `source/procedural/core/style_profile.*`:
-  - `StyleKind`: Grass, Dirt, Rock, Shore, Water, Other (ważny grunt bez rodzaju generatora: podłogi, dachy, schody, zagrożenia, grunty biomów), Unmapped (żadna reguła nie pasuje; raportowane, nie zgadywane), NoGround.
-  - `proposeKeyMap` z regułami po **całych słowach** nazwy brusha (bez ID, bez rozróżniania wielkości liter, w kolejności priorytetu: najpierw kwalifikatory „roof/floor/hole…”, potem Water, Rock, Dirt, Grass, Shore). Reguły są danymi w kodzie (`defaultKeyRules`), nie ID itemów.
-  - `serializeKeyMap`/`parseKeyMap` (`g4-keymap/1`, ręcznie edytowalny plik), `StyleProfile` (`g4-profile/1`: klient, SHA-256 `items.otb` i `Tibia.dat`, poziom surface/underground z zakresem pięter, źródła z wagami, mapowanie, statystyki całkowitoliczbowe), `validateProfile`, `parseProfile`, `checkProfile`.
-  - `accumulateKindStats`: kafle na rodzaj i pary sąsiadów (wschód/południe) dla zadanego zakresu pięter; klucz mapy nieobecny w mapowaniu to błąd, nie `Unmapped`.
-- Narzędzie `style_keymap` (tylko rdzeń): z raportów G3 (`ground_keys.csv`) buduje `keymap.tsv` i tabelę przeglądową Markdown.
-- Test `test_procedural_style_profile` PASS: reguły na 25 nazwach z danych (m.in. „dirt mountain ground” = Rock, „sandstone” ≠ „sand”, „grassland” ≠ „grass”, „grass pitfall” = Other, „snow” = Unmapped), pełny round-trip, jednoznaczność serializacji, odmowy (inna wersja schematu, brak sekcji, nieznany rodzaj/poziom, nadmiarowa linia, zdublowany klucz i klient, tab w kluczu, zakres pięter niezgodny z poziomem, puste pola), zgodność (klient, `items.otb`, `Tibia.dat`, piętro poza poziomem), statystyki policzone ręcznie na mapie 3×2 + piętro 8 (w tym kafel bez gruntu, brak sąsiada, anulowanie, odwrócony zakres).
+## Included
 
-## Propozycja mapowania 10.98 (do akceptacji)
-108 kluczy z 19 map; tabela liczona na 12 mapach stylu, wszystkie piętra (nie tylko powierzchnia), plik `local-data/procedural-smoke/g4-keymap/a/keymap-review.md` (dwa przebiegi bajtowo identyczne).
+- source/procedural/core/style_profile.*:
+  - StyleKind: Grass, Dirt, Rock, Shore, Water, Other (valid ground without a generator kind: floors, roofs, stairs, hazards and biome grounds), Unmapped (no rule matches, reported without guessing), NoGround.
+  - proposeKeyMap with whole-word brush-name rules (no IDs, case-insensitive, priority order: qualifiers roof/floor/hole…, then Water, Rock, Dirt, Grass, Shore). Rules are code data (defaultKeyRules), not item IDs.
+  - serializeKeyMap/parseKeyMap (g4-keymap/1, manually editable), StyleProfile (g4-profile/1: client, SHA-256 of items.otb and Tibia.dat, surface/underground level with floor range, weighted sources, mapping, integer statistics), validateProfile, parseProfile, checkProfile.
+  - accumulateKindStats: tiles per kind and neighboring pairs (east/south) for a selected floor range. A map key absent from the mapping is an error, not Unmapped.
+- style_keymap tool (core only): builds keymap.tsv and a Markdown review table from G3 ground_keys.csv reports.
+- test_procedural_style_profile PASS: rules on 25 data names (including “dirt mountain ground” = Rock, “sandstone” ≠ “sand”, “grassland” ≠ “grass”, “grass pitfall” = Other, “snow” = Unmapped), full round-trip, unambiguous serialization, refusals (other schema version, missing section, unknown kind/level, extra line, duplicate key/client, tab in key, floor range inconsistent with level, empty fields), compatibility (client, items.otb, Tibia.dat, floor outside level), manually calculated statistics on a 3×2 map plus floor 8 (including tile without ground, missing neighbor, cancellation, reversed range).
 
-| Rodzaj | Klucze | Kafle | Udział (‰) |
+## 10.98 mapping proposal (approval required)
+
+108 keys from 19 maps. The table uses 12 style maps and all floors (not only surface). File: local-data/procedural-smoke/g4-keymap/a/keymap-review.md (two byte-identical runs).
+
+| Kind | Keys | Tiles | Share (‰) |
 | --- | ---: | ---: | ---: |
 | Grass | 7 | 790 325 | 80 |
 | Dirt | 8 | 4 398 960 | 445 |
@@ -25,14 +27,16 @@
 | Unmapped | 5 | 23 733 | 2 |
 | NoGround | 1 | 1 149 443 | 116 |
 
-**Decyzje do potwierdzenia (to założenia, nie fakty o klientach):**
-1. `sand` (171 k kafli, głównie 2 mapy) = **Shore**. W mapach pustynnych to grunt główny, nie pas przy wodzie.
-2. `sea`, `clear water`, `walkable sea` = **Water**. Klucz nie mówi, czy to jezioro czy rzeka; podział na Lake/River dopiero z cech kształtu (D9) w G4-C.
-3. `cave`, `swamp`, `lava`, `tar pit` = **Other** (brak rodzaju w generatorze). `earth` i `dirt` = **Dirt**: `earth` ma 4,2 mln kafli w 3 mapach (głównie M06), co sprawia, że Dirt to 44,5 % kafli; wagi per mapa w G4-C to adresują.
-4. **Unmapped** (23,7 k kafli, 2 ‰): `snow`, `ice`, `white gravel`, `melting ground`, `ice closed stone pile`. Czy `snow`/`ice` mają być rodzajem (biom zimowy), czy zostają poza modelem?
-5. **NoGround = 11,6 % kafli** (kafel bez gruntu z brusha): nie zbadano, co to jest (np. itemy bez gruntu, ściany); do obejrzenia przed użyciem.
+**Decisions to confirm (assumptions, not client facts):**
 
-## Czego NIE zweryfikowano
-- Reguły to heurystyka po nazwie; niczego nie sprawdzono w definicjach itemów ani materiałach (np. czy `earth` to w tym kliencie ten sam materiał co „dirt” w BlackTek). Mapowanie dla BlackTek nie istnieje.
-- Statystyki w tabeli są z wszystkich pięter, nie z powierzchni; profil dla z≤7 liczy dopiero G4-C z `SemanticMap`.
-- Nie ma profilu wypełnionego danymi, więc nie ma jeszcze testu odmowy na prawdziwym profilu ani pomiaru czasu/pamięci `accumulateKindStats` na dużej mapie.
+1. sand (171k tiles, mainly two maps) = **Shore**. In desert maps it is the main ground, not a strip beside water.
+2. sea, clear water, walkable sea = **Water**. The key does not say whether it is lake or river; Lake/River split requires shape features (D9) in G4-C.
+3. cave, swamp, lava, tar pit = **Other** (no generator kind). earth and dirt = **Dirt**: earth has 4.2 million tiles in three maps, mainly M06, making Dirt 44.5% of tiles. Per-map weights in G4-C address this.
+4. **Unmapped** (23.7k tiles, 2‰): snow, ice, white gravel, melting ground, ice closed stone pile. Should snow/ice be a winter-biome kind or remain outside the model?
+5. **NoGround = 11.6% of tiles** (tile without ground from a brush): what these are (for example, groundless items or walls) was not investigated and should be reviewed before use.
+
+## Not verified
+
+- Rules are a name heuristic. Nothing was checked in item definitions or materials (for example, whether earth is the same material as dirt in BlackTek). No BlackTek mapping exists.
+- Table statistics use all floors, not surface. The z≤7 profile is calculated from SemanticMap only in G4-C.
+- There is no data-filled profile yet, so refusal on a real profile and time/memory measurement of accumulateKindStats on a large map are not tested.

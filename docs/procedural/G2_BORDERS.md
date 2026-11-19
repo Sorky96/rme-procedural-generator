@@ -1,38 +1,38 @@
-# G2-B — resolver powierzchni i istniejące bordery, stan na 2026-11-06
+# G2-B — surface resolver and existing borders, state as of 2026-11-06
 
-**PARTIAL.** Resolver v2 i istniejący `GroundBorderCalculator` działają razem na rzeczywistym kliencie 1098-BlackTek w próbniku. Nie ma jeszcze wpięcia w Preview, Commit ani dialog (G2-B2), więc nie ma wyniku w RME i nie zaliczono kryteriów „czytelny w RME” ani „brak krytycznych błędów borderów”.
+**PARTIAL.** The v2 resolver and the existing `GroundBorderCalculator` work together on the real 1098-BlackTek client in the probe. They are not yet connected to Preview, Commit or the dialog (G2-B2), so there is no RME result and the criteria “readable in RME” and “no critical border errors” are not passed.
 
-## Zakres
+## Scope
 
-- `source/procedural/adapter/surface_resolver.h/.cpp`: `SurfaceGrid` → identyfikatory itemów. Profil w kolejności rodzajów: `grass`, `dirt`, `rocky ground`, `sand`, `sea` (jezioro), `sea` (rzeka). Walidacja brushy jak w resolverze G1, osobny strumień losowania na rodzaj. Kod resolvera G1 i `GroundProfile` (trzy brushe) nie były zmieniane; część walidacji jest zduplikowana.
-- `tests/test_procedural_surface_resolver.cpp`: próbnik (wxModule) budowany i uruchamiany przez `g1_run_resolver_probe.py --surface`. Mapa syntetyczna, żadnych plików map. Bordery liczy wyłącznie `GroundBorderCalculator::calculate(…, true)`, bez własnej logiki.
+- `source/procedural/adapter/surface_resolver.h/.cpp`: `SurfaceGrid` → item identifiers. The profile order is `grass`, `dirt`, `rocky ground`, `sand`, `sea` (lake), `sea` (river). Brush validation follows the G1 resolver, with a separate random stream per kind. G1 resolver code and `GroundProfile` (three brushes) were not changed; some validation is duplicated.
+- `tests/test_procedural_surface_resolver.cpp`: a probe (wxModule) built and run by `g1_run_resolver_probe.py --surface`. The map is synthetic and contains no map files. Borders are calculated only by `GroundBorderCalculator::calculate(…, true)`, with no custom logic.
 
-## Wynik
+## Result
 
-Przebieg `g2-surface-resolver-2-20261106` (profil `g0-reference-profile-20261030`, hashe wejść niezmienione, stderr pusty, exit 0): `SURFACE_RESOLVER_PASS`. Pierwszy przebieg `g2-surface-resolver-20261106` padł na wczytaniu klienta (`build-ninja/config.toml` ma puste ścieżki klienta), zanim wykonał się kod resolvera; zostaje w `local-data` bez zaliczenia.
+Run `g2-surface-resolver-2-20261106` (profile `g0-reference-profile-20261030`, input hashes unchanged, empty stderr, exit 0): `SURFACE_RESOLVER_PASS`. The first run, `g2-surface-resolver-20261106`, failed while loading the client (`build-ninja/config.toml` has empty client paths) before resolver code ran. It remains in `local-data` without passing.
 
-Sprawdzone asercjami: powtarzalność planu, pochodzenie (klient, seed, rewizja assets), item każdej komórki należy do brusha przypisanego rodzajowi, maska nie zmienia wariantu innej komórki, bordery nie zastępują ani nie gubią położonego gruntu, drugie przejście borderów nie zmienia stosów, bordery nie sięgają poza jednokaflowe halo, a w obszarze są kafle z więcej niż jednym borderem.
+Assertions covered plan repeatability, provenance (client, seed, asset revision), each cell's item belonging to the brush assigned to its kind, the mask not changing another cell's variant, borders not replacing or losing placed ground, a second border pass not changing stacks, borders not reaching beyond a one-tile halo, and tiles with more than one border inside the area.
 
-| Rozmiar, seed | Kafle | Z borderem | Z ≥2 borderami | Maks. stos | Pary różnych brushy | Pary bez bordera | Zmienione kafle halo | Resolver | Bordery |
+| Size, seed | Tiles | With border | With ≥2 borders | Max. stack | Different-brush pairs | Pairs without border | Changed halo tiles | Resolver | Borders |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 100, 1 | 10 000 | 2151 | 1076 | 5 | 3365 | 0 | 95 | 0,50 ms | 6,2 ms |
-| 100, 2 | 10 000 | 2325 | 1064 | 5 | 3112 | 0 | 0 | 0,47 ms | 5,4 ms |
-| 100, 3 | 10 000 | 2378 | 1191 | 5 | 3476 | 0 | 0 | 0,48 ms | 5,5 ms |
-| 100, 4 | 10 000 | 2265 | 979 | 5 | 3029 | 0 | 0 | 0,46 ms | 5,3 ms |
-| 250, 1729 | 62 500 | 12 866 | 7075 | 5 | 20 943 | 0 | 50 | 2,7 ms | 38 ms |
-| 500, 1729 | 250 000 | 47 699 | 26 106 | 6 | 77 147 | 0 | 0 | 10,3 ms | 165 ms |
+| 100, 1 | 10 000 | 2151 | 1076 | 5 | 3365 | 0 | 95 | 0.50 ms | 6.2 ms |
+| 100, 2 | 10 000 | 2325 | 1064 | 5 | 3112 | 0 | 0 | 0.47 ms | 5.4 ms |
+| 100, 3 | 10 000 | 2378 | 1191 | 5 | 3476 | 0 | 0 | 0.48 ms | 5.5 ms |
+| 100, 4 | 10 000 | 2265 | 979 | 5 | 3029 | 0 | 0 | 0.46 ms | 5.3 ms |
+| 250, 1729 | 62 500 | 12 866 | 7075 | 5 | 20 943 | 0 | 50 | 2.7 ms | 38 ms |
+| 500, 1729 | 250 000 | 47 699 | 26 106 | 6 | 77 147 | 0 | 0 | 10.3 ms | 165 ms |
 
-Czasy to pojedyncze przebiegi, bez powtórzeń i bez narzutu `DrawOperations`.
+Times are single runs, without repetitions or `DrawOperations` overhead.
 
-## Znaleziska
+## Findings
 
-- **Bordery na kaflach poza obszarem.** Pierścień trawy wokół obszaru był położony tylko w dwóch przebiegach (100×100 seed 1 i 250×250 seed 1729). W nich krawędź obszaru o innym rodzaju niż sąsiad dopisała bordery na kafle halo poza obszarem: 95 i 50 kafli. W pozostałych przebiegach nie było żadnych kafli halo, więc „0” tam nic nie mówi o zachowaniu przy sąsiedzie. Obecny potok G1 odrzuca taki podgląd (`OutOfMask`: „Borders would extend outside the allowed area”), więc przy wpięciu v2 generowanie obok istniejącego terenu będzie często odrzucane. Rozstrzygnięte 2026-11-07 (patrz [G2_GATE_STATUS.md](G2_GATE_STATUS.md), sekcja D5); dawniej: do rozstrzygnięcia w G2-B2 (np. kształtowanie pierścienia brzegowego obszaru); wpisano jako D5 w [TECH_DEBT.md](TECH_DEBT.md).
-- Kafle poza jednokaflowym halo nie zmieniły się nigdy (asercja).
+- **Borders on tiles outside the area.** A grass ring around the area was placed in only two runs (100×100 seed 1 and 250×250 seed 1729). In those runs, an area edge with a different kind than its neighbor added borders to halo tiles outside the area: 95 and 50 tiles. The other runs had no halo tiles, so “0” there says nothing about behavior next to a neighbor. The current G1 pipeline rejects such a preview (`OutOfMask`: “Borders would extend outside the allowed area”), so after v2 integration, generation next to existing terrain will often be rejected. Resolved on 2026-11-07 (see [G2_GATE_STATUS.md](G2_GATE_STATUS.md), section D5); previously left for G2-B2 (for example, shaping the area's border ring), and recorded as D5 in [TECH_DE`.md](TECH_DE`.md).
+- Tiles outside the one-tile halo never changed (assertion).
 
-## Czego nie zweryfikowano
+## Not verified
 
-- Wyglądu w RME. „Pary bez bordera = 0” znaczy tylko, że przy każdej parze sąsiadów o różnych brushach przynajmniej jeden z dwóch kafli ma item border; nie dowodzi, że krawędź jest poprawna, ciągła ani ładna.
-- Wąskiej rzeki o szerokości jednego kafla: nie wyodrębniono jej w metrykach.
-- Ścieżki `DrawOperations` (budżety pamięci, sandbox, diff), zatwierdzania i Undo/Redo dla v2.
-- Wpływu na różne seedy poza sześcioma przebiegami; tylko jedna konfiguracja parametrów (domyślna).
-- Żadnych innych klientów niż 1098-BlackTek.
+- Appearance in RME. “Pairs without border = 0” means only that for every neighboring pair with different brushes, at least one tile has a border item. It does not prove that the edge is correct, continuous or attractive.
+- A one-tile-wide narrow river, which was not separated in the metrics.
+- `DrawOperations` paths (memory budgets, sandbox, diff), commit and Undo/Redo for v2.
+- Effects for seeds beyond the six runs, with only one parameter configuration (the default).
+- Any clients other than 1098-BlackTek.

@@ -1,54 +1,53 @@
-# I51b — raport wykonawcy, 2026-11-18
+# I51b — executor report, 2026-11-18
 
-Prerejestracja: `9ab1ca0`, G6_METRICS I51b. Polityka metryk: `396e057`.
-**Wynik: I51B_FAIL. G6 pozostaje otwarte.**
+Prerecorded at `9ab1ca0`, G6_METRICS I51b. Metrics policy: `396e057`.
+**Result: I51B_FAIL. G6 remains open.**
 
-Zaimplementowano tylko jawny eksperyment kolejności: A = hardFail, inBand malejąco,
-distance, indeks; B = hardFail, distance, inBand malejąco, indeks.
-Domyślny ranking A, generator, GUI, serializacja map, pasma g6-bands-v1,
-26 metryk, jednostki, N/A i kryteria nie zostały zmienione.
-Domyślny mountain i brak zależności od ID przedmiotów pozostają bez zmian.
+Only the explicit ordering experiment was implemented: A = hardFail, descending inBand,
+distance, index; B = hardFail, distance, descending inBand, index.
+Default ranking A, generator, GUI, map serialization, g6-bands-v1 bands,
+26 metrics, units, N/A and criteria were unchanged.
+Default mountain and the lack of item-ID dependencies remain unchanged.
 
-## Macierz i decyzja
+## Matrix and decision
 
-Nowe seedy 2001–2032, N=16, bok 512, --g5-levels; m06 długość/gęstość
-40/30, rockBlocks=0; m19 80/40, rockBlocks=1. Wspólne wiersze kandydatów
-dla A/B, dwa pełne przebiegi, łącznie 2048 generacji. Każdy przebieg profilu
-podzielono na cztery niezależne bloki po osiem seedów, scalone w kolejności
-kanonicznej. Brak retry, usuwania seedów i dodatkowych wariantów.
-Nie oceniano historycznej prywatnej macierzy 1001–1032.
+New seeds 2001–2032, N=16, side 512, --g5-levels; m06 length/density
+40/30, rockBlocks=0; m19 80/40, rockBlocks=1. A/B use shared candidate rows,
+two complete runs and 2048 generations in total. Each profile run was split into
+four independent blocks of eight seeds, merged in canonical order. There were no
+retries, seed removal or additional variants. The historical private 1001–1032
+matrix was not evaluated.
 
-| Profil | A | B | Baseline dokładny A=B | B >=23 i B>A | Zmiany winnera |
+| Profile | A | B | Exact baseline A=B | B >=23 and B>A | Winner changes |
 | --- | --- | --- | --- | --- | --- |
 | m06 | 29/32 | 28/32 | 125/256 | FAIL | 26/32 |
 | m19 | 27/32 | 21/32 | 1/2 | FAIL | 23/32 |
 
-B nie przewyższa A w żadnym profilu. Dodatkowo m19 B=21/32 nie osiąga
-progu 23/32. Jest to ważny pomiar jakości poniżej warunków przyjęcia
-(kod wyjścia ewaluatora 1), a nie blokada danych.
+B does not outperform A for either profile. In addition, m19 B=21/32 does not
+reach the 23/32 threshold. This is a meaningful quality measurement below the
+acceptance conditions (evaluator exit code 1), not a data-integrity failure.
 
-Warunki przyjęcia są łączne i osobne dla obu profili. Wynik nie powoduje
-dostrajania pasm, wag, parametrów ani progu. B pozostaje wyłącznie jawnym
-trybem eksperymentalnym; nie zastępuje produkcyjnego A.
-I51 zachowuje historyczne FAIL 18/32 obu profili. I51b nie zamyka G6:
-holdout ujawniono wcześniej, nowe seedy nie przywracają jego ślepoty.
-Nie deklarujemy istotności statystycznej ani jakości na nowych mapach.
+Acceptance conditions are conjunctive and separate for both profiles. The result does
+not tune bands, weights, parameters or threshold. B remains an explicit experimental
+mode and does not replace production A. I51 retains the historical 18/32 FAIL for both
+profiles. I51b does not close G6. The holdout was disclosed earlier, and new seeds do
+not restore blindness. No statistical significance or quality claim is made for new maps.
 
-Sukces wymaga hardFail=0 i odległości ściśle poniżej mediany wszystkich
-16 kandydatów (średnia pozycji 8 i 9); remisy przegrywają. Główny wynik
-to (M01 + M05 + (M11+M18)/2)/3. M12–M17 są tylko dodatkiem.
-Baseline to dokładna średnia udziałów kandydatów spełniających ten sam
-warunek w każdym seedzie; hardFail i wszystkie seedy zostają w mianowniku.
+Success requires hardFail=0 and distance strictly below the median of all
+16 candidates (the average of positions 8 and 9). Ties lose. The primary score is
+(M01 + M05 + (M11+M18)/2)/3. M12–M17 are supplementary only. Baseline is the exact
+mean share of candidates meeting the same condition in each seed. hardFail and all
+seeds remain in the denominator.
 
-## Wyniki per mapa i rodzina
+## Results by map and family
 
-Poprawa/pogorszenie/remis oznaczają mniejszą/większą/równą odległość
-holdout B względem A, bez zaokrąglania. JSON zawiera osobno przejścia
-sukces/porażka, również gdy zwycięzca się zmienił, a odległość nie.
+Improvement/regression/tie mean a smaller/larger/equal holdout distance for B versus A,
+without rounding. JSON records success/failure transitions separately, including cases
+where the winner changed but distance did not.
 
 ### m06
 
-| Mapa / rodzina | A sukcesy | B sukcesy | Baseline dokładny | Poprawa / pogorszenie / remis |
+| Map / family | A successes | B successes | Exact baseline | Improvement / regression / tie |
 | --- | --- | --- | --- | --- |
 | M01 | 11/32 | 10/32 | 213/512 | 10 / 14 / 8 |
 | M05 | 19/32 | 22/32 | 63/128 | 17 / 9 / 6 |
@@ -68,7 +67,7 @@ sukces/porażka, również gdy zwycięzca się zmienił, a odległość nie.
 
 ### m19
 
-| Mapa / rodzina | A sukcesy | B sukcesy | Baseline dokładny | Poprawa / pogorszenie / remis |
+| Map / family | A successes | B successes | Exact baseline | Improvement / regression / tie |
 | --- | --- | --- | --- | --- |
 | M01 | 19/32 | 17/32 | 253/512 | 9 / 14 / 9 |
 | M05 | 25/32 | 24/32 | 1/2 | 9 / 14 / 9 |
@@ -86,19 +85,19 @@ sukces/porażka, również gdy zwycięzca się zmienił, a odległość nie.
 | family.main | 27/32 | 21/32 | 1/2 | 10 / 13 / 9 |
 | family.winter | 13/32 | 16/32 | 255/512 | 11 / 12 / 9 |
 
-Pełne wyniki A/B per seed, mapa i rodzina, scores zwycięzców (indeks,
-hardFail, inBand, distance), mediana, baseline oraz przejścia par:
-[g6_i51b_holdout.json](g6_i51b_holdout.json). Surowe raporty i puste stderr
-pozostają w `scratchpad/i51b-matrix/` tego worktree.
+Full A/B results per seed, map and family, winner scores (index,
+hardFail, inBand, distance), median, baseline and pair transitions:
+[g6_i51b_holdout.json](g6_i51b_holdout.json). Raw reports and empty stderr remain
+in this worktree's `scratchpad/i51b-matrix/`.
 
-## HardFail i pokrycie
+## HardFail and coverage
 
-| Profil | Wspólni kandydaci hardFail | A zwycięzcy hardFail | B zwycięzcy hardFail |
+| Profile | Shared hardFail candidates | A hardFail winners | B hardFail winners |
 | --- | --- | --- | --- |
 | m06 | 10/512 | 0/32 | 0/32 |
 | m19 | 1/512 | 0/32 | 0/32 |
 
-| Mapa | Znana referencja /26 | Różne wkłady m06 | Różne wkłady m19 |
+| Map | Known reference /26 | Distinct m06 contributions | Distinct m19 contributions |
 | --- | --- | --- | --- |
 | M01 | 8 | 6 | 5 |
 | M05 | 8 | 8 | 7 |
@@ -111,33 +110,32 @@ pozostają w `scratchpad/i51b-matrix/` tego worktree.
 | M17 | 5 | 3 | 2 |
 | M18 | 5 | 4 | 3 |
 
-Małe pokrycie i cap ograniczają rozdzielczość holdoutu. Referencyjne N/A
-daje stałe ln(64) wszystkim kandydatom, bez usuwania pozycji. JSON podaje
-przyczyny każdej pozycji N/A (liczebność <5 lub progi G4 dla plam/granic)
-i metryki rzeczywiście różnicujące. Błąd wejścia blokuje ocenę, nie jest N/A.
+Low coverage and the cap limit holdout resolution. Reference N/A gives all candidates
+the constant ln(64), without removing positions. JSON gives the reason for each N/A
+(count <5 or G4 thresholds for patches/boundaries) and the metrics that actually
+differentiate candidates. An input error blocks evaluation. It is not N/A.
 
-Audyt prywatnych wejść: PASS dla M01–M19, klient 10.98, zgodne wersje map,
-potwierdzenia PASS, źródła import/semantic/verification, DAT/SPR, keymap
-i powtarzane podsumowania. Cztery jawne serie: g4-channels-20261108a,
+Private-input audit: PASS for M01–M19, client 10.98, matching map versions,
+PASS confirmations, import/semantic/verification sources, DAT/SPR, keymap
+and repeated summaries. Four explicit series: g4-channels-20261108a,
 g4-scale-20261108a, g4-trans-20261108a, g4-build-20261108a; profile
-g4-profiles/10.98-v10. Map, profili i obrazów nie kopiowano do Git.
-Cały referenceAudit (w tym hashe profili) jest identyczny z raportem I51.
+g4-profiles/10.98-v10. Maps, profiles and images were not copied to Git.
+The complete referenceAudit, including profile hashes, is identical to the I51 report.
 
-## Powtarzalność i zamrożenie
+## Repeatability and freeze
 
-Dwa raporty każdego profilu są bajtowo identyczne. Wszystkie procesy
-macierzy zakończyły się kodem 0 i pustym stderr. Ewaluator niezależnie
-odtworzył 1024 scores rdzenia i oba wybory przed odczytem holdoutu.
-Dodatkowy audyt odtworzył wszystkie 1024 seedy kandydatów (SplitMix64),
-sprawdził sumy par i zgodność zmian sukcesów z przejściami A/B: PASS.
+Two reports for each profile are byte-identical. All matrix processes exited with code 0 and
+empty stderr. The evaluator independently reproduced 1024 core scores and both selections
+before reading the holdout. An additional audit reproduced all 1024 candidate seeds
+(SplitMix64), checked pair sums and confirmed that success changes matched A/B transitions: PASS.
 
-| Profil | SHA-256 raportu każdego przebiegu |
+| Profile | SHA-256 report for each run |
 | --- | --- |
 | m06 | `224733843d77dbf81109029df6337dc783ce3690dfa36b22dd652509d01e6389` |
 | m19 | `9c5ddb61a3bccb195ea5119dd6e6807a01765a5566d67e1a42d67a25dff05f6f` |
 
 SHA-256 EXE: `272d634ea438979c67fc09c03359d5e510dc970f339e4e9b39fecb3483dd4a21`.
-Kod pomiaru/oceny i EXE nie zmieniły się od uruchomienia macierzy;
+Measurement/evaluation code and the EXE did not change after the matrix run;
 lokalny manifest hashy: `scratchpad/i51b-code-freeze.json`.
 
 Polecenia (od katalogu worktree):
@@ -147,30 +145,29 @@ rtk proxy py -I docs/procedural/smoke/g6_measure_candidates.py scratchpad/i51b-b
 rtk proxy py -I docs/procedural/smoke/g6_evaluate_i51b.py C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke C:/repo/remeres-map-editor-redux-master/local-data/procedural-smoke/g4-profiles/10.98-v10 scratchpad/i51b-matrix scratchpad/i51b-holdout.json
 ```
 
-## Testy i ograniczenia
+## Tests and limitations
 
-- Izolowany build rzeczywistego source/procedural/CMakeLists.txt, MSVC
+- Isolated build of the real source/procedural/CMakeLists.txt, MSVC
   19.51.36257 x64 Release, C++23, Ninja 1.13.2: PASS.
-- CTest 22/22 PASS; po uzupełnieniu testu agregacji ponowiono test I51b:
-  3/3 PASS. Pozostałe testy I51 holdoutu: 8/8, CLI: PASS.
-- Ręczne 26 pasm: dwa razy ln(1.5) daje 811; ln(577/384) daje 407
+- CTest 22/22 PASS. After adding the aggregation test, I51b was rerun:
+  3/3 PASS. Remaining I51 holdout tests: 8/8, CLI: PASS.
+- Manual 26 bands: two times ln(1.5) gives 811; ln(577/384) gives 407
   przy 25 pasmach. A wybiera pierwszego, B drugiego; kandydat z hardFail
   przegrywa mimo 26 pasm i distance=0. Remisy pasm i indeksu: PASS.
-- Ręczna agregacja 32 par: 16 popraw, 8 pogorszeń, 8 remisów;
+- Manual aggregation of 32 pairs: 16 improvements, 8 regressions, 8 ties;
   A=16/32, B=24/32, baseline 5/64. Test granic B=22 (FAIL),
   A=B=23 (FAIL), A=22/B=23 (PASS), odmowy niekompletnej macierzy,
-  błędnego score/winnera i znacznika eksperymentu: PASS.
-- N=1, kandydat 0, fingerprint 1729 100×100 =
-  17159159863505677800, powtarzalność i brak mutacji: PASS.
+  invalid score/winner and experiment marker: PASS.
+- N=1, candidate 0, fingerprint 1729 100×100 =
+  17159159863505677800, repeatability and no mutation: PASS.
 
-Nie wykonano kanonicznego build_ninja.bat, g5_run_suite z sondami,
-G5 --i47, ręcznego GUI/Place/Undo, gry, oryginalnego RME ani końcowej
-maski adaptera. Te regresje wykonuje rodzic niezależnie po przeglądzie
-i ff-merge. Nie potwierdzono determinizmu libm między kompilatorami.
-Nie importowano ponownie map: historyczne potwierdzenia są dowodem wejść,
-lecz nie zawierają hasha OTB, więc tożsamości binarnego OTB nie dowiedziono.
+The canonical build_ninja.bat, g5_run_suite with probes, G5 --i47, manual GUI/Place/Undo,
+the game, original RME and final adapter mask were not run. The parent performs these
+regressions independently after review and ff-merge. libm determinism across compilers was
+not confirmed. Maps were not re-imported. Historical confirmations prove the inputs but do
+not contain an OTB hash, so binary OTB identity was not proven.
 
-G6_GATE_STATUS pozostawiono bez zmian. Nie utworzono build-ninja w tym
-worktree; build i wszystkie pliki robocze są tylko w scratchpad.
-Nie instalowano zależności, nie dotykano C:/repo/vcpkg/buildtrees,
-nie wykonano push. Scratchpad i local-data nie wchodzą do commita.
+G6_GATE_STATUS was left unchanged. No build-ninja was created in this worktree.
+The build and all working files are only in scratchpad. No dependencies were installed,
+C:/repo/vcpkg/buildtrees was not touched and nothing was pushed. Scratchpad and local-data
+are excluded from the commit.

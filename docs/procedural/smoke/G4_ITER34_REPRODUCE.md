@@ -1,51 +1,50 @@
-# D21: odtworzenie tabel G4 z iteracji 3 i 4
+# D21: reproduce G4 tables from iterations 3 and 4
 
-Jedno polecenie odtwarza tabele `style_styles` (iteracja 3) i `water_eval` (iteracja 4) z
-[G4_GATE_STATUS.md](../G4_GATE_STATUS.md). Kryteria zapisano przed pracą w [G6_METRICS.md](../G6_METRICS.md) („D21”, commit `e3e6f8b`).
+One command reproduces the style_styles (iteration 3) and water_eval (iteration 4) tables from [G4_GATE_STATUS.md](../G4_GATE_STATUS.md). Criteria were recorded before implementation in [G6_METRICS.md](../G6_METRICS.md) (“D21”, commit e3e6f8b).
 
+```text
+py -I docs/procedural/smoke/g4_reproduce_iter34.py <NEW_SCRATCHPAD_DIRECTORY> [--local-data DIR] [--current-bin DIR] [--vcvars FILE]
 ```
-py -I docs/procedural/smoke/g4_reproduce_iter34.py <NOWY_KATALOG_W_SCRATCHPAD> [--local-data DIR] [--current-bin DIR] [--vcvars FILE]
-```
 
-Ostatnia linia wyjścia to `D21_PASS` albo `D21_FAIL`. Katalog wyjściowy musi być nowy albo pusty. Skrypt nic nie zapisuje w repo ani w `local-data`.
+The final output line is D21_PASS or D21_FAIL. The output directory must be new or empty. The script writes nothing to the repository or local-data.
 
-## Co robi
+## What it does
 
-1. Sprawdza, czy są wszystkie wejścia i historyczne raporty. Jeśli czegoś brakuje, wypisuje brakujące ścieżki i kończy się przed budową.
-2. Buduje narzędzia z commitów, które dały tabele: `style_styles` z `269da1b`, `water_eval` z `99f617c`. Pobiera `source/procedural/core` i plik `*_main.cpp` przez `git archive`, a potem kompiluje je jednym wywołaniem `cl` z flagami wydania z `build_ninja.bat` i z `/Brepro` (bez znacznika czasu PE). Nie używa CMake ani vcpkg; rdzeń w tych commitach korzysta tylko z biblioteki standardowej. MSVC znajduje przez `vswhere`, a `--vcvars` pozwala go wskazać.
-3. Uruchamia każde narzędzie dwa razy na tych samych wejściach i porównuje raporty bajt po bajcie: przebiegi między sobą oraz z historycznym raportem.
-4. Porównuje liczby cytowane w tabelach i tekście G4_GATE_STATUS.md z odtworzonym raportem: 15 sprawdzeń dla iteracji 3 i 10 dla wiersza 4b.
-5. Zapisuje `params.json` (SHA-256 każdego wejścia, historycznych raportów i EXE, commit, źródła, flagi, wersja kompilatora, polecenie, HEAD repo) oraz `summary.json`.
+1. Checks that all inputs and historical reports exist. If something is missing, it prints missing paths and exits before building.
+2. Builds the tools from the commits that produced the tables: style_styles from 269da1b and water_eval from 99f617c. It obtains source/procedural/core and *_main.cpp through git archive, then compiles them with one cl invocation using release flags from build_ninja.bat and /Brepro (without a PE timestamp). It does not use CMake or vcpkg; the core at those commits uses only the standard library. MSVC is found through vswhere, and --vcvars can specify it.
+3. Runs each tool twice on the same inputs and compares reports byte by byte, both between runs and with the historical report.
+4. Compares numbers quoted in G4_GATE_STATUS.md tables and text with the reproduced report: 15 checks for iteration 3 and 10 for row 4b.
+5. Writes params.json (SHA-256 for every input, historical report and EXE, commit, source, flags, compiler version, command and repository HEAD) and summary.json.
 
-`--current-bin DIR` uruchamia dodatkowo nowsze binaria (np. `build-ninja/source/procedural` głównego checkoutu) na tych samych wejściach. Ten przebieg ma charakter wyłącznie informacyjny i nie wpływa na werdykt.
+--current-bin DIR additionally runs newer binaries (for example, build-ninja/source/procedural from the main checkout) on the same inputs. This run is informational only and does not affect the verdict.
 
-## Wejścia (jawne, w `<local-data>/procedural-smoke`)
+## Inputs (explicit, in <local-data>/procedural-smoke)
 
-| Wejście | Ścieżka | Skąd wiadomo |
+| Input | Path | Evidence |
 | --- | --- | --- |
-| manifest | `g4-split/manifest.tsv` | jedyny manifest G4 |
-| odciski | `g4-split/fp-c/<alias>.fp` | ostatni zestaw przed `styles-1.json` (fp-c 09:57, raport 10:42) |
-| statystyki stylu | `g4-dood-20261108b/<alias>/run/analysis/` | jedyny katalog z `decor-context-surface.txt` sprzed 10:42 |
-| kształty wody | `g4-water-20261108a/<alias>/run/analysis/water-shapes-surface.txt` | jedyny katalog kształtów sprzed `water-1.json` (12:22) |
-| raporty historyczne | `g4-fit/styles-1.json`, `g4-fit/water-4b.json`, `g4-fit/water-4a.json` | zapisane w czasie iteracji |
+| manifest | g4-split/manifest.tsv | only G4 manifest |
+| fingerprints | g4-split/fp-c/<alias>.fp | last set before styles-1.json (fp-c 09:57, report 10:42) |
+| style statistics | g4-dood-20261108b/<alias>/run/analysis/ | only directory with decor-context-surface.txt before 10:42 |
+| water shapes | g4-water-20261108a/<alias>/run/analysis/water-shapes-surface.txt | only shape directory before water-1.json (12:22) |
+| historical reports | g4-fit/styles-1.json, g4-fit/water-4b.json, g4-fit/water-4a.json | recorded during the iterations |
 
-Dobór katalogów wynika ze znaczników czasu plików, bo historyczne polecenia nie zostały zapisane. Trafność tego doboru potwierdza bajtowa zgodność wyniku z historycznym raportem. W `g4-dood-20261108b` brakuje `ground-keys-surface.csv`. `style_styles` w `269da1b` tego pliku nie czyta, a w `params.json` jest on zapisany jako `null`.
+Directory selection is based on file timestamps because historical commands were not recorded. Byte-identical output to the historical report confirms the selection. g4-dood-20261108b lacks ground-keys-surface.csv. style_styles at 269da1b does not read that file, and params.json records it as null.
 
-## Wynik (2026-11-19)
+## Result (2026-11-19)
 
-Pięć wywołań skryptu, każde z dwoma przebiegami narzędzi, w katalogach scratchpad tej sesji: wszystkie zakończyły się `D21_PASS`. Dwa ostatnie wywołania użyły ostatecznej wersji skryptu. Kompilator: MSVC 19.51.36257 x64 (Visual Studio 18 Community). Hash EXE `water_eval` jest stały między budowami. Hash EXE `style_styles` różni się między budowami w różnych katalogach mimo `/Brepro`, a przyczyny nie ustalono. Raporty są mimo to identyczne, a kryterium dotyczy raportów.
+Five script invocations, each with two tool runs, in this session's scratchpad directories all ended in D21_PASS. The last two used the final script version. Compiler: MSVC 19.51.36257 x64 (Visual Studio 18 Community). water_eval EXE hash is stable between builds. style_styles EXE hash differs between builds in different directories despite /Brepro, and the cause is unknown. Reports are nevertheless identical, and the criterion concerns reports.
 
-- `style_styles` 269da1b: oba przebiegi są identyczne i dają `styles-1.json` bajt w bajt (SHA-256 `de465dde…`); 15/15 wartości tabeli iteracji 3 się zgadza.
-- `water_eval` 99f617c: oba przebiegi są identyczne i dają `water-4b.json` bajt w bajt (SHA-256 `c179f0e5…`); 10/10 wartości wiersza 4b i tekstu się zgadza.
-- Wiersz 4a: **nie da się go uruchomić ponownie**. Model sprzed `99f617c` (pierwszy wariant meandrowania, 12:22–12:23) nie trafił do git. Skrypt sprawdza tylko zapisany `water-4a.json`.
-- **Odchylenie (tabela bez zmian):** wiersz 4a w tabeli podaje P1 99,997 %, a zapisany raport daje 999 669 / 999 730 ppm = 99,994 %. Pozostałe wartości wiersza 4a (meander 8, T 1398, S 70, 18/9, 15/6, 0 wysp) się zgadzają. Sprawdzenie przechodzi jako „documented deviation” tylko wtedy, gdy raport dalej ma dokładnie 99,994 %.
-- Bieżące binaria głównego checkoutu (`build-ninja`, zbudowane 2026-11-09 13:41, commit budowy nieznany): `water_eval` daje `water-4b.json` bajt w bajt, a `style_styles` daje inny raport, bo generator i narzędzie zmieniły się po iteracji 3. Bieżące binaria nie odtwarzają więc iteracji 3; potrzebna jest budowa z `269da1b`.
+- style_styles 269da1b: both runs are identical and produce styles-1.json byte for byte (SHA-256 de465dde…); 15/15 values of the iteration-3 table match.
+- water_eval 99f617c: both runs are identical and produce water-4b.json byte for byte (SHA-256 c179f0e5…); 10/10 values of row 4b and its text match.
+- Row 4a: **cannot be rerun**. The model before 99f617c (first meander variant, 12:22–12:23) was not committed to git. The script checks only the saved water-4a.json.
+- **Deviation (table unchanged):** row 4a gives P1 99.997% in the table, while the saved report gives 999 669 / 999 730 ppm = 99.994%. Other row-4a values (meander 8, T 1398, S 70, 18/9, 15/6, 0 islands) match. The check passes as “documented deviation” only when the report still has exactly 99.994%.
+- Current binaries in the main checkout (build-ninja, built 2026-11-09 13:41, build commit unknown): water_eval produces water-4b.json byte-identically, while style_styles produces a different report because the generator and tool changed after iteration 3. Current binaries therefore cannot reproduce iteration 3. A build from 269da1b is required.
 
-Czas jednego wywołania z `--current-bin` wynosi 3,5–7 min, zależnie od obciążenia maszyny. Składają się na to dwie budowy po około 20 s i trzy przebiegi `style_styles` po około 47 s.
+One invocation with --current-bin takes 3.5–7 min depending on machine load. It consists of two builds of about 20 s and three style_styles runs of about 47 s.
 
-## Czego to nie sprawdza
+## What this does not check
 
-- Zdania „0 porażek w 1200/1200 seedach” z iteracji 4 nie ma w raporcie (`river_invariant_failures` = 0 dla 31 seedów w każdym foldzie), dlatego skrypt go nie weryfikuje.
-- Czasy przebiegów z tabel („44 s”) nie są porównywane.
-- Wejścia z `local-data` pochodzą ze starszych przebiegów sondy importu. Skrypt ich nie regeneruje, tylko zapisuje ich hashe.
-- Zgodność sprawdzono z MSVC 18 Community z tej maszyny. Na innym kompilatorze bajtowej zgodności nie badano.
+- The statement “0 failures in 1200/1200 seeds” from iteration 4 is not in the report (river_invariant_failures = 0 for 31 seeds in each fold), so the script does not verify it.
+- Run times from the tables (“44 s”) are not compared.
+- Inputs from local-data come from older import-probe runs. The script does not regenerate them, only records their hashes.
+- Compatibility was checked with MSVC 18 Community on this machine. Byte compatibility with another compiler was not tested.
