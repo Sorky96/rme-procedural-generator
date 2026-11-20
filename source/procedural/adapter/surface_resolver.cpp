@@ -590,6 +590,33 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				grassSlot.swap(next);
 			}
 		}
+		// Tree and bush brush per decor cell (0 = the main brush, m + 1 = the kind's mix m), chosen by smooth
+		// noise so a species grows in groves rather than one tile here, one there. The cells of a kind are
+		// ranked by their noise and split by the shares, which keeps the learned shares in any region.
+		std::vector<uint8_t> kindSlot;
+		if (vegetation && (kindMixShare[0] || kindMixShare[1])) {
+			kindSlot.assign(grid.cells.size(), 0);
+			std::vector<std::pair<uint32_t, uint32_t>> ranked; // grove value, cell
+			for (size_t kind = 0; kind < 2; ++kind) {
+				if (!kindMixShare[kind]) continue;
+				const auto placed = kind == 0 ? DecorKind::Tree : DecorKind::Bush;
+				ranked.clear();
+				for (size_t i = 0; i < grid.cells.size(); ++i) {
+					if (decor->cells[i] != placed) continue;
+					const size_t patch = grassSlot.empty() ? 0 : grassSlot[i];
+					if (patch && !profile.grassMixDecor[patch - 1][size_t(placed) - 1].empty()) continue; // the patch brush
+					ranked.emplace_back(grassPatchValue(input.config.seed ^ (kind == 0 ? treeMixStream : bushMixStream),
+						grid.region.x + int64_t(i % grid.region.width), grid.region.y + int64_t(i / grid.region.width)), uint32_t(i));
+				}
+				std::ranges::sort(ranked);
+				size_t from = ranked.size() * (1000 - kindMixShare[kind]) / 1000; // the main brush takes the lowest values
+				for (size_t m = 0; m < GroundProfile::treeMixCount; ++m) {
+					const size_t count = ranked.size() * (*kindMixPermille[kind])[m] / 1000;
+					for (size_t k = from; k < std::min(ranked.size(), from + count); ++k) kindSlot[ranked[k].second] = uint8_t(m + 1);
+					from += count;
+				}
+			}
+		}
 		GroundPlan result {input.config, profile, client, input.mapGeneration, input.mapRevision,
 			input.assetRevision, grid.fingerprint(), std::vector<uint16_t>(grid.cells.size(), 0)};
 		if (vegetation) result.decor.assign(grid.cells.size(), 0);
@@ -632,7 +659,6 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		// Own streams, advanced at every cell like the others, so a mix never shifts the plain variants.
 		std::vector<StableRandom> grassMixRng;
 		for (const auto stream : grassMixStreams) grassMixRng.emplace_back(input.config.seed, stream);
-		std::array<StableRandom, 2> kindMixRng {StableRandom(input.config.seed, treeMixStream), StableRandom(input.config.seed, bushMixStream)};
 		StableRandom mixDecorRng(input.config.seed, mixDecorStream);
 		for (size_t i = 0; i < grid.cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
@@ -645,8 +671,6 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			std::array<int, GroundProfile::grassMixCount> grassMixRolls {};
 			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m)
 				if (grassMix[m]) grassMixRolls[m] = int(grassMixRng[m].bounded(grassMixTotals[m])) + 1;
-			std::array<uint64_t, 2> kindMixRolls {};
-			for (size_t kind = 0; kind < 2; ++kind) if (kindMixShare[kind]) kindMixRolls[kind] = kindMixRng[kind].bounded(1000);
 			const uint64_t mixDecorRoll = grassMixShare && vegetation ? mixDecorRng.bounded(1000) : 0;
 			const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
@@ -694,18 +718,11 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					if (patch && mixDoodads[patch - 1][slot]) {
 						doodad = mixDoodads[patch - 1][slot];
 						roll = int((uint64_t(roll) - 1) * mixDoodadTotals[patch - 1][slot] / decorTotals[slot]) + 1;
-					} else if (placed == DecorKind::Tree || placed == DecorKind::Bush) {
-						// The kind's mix roll picks a mix brush on its share; the roll inside it is scaled
-						// from the decor roll, so no extra stream is needed.
+					} else if (const size_t mix = kindSlot.empty() ? 0 : kindSlot[i]; mix) {
+						// A grove of a mix brush; the roll inside it is scaled from the decor roll.
 						const size_t kind = placed == DecorKind::Tree ? 0 : 1;
-						uint64_t cumulative = 0;
-						for (size_t m = 0; m < GroundProfile::treeMixCount; ++m) {
-							cumulative += (*kindMixPermille[kind])[m];
-							if (!kindMix[kind][m] || kindMixRolls[kind] >= cumulative) continue;
-							doodad = kindMix[kind][m];
-							roll = int((uint64_t(roll) - 1) * kindMixTotals[kind][m] / decorTotals[slot]) + 1;
-							break;
-						}
+						doodad = kindMix[kind][mix - 1];
+						roll = int((uint64_t(roll) - 1) * kindMixTotals[kind][mix - 1] / decorTotals[slot]) + 1;
 					}
 					const auto* item = doodad->getRandomSingleItem(0, roll);
 					if (!item || !item->getID()) return std::unexpected(ResolveError::InvalidItem);
