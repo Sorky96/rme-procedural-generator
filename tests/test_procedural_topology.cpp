@@ -73,7 +73,19 @@ int main() {
 
 	// Diagonal contact does not connect: two walkable cells touching only at a corner.
 	const TopologyReport diagonal = analyze(build({".#", "#."}));
-	check(diagonal.floors[0].walkable.count == 2, "diagonals do not connect");
+	check(diagonal.floors[0].walkable.count == 2 && diagonal.floors[0].bottleneckCells == 0, "diagonal singletons have no bottlenecks");
+
+	// Two 2x2 rooms joined by a single hall tile. Removing the hall or either doorway separates them.
+	const TopologyReport hall = analyze(build({".....", "..u.."}));
+	check(hall.floors[0].walkable.count == 1 && hall.floors[0].bottleneckCells == 3, "hall and its two doorways are bottlenecks");
+	const TopologyReport bypass = analyze(build({".....", "....."}));
+	check(bypass.floors[0].bottleneckCells == 0, "a second route removes all bottlenecks between the rooms");
+	const TopologyReport rootFork = analyze(build({"...", ".##"}));
+	check(rootFork.floors[0].bottleneckCells == 2, "the DFS root and the interior of its longer branch are bottlenecks");
+	const TopologyReport cross = analyze(build({" . ", "...", " . "}));
+	check(cross.floors[0].bottleneckCells == 1, "a four-way junction is counted once");
+	const TopologyReport corridor = analyze(build({std::string(8192, '.')}));
+	check(corridor.floors[0].bottleneckCells == 8190, "a long corridor counts every tile except its ends");
 
 	// A lake inside land is enclosed; a pond in the corner is not.
 	const TopologyReport lakes = analyze(build({
@@ -111,7 +123,7 @@ int main() {
 	// Repeatable.
 	const TopologyReport again = analyze(grid, options);
 	check(again.floors[0].walkable.top == floor.walkable.top && again.floors[0].walkable.buckets == floor.walkable.buckets &&
-		again.keys[2].regions == sea.regions, "repeatable");
+		again.floors[0].bottleneckCells == floor.bottleneckCells && again.keys[2].regions == sea.regions, "repeatable");
 
 	if (failures == 0) std::cout << "TOPOLOGY_PASS\n";
 	return failures == 0 ? 0 : 1;

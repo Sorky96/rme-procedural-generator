@@ -41,6 +41,7 @@ struct FloorTopology {
 	uint64_t floorChangeCells = 0;
 	uint64_t teleportCells = 0;
 	ComponentStats walkable;      // 4-connected components of walkable cells
+	uint64_t bottleneckCells = 0; // walkable cells whose removal increases the number of same-floor components
 };
 
 // Same-ground regions: 4-connected cells that share one ground key (key 0 included).
@@ -61,8 +62,8 @@ struct TopologyReport {
 
 enum class TopologyError : uint8_t { InvalidOptions, Cancelled, AllocationFailed };
 
-// Checks stop_requested once per row. Working memory is about 9 bytes per cell of the
-// largest floor, allocated once. Output depends only on the map and options.
+// Working memory is about 9 bytes per cell of the largest floor, reused across floors.
+// Output depends only on the map and options.
 [[nodiscard]] std::expected<TopologyReport, TopologyError> analyzeTopology(
 	const SemanticMap& map, const SemanticSummary& summary, const TopologyOptions& options, std::stop_token stop);
 

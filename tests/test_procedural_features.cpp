@@ -122,6 +122,7 @@ int main() {
 	check(contains(json, "\"schema\": \"g3-reference-analysis/1\"") && contains(json, "brick roof, \\\"down\\\""), "json schema and escaping");
 	check(contains(json, "\"unknown_ids\": [{\"id\": 60000, \"count\": 2}]"), "json unknown ids");
 	check(contains(json, "[1, 2, 2, 0]") && contains(json, "[2, 2, 0, 1]"), "json adjacency pairs");
+	check(contains(json, "\"bottleneck_cells\": 1"), "json includes the middle tile of the three-cell walkable path");
 	const std::string keysCsv = renderCsv(in, CsvTable::GroundKeys);
 	check(contains(keysCsv, "1,\"brick roof, \"\"down\"\"\",4,"), "csv quoting");
 	const std::string distanceCsv = renderCsv(in, CsvTable::Distance);
@@ -133,6 +134,9 @@ int main() {
 	const std::string md = renderMarkdown(in);
 	check(contains(md, "# Reference map analysis (G3)") && contains(md, "## Floors") && contains(md, "## Unknown ids") &&
 		contains(md, "| 60000 | 2 |") && !contains(md, "\r"), "markdown sections");
+	check(contains(md, "| bottleneck tiles |") && contains(md, "| 7 | 6 | 3 | 1 | 3 | 1 | 0 | 0 | 1 |"), "markdown bottleneck count");
+	const std::string floorsCsv = renderCsv(in, CsvTable::Floors);
+	check(contains(floorsCsv, ",bottleneck_cells\n") && floorsCsv.ends_with(",1\n"), "floors CSV bottleneck count");
 
 	if (failures == 0) std::cout << "FEATURES_PASS\n";
 	return failures == 0 ? 0 : 1;
