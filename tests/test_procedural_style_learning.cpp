@@ -4,6 +4,7 @@
 #include "procedural/core/style_history.h"
 #include "procedural/core/candidate_series.h"
 #include <fstream>
+#include <optional>
 #include <iostream>
 
 using namespace rme::procedural;
@@ -90,6 +91,20 @@ int main(int argc, char** argv) {
             broken.grassMix[0].brush.clear();
             check(!validateProfile(broken), "grass variant share without a brush refused");
         }
+    }
+    {
+        // Vegetation in 8 x 8 thickets on a checkerboard is clumped; every other column planted is not.
+        const auto clumpOf = [](auto planted) {
+            FloorBounds fb{7, 0, 0, 64, 64};
+            auto map = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+            const auto grass = map.internGroundKey("grass").value();
+            for (int i = 0; i < 4096; ++i)
+                check(bool(map.set(i % 64, i / 64, 7, grass, bit(Trait::HasGround) | (planted(i % 64, i / 64) ? bit(Trait::BushDoodad) : 0))), "clump cell");
+            const auto sample = inspectLearningSample(map, proposeKeyMap(map.groundKeys(), defaultKeyRules()), {}, true);
+            return sample ? std::optional(sample->clumpPermille) : std::nullopt;
+        };
+        check(clumpOf([](int x, int y) { return (x / 8 + y / 8) % 2 == 0; }) > 250u, "thickets are clumped");
+        check(clumpOf([](int x, int) { return x % 2 == 0; }) == 0u, "an even spread is not clumped");
     }
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
     check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");

@@ -92,6 +92,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			if (c.vegetation && !(c.decor == DecorTuning {})) {
 				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,
 					c.decor.waterBushPermille, c.decor.dirtStonePermille, c.decor.rockStonePermille}) hashField(hash, value, 4);
+				if (c.decor.clumpPermille) hashField(hash, c.decor.clumpPermille, 4);
 			}
 		}
 	};

@@ -254,6 +254,8 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 			out += '\t' + std::to_string(v);
 		}
 		out += '\n';
+		// Its own line, after the tuning and only when set, so profiles without clumps keep their bytes.
+		if (d.clumpPermille) out += std::format("decor\tclump\t{}\n", d.clumpPermille);
 	}
 	if (p.tuning) {
 		const SurfaceTuning& t = *p.tuning;
@@ -391,6 +393,9 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             uint32_t v[6];
             for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
 			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
+        } else if (type == "decor" && f.size() == 3 && f[1] == "clump" && p.decorTuning && !p.decorTuning->clumpPermille) {
+            if (!parseU32(f[2], p.decorTuning->clumpPermille) || !p.decorTuning->clumpPermille || p.decorTuning->clumpPermille > 1000)
+                return std::unexpected(ProfileError::BadFormat);
         } else if (type == "tuning" && f.size() == 12 && !p.tuning) {
             uint32_t v[11];
             for (size_t i = 0; i < 11; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);

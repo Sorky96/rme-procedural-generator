@@ -21,6 +21,7 @@ struct LearningSample {
     std::array<StyleMix, maxTreeMix> treeMix; // further tree brushes with at least 5% of the tree items each
     std::array<StyleMix, maxTreeMix> bushMix; // further bush brushes with at least 5% of the bush items each
     std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // vegetation on each grassMix ground
+    uint32_t clumpPermille = 0;       // DecorTuning::clumpPermille measured on the grass of the sample
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.
 // `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.

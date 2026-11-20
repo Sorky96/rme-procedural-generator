@@ -60,6 +60,39 @@ std::array<StyleMix, maxTreeMix> chooseKindMix(std::span<const KeyTiles> items, 
     }
     return topMix<maxTreeMix>(std::move(candidates), total);
 }
+// How clumped trees and bushes on grass are: r = P(an 8-neighbour on grass is planted | the cell is
+// planted) / P(a grass cell is planted). r is 1 for an even spread; 3 and more for thickets with clearings.
+uint32_t vegetationClump(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
+    const auto& floor = map.floors().front();
+    std::vector<uint8_t> grassKey(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < grassKey.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        grassKey[k] = entry != mapping.end() && entry->kind == StyleKind::Grass;
+    }
+    const uint32_t plantBits = bit(Trait::TreeDoodad) | bit(Trait::BushDoodad);
+    const auto grass = [&](size_t i) { return (floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < grassKey.size() && grassKey[floor.ground[i]]; };
+    const int w = floor.bounds.width, h = floor.bounds.height;
+    uint64_t cells = 0, planted = 0, pairs = 0, plantedPairs = 0;
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        const size_t i = size_t(y) * w + x;
+        if (!grass(i)) continue;
+        ++cells;
+        if (!(floor.traits[i] & plantBits)) continue;
+        ++planted;
+        for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+            const int nx = x + dx, ny = y + dy;
+            if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const size_t j = size_t(ny) * w + nx;
+            if (!grass(j)) continue;
+            ++pairs;
+            plantedPairs += (floor.traits[j] & plantBits) != 0;
+        }
+    }
+    if (!planted || !pairs || planted == cells) return 0;
+    // r - 1 scaled by 500: r = 3 is full clumping.
+    const double r = (double(plantedPairs) / double(pairs)) / (double(planted) / double(cells));
+    return uint32_t(std::clamp((r - 1.0) * 500.0, 0.0, 1000.0));
+}
 } // namespace
 
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
@@ -148,6 +181,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         const auto palette = chooseDecorPalette(asKeyTiles(mixItems[m]), 10, 0);
         for (size_t k = 0; k < 3; ++k) if (palette[k] != sample.decorPalette[k]) d.brushes[k] = palette[k];
     }
+    sample.clumpPermille = vegetationClump(map, mapping);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -184,6 +218,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     auto decorTuning = fitDecorTuning(*profile.decorTarget, *profile.tuning, options.eval, stop);
     if (!decorTuning) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Vegetation fit failed.");
     profile.decorTuning = *decorTuning;
+    profile.decorTuning->clumpPermille = sample.clumpPermille;
     profile.decorPalette = sample.decorPalette;
     profile.grassMix = sample.grassMix;
     profile.grassMixDecor = sample.grassMixDecor;
