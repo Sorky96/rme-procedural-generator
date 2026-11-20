@@ -1493,7 +1493,18 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
 			if (!ground || ground->getTotalChance() <= 0) continue;
 			request.profile.grassMix[used] = mix.brush;
-			request.profile.grassMixPermille[used++] = uint16_t(mix.permille);
+			request.profile.grassMixPermille[used] = uint16_t(mix.permille);
+			// The patch vegetation applies with vegetation on; a brush this client lacks falls back to the main one.
+			if (config.vegetation) {
+				const auto& decor = profile.grassMixDecor[i];
+				for (size_t k = 0; k < GroundProfile::decorationCount; ++k) {
+					request.profile.grassMixDecorKeep[used][k] = uint16_t(decor.keepPermille[k]);
+					const auto* patchBrush = decor.brushes[k].empty() ? nullptr : g_brushes.getBrush(decor.brushes[k]);
+					const auto* doodad = patchBrush ? patchBrush->as<DoodadBrush>() : nullptr;
+					if (doodad && doodad->hasSingleObjects(0)) request.profile.grassMixDecor[used][k] = decor.brushes[k];
+				}
+			}
+			++used;
 		}
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.treeMix.size() && used < GroundProfile::treeMixCount; ++i) {
 			const auto& mix = profile.treeMix[i];

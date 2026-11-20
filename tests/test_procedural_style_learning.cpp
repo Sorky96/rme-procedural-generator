@@ -50,20 +50,26 @@ int main(int argc, char** argv) {
     check(a->tuning && a->tuning->rockPermille == 0 && a->tuning->dirtPermille == 0, "kinds absent from the sample are not generated");
     check(a->palette[size_t(StyleKind::Shore)] == a->palette[size_t(StyleKind::Grass)], "shoreless sample rings water with its grass");
     {
-        // Every grass tile holds a palm: the learned profile keeps the palm brush and a vegetation fit.
+        // Every grass tile holds a tree, every swamp tile a swamp plant: the learned profile keeps the palm
+        // brush, a vegetation fit, and swamp patches without trees that grow their own plants.
         FloorBounds fb{7, 0, 0, 64, 64};
         auto forest = SemanticMap::create(std::span(&fb, 1), {4096}).value();
         const auto grass = forest.internGroundKey("grass").value();
         const auto jungle = forest.internGroundKey("jungle grass").value();
         const auto swamp = forest.internGroundKey("swamp").value();
         for (int i = 0; i < 4096; ++i) // a quarter jungle grass, an eighth swamp
-            check(bool(forest.set(i % 64, i / 64, 7, i % 8 == 1 ? swamp : i % 4 ? grass : jungle, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
+            check(bool(forest.set(i % 64, i / 64, 7, i % 8 == 1 ? swamp : i % 4 ? grass : jungle,
+                bit(Trait::HasGround) | bit(i % 8 == 1 ? Trait::BushDoodad : Trait::TreeDoodad))), "forest cell");
         auto forestMapping = proposeKeyMap(forest.groundKeys(), defaultKeyRules());
         for (auto& entry : forestMapping) if (entry.key == "swamp") entry.kind = StyleKind::Grass; // as the dialog proposes
-        const std::vector<KeyTiles> palms{{"mangrove tree (on water)", 9000}, {"jungle palm", 1300}, {"oak tree", 1200},
-            {"pine tree", 1100}, {"birch tree", 1000}, {"fir tree", 900}};
+        const std::vector<GroundDoodadItems> palms{{grass, "mangrove tree (on water)", 9000}, {grass, "jungle palm", 1300},
+            {grass, "oak tree", 1200}, {grass, "pine tree", 1100}, {grass, "birch tree", 1000}, {grass, "fir tree", 900},
+            {swamp, "swamp plants", 512}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true);
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned");
+        check(learned && learned->decorPalette[1].empty(), "plants of the swamp patches are not the main bush");
+        check(learned && learned->grassMixDecor[1].keepPermille == std::array<uint32_t, 3>{0, 1000, 1000} &&
+            learned->grassMixDecor[1].brushes[1] == "swamp plants", "swamp keeps no trees and grows its own plants");
         check(learned && learned->grassMix[0] == StyleMix{"jungle grass", 250} && learned->grassMix[1] == StyleMix{"swamp", 125} &&
             learned->grassMix[2].brush.empty(), "grass mix with shares");
         // 5500 land trees: oak 1200 (218), pine 1100 (200), birch 1000 (181); fir (163) has no slot left.

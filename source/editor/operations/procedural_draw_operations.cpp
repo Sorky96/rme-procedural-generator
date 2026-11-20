@@ -128,6 +128,10 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	for (size_t i = 0; i < GroundProfile::grassMixCount; ++i) {
 		string(plan.profile.grassMix[i]);
 		hashField(hash, plan.profile.grassMixPermille[i], 2);
+		for (size_t k = 0; k < GroundProfile::decorationCount; ++k) {
+			hashField(hash, plan.profile.grassMixDecorKeep[i][k], 2);
+			string(plan.profile.grassMixDecor[i][k]);
+		}
 	}
 	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
 		string(plan.profile.treeMix[i]);
@@ -413,12 +417,14 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	std::vector<uint16_t> decorIds;
-	std::array<const std::string*, GroundProfile::decorationCount + GroundProfile::treeMixCount> decorNames {};
-	for (size_t i = 0; i < GroundProfile::decorationCount; ++i) decorNames[i] = &plan.profile.decor[i];
-	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) decorNames[GroundProfile::decorationCount + i] = &plan.profile.treeMix[i];
+	// Required decor brushes first, then the optional ones: tree mix and the brushes of the grass mix patches.
+	std::vector<const std::string*> decorNames;
+	for (const auto& name : plan.profile.decor) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.treeMix) decorNames.push_back(&name);
+	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
 		const std::string& name = *decorNames[i];
-		if (i >= GroundProfile::decorationCount && name.empty()) continue; // tree mix slots are optional
+		if (i >= GroundProfile::decorationCount && name.empty()) continue; // optional slots
 		const auto* brush = g_brushes.getBrush(name);
 		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
 		if (name.empty() || name.size() > 256 || !doodad || !doodad->hasSingleObjects(0) ||

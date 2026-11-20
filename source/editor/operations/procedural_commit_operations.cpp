@@ -97,6 +97,9 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 		for (const auto& name : unit.plan.profile.activeDecor()) {
 			if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
+		for (const auto& names : unit.plan.profile.grassMixDecor) for (const auto& name : names) {
+			if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		}
 		for (const auto& cell : snapshot.cells) {
 			if (stop.stop_requested()) return std::unexpected(TerrainCommitFailure::Cancelled);
 			if (!charge(cell.houseExits.capacity(), sizeof(uint32_t))) return std::unexpected(TerrainCommitFailure::MemoryLimit);

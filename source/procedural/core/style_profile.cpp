@@ -183,6 +183,14 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 		(mix >= p.treeMix.data() && mix < p.treeMix.data() + p.treeMix.size() ? treeShare : grassShare) += mix->permille;
 	}
 	if (grassShare > 1000 || treeShare > 1000) return std::unexpected(ProfileError::InvalidRange);
+	for (size_t m = 0; m < maxGrassMix; ++m) {
+		const auto& d = p.grassMixDecor[m];
+		if (p.grassMix[m].brush.empty() && d != StyleMixDecor {}) return std::unexpected(ProfileError::InvalidRange);
+		for (size_t k = 0; k < 3; ++k) {
+			if (d.keepPermille[k] > 1000) return std::unexpected(ProfileError::InvalidRange);
+			if (bad(d.brushes[k])) return std::unexpected(ProfileError::InvalidKey);
+		}
+	}
 	std::set<std::string_view> seen;
 	for (const auto& e : p.keymap) {
 		if (bad(e.key) || bad(e.rule)) return std::unexpected(ProfileError::InvalidKey);
@@ -211,6 +219,13 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		if (!p.decorPalette[k].empty()) out += std::string("doodad\t") + decorNames[k] + '\t' + p.decorPalette[k] + '\n';
 	}
 	for (const auto& mix : p.grassMix) if (!mix.brush.empty()) out += std::format("mix\tGrass\t{}\t{}\n", mix.permille, mix.brush);
+	for (size_t m = 0; m < maxGrassMix; ++m) {
+		const auto& d = p.grassMixDecor[m];
+		if (d == StyleMixDecor {}) continue;
+		const auto name = [](const std::string& b) { return b.empty() ? std::string("-") : b; };
+		out += std::format("mixdecor\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n", m, d.keepPermille[0], d.keepPermille[1], d.keepPermille[2],
+			name(d.brushes[0]), name(d.brushes[1]), name(d.brushes[2]));
+	}
 	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
 	if (p.target) {
 		out += "target\tshares";
@@ -254,6 +269,7 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	std::array<bool, naturalKindCount> haveAdjacency {};
 	std::array<bool, 8> haveDecorCell {};
 	bool haveShares = false;
+	std::array<bool, maxGrassMix> haveMixDecor {};
 	while (!text.empty()) {
 		const size_t end = text.find('\n');
 		std::string_view line = text.substr(0, end);
@@ -336,6 +352,15 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             const auto slot = std::ranges::find_if(slots, [](const StyleMix& m) { return m.brush.empty(); });
             if (slot == slots.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(mix);
+        } else if (type == "mixdecor" && f.size() == 8) {
+            uint32_t slot = 0;
+            if (!parseU32(f[1], slot) || slot >= maxGrassMix || haveMixDecor[slot]) return std::unexpected(ProfileError::BadFormat);
+            auto& d = p.grassMixDecor[slot];
+            for (size_t k = 0; k < 3; ++k) {
+                if (!parseU32(f[2 + k], d.keepPermille[k]) || f[5 + k].empty()) return std::unexpected(ProfileError::BadFormat);
+                d.brushes[k] = f[5 + k] == "-" ? std::string() : std::string(f[5 + k]);
+            }
+            haveMixDecor[slot] = true;
         } else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
             if (!p.target) {
                 p.target = StyleTarget {};

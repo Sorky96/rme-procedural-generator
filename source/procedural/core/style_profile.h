@@ -154,6 +154,16 @@ struct StyleMix {
 };
 inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3;
 
+// Vegetation on the cells of one grass mix brush (swamp: no trees, swamp plants as bushes). keepPermille
+// per DecorKind Tree, Bush, Stone: share of the generated decoration such a cell keeps (the patch rate
+// over the rate on the main grass, at most 1000: a patch only thins, never adds). brushes: the doodad
+// brush used there instead of the main one; empty = the main one.
+struct StyleMixDecor {
+	std::array<uint32_t, 3> keepPermille {1000, 1000, 1000};
+	std::array<std::string, 3> brushes;
+	bool operator==(const StyleMixDecor&) const = default;
+};
+
 struct StyleProfile {
 	std::string client;
 	std::string otbSha256, datSha256;   // lowercase hex of the client's items.otb and Tibia.dat
@@ -171,6 +181,7 @@ struct StyleProfile {
 	// Learned mixes (empty brush = none): further grass brushes in patches, each covering `permille` of the grass,
 	// and further tree brushes, each standing in for the tree brush on `permille` of the trees.
 	std::array<StyleMix, maxGrassMix> grassMix;
+	std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // per grassMix entry; the default for an unused one
 	std::array<StyleMix, maxTreeMix> treeMix;
 	bool operator==(const StyleProfile&) const = default;
 };

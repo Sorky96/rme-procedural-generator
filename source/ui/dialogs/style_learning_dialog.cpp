@@ -187,8 +187,8 @@ void StyleLearningDialog::Analyze() {
     if (mappingText.size() > (1u << 20)) { Status("Mapping exceeds the 1 MiB limit."); return; }
     auto mapping = parseKeyMap(mappingText);
     if (!mapping) { Status("Invalid G4 mapping. Keep the schema, tab separators and exact brush names."); return; }
-    std::vector<KeyTiles> doodadItems;
-    for (const auto& [name, items] : doodads_) doodadItems.push_back({name, items});
+    std::vector<GroundDoodadItems> doodadItems;
+    for (const auto& [where, items] : doodads_) doodadItems.push_back({where.first, where.second, items});
     auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue());
     if (!sample) { Status(sample.error()); return; }
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));

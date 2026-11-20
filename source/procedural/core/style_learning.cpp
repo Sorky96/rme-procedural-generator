@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <fstream>
 #include <format>
+#include <map>
+#include <optional>
 #include <numeric>
 #ifdef _WIN32
 #define NOMINMAX
@@ -61,7 +63,7 @@ std::array<StyleMix, maxTreeMix> chooseTreeMix(std::span<const KeyTiles> items, 
 } // namespace
 
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
-    std::span<const KeyMapEntry> mapping, std::span<const KeyTiles> doodadItems, bool permission, std::stop_token stop) try {
+    std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
     if (stop.stop_requested()) return std::unexpected("Analysis cancelled.");
     if (map.floors().size() != 1) return std::unexpected("Choose one surface rectangle.");
@@ -89,16 +91,61 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     auto decor = extractDecorContext(map, mapping, b.z, b.z, stop);
     if (!decor) return std::unexpected("Invalid mapping or analysis cancelled.");
     sample.decor = *decor;
+    sample.grassMix = chooseGrassMix(mapping, keys, sample.palette[size_t(StyleKind::Grass)]);
+    // Ground key of each mix brush; its tiles keep their own vegetation, the rest is the main style.
+    std::array<std::optional<uint16_t>, maxGrassMix> mixKey;
+    for (size_t m = 0; m < maxGrassMix; ++m)
+        for (size_t k = 0; k < map.groundKeys().size(); ++k)
+            if (!sample.grassMix[m].brush.empty() && map.groundKeys()[k] == sample.grassMix[m].brush) mixKey[m] = uint16_t(k);
+    const auto slotOf = [&](uint16_t ground) -> std::optional<size_t> {
+        for (size_t m = 0; m < maxGrassMix; ++m) if (mixKey[m] == ground) return m;
+        return std::nullopt;
+    };
     // Generated decoration stands on land, so brushes placed on water never stand in for it. Mixed
     // forests rarely give one brush a quarter of the trees; the most used one still beats the built-in.
-    std::vector<KeyTiles> landItems;
+    std::map<std::string, uint64_t, std::less<>> mainItems;
+    std::array<std::map<std::string, uint64_t, std::less<>>, maxGrassMix> mixItems;
     for (const auto& item : doodadItems) {
-        const bool onWater = item.key.find("water") != std::string::npos;
-        if (!onWater) landItems.push_back(item);
+        if (item.doodad.find("water") != std::string::npos) continue;
+        const auto slot = slotOf(item.ground);
+        (slot ? mixItems[*slot] : mainItems)[item.doodad] += item.items;
     }
+    const auto asKeyTiles = [](const auto& counts) {
+        std::vector<KeyTiles> out;
+        for (const auto& [name, items] : counts) out.push_back({name, items});
+        return out;
+    };
+    const auto landItems = asKeyTiles(mainItems);
     sample.decorPalette = chooseDecorPalette(landItems, 100, 0);
-    sample.grassMix = chooseGrassMix(mapping, keys, sample.palette[size_t(StyleKind::Grass)]);
     sample.treeMix = chooseTreeMix(landItems, sample.decorPalette[0]);
+    // Per-tile rates of trees, bushes and stones on the main grass and on each mix ground.
+    const auto ratesOn = [&](uint16_t ground) {
+        std::array<uint64_t, 4> counts {}; // tiles, trees, bushes, stones
+        const auto& floor = map.floors().front();
+        for (size_t i = 0; i < floor.ground.size(); ++i) {
+            if (floor.ground[i] != ground || !(floor.traits[i] & bit(Trait::Present))) continue;
+            ++counts[0];
+            counts[1] += (floor.traits[i] & bit(Trait::TreeDoodad)) != 0;
+            counts[2] += (floor.traits[i] & bit(Trait::BushDoodad)) != 0;
+            counts[3] += (floor.traits[i] & bit(Trait::StoneDoodad)) != 0;
+        }
+        return counts;
+    };
+    std::optional<uint16_t> mainKey;
+    for (size_t k = 0; k < map.groundKeys().size(); ++k)
+        if (map.groundKeys()[k] == sample.palette[size_t(StyleKind::Grass)]) mainKey = uint16_t(k);
+    const auto base = mainKey ? ratesOn(*mainKey) : std::array<uint64_t, 4> {};
+    for (size_t m = 0; m < maxGrassMix; ++m) {
+        if (!mixKey[m]) continue;
+        const auto own = ratesOn(*mixKey[m]);
+        auto& d = sample.grassMixDecor[m];
+        for (size_t k = 0; k < 3; ++k) {
+            // keep = (own rate) / (base rate), both per tile; a base rate of 0 has nothing to thin.
+            if (own[0] && base[0] && base[1 + k]) d.keepPermille[k] = uint32_t(std::min<uint64_t>(1000, own[1 + k] * base[0] * 1000 / (own[0] * base[1 + k])));
+        }
+        const auto palette = chooseDecorPalette(asKeyTiles(mixItems[m]), 10, 0);
+        for (size_t k = 0; k < 3; ++k) if (palette[k] != sample.decorPalette[k]) d.brushes[k] = palette[k];
+    }
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -134,6 +181,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.decorTuning = *decorTuning;
     profile.decorPalette = sample.decorPalette;
     profile.grassMix = sample.grassMix;
+    profile.grassMixDecor = sample.grassMixDecor;
     profile.treeMix = sample.treeMix;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;

@@ -41,6 +41,12 @@ struct GroundProfile {
 	static constexpr size_t grassMixCount = 3;
 	std::array<std::string, grassMixCount> grassMix;
 	std::array<uint16_t, grassMixCount> grassMixPermille {};
+	// Vegetation on grassMix[m] cells (vegetation only): grassMixDecorKeep[m][k] is the share (permille) of
+	// the generated decoration of DecorKind k (Tree, Bush, Stone) such a cell keeps; grassMixDecor[m][k] is
+	// the doodad brush used there instead of decor[k], empty = decor[k]. Unused entries keep the defaults.
+	static constexpr std::array<uint16_t, decorationCount> keepAllDecor {1000, 1000, 1000};
+	std::array<std::array<uint16_t, decorationCount>, grassMixCount> grassMixDecorKeep {keepAllDecor, keepAllDecor, keepAllDecor};
+	std::array<std::array<std::string, decorationCount>, grassMixCount> grassMixDecor;
 	std::array<std::string, treeMixCount> treeMix;
 	std::array<uint16_t, treeMixCount> treeMixPermille {};
 	bool operator==(const GroundProfile&) const = default;

@@ -34,7 +34,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             if (!doodad || item->isWall() || item->isDoor() || item->isTable() || item->isCarpet() || item->isBorder()) continue;
             auto name = doodad->getName();
             traits |= decorTraitBit(classifyDoodadBrush(name));
-            ++doodads[std::move(name)];
+            ++doodads[{key, std::move(name)}];
         }
         if (!destination.set(x, b.y0 + row, b.z, key, traits)) return std::unexpected("Invalid sample cell.");
     }

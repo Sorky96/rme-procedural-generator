@@ -299,6 +299,11 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(name->size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name->size());
 	}
+	for (const auto& names : profile.grassMixDecor) for (const auto& name : names) {
+		if (name.empty()) continue;
+		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name.size());
+	}
 	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush, &profile.buildingStairs,
 		&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs, &profile.dungeonDescent}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
@@ -559,7 +564,8 @@ TerrainPreparationSteps runPreparation(
                             floorInput.config.region = cap.region;
                             floorProfile.brushes[0] = profile.plateauGround;
                             floorProfile.wall.clear(); floorProfile.door.clear(); floorProfile.campfire.clear();
-                            floorProfile.grassMix = {}; floorProfile.grassMixPermille = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {};
+                            floorProfile.grassMix = {}; floorProfile.grassMixPermille = {};
+                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {};
                         }
                         auto resolved = resolveSurfacePlan(floorInput, floorGrid, floorProfile, semanticBytes, stop,
                             input.config.vegetation ? &world->decor[f] : nullptr, clear);
@@ -940,7 +946,8 @@ TerrainPreparationSteps runPreparation(
                         upperProfile.door.clear();
                         upperProfile.campfire.clear();
                         // Caps and storeys use their own ground; the learned mixes belong to the surface below.
-                        upperProfile.grassMix = {}; upperProfile.grassMixPermille = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {};
+                        upperProfile.grassMix = {}; upperProfile.grassMixPermille = {};
+                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {};
                         auto upperPlan = resolveSurfacePlan(
                             upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
                         );
