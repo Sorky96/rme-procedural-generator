@@ -1119,6 +1119,10 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
+	if (!entry.profile.grassVariant.brush.empty())
+		note(applied, "grass patches", wxstr(std::format("{} {}%", entry.profile.grassVariant.brush, entry.profile.grassVariant.permille / 10)));
+	for (const auto& mix : entry.profile.treeMix)
+		if (!mix.brush.empty()) note(applied, "trees with vegetation", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
 	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
 	if (!skipped.empty()) message += " Not usable in this client, kept the default: " + skipped + ".";
@@ -1477,6 +1481,24 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 				decorFields[i]->SetFocus();
 				return std::nullopt;
 			}
+		}
+	}
+
+	// Learned mixes of the chosen profile; a brush this client cannot place is left out, as for the palette.
+	if (const int picked = profile_choice_->GetSelection(); natural && picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
+		const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
+		const auto* variant = profile.grassVariant.brush.empty() ? nullptr : g_brushes.getBrush(profile.grassVariant.brush);
+		if (variant && variant->as<GroundBrush>() && variant->as<GroundBrush>()->getTotalChance() > 0) {
+			request.profile.grassVariant = profile.grassVariant.brush;
+			request.profile.grassVariantPermille = uint16_t(profile.grassVariant.permille);
+		}
+		for (size_t i = 0, used = 0; config.vegetation && i < profile.treeMix.size() && used < GroundProfile::treeMixCount; ++i) {
+			const auto& mix = profile.treeMix[i];
+			const auto* brush = mix.brush.empty() ? nullptr : g_brushes.getBrush(mix.brush);
+			const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
+			if (!doodad || !doodad->hasSingleObjects(0)) continue;
+			request.profile.treeMix[used] = mix.brush;
+			request.profile.treeMixPermille[used++] = uint16_t(mix.permille);
 		}
 	}
 

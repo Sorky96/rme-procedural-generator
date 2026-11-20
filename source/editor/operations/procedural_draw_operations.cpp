@@ -125,6 +125,12 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	string(plan.client);
 	for (const auto& name : plan.profile.active()) string(name);
 	for (const auto& name : plan.profile.activeDecor()) string(name);
+	string(plan.profile.grassVariant);
+	hashField(hash, plan.profile.grassVariantPermille, 2);
+	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
+		string(plan.profile.treeMix[i]);
+		hashField(hash, plan.profile.treeMixPermille[i], 2);
+	}
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	hashField(hash, plan.decor.size());
@@ -391,16 +397,27 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
                    : groundBrush(plan.profile.brushes[i]);
 		if (!brushes[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
+	// The learned grass variant is placed on Grass cells of the surface only.
+	const GroundBrush* grassVariantBrush = nullptr;
+	if (!plan.profile.grassVariant.empty() && !cave && !upper) {
+		grassVariantBrush = plan.profile.grassVariant.size() <= 256 ? groundBrush(plan.profile.grassVariant) : nullptr;
+		if (!grassVariantBrush) co_return std::unexpected(PreviewError::InvalidPlan);
+	}
 	const bool vegetation = plan.config.vegetation && !cave;
 	if (vegetation != !plan.decor.empty() || (!cave && plan.profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) ||
 		(vegetation && (plan.decor.size() != plan.items.size() || plan.config.algorithm != GenerationAlgorithm::Surface))) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	std::vector<uint16_t> decorIds;
-	for (size_t i = 0; vegetation && i < GroundProfile::decorationCount; ++i) {
-		const auto* brush = g_brushes.getBrush(plan.profile.decor[i]);
+	std::array<const std::string*, GroundProfile::decorationCount + GroundProfile::treeMixCount> decorNames {};
+	for (size_t i = 0; i < GroundProfile::decorationCount; ++i) decorNames[i] = &plan.profile.decor[i];
+	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) decorNames[GroundProfile::decorationCount + i] = &plan.profile.treeMix[i];
+	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
+		const std::string& name = *decorNames[i];
+		if (i >= GroundProfile::decorationCount && name.empty()) continue; // tree mix slots are optional
+		const auto* brush = g_brushes.getBrush(name);
 		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-		if (plan.profile.decor[i].empty() || plan.profile.decor[i].size() > 256 || !doodad || !doodad->hasSingleObjects(0) ||
+		if (name.empty() || name.size() > 256 || !doodad || !doodad->hasSingleObjects(0) ||
 			doodad->getSingleChance(0) <= 0 || doodad->getSingleChance(0) > 100000) co_return std::unexpected(PreviewError::InvalidPlan);
 		for (int roll = 1; roll <= doodad->getSingleChance(0); ++roll) {
 			const auto* item = doodad->getRandomSingleItem(0, roll);
@@ -639,6 +656,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}
+		if (grassVariantBrush && ground.editorData().brush == grassVariantBrush)
+			for (const auto& variant : grassVariantBrush->getBorderItems()) found |= variant.id == plan.items[i];
 		const bool groundHole = !cave && (plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole ||
 			(fallbackHole && plan.items[i] == fallbackHole) || std::ranges::find(dungeonOpenings, plan.items[i]) != dungeonOpenings.end()) &&
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&

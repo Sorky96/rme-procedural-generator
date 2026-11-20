@@ -54,17 +54,30 @@ int main(int argc, char** argv) {
         FloorBounds fb{7, 0, 0, 64, 64};
         auto forest = SemanticMap::create(std::span(&fb, 1), {4096}).value();
         const auto grass = forest.internGroundKey("grass").value();
-        for (int i = 0; i < 4096; ++i)
-            check(bool(forest.set(i % 64, i / 64, 7, grass, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
+        const auto jungle = forest.internGroundKey("jungle grass").value();
+        for (int i = 0; i < 4096; ++i) // a quarter of the grass is jungle grass
+            check(bool(forest.set(i % 64, i / 64, 7, i % 4 ? grass : jungle, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
         const auto forestMapping = proposeKeyMap(forest.groundKeys(), defaultKeyRules());
         const std::vector<KeyTiles> palms{{"mangrove tree (on water)", 9000}, {"jungle palm", 1300}, {"oak tree", 1200},
             {"pine tree", 1100}, {"birch tree", 1000}, {"fir tree", 900}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true);
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned");
+        check(learned && learned->grassVariant == StyleMix{"jungle grass", 250}, "grass variant with its share");
+        // 5500 land trees: oak 1200 (218), pine 1100 (200), birch 1000 (181); fir (163) has no slot left.
+        check(learned && learned->treeMix[0] == StyleMix{"oak tree", 218} && learned->treeMix[1] == StyleMix{"pine tree", 200} &&
+            learned->treeMix[2] == StyleMix{"birch tree", 181}, "tree mix by use, water trees left out");
         const auto fitted = learned ? fitLearningSample(*learned, forestMapping, "10.98", "otb", "dat")
                                     : std::expected<StyleProfile, std::string>(std::unexpected("no sample"));
         check(fitted && fitted->decorTuning && fitted->decorTarget && fitted->decorPalette[0] == "jungle palm", "vegetation fitted");
-        check(fitted && parseProfile(*serializeProfile(*fitted)) == *fitted, "learned vegetation round-trips");
+        check(fitted && parseProfile(*serializeProfile(*fitted)) == *fitted, "learned vegetation and mixes round-trip");
+        if (fitted) {
+            auto broken = *fitted;
+            broken.treeMix[0].permille = 900; // 900 + 200 + 181 > 1000
+            check(!validateProfile(broken), "tree mix shares above 1000 refused");
+            broken = *fitted;
+            broken.grassVariant.brush.clear();
+            check(!validateProfile(broken), "grass variant share without a brush refused");
+        }
     }
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
     check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");

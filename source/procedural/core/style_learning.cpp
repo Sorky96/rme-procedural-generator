@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/style_learning.h"
+#include "procedural/core/doodad_class.h"
 #include <algorithm>
 #include <fstream>
 #include <format>
@@ -10,6 +11,50 @@
 #endif
 
 namespace rme::procedural {
+namespace {
+// Smallest share a second brush needs to be worth a mix; rarer ones read as noise, not style.
+constexpr uint64_t minMixPermille = 50;
+
+uint32_t permilleOf(uint64_t part, uint64_t whole) { return whole ? uint32_t(std::min<uint64_t>(1000, part * 1000 / whole)) : 0; }
+
+// The most used named grass brush after the palette's one, with its share of all grass tiles.
+StyleMix chooseGrassVariant(std::span<const KeyMapEntry> mapping, std::span<const KeyTiles> keys, const std::string& primary) {
+    if (primary.empty()) return {};
+    uint64_t total = 0;
+    const KeyTiles* best = nullptr;
+    for (const auto& t : keys) {
+        const auto entry = std::ranges::find(mapping, t.key, &KeyMapEntry::key);
+        if (entry == mapping.end() || entry->kind != StyleKind::Grass) continue;
+        total += t.tiles;
+        if (t.key == primary || t.key.starts_with("item ")) continue;
+        if (!best || t.tiles > best->tiles || (t.tiles == best->tiles && t.key < best->key)) best = &t;
+    }
+    const uint32_t share = best ? permilleOf(best->tiles, total) : 0;
+    return share >= minMixPermille ? StyleMix{best->key, share} : StyleMix{};
+}
+
+// Tree brushes after the palette's one, most used first, each with its share of all tree items.
+std::array<StyleMix, maxTreeMix> chooseTreeMix(std::span<const KeyTiles> items, const std::string& primary) {
+    std::array<StyleMix, maxTreeMix> mix;
+    if (primary.empty()) return mix;
+    std::vector<const KeyTiles*> trees;
+    uint64_t total = 0;
+    for (const auto& t : items) {
+        if (classifyDoodadBrush(t.key) != DecorKind::Tree) continue;
+        total += t.tiles;
+        if (t.key != primary) trees.push_back(&t);
+    }
+    std::ranges::sort(trees, [](const KeyTiles* a, const KeyTiles* b) { return a->tiles != b->tiles ? a->tiles > b->tiles : a->key < b->key; });
+    size_t used = 0;
+    for (const auto* t : trees) {
+        const uint32_t share = permilleOf(t->tiles, total);
+        if (used == maxTreeMix || share < minMixPermille) break;
+        mix[used++] = {t->key, share};
+    }
+    return mix;
+}
+} // namespace
+
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const KeyTiles> doodadItems, bool permission, std::stop_token stop) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
@@ -47,6 +92,8 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         if (!onWater) landItems.push_back(item);
     }
     sample.decorPalette = chooseDecorPalette(landItems, 100, 0);
+    sample.grassVariant = chooseGrassVariant(mapping, keys, sample.palette[size_t(StyleKind::Grass)]);
+    sample.treeMix = chooseTreeMix(landItems, sample.decorPalette[0]);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -81,6 +128,8 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     if (!decorTuning) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Vegetation fit failed.");
     profile.decorTuning = *decorTuning;
     profile.decorPalette = sample.decorPalette;
+    profile.grassVariant = sample.grassVariant;
+    profile.treeMix = sample.treeMix;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

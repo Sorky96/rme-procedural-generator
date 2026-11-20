@@ -11,6 +11,8 @@ struct LearningSample {
     StylePalette palette;
     DecorContext decor;               // tree/bush/stone counts by ground context, from the decor traits
     StyleDecorPalette decorPalette;
+    StyleMix grassVariant;            // second grass brush with at least 5% of the grass tiles
+    std::array<StyleMix, maxTreeMix> treeMix; // further tree brushes with at least 5% of the tree items each
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.
 // `doodadItems` are the stacked items per doodad brush name read from the same rectangle.
