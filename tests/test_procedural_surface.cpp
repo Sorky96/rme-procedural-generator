@@ -369,20 +369,27 @@ void transitionBand() {
 	require(mixed(*b) > mixed(*a), "Soft transition did not add grass/dirt interleaving");
 }
 
-void allocationFailures() {
-	const auto config = makeConfig(24, 3);
+void allocationFailures(const SurfaceConfig& config, bool expectStructures) {
 	allocationRecording = true; allocationCount = 0; failedAllocation = 0;
 	const auto baseline = generateSurface(config, extent, budget);
 	allocationRecording = false;
 	require(bool(baseline), "Baseline failed");
+	if (expectStructures) {
+		require(!baseline->doors.empty() && !baseline->entrances.empty(),
+			"Allocation fixture did not generate buildings and cave entrances");
+	}
 	const size_t total = allocationCount;
 	size_t failures = 0;
 	for (size_t fail = 1; fail <= total; ++fail) {
 		allocationRecording = true; allocationCount = 0; failedAllocation = fail;
 		const auto result = generateSurface(config, extent, budget);
 		allocationRecording = false;
+		require(allocationCount >= fail, "Allocation fault was not reached");
 		if (!result) { require(result.error() == SurfaceError::AllocationFailed, "Unexpected error on bad_alloc"); ++failures; }
-		else require(result->cells == baseline->cells, "Result changed after skipped failure");
+		else require(result->valid() && result->region == baseline->region && result->cells == baseline->cells &&
+			result->doors == baseline->doors && result->gaps == baseline->gaps && result->sites == baseline->sites &&
+			result->fires == baseline->fires && result->entrances == baseline->entrances &&
+			result->bridgeAxes == baseline->bridgeAxes, "Result changed after skipped failure");
 	}
 	std::cout << "allocation_points=" << total << " injected_failures_reported=" << failures << '\n';
 	require(failures > 0, "No allocation failure was reported");
@@ -809,7 +816,13 @@ void sandIslands() {
 int main() {
 	try {
 		sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
-		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
+		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3);
+		allocationFailures(makeConfig(24, 3), false);
+		auto structures = makeConfig(100, 1);
+		structures.tuning.buildingDensity = 40;
+		structures.tuning.pathLength = 40;
+		structures.tuning.caveEntrances = 20;
+		allocationFailures(structures, true);
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface(); ruinsAndCamps();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
