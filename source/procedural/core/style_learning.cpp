@@ -64,6 +64,10 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     // keep some rock or dirt that improves the neighbour pairs, which reads as foreign terrain.
     if (target->sharesPpm[size_t(StyleKind::Rock)] == 0) { profile.tuning->rockPermille = 0; profile.tuning->riverCount = 0; }
     if (target->sharesPpm[size_t(StyleKind::Dirt)] == 0) profile.tuning->dirtPermille = 0;
+    // The generator always rings water with Shore; a sample without any shore meets water with grass,
+    // so the ring takes the grass brush instead of the built-in sand.
+    auto& shore = profile.palette[size_t(StyleKind::Shore)];
+    if (target->sharesPpm[size_t(StyleKind::Shore)] == 0 && shore.empty()) shore = profile.palette[size_t(StyleKind::Grass)];
     const MapDecor own{"user-local-surface", "user-local-surface", sample.decor};
     profile.decorTarget = buildDecorTarget(std::span(&own, 1));
     auto decorTuning = fitDecorTuning(*profile.decorTarget, *profile.tuning, options.eval, stop);

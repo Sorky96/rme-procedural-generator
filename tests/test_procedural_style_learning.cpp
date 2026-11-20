@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
     check(a && b && *a == *b, "deterministic G4 fit");
     if (!a) return 1;
     check(a->tuning && a->tuning->rockPermille == 0 && a->tuning->dirtPermille == 0, "kinds absent from the sample are not generated");
+    check(a->palette[size_t(StyleKind::Shore)] == a->palette[size_t(StyleKind::Grass)], "shoreless sample rings water with its grass");
     {
         // Every grass tile holds a palm: the learned profile keeps the palm brush and a vegetation fit.
         FloorBounds fb{7, 0, 0, 64, 64};
