@@ -1848,7 +1848,7 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
 	return preview_bitmap_.IsOk();
 }
 
-void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) {
+void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) try {
 	if (!prepared_) {
 		return;
 	}
@@ -1880,41 +1880,58 @@ void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) {
 	}
 	SetStatus(wxstr(std::format("Preview validated. {} tiles. Similarity: {}.",
 		prepared_->preview.getChanges().size(), copyStateName(prepared_->copyAssessment.state))), prepared_->copyAssessment.hardFail());
+} catch (const std::bad_alloc&) {
+	SetStatus(memoryMessage, true);
 }
 
 void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
-	if (!prepared_) {
+	try {
+		if (!prepared_) {
+			return;
+		}
+		if (!CurrentTarget()) {
+			ReleasePreview();
+			UpdateControlStates();
+			return;
+		}
+		auto request = ReadRequest();
+		if (!request) {
+			ReleasePreview();
+			UpdateControlStates();
+			return;
+		}
+		if (!CandidateAllowed()) {
+			SetStatus("Only a validated, admissible candidate can be placed.", true);
+			return;
+		}
+		if (!SeriesCurrent() || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile) {
+			ReleasePreview();
+			UpdateControlStates();
+			SetStatus(staleMessage, true);
+			return;
+		}
+		request->config.seed = prepared_->plan.config.seed;
+		// The commit validates again and copies the owned diff; it never regenerates or reborders.
+		const auto receipt = selection_ ?
+			DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :
+			DrawOperations::commitTerrainPreview(*prepared_, request->config, request->profile, commitBudget);
+		if (!receipt) {
+			if (const auto* failure = std::get_if<TerrainCommitFailure>(&receipt.error());
+				failure && *failure == TerrainCommitFailure::AllocationFailed) {
+				SetStatus(describe(*failure), true);
+				return;
+			}
+			const wxString message = describe(receipt.error());
+			ReleasePreview();
+			UpdateControlStates();
+			SetStatus(message, true);
+			return;
+		}
+	} catch (const std::bad_alloc&) {
+		SetStatus(memoryMessage, true);
 		return;
 	}
-	if (!CurrentTarget()) {
-		ReleasePreview();
-		UpdateControlStates();
-		return;
-	}
-	auto request = ReadRequest();
-	if (!request) {
-		ReleasePreview();
-		UpdateControlStates();
-		return;
-	}
-    if (!CandidateAllowed()) { SetStatus("Only a validated, admissible candidate can be placed.", true); return; }
-    if (!SeriesCurrent() || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile) {
-        ReleasePreview(); UpdateControlStates(); SetStatus(staleMessage, true); return;
-    }
-    request->config.seed = prepared_->plan.config.seed;
-	// The commit validates again and copies the owned diff; it never regenerates or reborders.
-	const auto receipt = selection_ ?
-		DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :
-		DrawOperations::commitTerrainPreview(*prepared_, request->config, request->profile, commitBudget);
-	if (receipt) {
-        spdlog::info("Terrain generator: placed {} tiles", receipt->changes);
-        EndModal(wxID_OK);
-		return;
-	}
-	const wxString message = describe(receipt.error());
-	ReleasePreview();
-	UpdateControlStates();
-	SetStatus(message, true);
+	EndModal(wxID_OK);
 }
 
 void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {

@@ -85,7 +85,7 @@ capacity_stderr_ok = bool(args.capacity or args.series or args.learn) and all("'
 passed = code == 0 and unchanged and (stderr_empty or capacity_stderr_ok) and ('LEARNING_DIALOG_PASS\n' if args.learn else 'CANDIDATE_DIALOG_PASS\n' if args.series else 'CAPACITY_PASS\n' if args.capacity else 'PREVIEW_PASS\n' if args.preview else 'RESOLVER_PASS\n') in report and 'FAILED\t' not in report
 if args.commit:
     passed = passed and all(marker in report for marker in (
-        'TERRAIN_RESERVATION_FAILURES_PASS\t', 'TERRAIN_COMMIT_FAILURES_PASS\t',
+        'TERRAIN_RESERVATION_FAILURES_PASS\t', 'TERRAIN_COMMIT_FAILURES_PASS\t', 'TERRAIN_SURFACE_HISTORY_FAILURES_PASS\t',
         'TERRAIN_COMMIT_SIZE_PASS\t100\t', 'TERRAIN_COMMIT_SIZE_PASS\t500\t', 'TERRAIN_SELECTED_COMMIT_PASS\t'))
 verification = {'passed': passed, 'exit_code': code, 'input_assets_unchanged': unchanged,
                 'scope': ('real loaded-client open-map learning, local save, normal offer, I54 feedback and Place/Undo/Redo; synthetic maps, automated controls, no manual visual/keyboard claim' if args.learn else
