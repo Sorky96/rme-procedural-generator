@@ -39,7 +39,14 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     auto decor = extractDecorContext(map, mapping, b.z, b.z, stop);
     if (!decor) return std::unexpected("Invalid mapping or analysis cancelled.");
     sample.decor = *decor;
-    sample.decorPalette = chooseDecorPalette(doodadItems);
+    // Generated decoration stands on land, so brushes placed on water never stand in for it. Mixed
+    // forests rarely give one brush a quarter of the trees; the most used one still beats the built-in.
+    std::vector<KeyTiles> landItems;
+    for (const auto& item : doodadItems) {
+        const bool onWater = item.key.find("water") != std::string::npos;
+        if (!onWater) landItems.push_back(item);
+    }
+    sample.decorPalette = chooseDecorPalette(landItems, 100, 0);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 

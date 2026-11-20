@@ -57,7 +57,8 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 4096; ++i)
             check(bool(forest.set(i % 64, i / 64, 7, grass, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
         const auto forestMapping = proposeKeyMap(forest.groundKeys(), defaultKeyRules());
-        const std::vector<KeyTiles> palms{{"jungle palm", 4096}};
+        const std::vector<KeyTiles> palms{{"mangrove tree (on water)", 9000}, {"jungle palm", 1300}, {"oak tree", 1200},
+            {"pine tree", 1100}, {"birch tree", 1000}, {"fir tree", 900}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true);
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned");
         const auto fitted = learned ? fitLearningSample(*learned, forestMapping, "10.98", "otb", "dat")
