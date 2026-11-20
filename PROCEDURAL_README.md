@@ -21,3 +21,17 @@ Use **Map → Generate terrain…** to preview terrain and place it in an empty 
 Profiles record surface ground proportions, adjacency and brush names. The source map, its path and sample coordinates stay out of the profile. Underground geometry, buildings and vegetation are outside the scope of this fit. Learning and saving leave the source map and its undo history intact.
 
 See the [local learning implementation and verification notes](docs/procedural/I56_LOCAL_LEARNING.md) for the automated check and its coverage.
+
+## Review and reproduce the G6 results
+
+- [Acceptance criteria](docs/procedural/G6_METRICS.md) records the ranking, holdout, and feedback policies. [Gate status](docs/procedural/G6_GATE_STATUS.md) records the results and links to the individual reports.
+- [Smoke tests](docs/procedural/smoke/README.md) cover the Windows build, loaded-client probes, and reproducible measurements. The probes require a local client profile and compatible client assets.
+- [Blind test instructions](docs/procedural/smoke/g6_i55.md) explain the anonymous comparison. [Family intake](docs/procedural/smoke/g6_i55_intake.md) explains how to prepare and freeze independent map families.
+- [Technical debt](docs/procedural/TECH_DEBT.md) tracks remaining work, including the limits of the Preview memory diagnosis.
+
+G6 remains open. Both profiles scored 18/32 in the original I51 holdout
+against a 23/32 threshold, and I51b did not improve upon ranking A.
+I55 still needs 20 human ratings and measurements on newly reviewed map
+families. The live copy guard uses index format `i53-index/2`. Replays of
+the frozen I55 protocol use the matching pre-D10 executable and
+`i53-index/1` described in the family intake instructions.
