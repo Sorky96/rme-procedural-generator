@@ -528,6 +528,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("S&hore brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
 	form->Add(shore_brush_choice_, 1, wxEXPAND);
+	for (auto* brush : {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_}) {
+		brush->SetToolTip("Natural surface can leave a one-tile gap next to existing ground outside the writable area.");
+	}
 
 	form->Add(label("Smooth &beaches:"), 0, wxALIGN_CENTER_VERTICAL);
 	smooth_beaches_check_ = newd wxCheckBox(host, wxID_ANY, "Round the sand edge near lakes");
@@ -679,8 +682,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	// Iteration 50: the natural rock wall brush, aligned on every side of the floor; the "mountain" ground (faces only
-	// towards the east and south) when the client lacks it.
+	// Default to mountain ground. A wall brush can align pieces on all sides of the cave floor.
 	const wxString caveWall = "mountain";
 	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", caveWall, 4);
 	cave_wall_brush_choice_->SetToolTip("Wall brush drawn on cave ground around the cave floor, or a ground brush for the whole wall band.");

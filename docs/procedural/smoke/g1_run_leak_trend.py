@@ -3,6 +3,8 @@
 Unlike the other g1_* probes no operator input is needed: the probe queues the dialog's menu and button
 events itself, so production handlers run but native input is NOT exercised. Each cycle: open the dialog
 from the menu, Preview, in-flight Cancel, Preview, Validate, Cancel (closes), settle 1 s, sample.
+The default uses Classic (one candidate). Use --candidates 1 and --candidates N to compare the same
+Natural surface fixture at different candidate counts.
 
 Criterion fixed BEFORE the first run: the first 2 cycles are warm-up; over cycles 3..N the least-squares
 slope of working set and private bytes must be <= 1 MiB per cycle, and GDI objects, USER objects and
@@ -28,11 +30,15 @@ parser.add_argument('--cycles', type=int, default=10)
 parser.add_argument('--side', type=int, choices=(100, 500), default=500)
 parser.add_argument('--heap', action='store_true',
                     help='Also write heap-trend.csv and heap-buckets.csv (D4) plus a final HeapCompact sample')
+parser.add_argument('--candidates', type=int, choices=range(1, 17), metavar='N',
+                    help='Use the single-floor Natural surface fixture with N candidates (1–16)')
 for name in ('output', 'profile_data', 'config'):
     parser.add_argument(name, type=lambda value: Path(value).resolve())
 args = parser.parse_args()
 if args.cycles < WARMUP + 3:
     parser.error('--cycles must leave at least 3 cycles after warm-up')
+fixture = 'natural-single-floor' if args.candidates is not None else 'classic'
+candidate_count = args.candidates or 1
 repo = Path(__file__).resolve().parents[3]
 if not (args.output.is_relative_to(repo / 'local-data/procedural-smoke') or args.output.is_relative_to(repo / 'scratchpad')):
     raise ValueError('Output must be a NEW private procedural-smoke directory')
@@ -68,7 +74,12 @@ for key, value in settings.items():
     assert count == 1, key
 (run / 'config.toml').write_text(config, encoding='utf-8')
 (run / '.g1-dialog-probe').write_text('Private synthetic editor only', encoding='utf-8')
-(run / '.g1-dialog-leak').write_text(f'{args.cycles} {args.side}' + (' heap' if args.heap else ''), encoding='utf-8')
+marker = f'{args.cycles} {args.side}'
+if args.heap:
+    marker += ' heap'
+if args.candidates is not None:
+    marker += f' candidates {candidate_count}'
+(run / '.g1-dialog-leak').write_text(marker, encoding='utf-8')
 shutil.copytree(repo / 'build-ninja/assets', args.output / 'assets')
 env = os.environ.copy()
 env['PATH'] = str(repo / 'build-ninja') + os.pathsep + env.get('PATH', '')
@@ -77,7 +88,7 @@ startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 startup.wShowWindow = 1
 with (args.output / 'stdout.log').open('w', encoding='utf-8') as out, (args.output / 'stderr.log').open('w', encoding='utf-8') as err:
     process = subprocess.Popen([str(args.output / 'snapshot_probe.exe')], cwd=run, env=env, stdout=out, stderr=err, startupinfo=startup)
-    code = process.wait(timeout=max(1500, 12 * args.cycles + 300))
+    code = process.wait(timeout=max(1500, 12 * args.cycles * candidate_count + 300))
 
 report = (run / 'dialog-probe.log').read_text(encoding='utf-8')
 rows = list(csv.DictReader((run / 'leak-trend.csv').open(newline='')))
@@ -88,7 +99,10 @@ if args.heap and heap_report.is_file():
         heap_samples = sum(1 for _ in csv.DictReader(stream))
 else:
     heap_samples = 0
+series = [line for line in lines if line.startswith('LEAK_SERIES_PASS\t')]
+expected_series = [f'LEAK_SERIES_PASS\t{i}\t{candidate_count}' for i in range(1, args.cycles + 1)]
 complete = (code == 0 and 'LEAK_PASS' in lines and 'FAILED\t' not in report and len(rows) == args.cycles + 1 and
+            f'LEAK_FIXTURE\t{fixture}\tcandidates={candidate_count}' in lines and series == expected_series and
             [f'LEAK_CYCLE_PASS\t{i}' for i in range(1, args.cycles + 1)] == [l for l in lines if l.startswith('LEAK_CYCLE_PASS')] and
             (not args.heap or heap_samples == args.cycles + 2))
 unchanged = all(sha(Path(path)) == value for path, value in original.items())
@@ -115,6 +129,8 @@ trend_ok = bool(trend) and all(trend[k] <= SLOPE_LIMIT for k in trend if k.endsw
     all(trend[k] <= 0 for k in trend if k.endswith('_after_warmup'))
 passed = complete and unchanged and current and (not stderr_lines or focus_only) and trend_ok
 result = {'passed': passed, 'complete': complete, 'trend_ok': trend_ok, 'exit_code': code, 'cycles': args.cycles, 'heap': args.heap,
+          'fixture': fixture, 'requested_candidates': candidate_count,
+          'verified_series': len(series), 'effective_candidates': candidate_count if series == expected_series else None,
           'side': args.side, 'input_assets_unchanged': unchanged, 'current_sources': current,
           'stderr_focus_warning_only': focus_only, 'stderr_empty': not stderr_lines, 'trend': trend,
           'criterion': {'warmup_cycles': WARMUP, 'slope_limit_mib_per_cycle': SLOPE_LIMIT},
