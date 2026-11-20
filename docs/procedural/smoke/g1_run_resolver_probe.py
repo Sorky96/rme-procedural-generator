@@ -93,7 +93,7 @@ verification = {'passed': passed, 'exit_code': code, 'input_assets_unchanged': u
                           'real loaded-client capacity preparation and Place/Undo/Redo with production dialog budgets; synthetic empty map, no native dialog interaction' if args.capacity else
                           'real loaded-client owned preview and atomic Commit/Undo/Redo core; no GUI preview/Commit wiring or G1 E2E' if args.commit else
                           'real loaded-client owned DrawOperations sandbox/diff; no commit/GUI-preview or G1 E2E' if args.preview else
-                          'real loaded-client surface v2 placements and existing border calculator on a synthetic map; no DrawOperations/commit/GUI' if args.surface else
+                          'real loaded-client Surface v2 preparation, validation, Place/Undo/Redo and automated generator dialog cases on synthetic maps' if args.surface else
                           'real loaded-client placements at 100x100/500x500; no drawing/commit or G1 E2E'),
                 'report': report, 'source_assets': original,
                 'stderr_empty': stderr_empty}
