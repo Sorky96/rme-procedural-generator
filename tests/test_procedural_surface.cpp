@@ -276,6 +276,21 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 
 // Rivers with a sideways swing keep every structural rule (they end at a lake or the border, start at rock, are
 // never one cell wide, tributaries stay joined) and stay deterministic; meander 0 is the original output.
+void emptyRiverRoutes() {
+	auto config = makeConfig(32, 1);
+	config.region.height = 1; // Every cell is an outlet in the priority flood.
+	config.tuning.lakePermille = 0;
+	config.tuning.rockPermille = 500;
+	config.tuning.minRockCells = 1;
+	config.tuning.minRiverLength = 0;
+	config.tuning.riverCount = 0;
+	const auto withoutRivers = generateSurface(config, extent, budget);
+	require(withoutRivers && countOf(*withoutRivers, SurfaceKind::Rock) > 0, "empty-route fixture has rock sources");
+	config.tuning.riverCount = 1;
+	const auto withRivers = generateSurface(config, extent, budget);
+	require(withRivers && withRivers->cells == withoutRivers->cells, "empty river routes leave terrain intact");
+}
+
 void meanderingRivers(uint32_t side, uint32_t seeds) {
 	size_t seedsWithRiver = 0, changed = 0;
 	for (const uint32_t meander : {2u, 5u, 8u}) {
@@ -883,7 +898,7 @@ void sandIslands() {
 
 int main() {
 	try {
-		sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
+		emptyRiverRoutes(); sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3);
 		allocationFailures(makeConfig(24, 3), false);
 		auto structures = makeConfig(100, 1);

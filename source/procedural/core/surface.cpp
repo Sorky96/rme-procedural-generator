@@ -1115,7 +1115,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				for (; cell != noParent && !lake[cell] && !river[cell]; cell = parent[cell]) {
 					route.push_back(uint32_t(cell));
 				}
-				if (route.size() < config.tuning.minRiverLength) continue;
+				if (route.empty() || route.size() < config.tuning.minRiverLength) continue;
 				routeCells.insert(routeCells.end(), route.begin(), route.end());
 				routeEnds.push_back(routeCells.size());
 				if (const int64_t joint = parent[route.back()]; joint != noParent && !lake[joint]) junction[joint] = 1;
