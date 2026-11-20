@@ -1123,6 +1123,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		if (!mix.brush.empty()) note(applied, "grass patches", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	for (const auto& mix : entry.profile.treeMix)
 		if (!mix.brush.empty()) note(applied, "trees with vegetation", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
+	for (const auto& mix : entry.profile.bushMix)
+		if (!mix.brush.empty()) note(applied, "bushes with vegetation", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
 	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
 	if (!skipped.empty()) message += " Not usable in this client, kept the default: " + skipped + ".";
@@ -1506,14 +1508,17 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			}
 			++used;
 		}
-		for (size_t i = 0, used = 0; config.vegetation && i < profile.treeMix.size() && used < GroundProfile::treeMixCount; ++i) {
-			const auto& mix = profile.treeMix[i];
-			const auto* brush = mix.brush.empty() ? nullptr : g_brushes.getBrush(mix.brush);
-			const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-			if (!doodad || !doodad->hasSingleObjects(0)) continue;
-			request.profile.treeMix[used] = mix.brush;
-			request.profile.treeMixPermille[used++] = uint16_t(mix.permille);
-		}
+		const auto copyMix = [&](const auto& from, auto& names, auto& permille) {
+			for (size_t i = 0, used = 0; config.vegetation && i < from.size() && used < GroundProfile::treeMixCount; ++i) {
+				const auto* brush = from[i].brush.empty() ? nullptr : g_brushes.getBrush(from[i].brush);
+				const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
+				if (!doodad || !doodad->hasSingleObjects(0)) continue;
+				names[used] = from[i].brush;
+				permille[used++] = uint16_t(from[i].permille);
+			}
+		};
+		copyMix(profile.treeMix, request.profile.treeMix, request.profile.treeMixPermille);
+		copyMix(profile.bushMix, request.profile.bushMix, request.profile.bushMixPermille);
 	}
 
 	if (selection_) {

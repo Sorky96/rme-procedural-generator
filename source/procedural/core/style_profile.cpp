@@ -176,13 +176,15 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	}
 	for (const auto& name : p.palette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
 	for (const auto& name : p.decorPalette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
-	uint32_t grassShare = 0, treeShare = 0;
-	for (const StyleMix* mix : {&p.grassMix[0], &p.grassMix[1], &p.grassMix[2], &p.treeMix[0], &p.treeMix[1], &p.treeMix[2]}) {
-		if (bad(mix->brush)) return std::unexpected(ProfileError::InvalidKey);
-		if (mix->brush.empty() != (mix->permille == 0) || mix->permille > 1000) return std::unexpected(ProfileError::InvalidRange);
-		(mix >= p.treeMix.data() && mix < p.treeMix.data() + p.treeMix.size() ? treeShare : grassShare) += mix->permille;
+	for (const auto* group : {&p.grassMix, &p.treeMix, &p.bushMix}) {
+		uint32_t share = 0;
+		for (const StyleMix& mix : *group) {
+			if (bad(mix.brush)) return std::unexpected(ProfileError::InvalidKey);
+			if (mix.brush.empty() != (mix.permille == 0) || mix.permille > 1000) return std::unexpected(ProfileError::InvalidRange);
+			share += mix.permille;
+		}
+		if (share > 1000) return std::unexpected(ProfileError::InvalidRange);
 	}
-	if (grassShare > 1000 || treeShare > 1000) return std::unexpected(ProfileError::InvalidRange);
 	for (size_t m = 0; m < maxGrassMix; ++m) {
 		const auto& d = p.grassMixDecor[m];
 		if (p.grassMix[m].brush.empty() && d != StyleMixDecor {}) return std::unexpected(ProfileError::InvalidRange);
@@ -227,6 +229,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 			name(d.brushes[0]), name(d.brushes[1]), name(d.brushes[2]));
 	}
 	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
+	for (const auto& mix : p.bushMix) if (!mix.brush.empty()) out += std::format("mix\tBush\t{}\t{}\n", mix.permille, mix.brush);
 	if (p.target) {
 		out += "target\tshares";
 		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
@@ -344,11 +347,11 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			if (k == 3) return std::unexpected(ProfileError::UnknownKind);
 			if (!p.decorPalette[k].empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
 			p.decorPalette[k] = f[2];
-        } else if (type == "mix" && f.size() == 4 && (f[1] == "Grass" || f[1] == "Tree")) {
+        } else if (type == "mix" && f.size() == 4 && (f[1] == "Grass" || f[1] == "Tree" || f[1] == "Bush")) {
             StyleMix mix;
             if (!parseU32(f[2], mix.permille) || f[3].empty()) return std::unexpected(ProfileError::BadFormat);
             mix.brush = f[3];
-            auto& slots = f[1] == "Grass" ? p.grassMix : p.treeMix;
+            auto& slots = f[1] == "Grass" ? p.grassMix : f[1] == "Tree" ? p.treeMix : p.bushMix;
             const auto slot = std::ranges::find_if(slots, [](const StyleMix& m) { return m.brush.empty(); });
             if (slot == slots.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(mix);

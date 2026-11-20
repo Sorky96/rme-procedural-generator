@@ -294,7 +294,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2]}) {
+	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2]}) {
 		if (name->empty()) continue;
 		if (!validName(name->size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name->size());
@@ -565,7 +565,7 @@ TerrainPreparationSteps runPreparation(
                             floorProfile.brushes[0] = profile.plateauGround;
                             floorProfile.wall.clear(); floorProfile.door.clear(); floorProfile.campfire.clear();
                             floorProfile.grassMix = {}; floorProfile.grassMixPermille = {};
-                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {};
+                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {}; floorProfile.bushMix = {}; floorProfile.bushMixPermille = {};
                         }
                         auto resolved = resolveSurfacePlan(floorInput, floorGrid, floorProfile, semanticBytes, stop,
                             input.config.vegetation ? &world->decor[f] : nullptr, clear);
@@ -947,7 +947,7 @@ TerrainPreparationSteps runPreparation(
                         upperProfile.campfire.clear();
                         // Caps and storeys use their own ground; the learned mixes belong to the surface below.
                         upperProfile.grassMix = {}; upperProfile.grassMixPermille = {};
-                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {};
+                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {}; upperProfile.bushMix = {}; upperProfile.bushMixPermille = {};
                         auto upperPlan = resolveSurfacePlan(
                             upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
                         );

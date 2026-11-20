@@ -179,10 +179,11 @@ struct StyleProfile {
 	StylePalette palette;                      // brushes the style used (see StylePalette)
 	StyleDecorPalette decorPalette;            // doodad brushes the style used (see StyleDecorPalette)
 	// Learned mixes (empty brush = none): further grass brushes in patches, each covering `permille` of the grass,
-	// and further tree brushes, each standing in for the tree brush on `permille` of the trees.
+	// and further tree (bush) brushes, each standing in for the tree (bush) brush on `permille` of the trees (bushes).
 	std::array<StyleMix, maxGrassMix> grassMix;
 	std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // per grassMix entry; the default for an unused one
 	std::array<StyleMix, maxTreeMix> treeMix;
+	std::array<StyleMix, maxTreeMix> bushMix;
 	bool operator==(const StyleProfile&) const = default;
 };
 

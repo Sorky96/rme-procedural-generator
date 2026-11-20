@@ -136,6 +136,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
 		string(plan.profile.treeMix[i]);
 		hashField(hash, plan.profile.treeMixPermille[i], 2);
+		string(plan.profile.bushMix[i]);
+		hashField(hash, plan.profile.bushMixPermille[i], 2);
 	}
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
@@ -421,6 +423,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	std::vector<const std::string*> decorNames;
 	for (const auto& name : plan.profile.decor) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.treeMix) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.bushMix) decorNames.push_back(&name);
 	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
 		const std::string& name = *decorNames[i];

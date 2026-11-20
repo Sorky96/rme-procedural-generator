@@ -19,6 +19,7 @@ struct LearningSample {
     StyleDecorPalette decorPalette;
     std::array<StyleMix, maxGrassMix> grassMix; // further grass brushes with at least 5% of the grass tiles each
     std::array<StyleMix, maxTreeMix> treeMix; // further tree brushes with at least 5% of the tree items each
+    std::array<StyleMix, maxTreeMix> bushMix; // further bush brushes with at least 5% of the bush items each
     std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // vegetation on each grassMix ground
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.

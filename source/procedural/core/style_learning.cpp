@@ -48,13 +48,13 @@ std::array<StyleMix, maxGrassMix> chooseGrassMix(std::span<const KeyMapEntry> ma
     return topMix<maxGrassMix>(std::move(candidates), total);
 }
 
-// Tree brushes after the palette's one, each with its share of all tree items.
-std::array<StyleMix, maxTreeMix> chooseTreeMix(std::span<const KeyTiles> items, const std::string& primary) {
+// Brushes of one decor kind after the palette's one, each with its share of all items of that kind.
+std::array<StyleMix, maxTreeMix> chooseKindMix(std::span<const KeyTiles> items, const std::string& primary, DecorKind kind) {
     if (primary.empty()) return {};
     std::vector<const KeyTiles*> candidates;
     uint64_t total = 0;
     for (const auto& t : items) {
-        if (classifyDoodadBrush(t.key) != DecorKind::Tree) continue;
+        if (classifyDoodadBrush(t.key) != kind) continue;
         total += t.tiles;
         if (t.key != primary) candidates.push_back(&t);
     }
@@ -116,8 +116,10 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         return out;
     };
     const auto landItems = asKeyTiles(mainItems);
-    sample.decorPalette = chooseDecorPalette(landItems, 100, 0);
-    sample.treeMix = chooseTreeMix(landItems, sample.decorPalette[0]);
+    // A small sample has few items per brush; 20 still separates a used brush from a stray one.
+    sample.decorPalette = chooseDecorPalette(landItems, 20, 0);
+    sample.treeMix = chooseKindMix(landItems, sample.decorPalette[0], DecorKind::Tree);
+    sample.bushMix = chooseKindMix(landItems, sample.decorPalette[1], DecorKind::Bush);
     // Per-tile rates of trees, bushes and stones on the main grass and on each mix ground.
     const auto ratesOn = [&](uint16_t ground) {
         std::array<uint64_t, 4> counts {}; // tiles, trees, bushes, stones
@@ -170,6 +172,9 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     // keep some rock or dirt that improves the neighbour pairs, which reads as foreign terrain.
     if (target->sharesPpm[size_t(StyleKind::Rock)] == 0) { profile.tuning->rockPermille = 0; profile.tuning->riverCount = 0; }
     if (target->sharesPpm[size_t(StyleKind::Dirt)] == 0) profile.tuning->dirtPermille = 0;
+    // Lakes start as the lowest cells: their share is the sample's water share. The fit scores shares and
+    // neighbour pairs together and can trade all water away on a small sample, so this one is set directly.
+    profile.tuning->lakePermille = std::min<uint32_t>(500, (target->sharesPpm[size_t(StyleKind::Water)] + 500) / 1000);
     // The generator always rings water with Shore; a sample without any shore meets water with grass,
     // so the ring takes the grass brush instead of the built-in sand.
     auto& shore = profile.palette[size_t(StyleKind::Shore)];
@@ -183,6 +188,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.grassMix = sample.grassMix;
     profile.grassMixDecor = sample.grassMixDecor;
     profile.treeMix = sample.treeMix;
+    profile.bushMix = sample.bushMix;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

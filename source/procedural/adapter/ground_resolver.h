@@ -36,7 +36,7 @@ struct GroundProfile {
 	// Learned style mixes; an empty name is off and its permille 0. grassMix[i]: ground brush placed in
 	// noise patches over about grassMixPermille[i] of the Grass cells (surface profiles only; the shares sum to at most 1000).
 	// treeMix[i]: doodad brush that takes the place of the tree brush on treeMixPermille[i] of the
-	// tree cells (vegetation only; the shares sum to at most 1000).
+	// tree cells (vegetation only; the shares sum to at most 1000). bushMix: the same for the bush brush.
 	static constexpr size_t treeMixCount = 3;
 	static constexpr size_t grassMixCount = 3;
 	std::array<std::string, grassMixCount> grassMix;
@@ -49,6 +49,8 @@ struct GroundProfile {
 	std::array<std::array<std::string, decorationCount>, grassMixCount> grassMixDecor;
 	std::array<std::string, treeMixCount> treeMix;
 	std::array<uint16_t, treeMixCount> treeMixPermille {};
+	std::array<std::string, treeMixCount> bushMix;
+	std::array<uint16_t, treeMixCount> bushMixPermille {};
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;

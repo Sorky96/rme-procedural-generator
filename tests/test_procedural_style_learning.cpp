@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
     check(a && b && *a == *b, "deterministic G4 fit");
     if (!a) return 1;
     check(a->tuning && a->tuning->rockPermille == 0 && a->tuning->dirtPermille == 0, "kinds absent from the sample are not generated");
+    check(a->tuning->lakePermille == 0, "no water in the sample, no lakes");
     check(a->palette[size_t(StyleKind::Shore)] == a->palette[size_t(StyleKind::Grass)], "shoreless sample rings water with its grass");
     {
         // Every grass tile holds a tree, every swamp tile a swamp plant: the learned profile keeps the palm
@@ -64,10 +65,12 @@ int main(int argc, char** argv) {
         for (auto& entry : forestMapping) if (entry.key == "swamp") entry.kind = StyleKind::Grass; // as the dialog proposes
         const std::vector<GroundDoodadItems> palms{{grass, "mangrove tree (on water)", 9000}, {grass, "jungle palm", 1300},
             {grass, "oak tree", 1200}, {grass, "pine tree", 1100}, {grass, "birch tree", 1000}, {grass, "fir tree", 900},
-            {swamp, "swamp plants", 512}};
+            {swamp, "swamp plants", 512}, {grass, "grass tufts", 600}, {grass, "tall jungle grass", 300}, {grass, "bushes", 100}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true);
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned");
-        check(learned && learned->decorPalette[1].empty(), "plants of the swamp patches are not the main bush");
+        check(learned && learned->decorPalette[1] == "grass tufts", "plants of the swamp patches are not the main bush");
+        check(learned && learned->bushMix[0] == StyleMix{"tall jungle grass", 300} && learned->bushMix[1] == StyleMix{"bushes", 100},
+            "bush mix by use");
         check(learned && learned->grassMixDecor[1].keepPermille == std::array<uint32_t, 3>{0, 1000, 1000} &&
             learned->grassMixDecor[1].brushes[1] == "swamp plants", "swamp keeps no trees and grows its own plants");
         check(learned && learned->grassMix[0] == StyleMix{"jungle grass", 250} && learned->grassMix[1] == StyleMix{"swamp", 125} &&

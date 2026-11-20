@@ -226,7 +226,12 @@ void StyleLearningDialog::Tick() {
             if (!mapping) { Invalidate(); Status("Cannot display ground mapping."); return; }
             mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable(); cancel_->Disable();
             const auto counts = summarize(*sample_);
-            Status(std::format("Read {} present tiles. Review/correct mapping; unknown or unbrushed ground is not guessed. Then Analyze.", counts.tilesPerFloor[size_t(z_->GetValue())]));
+            const uint64_t present = counts.tilesPerFloor[size_t(z_->GetValue())];
+            // Patch sizes and vegetation brushes need room to show; a few thousand tiles give extreme fits.
+            constexpr uint64_t smallSample = 20000;
+            Status(std::format("Read {} present tiles in {} x {}.{} Review/correct mapping; unknown or unbrushed ground is not guessed. Then Analyze.",
+                present, width_->GetValue(), height_->GetValue(),
+                present < smallSample ? std::format(" Small sample: select at least {} tiles of terrain for a reliable style.", smallSample) : std::string()));
         }
     }
     if (worker_.valid()) {
