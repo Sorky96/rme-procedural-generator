@@ -81,7 +81,7 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 			!charge(unit.plan.client.capacity() + 1) || !charge(unit.preview.getEstimatedPeakBytes())) {
 			return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
-		for (const auto* name : {&unit.plan.profile.wall, &unit.plan.profile.door, &unit.plan.profile.campfire, &unit.plan.profile.grassVariant, &unit.plan.profile.treeMix[0], &unit.plan.profile.treeMix[1], &unit.plan.profile.treeMix[2],
+		for (const auto* name : {&unit.plan.profile.wall, &unit.plan.profile.door, &unit.plan.profile.campfire, &unit.plan.profile.grassMix[0], &unit.plan.profile.grassMix[1], &unit.plan.profile.grassMix[2], &unit.plan.profile.treeMix[0], &unit.plan.profile.treeMix[1], &unit.plan.profile.treeMix[2],
 			&unit.plan.profile.caveEntrance, &unit.plan.profile.caveExit, &unit.plan.profile.caveGround, &unit.plan.profile.bridgeBrush,
 			&unit.plan.profile.buildingStairs, &unit.plan.profile.dungeonFloor, &unit.plan.profile.dungeonWall, &unit.plan.profile.dungeonStairs, &unit.plan.profile.dungeonDescent}) {
 			if (!charge(name->capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);

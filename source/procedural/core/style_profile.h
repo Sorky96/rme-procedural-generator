@@ -152,7 +152,7 @@ struct StyleMix {
 	uint32_t permille = 0; // 1..1000 when brush is set, else 0
 	bool operator==(const StyleMix&) const = default;
 };
-inline constexpr size_t maxTreeMix = 3;
+inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3;
 
 struct StyleProfile {
 	std::string client;
@@ -168,9 +168,9 @@ struct StyleProfile {
 	std::optional<DecorTuning> decorTuning;    // vegetation chances fitted to decorTarget
 	StylePalette palette;                      // brushes the style used (see StylePalette)
 	StyleDecorPalette decorPalette;            // doodad brushes the style used (see StyleDecorPalette)
-	// Learned mixes (empty brush = none): a second grass brush in patches covering `permille` of the grass,
+	// Learned mixes (empty brush = none): further grass brushes in patches, each covering `permille` of the grass,
 	// and further tree brushes, each standing in for the tree brush on `permille` of the trees.
-	StyleMix grassVariant;
+	std::array<StyleMix, maxGrassMix> grassMix;
 	std::array<StyleMix, maxTreeMix> treeMix;
 	bool operator==(const StyleProfile&) const = default;
 };

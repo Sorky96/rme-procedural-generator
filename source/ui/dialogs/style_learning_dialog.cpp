@@ -218,7 +218,11 @@ void StyleLearningDialog::Tick() {
         progress_->SetValue(row_ * 100 / rows);
         if (row_ == rows) {
             reading_ = false; captured_ = true;
-            const auto mapping = serializeKeyMap(proposeKeyMap(sample_->groundKeys(), defaultKeyRules()));
+            // Swamp is walkable natural ground: learned as a grass patch here, unlike the reference rules
+            // (which keep it Other), so the generator can reproduce it.
+            std::vector<KeyRule> rules{{"swamp", StyleKind::Grass}};
+            rules.insert(rules.end(), defaultKeyRules().begin(), defaultKeyRules().end());
+            const auto mapping = serializeKeyMap(proposeKeyMap(sample_->groundKeys(), rules));
             if (!mapping) { Invalidate(); Status("Cannot display ground mapping."); return; }
             mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable(); cancel_->Disable();
             const auto counts = summarize(*sample_);

@@ -9,6 +9,7 @@
 #include "brushes/wall/wall_brush.h"
 #include "procedural/adapter/door_types.h"
 #include "item_definitions/core/item_definition_store.h"
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <new>
@@ -31,7 +32,8 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
 };
 constexpr uint64_t maxDecorChance = 100000;
-constexpr uint64_t grassVariantStream = 0x73325f6d69786772ULL, treeMixStream = 0x73325f6d69787472ULL;
+constexpr std::array<uint64_t, GroundProfile::grassMixCount> grassMixStreams {0x73325f6d69786772ULL, 0x73325f6d69786773ULL, 0x73325f6d69786774ULL};
+constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL;
 constexpr uint32_t grassPatchStep = 10; // lattice step of the grass variant patches, in cells
 
 uint64_t mixHash(uint64_t value) {
@@ -396,8 +398,13 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		return std::unexpected(ResolveError::InvalidProfile);
 	}
 	if (vegetation && (decor->region != grid.region || !decor->valid())) return std::unexpected(ResolveError::InvalidInput);
-	if (profile.grassVariant.empty() != (profile.grassVariantPermille == 0) || profile.grassVariantPermille > 1000 ||
-		profile.grassVariant.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
+	uint32_t grassMixShare = 0;
+	for (size_t i = 0; i < GroundProfile::grassMixCount; ++i) {
+		if (profile.grassMix[i].empty() != (profile.grassMixPermille[i] == 0) || profile.grassMix[i].size() > 256)
+			return std::unexpected(ResolveError::InvalidProfile);
+		grassMixShare += profile.grassMixPermille[i];
+	}
+	if (grassMixShare > 1000) return std::unexpected(ResolveError::InvalidProfile);
 	uint32_t treeMixShare = 0;
 	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
 		if (profile.treeMix[i].empty() != (profile.treeMixPermille[i] == 0) || profile.treeMix[i].size() > 256 ||
@@ -415,7 +422,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		payloadBytes += name.size() + 1;
 	}
 	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor,
-		&profile.grassVariant, &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2]}) {
+		&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2]}) {
 		if (name->empty()) continue;
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;
@@ -461,12 +468,13 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (!checked) return std::unexpected(checked.error());
 			std::tie(brushes[index], totals[index]) = *checked;
 		}
-		const GroundBrush* grassVariant = nullptr;
-		uint64_t grassVariantTotal = 0;
-		if (!profile.grassVariant.empty()) {
-			const auto checked = checkGround(profile.grassVariant);
+		std::array<const GroundBrush*, GroundProfile::grassMixCount> grassMix {};
+		std::array<uint64_t, GroundProfile::grassMixCount> grassMixTotals {};
+		for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
+			if (profile.grassMix[m].empty()) continue;
+			const auto checked = checkGround(profile.grassMix[m]);
 			if (!checked) return std::unexpected(checked.error());
-			std::tie(grassVariant, grassVariantTotal) = *checked;
+			std::tie(grassMix[m], grassMixTotals[m]) = *checked;
 		}
 		uint16_t wallItem = 0;
 		if (walled) {
@@ -509,21 +517,26 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (!checked) return std::unexpected(checked.error());
 			std::tie(treeMix[index], treeMixTotals[index]) = *checked;
 		}
-		// Grass cells whose patch value lies below this cut take the variant brush: the cut is the
-		// value at the wanted share of this grid's grass cells, so the share holds for any region.
-		uint32_t grassCut = 0;
-		if (grassVariant) {
-			std::vector<uint32_t> values;
-			for (size_t i = 0; i < grid.cells.size(); ++i) {
-				if (grid.cells[i] != SurfaceKind::Grass) continue;
-				values.push_back(grassPatchValue(input.config.seed ^ grassVariantStream, grid.region.x + int64_t(i % grid.region.width),
-					grid.region.y + int64_t(i / grid.region.width)));
-			}
-			const size_t below = values.size() * profile.grassVariantPermille / 1000;
-			if (below == values.size()) grassCut = std::numeric_limits<uint32_t>::max();
-			else if (below > 0) {
-				std::ranges::nth_element(values, values.begin() + std::ptrdiff_t(below));
-				grassCut = values[below];
+		// Grass mix per cell (0 = the Grass brush, m + 1 = grassMix[m]). Each mix brush in turn takes the
+		// unclaimed Grass cells whose own patch noise lies lowest, as many as its share of all Grass cells
+		// of this grid, so the shares hold for any region.
+		std::vector<uint8_t> grassSlot;
+		if (grassMixShare) {
+			grassSlot.assign(grid.cells.size(), 0);
+			const size_t grassCells = size_t(std::ranges::count(grid.cells, SurfaceKind::Grass));
+			std::vector<std::pair<uint32_t, uint32_t>> values; // patch value, cell
+			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
+				if (!grassMix[m]) continue;
+				if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+				values.clear();
+				for (size_t i = 0; i < grid.cells.size(); ++i) {
+					if (grid.cells[i] != SurfaceKind::Grass || grassSlot[i]) continue;
+					values.emplace_back(grassPatchValue(input.config.seed ^ grassMixStreams[m], grid.region.x + int64_t(i % grid.region.width),
+						grid.region.y + int64_t(i / grid.region.width)), uint32_t(i));
+				}
+				const size_t wanted = std::min(values.size(), grassCells * profile.grassMixPermille[m] / 1000);
+				std::ranges::nth_element(values, values.begin() + std::ptrdiff_t(wanted));
+				for (size_t k = 0; k < wanted; ++k) grassSlot[values[k].second] = uint8_t(m + 1);
 			}
 		}
 		GroundPlan result {input.config, profile, client, input.mapGeneration, input.mapRevision,
@@ -566,7 +579,9 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		decorRng.reserve(decorKindCount);
 		if (vegetation) for (const auto stream : decorStreams) decorRng.emplace_back(input.config.seed, stream);
 		// Own streams, advanced at every cell like the others, so a mix never shifts the plain variants.
-		StableRandom grassVariantRng(input.config.seed, grassVariantStream), treeMixRng(input.config.seed, treeMixStream);
+		std::vector<StableRandom> grassMixRng;
+		for (const auto stream : grassMixStreams) grassMixRng.emplace_back(input.config.seed, stream);
+		StableRandom treeMixRng(input.config.seed, treeMixStream);
 		for (size_t i = 0; i < grid.cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 			std::array<int, kindCount> rolls {};
@@ -575,7 +590,9 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (vegetation) for (size_t kind = 0; kind < decorKindCount; ++kind) {
 				decorRolls[kind] = int(decorRng[kind].bounded(decorTotals[kind])) + 1;
 			}
-			const int grassVariantRoll = grassVariant ? int(grassVariantRng.bounded(grassVariantTotal)) + 1 : 0;
+			std::array<int, GroundProfile::grassMixCount> grassMixRolls {};
+			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m)
+				if (grassMix[m]) grassMixRolls[m] = int(grassMixRng[m].bounded(grassMixTotals[m])) + 1;
 			const uint64_t treeMixRoll = treeMixShare ? treeMixRng.bounded(1000) : 0;
 			const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
@@ -585,10 +602,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
                 input.config.surface.passes && grid.cells[i] == SurfaceKind::Path && kinds == GroundProfile::surfaceCount
                     ? size_t(SurfaceKind::Dirt) - 1 : size_t(grid.cells[i]) - 1;
 			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush
-			const bool variantGrass = grassVariant && grid.cells[i] == SurfaceKind::Grass &&
-				grassPatchValue(input.config.seed ^ grassVariantStream, grid.region.x + int64_t(i % grid.region.width),
-					grid.region.y + int64_t(i / grid.region.width)) < grassCut;
-			const auto id = variantGrass ? grassVariant->getPlacementItemIdForRoll(grassVariantRoll)
+			const size_t mixSlot = grassSlot.empty() ? 0 : grassSlot[i];
+			const auto id = mixSlot ? grassMix[mixSlot - 1]->getPlacementItemIdForRoll(grassMixRolls[mixSlot - 1])
 				: brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;

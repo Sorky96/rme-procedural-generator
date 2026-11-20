@@ -125,8 +125,10 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	string(plan.client);
 	for (const auto& name : plan.profile.active()) string(name);
 	for (const auto& name : plan.profile.activeDecor()) string(name);
-	string(plan.profile.grassVariant);
-	hashField(hash, plan.profile.grassVariantPermille, 2);
+	for (size_t i = 0; i < GroundProfile::grassMixCount; ++i) {
+		string(plan.profile.grassMix[i]);
+		hashField(hash, plan.profile.grassMixPermille[i], 2);
+	}
 	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
 		string(plan.profile.treeMix[i]);
 		hashField(hash, plan.profile.treeMixPermille[i], 2);
@@ -397,11 +399,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
                    : groundBrush(plan.profile.brushes[i]);
 		if (!brushes[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
-	// The learned grass variant is placed on Grass cells of the surface only.
-	const GroundBrush* grassVariantBrush = nullptr;
-	if (!plan.profile.grassVariant.empty() && !cave && !upper) {
-		grassVariantBrush = plan.profile.grassVariant.size() <= 256 ? groundBrush(plan.profile.grassVariant) : nullptr;
-		if (!grassVariantBrush) co_return std::unexpected(PreviewError::InvalidPlan);
+	// The learned grass mix is placed on Grass cells of the surface only.
+	std::array<const GroundBrush*, GroundProfile::grassMixCount> grassMixBrushes {};
+	for (size_t m = 0; m < GroundProfile::grassMixCount && !cave && !upper; ++m) {
+		const auto& name = plan.profile.grassMix[m];
+		if (name.empty()) continue;
+		grassMixBrushes[m] = name.size() <= 256 ? groundBrush(name) : nullptr;
+		if (!grassMixBrushes[m]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	const bool vegetation = plan.config.vegetation && !cave;
 	if (vegetation != !plan.decor.empty() || (!cave && plan.profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) ||
@@ -656,8 +660,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
 		}
-		if (grassVariantBrush && ground.editorData().brush == grassVariantBrush)
-			for (const auto& variant : grassVariantBrush->getBorderItems()) found |= variant.id == plan.items[i];
+		for (const auto* mixBrush : grassMixBrushes) {
+			if (!mixBrush || ground.editorData().brush != mixBrush) continue;
+			for (const auto& variant : mixBrush->getBorderItems()) found |= variant.id == plan.items[i];
+		}
 		const bool groundHole = !cave && (plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole ||
 			(fallbackHole && plan.items[i] == fallbackHole) || std::ranges::find(dungeonOpenings, plan.items[i]) != dungeonOpenings.end()) &&
 			!plan.entrances.empty() && plan.entrances[i] == plan.items[i] && definition.isGroundTile() &&

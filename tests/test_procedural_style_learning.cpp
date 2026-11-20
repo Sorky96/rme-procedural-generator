@@ -55,14 +55,17 @@ int main(int argc, char** argv) {
         auto forest = SemanticMap::create(std::span(&fb, 1), {4096}).value();
         const auto grass = forest.internGroundKey("grass").value();
         const auto jungle = forest.internGroundKey("jungle grass").value();
-        for (int i = 0; i < 4096; ++i) // a quarter of the grass is jungle grass
-            check(bool(forest.set(i % 64, i / 64, 7, i % 4 ? grass : jungle, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
-        const auto forestMapping = proposeKeyMap(forest.groundKeys(), defaultKeyRules());
+        const auto swamp = forest.internGroundKey("swamp").value();
+        for (int i = 0; i < 4096; ++i) // a quarter jungle grass, an eighth swamp
+            check(bool(forest.set(i % 64, i / 64, 7, i % 8 == 1 ? swamp : i % 4 ? grass : jungle, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
+        auto forestMapping = proposeKeyMap(forest.groundKeys(), defaultKeyRules());
+        for (auto& entry : forestMapping) if (entry.key == "swamp") entry.kind = StyleKind::Grass; // as the dialog proposes
         const std::vector<KeyTiles> palms{{"mangrove tree (on water)", 9000}, {"jungle palm", 1300}, {"oak tree", 1200},
             {"pine tree", 1100}, {"birch tree", 1000}, {"fir tree", 900}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true);
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned");
-        check(learned && learned->grassVariant == StyleMix{"jungle grass", 250}, "grass variant with its share");
+        check(learned && learned->grassMix[0] == StyleMix{"jungle grass", 250} && learned->grassMix[1] == StyleMix{"swamp", 125} &&
+            learned->grassMix[2].brush.empty(), "grass mix with shares");
         // 5500 land trees: oak 1200 (218), pine 1100 (200), birch 1000 (181); fir (163) has no slot left.
         check(learned && learned->treeMix[0] == StyleMix{"oak tree", 218} && learned->treeMix[1] == StyleMix{"pine tree", 200} &&
             learned->treeMix[2] == StyleMix{"birch tree", 181}, "tree mix by use, water trees left out");
@@ -75,7 +78,7 @@ int main(int argc, char** argv) {
             broken.treeMix[0].permille = 900; // 900 + 200 + 181 > 1000
             check(!validateProfile(broken), "tree mix shares above 1000 refused");
             broken = *fitted;
-            broken.grassVariant.brush.clear();
+            broken.grassMix[0].brush.clear();
             check(!validateProfile(broken), "grass variant share without a brush refused");
         }
     }

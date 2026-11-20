@@ -1119,8 +1119,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
-	if (!entry.profile.grassVariant.brush.empty())
-		note(applied, "grass patches", wxstr(std::format("{} {}%", entry.profile.grassVariant.brush, entry.profile.grassVariant.permille / 10)));
+	for (const auto& mix : entry.profile.grassMix)
+		if (!mix.brush.empty()) note(applied, "grass patches", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	for (const auto& mix : entry.profile.treeMix)
 		if (!mix.brush.empty()) note(applied, "trees with vegetation", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
@@ -1487,10 +1487,13 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	// Learned mixes of the chosen profile; a brush this client cannot place is left out, as for the palette.
 	if (const int picked = profile_choice_->GetSelection(); natural && picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
 		const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
-		const auto* variant = profile.grassVariant.brush.empty() ? nullptr : g_brushes.getBrush(profile.grassVariant.brush);
-		if (variant && variant->as<GroundBrush>() && variant->as<GroundBrush>()->getTotalChance() > 0) {
-			request.profile.grassVariant = profile.grassVariant.brush;
-			request.profile.grassVariantPermille = uint16_t(profile.grassVariant.permille);
+		for (size_t i = 0, used = 0; i < profile.grassMix.size() && used < GroundProfile::grassMixCount; ++i) {
+			const auto& mix = profile.grassMix[i];
+			const auto* brush = mix.brush.empty() ? nullptr : g_brushes.getBrush(mix.brush);
+			const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+			if (!ground || ground->getTotalChance() <= 0) continue;
+			request.profile.grassMix[used] = mix.brush;
+			request.profile.grassMixPermille[used++] = uint16_t(mix.permille);
 		}
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.treeMix.size() && used < GroundProfile::treeMixCount; ++i) {
 			const auto& mix = profile.treeMix[i];
