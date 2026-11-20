@@ -36,4 +36,6 @@ Items intentionally deferred, with the decision date recorded. Debt is not a cri
 
 The Windows MSVC run of `test_procedural_surface` injected a failure at each of the 582 C++ allocation calls observed in a 100×100, seed 1 Surface fixture with buildings, paths and cave entrances enabled. The fixture produced both doors and entrances before injection. Each fault returned `SurfaceError::AllocationFailed`. The existing 24×24 fixture also passed all 225 injections. These counts cover the Surface core for those configurations. D3 remains open for the full allocation inventory, including the dialog and the editor lifecycle through Place, Undo and Redo.
 
+The Underground core sweep used a 40×20 cave with two entrances and a blocked lower-floor cell. All 52 observed C++ allocation faults from `generateCave` returned `SurfaceError::AllocationFailed`. A clean retry reproduced the grid, rooms, corridors and blocked mask. The sweep used the editor's call form without the optional measurement layout. It did not exercise cave exit placement or the editor adapter.
+
 Outside G1 scope (not debt): real live network sessions, per the user decision on 2026-11-06.

@@ -3,6 +3,7 @@
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/surface.h"
 #include "procedural/core/reachability.h"
+#include "procedural/core/underground.h"
 
 #include <algorithm>
 #include <array>
@@ -393,6 +394,41 @@ void allocationFailures(const SurfaceConfig& config, bool expectStructures) {
 	}
 	std::cout << "allocation_points=" << total << " injected_failures_reported=" << failures << '\n';
 	require(failures > 0, "No allocation failure was reported");
+}
+
+void caveAllocationFailures() {
+	SurfaceGrid surface;
+	surface.region = {100, 100, 7, 40, 20};
+	surface.cells.assign(800, SurfaceKind::Rock);
+	surface.entrances = {410, 430};
+	std::vector<uint8_t> blocked(surface.cells.size());
+	blocked[420] = 1;
+	const auto generate = [&] { return generateCave(surface, 7, {}, nullptr, blocked); };
+
+	allocationCount = 0;
+	failedAllocation = 0;
+	allocationRecording = true;
+	const auto baseline = generate();
+	allocationRecording = false;
+	const auto total = allocationCount;
+	require(baseline && baseline->valid() && baseline->blocked == blocked &&
+		baseline->cells[410] == CaveKind::Floor && baseline->cells[430] == CaveKind::Floor &&
+		baseline->cells[420] == CaveKind::Solid && total > 0, "Cave allocation fixture failed");
+
+	for (size_t fault = 1; fault <= total; ++fault) {
+		allocationCount = 0;
+		failedAllocation = fault;
+		allocationRecording = true;
+		const auto result = generate();
+		allocationRecording = false;
+		require(allocationCount >= fault && !result && result.error() == SurfaceError::AllocationFailed,
+			"Cave allocation fault returned partial output or the wrong error");
+	}
+	const auto retry = generate();
+	require(retry && retry->region == baseline->region && retry->cells == baseline->cells &&
+		retry->rooms == baseline->rooms && retry->corridors == baseline->corridors &&
+		retry->blocked == baseline->blocked, "Cave allocation fault changed retry output");
+	std::cout << "cave_allocation_failure_cases=" << total << '\n';
 }
 
 void measure(uint32_t side) {
@@ -823,6 +859,7 @@ int main() {
 		structures.tuning.pathLength = 40;
 		structures.tuning.caveEntrances = 20;
 		allocationFailures(structures, true);
+		caveAllocationFailures();
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface(); ruinsAndCamps();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";
