@@ -247,6 +247,55 @@ void testKeyShapes() {
 	check(extractKeyShapes(map, keys, 3, 2, {}).error() == StatsError::InvalidRange, "reversed range refused");
 }
 
+void testPathJunctions() {
+	constexpr uint32_t side = 80;
+	SurfaceGrid grid;
+	grid.region = {0, 0, 7, side, side};
+	grid.cells.assign(side * side, SurfaceKind::Grass);
+	const auto path = [&](uint32_t x, uint32_t y) { grid.cells[y * side + x] = SurfaceKind::Path; };
+	for (uint32_t x = 5; x <= 70; ++x) {
+		const uint32_t y = 15 + x / 5;
+		path(x, y);
+		if (x > 5 && x % 5 == 0) path(x, y - 1);
+	}
+	path(22, 18);
+	path(22, 17); // a two-tile spur on the stepped route
+	const auto winding = pathShapesOf(grid);
+	check(winding && winding->shapes.rivers.size() == 1, "winding route is one component");
+	if (!winding || winding->shapes.rivers.empty()) return;
+	check(winding->shapes.rivers.front().branches > 0, "the old metric counts winding route artifacts");
+	check(winding->pathJunctions == 0, "steps and a short spur produce no path junctions");
+
+	for (uint32_t y = 24; y <= 42; ++y) path(42, y);
+	const auto tee = pathShapesOf(grid);
+	check(tee && tee->pathJunctions == 1, "a long side route creates one junction");
+	for (uint32_t y = 10; y <= 22; ++y) path(43, y);
+	const auto adjacentTees = pathShapesOf(grid);
+	check(adjacentTees && adjacentTees->pathJunctions == 1, "neighboring high-degree cells form one junction");
+	for (uint32_t y = 27; y <= 42; ++y) path(61, y);
+
+	const auto network = pathShapesOf(grid);
+	check(network && network->shapes.rivers.size() == 1 && network->pathJunctions == 2, "two separated junctions are counted distinctly");
+	if (!network || network->shapes.rivers.size() != 1) return;
+	const auto summary = summarizeChannels(*network);
+	check(summary.junctionsPer100Milli == 200'000 / network->shapes.rivers.front().skeleton,
+		"junction density uses the original skeleton length");
+
+	auto map = SemanticMap::create(std::vector<FloorBounds> {{7, 0, 0, side, side}}, {100000}).value();
+	const uint16_t grass = map.internGroundKey("grass").value();
+	const uint16_t cobble = map.internGroundKey("cobblestone").value();
+	const uint32_t traits = bit(Trait::HasGround) | bit(Trait::Present);
+	for (uint32_t y = 0; y < side; ++y) {
+		for (uint32_t x = 0; x < side; ++x) {
+			const uint16_t ground = grid.cells[y * side + x] == SurfaceKind::Path ? cobble : grass;
+			check(map.set(x, y, 7, ground, traits).has_value(), "copy grid to reference map");
+		}
+	}
+	const std::string_view keys[] = {"cobblestone"};
+	const auto reference = extractKeyShapes(map, keys, 7, 7, {});
+	check(reference && summarizeChannels(*reference) == summary, "reference and generated paths use the same metric");
+}
+
 } // namespace
 
 int main() {
@@ -258,6 +307,7 @@ int main() {
 	testMeanderEffect();
 	testChannels();
 	testKeyShapes();
+	testPathJunctions();
 	if (failures == 0) std::cout << "OK\n";
 	return failures == 0 ? 0 : 1;
 }

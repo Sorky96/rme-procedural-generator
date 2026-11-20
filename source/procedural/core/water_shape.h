@@ -52,6 +52,7 @@ struct ChannelShapes {
 	WaterShapes shapes;           // channel components in `rivers`
 	uint64_t regionCells = 0;     // cells of the examined area (present tiles of a reference, all cells of a grid)
 	uint64_t maskCells = 0;       // (key shapes only) tiles in the mask
+	uint64_t pathJunctions = 0;   // (key and Path shapes only) junction clusters in accepted components
 };
 // Fills `open` (same size as `water`) with the open water of one floor.
 void openWaterMask(std::span<const uint8_t> water, uint32_t width, uint32_t height, std::vector<uint8_t>& open);
@@ -71,6 +72,7 @@ struct ChannelSummary {
 	uint32_t widthMilli = 0;          // 1000 * area / skeleton, over all components
 	uint32_t branchesPer100Milli = 0; // 1000 * (100 * branches / skeleton)
 	uint32_t connectedPermille = 0;   // components touching open water or the border
+	uint32_t junctionsPer100Milli = 0; // 1000 * (100 * path junctions / unpruned skeleton)
 	bool operator==(const ChannelSummary&) const = default;
 };
 [[nodiscard]] ChannelSummary summarizeChannels(const ChannelShapes& channels);

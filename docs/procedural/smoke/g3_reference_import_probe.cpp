@@ -377,6 +377,8 @@ void runProbe() {
                 const ChannelSummary ps = summarizeChannels(*paths);
                 writeText("paths-surface.txt", std::format("count\t{}\nlength_per_64k\t{}\nwidth_milli\t{}\nbranches_per_100_milli\t{}\npath_cells\t{}\nregion_cells\t{}\n",
                     ps.count, ps.lengthPer64k, ps.widthMilli, ps.branchesPer100Milli, paths->maskCells, paths->regionCells));
+                writeText("path-junctions-surface.txt", std::format("count\t{}\nper_100_milli\t{}\n",
+                    paths->pathJunctions, ps.junctionsPer100Milli));
             }
             {
                 const auto buildings = extractBuildingShapes(normalized->map, 0, 7, stopSource.get_token());
