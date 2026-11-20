@@ -11,7 +11,7 @@ namespace {
 // Fixed search grids, in the order they are tried. Chosen to span the validated ranges of
 // SurfaceTuning with the manual default inside each grid.
 constexpr uint32_t featureSizeGrid[] {8, 12, 16, 24, 32, 48, 64};
-constexpr uint32_t lakeGrid[] {0, 20, 40, 60, 100, 150, 200, 300, 400, 500};
+constexpr uint32_t lakeGrid[] {0, 20, 40, 60, 100, 150, 200, 300};
 constexpr uint32_t riverGrid[] {0, 1, 2, 3, 5, 8};
 constexpr uint32_t shoreGrid[] {0, 1, 2, 3, 4};
 constexpr uint32_t rockGrid[] {0, 20, 40, 80, 120, 160, 240, 320};
