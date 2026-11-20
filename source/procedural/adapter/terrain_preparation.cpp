@@ -525,7 +525,10 @@ TerrainPreparationSteps runPreparation(
                         }
                         world = task.take();
                     } else world = work(stop);
-                    if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    if (!world) {
+                        if (world.error() == ReachabilityError::AllocationFailed) co_return fail(PreparationInputError::AllocationFailed);
+                        co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    }
                     passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
                     // Offline measurement deliberately uses conservative class flags instead.
@@ -613,15 +616,28 @@ TerrainPreparationSteps runPreparation(
                                 occupied.resize(decoration.cells.size());
                                 for (size_t i = 0; i < occupied.size(); ++i) occupied[i] = decoration.cells[i] != DecorKind::None;
                             }
+                            const auto caveFailure = [](UndergroundError error) {
+                                switch (error) {
+                                    case UndergroundError::Cancelled: return PreparationInputError::Cancelled;
+                                    case UndergroundError::AllocationFailed: return PreparationInputError::AllocationFailed;
+                                    case UndergroundError::InvalidGrid: return PreparationInputError::InvalidParameters;
+                                }
+                                return PreparationInputError::InvalidParameters;
+                            };
                             auto exits = placeCaveExits(surface, *generated, shapes, occupied, token);
-                            if (!exits) return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
-                                exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
-                            if (!caveBlocked.empty() && !removeUnenteredCaveComponents(*generated, *exits, token))
-                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                            if (tuning.caveFarExits && !placeFarCaveExits(surface, *generated, *exits, shapes, seed, occupied, token))
-                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                            if (tuning.caveDoorCorridors && !placeCaveDoorCorridors(*generated, *exits, shapes, token))
-                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                            if (!exits) return fail(caveFailure(exits.error()));
+                            if (!caveBlocked.empty()) {
+                                const auto removed = removeUnenteredCaveComponents(*generated, *exits, token);
+                                if (!removed) return fail(caveFailure(removed.error()));
+                            }
+                            if (tuning.caveFarExits) {
+                                const auto placed = placeFarCaveExits(surface, *generated, *exits, shapes, seed, occupied, token);
+                                if (!placed) return fail(caveFailure(placed.error()));
+                            }
+                            if (tuning.caveDoorCorridors) {
+                                const auto placed = placeCaveDoorCorridors(*generated, *exits, shapes, token);
+                                if (!placed) return fail(caveFailure(placed.error()));
+                            }
                             return CaveStage{std::move(surface), std::move(*generated), std::move(*exits)};
                         };
                         // Keep resolved vegetation unchanged: the cave worker needs only its occupied mask.

@@ -8,6 +8,11 @@
 
 namespace rme::procedural {
 namespace {
+ReachabilityError caveError(UndergroundError error) noexcept {
+    if (error == UndergroundError::AllocationFailed) return ReachabilityError::AllocationFailed;
+    return error == UndergroundError::Cancelled ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid;
+}
+
 template<class Visit> void neighbours(uint32_t i, uint32_t w, uint32_t h, Visit visit) {
     const auto x = i % w, y = i / w;
     if (y) visit(i - w);
@@ -174,24 +179,27 @@ std::expected<LevelWorld, ReachabilityError> buildLevelWorld(
     }
     if (tuning.caveEntrances) {
         auto cave = generateCave(world.surface, seed, stop, nullptr, caveBlocked);
-        if (!cave) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        if (!cave) {
+            if (cave.error() == SurfaceError::AllocationFailed) return std::unexpected(ReachabilityError::AllocationFailed);
+            return std::unexpected(cave.error() == SurfaceError::Cancelled ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        }
         // Vegetation at a ramp's surface destination is removable. Keep the
         // geometric cap reservation, and clear selected endpoints below.
         std::fill(occupied.begin(), occupied.end(), 0);
         if (!world.caps.empty()) for (size_t i = 0; i < n; ++i)
             occupied[i] = world.caps[0].cells[i] == PlateauKind::Top;
         auto exits = placeCaveExits(world.surface, *cave, caveShapes, occupied, stop);
-        if (!exits) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        if (!exits) return std::unexpected(caveError(exits.error()));
         auto removed = removeUnenteredCaveComponents(*cave, *exits, stop);
-        if (!removed) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+        if (!removed) return std::unexpected(caveError(removed.error()));
         world.repair.removedCaveComponents = *removed;
         if (tuning.caveFarExits) {
             auto distant = placeFarCaveExits(world.surface, *cave, *exits, caveShapes, seed, occupied, stop);
-            if (!distant) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+            if (!distant) return std::unexpected(caveError(distant.error()));
         }
         if (tuning.caveDoorCorridors) {
             auto doors = placeCaveDoorCorridors(*cave, *exits, caveShapes, stop);
-            if (!doors) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+            if (!doors) return std::unexpected(caveError(doors.error()));
         }
         world.cave = std::move(*cave); world.exits = std::move(*exits);
         world.decor.push_back({});
@@ -424,7 +432,7 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
                 world.exits.skipped.clear();
                 if (world.cave) {
                     auto removed = removeUnenteredCaveComponents(*world.cave, world.exits, stop);
-                    if (!removed) return std::unexpected(stop.stop_requested() ? ReachabilityError::Cancelled : ReachabilityError::InvalidGrid);
+                    if (!removed) return std::unexpected(caveError(removed.error()));
                     result.removedCaveComponents += *removed;
                     std::erase_if(world.exits.exits, [&](const auto& e) { return world.cave->cells[e.cell] != CaveKind::Floor; });
                     std::erase_if(world.cave->corridors, [&](const auto& c) { return world.cave->cells[c.door] != CaveKind::Floor; });

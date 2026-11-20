@@ -431,6 +431,38 @@ void caveAllocationFailures() {
 	std::cout << "cave_allocation_failure_cases=" << total << '\n';
 }
 
+void cavePruningAllocationFailures() {
+	CaveGrid cave;
+	cave.region = {100, 100, 8, 8, 8};
+	cave.cells.assign(64, CaveKind::Solid);
+	cave.cells[9] = CaveKind::Floor;
+	for (size_t i = 33; i <= 38; ++i) cave.cells[i] = CaveKind::Floor;
+	CaveExitPlan exits;
+	exits.exits.push_back({0, 33, 0});
+
+	auto pruned = cave;
+	allocationCount = 0;
+	failedAllocation = 0;
+	allocationRecording = true;
+	const auto baseline = removeUnenteredCaveComponents(pruned, exits);
+	allocationRecording = false;
+	const auto total = allocationCount;
+	require(baseline == 1 && pruned.cells[9] == CaveKind::Solid && pruned.cells[33] == CaveKind::Floor &&
+		total > 3, "Cave pruning fixture did not grow the queue after finding an isolated component");
+
+	for (size_t fault = 1; fault <= total; ++fault) {
+		auto candidate = cave;
+		allocationCount = 0;
+		failedAllocation = fault;
+		allocationRecording = true;
+		const auto result = removeUnenteredCaveComponents(candidate, exits);
+		allocationRecording = false;
+		require(allocationCount >= fault && !result && result.error() == UndergroundError::AllocationFailed &&
+			candidate.cells == cave.cells, "Failed cave pruning changed the source grid");
+	}
+	std::cout << "cave_pruning_allocation_failure_cases=" << total << '\n';
+}
+
 void measure(uint32_t side) {
 	const auto config = makeConfig(side, 1729);
 	constexpr SurfaceBudget big { 1000000, 8 * 1024 * 1024, 128 * 1024 * 1024 };
@@ -860,6 +892,7 @@ int main() {
 		structures.tuning.caveEntrances = 20;
 		allocationFailures(structures, true);
 		caveAllocationFailures();
+		cavePruningAllocationFailures();
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface(); ruinsAndCamps();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";

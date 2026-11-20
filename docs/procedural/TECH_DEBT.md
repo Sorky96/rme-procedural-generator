@@ -38,4 +38,6 @@ The Windows MSVC run of `test_procedural_surface` injected a failure at each of 
 
 The Underground core sweep used a 40×20 cave with two entrances and a blocked lower-floor cell. All 52 observed C++ allocation faults from `generateCave` returned `SurfaceError::AllocationFailed`. A clean retry reproduced the grid, rooms, corridors and blocked mask. The sweep used the editor's call form without the optional measurement layout. It did not exercise cave exit placement or the editor adapter.
 
+Cave component pruning now completes all allocation and cancellation checks before changing cells. A regression fixture with an isolated cell followed by a larger connected component exercised all seven observed allocations and confirmed that each failure leaves the grid intact. Preview now preserves allocation errors from cave generation, exits, pruning and door corridors through both preparation paths. The Surface, Underground and Reachability tests passed on Windows MSVC, and the editor adapter compiled. The loaded-client editor lifecycle remains unverified for these changes.
+
 Outside G1 scope (not debt): real live network sessions, per the user decision on 2026-11-06.
