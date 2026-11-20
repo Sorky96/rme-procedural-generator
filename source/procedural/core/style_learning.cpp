@@ -60,6 +60,10 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.sources = {{"user-local-surface", 1000}};
     profile.keymap = std::move(mapping); profile.stats = sample.stats; profile.target = target;
     profile.tuning = steps->back().tuning; profile.palette = sample.palette;
+    // A kind the sample does not contain at all is not generated: the fit only scores shares and may
+    // keep some rock or dirt that improves the neighbour pairs, which reads as foreign terrain.
+    if (target->sharesPpm[size_t(StyleKind::Rock)] == 0) { profile.tuning->rockPermille = 0; profile.tuning->riverCount = 0; }
+    if (target->sharesPpm[size_t(StyleKind::Dirt)] == 0) profile.tuning->dirtPermille = 0;
     const MapDecor own{"user-local-surface", "user-local-surface", sample.decor};
     profile.decorTarget = buildDecorTarget(std::span(&own, 1));
     auto decorTuning = fitDecorTuning(*profile.decorTarget, *profile.tuning, options.eval, stop);
