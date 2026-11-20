@@ -73,6 +73,8 @@ struct ReferenceImportSummary {
 	std::map<uint32_t, uint64_t> unknownIds; // server id -> occurrences, ordered by id
 	std::map<uint32_t, UnbrushedGround> groundWithoutBrush; // server id -> use; filled by normalizeReference only
 	std::map<std::string, DoodadUse> doodadBrushes;         // doodad brush name -> items; filled by normalizeReference only
+	uint64_t nestedItems = 0;        // descendants of decoded tile containers at any depth
+	uint64_t unknownNestedItems = 0; // descendants the loaded client could not resolve
 };
 
 enum class ReferenceImportError : uint8_t {

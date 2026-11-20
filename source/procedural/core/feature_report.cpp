@@ -102,7 +102,8 @@ std::string renderJson(const ReportInput& in) {
 	for (size_t i = 0; i < in.unknownIds.size(); ++i) {
 		out += std::format("{}{{\"id\": {}, \"count\": {}}}", i ? ", " : "", in.unknownIds[i].id, in.unknownIds[i].count);
 	}
-	out += "]},\n";
+	out += std::format("], \"nested_items\": {}, \"unknown_nested_items\": {}}},\n",
+		in.nestedItems, in.unknownNestedItems);
 	out += std::format("  \"options\": {{\"impassable_percent\": {}, \"small_component_cells\": {}}},\n",
 		in.topologyOptions.impassablePercent, in.topologyOptions.smallComponentCells);
 
@@ -230,6 +231,7 @@ std::string renderMarkdown(const ReportInput& in) {
 		in.header.itemsMinor, in.header.fileBytes, in.header.compressed ? ", compressed" : "");
 	out += std::format("- Tiles {}, items {}, loader warnings {}\n", in.tiles, in.items, in.loaderWarnings);
 	out += std::format("- Unknown content: {} ground, {} stacked, {} distinct ids\n", in.unknownGround, in.unknownItems, in.unknownIds.size());
+	out += std::format("- Items inside containers: {} decoded, {} unresolved\n", in.nestedItems, in.unknownNestedItems);
 	const uint64_t coveredTiles = in.tiles;
 	const uint64_t unknownTiles = in.semantic->tilesPerTrait[15];
 	out += std::format("- Analysis coverage: {} of {} tiles have no unknown content ({})\n", coveredTiles - unknownTiles, coveredTiles,

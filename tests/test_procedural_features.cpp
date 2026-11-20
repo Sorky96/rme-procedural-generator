@@ -116,11 +116,14 @@ int main() {
 
 	// Reports: repeatable bytes, escaping and quoting, permille, every table has a header.
 	const Analysis quoted = analyze(smallMap("brick roof, \"down\""));
-	const ReportInput in = inputFor(quoted);
+	ReportInput in = inputFor(quoted);
+	in.nestedItems = 4;
+	in.unknownNestedItems = 1;
 	const std::string json = renderJson(in);
 	check(json == renderJson(in) && renderMarkdown(in) == renderMarkdown(in), "renderers repeatable");
 	check(contains(json, "\"schema\": \"g3-reference-analysis/1\"") && contains(json, "brick roof, \\\"down\\\""), "json schema and escaping");
 	check(contains(json, "\"unknown_ids\": [{\"id\": 60000, \"count\": 2}]"), "json unknown ids");
+	check(contains(json, "\"nested_items\": 4, \"unknown_nested_items\": 1"), "json reports container contents separately");
 	check(contains(json, "[1, 2, 2, 0]") && contains(json, "[2, 2, 0, 1]"), "json adjacency pairs");
 	check(contains(json, "\"bottleneck_cells\": 1"), "json includes the middle tile of the three-cell walkable path");
 	const std::string keysCsv = renderCsv(in, CsvTable::GroundKeys);
@@ -132,6 +135,7 @@ int main() {
 		renderCsv(in, CsvTable::Adjacency).starts_with("key_a,key_b,east,south") &&
 		std::string(csvTableName(CsvTable::Adjacency)) == "adjacency", "csv headers");
 	const std::string md = renderMarkdown(in);
+	check(contains(md, "Items inside containers: 4 decoded, 1 unresolved"), "markdown reports container contents separately");
 	check(contains(md, "# Reference map analysis (G3)") && contains(md, "## Floors") && contains(md, "## Unknown ids") &&
 		contains(md, "| 60000 | 2 |") && !contains(md, "\r"), "markdown sections");
 	check(contains(md, "| bottleneck tiles |") && contains(md, "| 7 | 6 | 3 | 1 | 3 | 1 | 0 | 0 | 1 |"), "markdown bottleneck count");
