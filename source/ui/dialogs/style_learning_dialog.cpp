@@ -3,6 +3,7 @@
 #include "ui/dialogs/style_learning_dialog.h"
 #include "procedural/adapter/open_map_learning.h"
 #include "procedural/adapter/generation_assets.h"
+#include "procedural/adapter/generation_selection.h"
 #include "app/managers/version_manager.h"
 #include "app/client_version.h"
 #include "editor/editor.h"
@@ -44,6 +45,13 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     width_ = spin("&Width (max 512):", "learn-width", 1, 512, 100);
     height_ = spin("&Height (max 512):", "learn-height", 1, 512, 100);
     root->Add(form, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
+    auto* fromSelection = new wxButton(this, wxID_ANY, "Use map s&election");
+    fromSelection->SetName("learn-use-selection");
+    fromSelection->SetToolTip("Fill the rectangle with the bounds of the tiles selected on the map (one floor, up to 512 x 512).");
+    fromSelection->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        if (UseSelection()) Status("Rectangle taken from the map selection. Read it to continue.");
+    });
+    root->Add(fromSelection, 0, wxLEFT | wxRIGHT | wxTOP, margin);
     permission_ = new wxCheckBox(this, wxID_ANY, "I have the &right to use this map for local style learning.");
     permission_->SetName("learn-permission"); root->Add(permission_, 0, wxALL, margin);
     permission_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { Invalidate(false); });
@@ -82,8 +90,36 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
         child->SetFont(Theme::GetFont()); child->SetForegroundColour(Theme::Get(Theme::Role::Text));
         child->SetBackgroundColour(Theme::Get(Theme::Role::Background));
     }
+    if (const auto* e = g_gui.GetCurrentEditor(); e && e->selection.size() != 0 && UseSelection())
+        Status("Rectangle taken from the map selection. Read it to continue. Data stays on this computer.");
     Bind(wxEVT_TIMER, [this](wxTimerEvent&) { Tick(); }, timer_.GetId());
     timer_.Start(20);
+}
+bool StyleLearningDialog::UseSelection() {
+    if (worker_.valid() || reading_) return false;
+    auto* e = g_gui.GetCurrentEditor();
+    if (!e) { Status("Open a map first."); return false; }
+    constexpr uint64_t maxCells = 512 * 512;
+    const auto captured = captureGenerationSelection(*e, SelectionMaskBudget{maxCells, maxCells + 64 * 1024});
+    if (!captured) {
+        switch (captured.error()) {
+            case SelectionMaskError::Empty: Status("Nothing is selected. Select an area on the map first."); break;
+            case SelectionMaskError::MultipleFloors: Status("The selection spans several floors. Select tiles on one floor only."); break;
+            case SelectionMaskError::CellLimit:
+            case SelectionMaskError::MemoryLimit: Status("The selection is larger than 512 x 512 tiles."); break;
+            case SelectionMaskError::Busy: Status("Finish the current selection first, then try again."); break;
+            default: Status("The selection could not be read. Select the area again."); break;
+        }
+        return false;
+    }
+    const auto& r = captured->region;
+    if (r.z < 0 || r.z > 7) { Status("Select an area on a surface floor (0-7)."); return false; }
+    // A larger cell budget would admit a 1 x 262144 strip; the spin limits refuse it.
+    if (r.width > 512 || r.height > 512) { Status("The selection is larger than 512 x 512 tiles."); return false; }
+    x_->SetValue(r.x); y_->SetValue(r.y); z_->SetValue(r.z);
+    width_->SetValue(int(r.width)); height_->SetValue(int(r.height));
+    Invalidate();
+    return true;
 }
 StyleLearningDialog::~StyleLearningDialog() { timer_.Stop(); stop_.request_stop(); }
 void StyleLearningDialog::Status(const std::string& text) {

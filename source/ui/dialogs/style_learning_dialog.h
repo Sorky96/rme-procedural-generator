@@ -20,6 +20,7 @@ public:
 private:
     bool CurrentSource();
     void Invalidate(bool discardSample = true);
+    bool UseSelection();
     void Read();
     void Analyze();
     void Save();
