@@ -1,40 +1,40 @@
-# G1-A — rdzeń semantyczny
+# G1-A — semantic core
 
-Status: implementacja pierwszego pakietu G1, bez integracji commitu i GUI. Cała bramka G1 pozostaje IN PROGRESS.
+Status: implementation of the first G1 package, without commit or GUI integration. The full G1 gate remains IN PROGRESS.
 
-## Kontrakt
+## Contract
 
-[`generation.h`](../../source/procedural/core/generation.h) i [`generation.cpp`](../../source/procedural/core/generation.cpp) tworzą osobną bibliotekę `rme_procedural_core`. Nie zależą od wxWidgets, Lua, item ID, brushy ani żywej mapy. Target `rme` zależy od tej biblioteki; aktualnie konsumentem API jest test C++, a edytor nie udostępnia jeszcze polecenia generacji.
+[`generation.h`](../../source/procedural/core/generation.h) and [`generation.cpp`](../../source/procedural/core/generation.cpp) form a separate `rme_procedural_core` library. They do not depend on wxWidgets, Lua, item IDs, brushes, or a live map. Target `rme` depends on this library. The current API consumer is a C++ test, and the editor does not yet expose a generation command.
 
-- `GenerationConfig`: jawne X/Y/Z, szerokość/wysokość, seed i całkowite wagi grass/dirt/water. To pierwszy baseline niezależnych pól, bez noise, rzek i modelu biomów. Naturalność terenu nie jest kryterium tego pakietu.
-- Przegląd przed adapterem: `MapExtent`, `CoreBudget` i `GenerationLayout` domyślnie zerują pola. Puste granice/budżety odmawiają pracy. `SemanticGrid::valid()` sprawdza nieujemny, niepusty region, dokładną liczbę komórek i znane wartości enum; adapter musi dodatkowo porównać region ze zleceniem oraz aktualne granice.
-- `MapExtent` zawiera wyłączne granice przekazane przez przyszły adapter. Przy pobieraniu ich z RME trzeba uwzględnić włączne maksima `Position::isValid()` oraz rzeczywisty rozmiar mapy. Rdzeń nie przyjmuje mapy o domyślnym/hardkodowanym rozmiarze.
-- Płaska siatka obejmuje jedno piętro, indeks `y * width + x`. Maska i ochrona to read-only `span<const uint8_t>` o dokładnie takim rozmiarze; wartości 0/1. Pusta maska oznacza cały prostokąt, pusta ochrona — brak chronionych pól. Całkowicie wykluczony obszar jest błędem. Niezmieniane pola otrzymują `Terrain::Preserve`; nie jest to polecenie usunięcia tile.
-- `StableRandom` ma własny silnik `mt19937_64` z `seed_seq` wyprowadzonym z obu połówek seeda i identyfikatora strumienia. Nie korzysta z globalnego RNG brushy, `random_device`, `std::hash` ani `uniform_int_distribution`. Losowanie z zakresu używa rejection sampling. Strumień terenu v1 ma stałą domenę `0x7465727261696e`.
-- Każde pole zużywa jeden roll terenu, także wykluczone przez maskę/ochronę. Dzięki temu zmiana samej maski nie przesuwa losowania pozostałych pól w tym samym prostokącie. Nie obiecuje się zgodności fragmentów po zmianie rozmiaru/pochodzenia prostokąta ani kontroli RNG istniejących brushy.
-- `fingerprint()` jest niekryptograficznym FNV-1a po jawnych bajtach little-endian: wersja algorytmu, region i komórki. Nie hashuje paddingu C++, ustawień ani całego snapshotu mapy. Przyszłe provenance musi osobno obejmować seed/config, wejścia i assets. Preview/Commit/Redo będą wymagać także hasha konkretnego diffu.
-- `validateGeneration` odrzuca ujemne współrzędne, Z poza zakresem, zerowe/wychodzące poza granice rozmiary, zerową sumę wag, niedopasowane/niebinarne maski, brak pól do zapisu, przekroczenie limitów i nieprzedstawialny rozmiar wektora. Sumy/mnożenia są poszerzone przed działaniem. Walidacja nie alokuje siatki.
-- `CoreBudget` dotyczy liczby pól oraz rozmiaru samego wyjścia (`sizeof(SemanticGrid)` + komórki). Nie jest limitem pamięci całego zadania, allocator overhead ani pomiarem RSS. Snapshot, halo, maski, warianty, sandbox, konkretne tile i Undo muszą mieć oddzielne sprawdzone rozliczenie przed dopuszczeniem commitu G1.
-- `stop_token`: odmowa przed alokacją, kontrola podczas generacji na granicy każdego wiersza i przed zwrotem. Anulowanie/`bad_alloc` zwraca błąd zamiast częściowej siatki. Podczas synchronicznego wywołania caller musi utrzymywać wejściowe spany przy życiu i nie mutować ich równolegle. Przed workerem adapter będzie musiał stworzyć własny spójny snapshot.
-- `validateGeneration` przyjmuje ten sam token i sprawdza anulowanie także podczas walidacji maski/ochrony co 4096 pól. Fingerprinty i algorytm v1 pozostały niezmienione. Commit ma zastosować przechowywany, zweryfikowany konkretny diff; ponowne losowanie przy Commit/Redo nie jest kontraktem.
+- `GenerationConfig`: explicit X/Y/Z, width/height, seed, and integer grass/dirt/water weights. This is the first independent-cell baseline, without noise, rivers, or a biome model. Terrain naturalness is not a criterion for this package.
+- Adapter preflight: `MapExtent`, `CoreBudget`, and `GenerationLayout` default to zero. Empty bounds/budgets reject work. `SemanticGrid::valid()` checks a non-negative, non-empty region, exact cell count, and known enum values. The adapter must also compare the region with the request and current bounds.
+- `MapExtent` contains exclusive bounds supplied by the future adapter. When obtained from RME, account for inclusive `Position::isValid()` maxima and the actual map size. The core does not accept a default/hard-coded map size.
+- The flat grid covers one floor, indexed by `y * width + x`. Mask and protection are read-only `span<const uint8_t>` with the exact size and 0/1 values. Empty mask means the full rectangle. Empty protection means no protected cells. Fully excluded area is an error. Unchanged cells receive `Terrain::Preserve`, which is not a tile-deletion command.
+- `StableRandom` owns an `mt19937_64` engine with `seed_seq` derived from both seed halves and a stream identifier. It does not use the global brush RNG, `random_device`, `std::hash`, or `uniform_int_distribution`. Range draws use rejection sampling. The v1 terrain stream has fixed domain `0x7465727261696e`.
+- Every cell consumes one terrain roll, including cells excluded by mask/protection. Changing only the mask therefore does not shift rolls for other cells in the same rectangle. Fragment compatibility after changing rectangle size/origin and control of existing-brush RNG are not promised.
+- `fingerprint()` is non-cryptographic FNV-1a over explicit little-endian bytes: algorithm version, region, and cells. It does not hash C++ padding, settings, or the complete map snapshot. Future provenance must separately include seed/config, inputs, and assets. Preview/Commit/Redo will also require a concrete-diff hash.
+- `validateGeneration` rejects negative coordinates, out-of-range Z, zero/out-of-bounds sizes, zero weight sum, mismatched/non-binary masks, no writable cells, limit excess, and unrepresentable vector size. Sums/multiplications are widened before operation. Validation does not allocate the grid.
+- `CoreBudget` covers cell count and output size (`sizeof(SemanticGrid)` + cells). It is not a whole-job memory limit, allocator-overhead limit, or RSS measurement. Snapshot, halo, masks, variants, sandbox, concrete tiles, and Undo need separate checked accounting before G1 commit is allowed.
+- `stop_token`: refusal before allocation, checked during generation at every row boundary and before return. Cancellation/`bad_alloc` returns an error instead of a partial grid. During synchronous calls, the caller must keep input spans alive and avoid concurrent mutation. Before a worker runs, the adapter must create its own consistent snapshot.
+- `validateGeneration` accepts the same token and checks cancellation during mask/protection validation every 4096 cells. Fingerprints and v1 algorithm remain unchanged. Commit must apply the stored, verified concrete diff. Rerolling during Commit/Redo is not the contract.
 
 ## Weryfikacja
 
-[`test_procedural_core.cpp`](../../tests/test_procedural_core.cpp) wywołuje rzeczywisty kod tej biblioteki, bez modelu w Pythonie. Sprawdza powtarzalność i rozdzielenie RNG, przedziały (także duże), seed/config, czyste wagi, szeroką sumę wag, nieregularną maskę, ochronę, brak modyfikacji wejść, granice i odmowy limitów, anulowanie zgłoszone przed startem oraz fingerprint z niezależnie wyliczoną stałą.
+[`test_procedural_core.cpp`](../../tests/test_procedural_core.cpp) calls the real library code without a Python model. It checks repeatability and RNG separation, ranges including large ones, seed/config, clean weights, wide weight sum, irregular mask, protection, unchanged inputs, bounds and limit refusals, pre-start cancellation, and a fingerprint against an independently calculated constant.
 
-Próby 100×100 i 500×500 porównują całe wektory, odmienny seed i obecność trzech terenów. Wypisany czas obejmuje tylko pojedynczą generację rdzenia. Nie jest to pomiar resolvera/commitu, pełnego szczytu RAM ani zaliczenie rozmiarów E2E G1.
+100×100 and 500×500 runs compare complete vectors, a different seed, and presence of all three terrains. Reported time covers one core generation only. It is not resolver/commit measurement, full peak RAM, or an E2E G1 size pass.
 
-Budowanie: kanoniczny `rtk proxy cmd /c build_ninja.bat`, następnie w środowisku MSVC x64:
+Build: canonical `rtk proxy cmd /c build_ninja.bat`, then in the MSVC x64 environment:
 
 ```text
 rtk proxy cmake --build build-ninja --target test_procedural_core --parallel 2
 rtk proxy ctest --test-dir build-ninja -R "^test_procedural_core$" -V
 ```
 
-Wyniki wykonanych prób znajdują się w bieżącym wpisie `../PROGRESS.md`. Test nie używa `assert`, więc warunki działają także w Release. Rozszerzenie `g1-core-faults-tests-20261102.log` sprawdziło pięć jednorazowych błędów alokacji małej generacji i deterministyczne ponowienia; nie obejmuje trwałego OOM ani późniejszych etapów adaptera. Nie sprawdzono anulowania w trakcie biegu, równoległej mutacji wejść ani zgodności fingerprintów między toolchainami/platformami. Nie uruchamiano nowego GUI RME, ponieważ pakiet nie dodaje przepływu dostępnego użytkownikowi; manualny test całego workflow nadal należy do G1-C.
+Results are in the current `../PROGRESS.md` entry. The test does not use `assert`, so conditions also run in Release. Extension `g1-core-faults-tests-20261102.log` checked five one-time allocation failures in a small generation and deterministic retries. It does not cover persistent OOM or later adapter stages. Cancellation during the run, concurrent input mutation, and cross-toolchain/platform fingerprint compatibility were not checked. No new RME GUI was run because this package adds no user-accessible flow. Manual testing of the complete workflow remains G1-C.
 
 ## Dalsza praca G1
 
-1. G1-B: snapshot maski/halo/ochrony i assets, kontrolowany resolver wykorzystujący istniejące DrawOperations/autoborder; pełne budżety i sprawdzenie zasięgu konkretnego diffu.
+1. G1-B: mask/halo/protection and asset snapshot, controlled resolver using existing DrawOperations/autoborder, full budgets, and concrete-diff range checks.
 2. G1-C: odrzucanie stale preview, atomowy commit przygotowanej akcji, osobne Undo/Redo, Cancel i blokada live.
-3. Minimalny dialog i rzeczywiste E2E 100×100/500×500 z pełnym round-trip, zachowaniem danych chronionych i pomiarami zasobów. Dopiero to może zamknąć G1.
+3. Minimal dialog and real 100×100/500×500 E2E with full round-trip, protected-data preservation, and resource measurements. Only this can close G1.

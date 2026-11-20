@@ -22,6 +22,9 @@ struct NamedProfileText {
 struct OfferedProfile {
 	std::string name;
 	StyleProfile profile;
+	std::string versionId; // empty for read-only legacy profile files
+	std::string baseId;
+	std::optional<std::array<uint32_t, 8>> adjustment;
 };
 
 struct ProfileOffer {

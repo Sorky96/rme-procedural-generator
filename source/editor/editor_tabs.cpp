@@ -199,13 +199,28 @@ void MapTabbook::SetTabLabel(int idx, wxString label) {
 }
 
 void MapTabbook::DeleteTab(int idx) {
-	if (notebook) {
-		// Palettes borrow map objects. The last deletion may not emit a page
-		// change event, so detach before destruction and rebind afterwards.
-		g_palettes.RefreshPalettes(nullptr, false);
-		notebook->DeletePage(idx);
-		g_palettes.RefreshPalettes();
+	DestroyDetachedTab(DetachTab(idx));
+}
+
+wxWindow* MapTabbook::DetachTab(int idx) {
+	if (!notebook) {
+		return nullptr;
 	}
+	// Palettes borrow map objects. The last removal may not emit a page
+	// change event, so detach them before the page is destroyed.
+	g_palettes.RefreshPalettes(nullptr, false);
+	wxWindow* page = notebook->GetPage(idx);
+	notebook->RemovePage(idx);
+	return page;
+}
+
+void MapTabbook::DestroyDetachedTab(wxWindow* page) {
+	if (!page) {
+		return;
+	}
+	conv.erase(page);
+	page->Destroy();
+	g_palettes.RefreshPalettes();
 }
 
 int MapTabbook::GetTabCount() {

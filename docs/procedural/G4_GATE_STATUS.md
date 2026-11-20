@@ -1,662 +1,666 @@
-# G4 — stan bramki „Uczenie stylu L1/L2”, 2026-11-08
+﻿# G4 — gate status “Learning L1/L2 style”, 2026-11-08
 
-**G4 NIE SPEŁNIONA w mierzonym zakresie.** Ocena G4-F uruchomiona raz, na kryteriach z [G4_METRICS.md](G4_METRICS.md) zapisanych i zacommitowanych przed uruchomieniem (ewaluator `f251ba7`). Dwa przebiegi dały bajtowo identyczny raport (8 s każdy, jedna maszyna). Żadnego kryterium ani progu nie zmieniano po zobaczeniu wyniku.
+**G4 NOT MET in measured scope.** G4-F evaluation run once, on criteria from [G4_METRICS.md](G4_METRICS.md) written and committed before execution (evaluator `f251ba7`). Two runs produced bit-identical reports (8 s each, one machine). No criterion or threshold was changed after seeing the result.
 
-**Bramka z planu:** „mierzalna i powtarzalna poprawa wybranych metryk stylu nad ręcznymi presetami, bez pogorszenia krytycznych metryk grywalności.”
+**Gate from plan:** “measurable and repeatable improvement in selected style metrics over manual presets, without degradation of critical playability metrics.”
 
-## Wynik (klient 10.98, powierzchnia z ≤ 7, bok 256, seedy 1001–1032, pary baseline/kandydat)
-Różnica = kandydat − baseline, mniejsza = lepiej. S1/S2 w ppm (max 2 000 000 każda), S3 w tysięcznych ‰, P1 w ppm. „Lepszy” = mediana < 0 i kandydat wygrywa w ≥ 24 z 32 seedów.
+## Result (client 10.98, surface z ≤ 7, side 256, seeds 1001–1032, baseline/candidate pairs)
+Difference = candidate − baseline, smaller = better. S1/S2 in ppm (max 2,000,000 each), S3 in thousandths ‰, P1 in ppm. “Better” = median < 0 and candidate wins in ≥ 24 of 32 seeds.
 
-| Fold (test) | Mapy | S1 udziały | S2 sąsiedztwa | S3 wegetacja | P1 mediana: baseline → kandydat |
+| Fold (test) | Maps | S1 shares | S2 adjacency | S3 vegetation | P1 median: baseline → candidate |
 | --- | ---: | --- | --- | --- | --- |
-| caves (M14, M16) | 2 | gorszy (+440 140) | gorszy (+425 428) | lepszy (−4 833, 3 wyrazy) | 999 730 → 889 678 (89 %) |
-| M01 | 1 | bez rozstrzygnięcia (0) | bez rozstrzygnięcia (0) | N/A | 999 730 → 999 730 |
-| M05 | 1 | gorszy (+1 022 156) | gorszy (+1 011 538) | gorszy (+85 916) | 999 730 → 946 054 |
-| M06 | 1 | lepszy (−274 079) | lepszy (−276 892) | lepszy (−2 071, 24/32) | 999 730 → 933 535 |
-| M15 | 1 | N/A: brak profilu (walidacja M17 bez danych) | | | |
-| M17 | 1 | N/A: brak celu testowego (0 kafli naturalnych) | | | |
-| M19 | 1 | lepszy (−817 977) | lepszy (−788 629) | lepszy (−8 396) | 999 730 → 947 825 |
-| swamp (M12, M13) | 2 | lepszy (−320 283) | lepszy (−325 744) | N/A | 999 730 → **689 523** |
-| zima (M11, M18) | 2 | bez rozstrzygnięcia (0) | bez rozstrzygnięcia (0) | N/A | 999 730 → 999 730 |
+| caves (M14, M16) | 2 | worse (+440 140) | worse (+425 428) | better (−4 833, 3 words) | 999 730 → 889 678 (89 %) |
+| M01 | 1 | undecided (0) | undecided (0) | N/A | 999 730 → 999 730 |
+| M05 | 1 | worse (+1 022 156) | worse (+1 011 538) | worse (+85 916) | 999 730 → 946 054 |
+| M06 | 1 | better (−274 079) | better (−276 892) | better (−2 071, 24/32) | 999 730 → 933 535 |
+| M15 | 1 | N/A: no profile (M17 validation no data) | | | |
+| M17 | 1 | N/A: no test target (0 natural tiles) | | | |
+| M19 | 1 | better (−817 977) | better (−788 629) | better (−8 396) | 999 730 → 947 825 |
+| swamp (M12, M13) | 2 | better (−320 283) | better (−325 744) | N/A | 999 730 → **689 523** |
+| winter (M11, M18) | 2 | undecided (0) | undecided (0) | N/A | 999 730 → 999 730 |
 
-M01 i zima: wybrany krok walidacji to baseline, więc kandydat jest tym samym generatorem (różnica dokładnie 0).
+M01 and winter: validation step chosen is baseline, so candidate is the same generator (difference exactly 0).
 
-## Kryteria bramki (zapisane z góry) i wynik
-| Kryterium | Wymaganie | Wynik |
+## Gate criteria (registered ahead) and result
+| Criterion | Requirement | Result |
 | --- | --- | --- |
-| S1 udziały | lepszych ≥ 2/3 ocenianych foldów (7) | 3 z 7: **nie** |
-| S2 sąsiedztwa | lepszych ≥ 2/3 | 3 z 7: **nie** |
-| Brak foldu gorszego w obu naraz | 0 | 2 (caves, M05): **nie** |
-| S3 wegetacja | lepszych więcej niż gorszych (foldy z kontekstem) | 3 lepsze, 1 gorszy (4 foldy): tak |
-| P1 spójność chodzenia | w każdym foldzie kandydat ≥ 95 % mediany baseline | 5 z 7 foldów poniżej 95 %: **nie** |
+| S1 shares | better ≥ 2/3 evaluated folds (7) | 3 of 7: **no** |
+| S2 adjacency | better ≥ 2/3 | 3 of 7: **no** |
+| No fold worse in both | 0 | 2 (caves, M05): **no** |
+| S3 vegetation | more better than worse (folds with context) | 3 better, 1 worse (4 folds): yes |
+| P1 walkability coherence | in each fold candidate ≥ 95 % of baseline median | 5 of 7 folds below 95 %: **no** |
 
-**Wynik: nie spełniona** (zawiodły S1, S2, brak foldu gorszego w obu, P1).
+**Result: not met** (S1, S2, no fold worse in both, P1 failed).
 
-## Co z tego wynika
-- Dopasowanie poprawia styl na 3 z 7 ocenianych foldów (M06, M19, swamp) i pogarsza na 2 (caves, M05), a na 2 nie zmienia nic. Poprawy są duże tam, gdzie cel testowy przypomina mieszankę treningową (M19: −818 tys. ppm z 2 mln możliwych).
-- **Krytyczna metryka grywalności jest gorsza.** Dopasowane parametry (jezioro do 300 ‰, skała do 320 ‰, do 8 rzek) tną ląd: mediana największej spójnej składowej chodzenia spada z 99,97 % do 68,9 % (swamp), 88,9 % (caves), 93–95 % w pozostałych. Poprawa dystansu udziałów jest więc kupowana kosztem spójności lądu. To jest wada samej funkcji celu (patrz niżej), nie błąd narzędzia.
-- Funkcja celu (dystans L1 udziałów i sąsiedztw) nie zawiera spójności lądu ani żadnego ograniczenia grywalności, więc nic nie powstrzymuje dopasowania przed skrajnymi siatkami.
+## What follows from this
+- Fitting improves style on 3 of 7 evaluated folds (M06, M19, swamp) and worsens on 2 (caves, M05), and changes nothing on 2. Improvements are large where the test target resembles the training mix (M19: −818K ppm of 2M possible).
+- **Critical playability metric is worse.** Fitted parameters (lake to 300 ‰, rock to 320 ‰, up to 8 rivers) cut land: median of largest coherent walkable component drops from 99.97 % to 68.9 % (swamp), 88.9 % (caves), 93–95 % in others. Improvement in share distance is thus bought at the cost of land coherence. This is a flaw of the objective function itself (see below), not a tool error.
+- Objective function (L1 distance of shares and adjacencies) contains no land coherence or any playability constraint, so nothing prevents fitting from reaching extreme grid limits.
 
-## Zastrzeżenia do wyniku
-- **Dane:** 7 ocenianych foldów to po jednej–dwóch mapach; trzy foldy z wegetacją 3 mapy. Przedziały to rozrzut po 32 seedach generatora, nie niepewność doboru map.
-- **Przeciek:** rodzina testowa foldu k była walidacyjną foldu k−1 (G4_METRICS.md); wynik jest nieco mniej niezależny, niż sugeruje nazwa „test”.
-- **Interpretacja zapisu metryk:** G4_METRICS.md mówi o „sumie po seedach” w opisie S1/S2 i o parach per seed w agregacji; ewaluator liczy dystanse per seed (konieczne do par). Nie licząc sumarycznego wariantu.
-- **S3** liczono na tych foldach, gdzie cel testowy ma kontekst ≥ 200 kafli (24 z 3–24 wyrazów).
-- **Nie zmierzono:** podobieństwa wizualnego, naturalności rzek i gór, klastrowania 16/32/64, ocen człowieka, podziemi, BlackTek, `border_error_rate`, memoryzacji wyniku generatora względem referencji (D10), 100 % poprawnych ID i zera zmian poza maską (te zależą od ścieżki zatwierdzania, nie od strojenia, ale nie sprawdzano ich w GUI).
-- **Profil nie jest podpięty do GUI** (strojenie powierzchni i wegetacji nie ma pól w `GenerationConfig`/dialogu), więc nie ma jeszcze testu ręcznego w RME; dopóki nie ma w nim niczego do wyboru, byłby bez sensu.
+## Caveats to the result
+- **Data:** 7 evaluated folds are one to two maps each; three folds with vegetation are 3 maps. Ranges are scatter across 32 generator seeds, not uncertainty in map selection.
+- **Leak:** test family of fold k was validation family of fold k−1 (G4_METRICS.md); result is somewhat less independent than the name “test” suggests.
+- **Interpretation of metric recording:** G4_METRICS.md mentions “sum across seeds” in S1/S2 description and pairs per seed in aggregation; evaluator counts distances per seed (necessary for pairs). Not counting cumulative variant.
+- **S3** was computed on folds where test target has context ≥ 200 tiles (24 of 3–24 words).
+- **Not measured:** visual similarity, naturalness of rivers and mountains, clustering at 16/32/64, human judgments, dungeons, BlackTek, `border_error_rate`, generator output memorization vs. reference (D10), 100 % correct IDs and zero changes outside mask (those depend on commit path, not tuning, but not checked in GUI).
+- **Profile is not wired to GUI** (surface and vegetation tuning lack fields in `GenerationConfig`/dialog), so no manual test in RME yet; as long as nothing there to choose, it would be pointless.
 
-## Co zostaje (propozycje, nie wykonano)
-1. Dodać spójność lądu (P1) jako twarde ograniczenie lub składnik funkcji celu dopasowania i powtórzyć G4-F. Każda taka zmiana to nowa iteracja, nie poprawka tego wyniku: zapisać nowe kryteria przed uruchomieniem i oznaczyć wynik „po zmianie kryterium”.
-2. Profile per styl (wybrzeże, trawa, góry) zamiast jednego zlepka, i więcej map z rozpoznanym gruntem.
-3. Zawęzić siatki parametrów lub dodać regularyzację ku wartościom ręcznym.
+## What remains (proposals, not executed)
+1. Add land coherence (P1) as a hard constraint or component of fitting objective function and repeat G4-F. Any such change is a new iteration, not a fix of this result: record new criteria before execution and mark result “after criterion change”.
+2. Per-style profiles (coast, grass, mountains) instead of one blend, and more maps with identified ground.
+3. Narrow parameter grids or add regularization toward manual values.
 
-## Iteracja 2 — dopasowanie z ograniczeniem spójności lądu (2026-11-08, „po zmianie modelu”)
+<a id="iteracja-2--dopasowanie-z-ograniczeniem-spójności-lądu-2026-11-08-po-zmianie-modelu"></a>
 
-**G4 nadal NIE spełniona.** Kryteria zapisane przed uruchomieniem ([G4_METRICS.md](G4_METRICS.md), sekcja „Iteracja 2”, commit `83607af`); metryki, seedy, foldy i reguła bramki bez zmian. Zmienił się tylko model: kandydat w dopasowaniu `SurfaceTuning` jest odrzucany, gdy mediana spójności lądu na seedach 1–6 jest niższa niż 97 % mediany ręcznych parametrów (`fc41d6b`). Dwa dopasowania (36 s) i dwie oceny bajtowo identyczne.
+## Iteration 2 — fitting with land coherence constraint (2026-11-08, “after model change”)
 
-| Fold (test) | S1 udziały | S2 sąsiedztwa | S3 wegetacja | P1 mediana: baseline → kandydat |
+**G4 still NOT MET.** Criteria recorded before execution ([G4_METRICS.md](G4_METRICS.md), section “Iteration 2”, commit `83607af`); metrics, seeds, folds and gate rule unchanged. Only the model changed: candidate in `SurfaceTuning` fitting is rejected if median land coherence on seeds 1–6 is lower than 97 % of median of manual parameters (`fc41d6b`). Two fittings (36 s) and two evaluations bit-identical.
+
+| Fold (test) | S1 shares | S2 adjacency | S3 vegetation | P1 median: baseline → candidate |
 | --- | --- | --- | --- | --- |
-| caves | gorszy (+354 676) | gorszy (+347 019) | lepszy (−5 000) | 999 730 → 958 154 |
-| M01, zima | bez zmian (kandydat = ręczne) | | N/A | bez zmian |
-| M05 | gorszy (+836 959) | gorszy (+832 825) | gorszy (+85 167) | 999 730 → 958 154 |
-| M06 | lepszy (−410 079) | lepszy (−342 307) | **gorszy (+2 523)** | 999 730 → 958 154 |
-| M19 | lepszy (−815 337) | lepszy (−781 036) | lepszy (−8 312) | 999 730 → 966 000 |
-| swamp | lepszy (−320 068) | lepszy (−312 398) | N/A | 999 730 → 958 154 |
-| M15, M17 | N/A (jak w iteracji 1) | | | |
+| caves | worse (+354 676) | worse (+347 019) | better (−5 000) | 999 730 → 958 154 |
+| M01, winter | unchanged (candidate = manual) | | N/A | unchanged |
+| M05 | worse (+836 959) | worse (+832 825) | worse (+85 167) | 999 730 → 958 154 |
+| M06 | better (−410 079) | better (−342 307) | **worse (+2 523)** | 999 730 → 958 154 |
+| M19 | better (−815 337) | better (−781 036) | better (−8 312) | 999 730 → 966 000 |
+| swamp | better (−320 068) | better (−312 398) | N/A | 999 730 → 958 154 |
+| M15, M17 | N/A (as in iteration 1) | | | |
 
-| Kryterium | Iteracja 1 | Iteracja 2 |
+| Criterion | Iteration 1 | Iteration 2 |
 | --- | --- | --- |
-| S1 lepszych ≥ 2/3 foldów (7) | 3 z 7: nie | 3 z 7: nie |
-| S2 lepszych ≥ 2/3 | 3 z 7: nie | 3 z 7: nie |
-| Fold gorszy w obu naraz = 0 | 2: nie | 2: nie |
-| S3 więcej lepszych niż gorszych | 3 : 1: tak | 2 : 2: **nie** |
-| P1 każdy fold ≥ 95 % baseline | 5 foldów poniżej: nie | **0 poniżej: tak** (958 154–999 730 przy progu 949 744) |
-| **Bramka** | nie spełniona | **nie spełniona** (zawodzą S1, S2, brak foldu gorszego w obu, S3) |
+| S1 better ≥ 2/3 of folds (7) | 3 of 7: no | 3 of 7: no |
+| S2 better ≥ 2/3 | 3 of 7: no | 3 of 7: no |
+| Fold worse in both = 0 | 2: no | 2: no |
+| S3 more better than worse | 3 : 1: yes | 2 : 2: **no** |
+| P1 each fold ≥ 95 % baseline | 5 folds below: no | **0 below: yes** (958 154–999 730 at threshold 949 744) |
+| **Gate** | not met | **not met** (S1, S2, no fold worse in both, S3 fail) |
 
-**Wniosek:** ograniczenie naprawiło krytyczną grywalność (spójność lądu ≥ 95,8 % ręcznej we wszystkich foldach, wcześniej do 69 %), nie niszcząc poprawy w tych trzech foldach, gdzie cel testowy przypomina mieszankę treningową (M06, M19, swamp: nadal −0,3 do −0,8 mln ppm). Nie poprawiło dwóch foldów, w których styl się nie poprawia: caves (cel to tylko ziemia) i M05 (cel to prawie sama trawa), gdzie dopasowany do mieszanki generator jest dalej od celu niż ręczne parametry; w M06 wegetacja zmieniła się z lepszej na gorszą (+2 523 przy rozrzucie −3 286…+6 381, czyli blisko zera). Zwykły zlepek stylów nie opisuje pojedynczej rodziny, co potwierdza kierunek „profile per styl”.
+**Conclusion:** constraint fixed critical playability (land coherence ≥ 95.8 % of manual in all folds, earlier down to 69 %), not destroying improvement in the three folds where test target resembles training mix (M06, M19, swamp: still −0.3 to −0.8M ppm). Did not improve two folds where style does not improve: caves (target is ground only) and M05 (target is almost all grass), where generator fitted to the mix is farther from target than manual parameters; in M06 vegetation changed from better to worse (+2 523 at scatter −3 286…+6 381, nearly zero). Plain style blend does not describe individual family, confirming direction “per-style profiles”.
 
-**Zastrzeżenia iteracji 2:** foldy testowe użyte po raz drugi, po adaptacji modelu do wyniku iteracji 1; wartość 97 % wybrana z góry, ale cały pomysł ograniczenia wynika z oglądania wyniku iteracji 1. Pozostałe zastrzeżenia jak w iteracji 1 (jedna–dwie mapy na fold, przeciek walidacja/test, brak oceny wizualnej, podziemi, BlackTek, memoryzacji generatora, brak podpięcia do GUI).
+**Iteration 2 caveats:** test folds used second time, after model adaptation to iteration 1 result; 97 % value chosen ahead, but entire constraint idea comes from observing iteration 1 result. Remaining caveats as in iteration 1 (one to two maps per fold, validation/test leak, no visual assessment, dungeons, BlackTek, generator memorization, no GUI wiring).
 
-## Iteracja 3 — profile per styl (2026-11-08, „po zmianie modelu”)
+## Iteration 3 — per-style profiles (2026-11-08, “after model change”)
 
-Kryteria zapisane przed uruchomieniem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 3”, commit `975fba4`; narzędzie `269da1b`). Dwa przebiegi (44 s) bajtowo identyczne. **Kryterium iteracji 3 spełnione w mierzonym zakresie, ale to wynik in-sample i nie spełnia bramki G4 z planu** (interpretacja zapisana z góry).
+Criteria recorded before execution ([G4_METRICS.md](G4_METRICS.md), “Iteration 3”, commit `975fba4`; tool `269da1b`). Two runs (44 s) bit-identical. **Iteration 3 criterion met in measured scope, but this is in-sample result and does not meet G4 gate from plan** (interpretation recorded ahead).
 
-**A — własny styl (in-sample), 8 stylów:** profil lepszy od ręcznych parametrów w S1 i S2 we **wszystkich 8** (32/32 seedów w każdym), żaden gorszy; wegetacja (S3) lepsza we wszystkich 4 stylach z porównywalnym kontekstem (caves, m05, m06, m19). Spójność lądu P1 ≥ 95 % we wszystkich 8 (95,2–100 %).
+**A — own style (in-sample), 8 styles:** profile better than manual parameters in S1 and S2 in **all 8** (32/32 seeds in each), none worse; vegetation (S3) better in all 4 styles with comparable context (caves, m05, m06, m19). Land coherence P1 ≥ 95 % in all 8 (95.2–100 %).
 
-**B — mapa wyłączona z uczenia w obrębie stylu (jedyny przypadek, swamp, n = 2):** profil z M13 na M12 i z M12 na M13 jest lepszy od ręcznych w S1 i S2 (32/32 seedów; −320 252 / −307 163 oraz −493 180 / −487 248 ppm), P1 95,9 % i 95,2 % (tuż nad progiem 95 %). To jedyny wynik na mapie niewidzianej, ale M12 i M13 to ta sama deklarowana rodzina (nazwy plików), dwa przypadki nie wystarczają do wniosku o uogólnieniu.
+**B — map excluded from learning within style (only case, swamp, n = 2):** profile from M13 to M12 and from M12 to M13 is better than manual in S1 and S2 (32/32 seeds; −320 252 / −307 163 and −493 180 / −487 248 ppm), P1 95.9 % and 95.2 % (just above 95 % threshold). This is the only result on unseen map, but M12 and M13 are the same declared family (file names), two cases insufficient for generalization conclusion.
 
-**C — rozróżnialność:** rozpoznanych 6 z 8 stylów (własny profil najbliższy własnemu celowi). Nie rozpoznane: m01 i swamp (profile m06 i m19 są o włos bliżej: m01: 2 821 743 własny vs 2 811 131 profil m06). Profile m15, m19, swamp i winter są do siebie podobne, bo dopasowanie dochodzi do krańców siatek (jezioro 300 ‰, skała do 320 ‰, rzeki 0–8, brzeg 3–4).
+**C — distinguishability:** 6 of 8 styles recognized (own profile closest to own target). Not recognized: m01 and swamp (m06 and m19 profiles just barely closer: m01: 2 821 743 own vs 2 811 131 m06 profile). Profiles m15, m19, swamp and winter are similar because fitting reaches grid limits (lake 300 ‰, rock to 320 ‰, rivers 0–8, shore 3–4).
 
-| Kryterium iteracji 3 | Wymaganie | Wynik |
+| Iteration 3 criterion | Requirement | Result |
 | --- | --- | --- |
-| A | ≥ 2/3 stylów lepszych w S1 i S2, żaden gorszy w obu | 8 z 8, 0 gorszych: tak |
-| C | ≥ 2/3 rozpoznanych | 6 z 8: tak |
-| P1 | każdy profil ≥ 95 % baseline | 0 poniżej: tak |
-| B | bez progu, zawód jeśli gorszy w S1 i S2 | 0 zawodów |
+| A | ≥ 2/3 styles better in S1 and S2, none worse in both | 8 of 8, 0 worse: yes |
+| C | ≥ 2/3 recognized | 6 of 8: yes |
+| P1 | each profile ≥ 95 % baseline | 0 below: yes |
+| B | no threshold, failure if worse in S1 and S2 | 0 failures |
 
-**Jak to czytać (zastrzeżenia, z których żadne nie jest drobne):**
-- A i C to dopasowanie do danych, z których profil powstał. Ręczne parametry są dalekie od większości celów (np. cel „caves” to prawie sama ziemia: 3,0 mln ppm baseline vs 12 712 profilu), więc „lepszy” jest łatwe do osiągnięcia; to dowodzi, że **generator potrafi odtworzyć rozkład rodzajów danego stylu**, nie że styl jest wiernie naśladowany.
-- Wynik mierzy rozkład udziałów, sąsiedztwa rodzajów, wegetację i spójność lądu. **Nie ocenia wyglądu** (kształty rzek i gór, klastry, naturalność), a rzeki wciąż prowadzą głównie po osiach (D6). Dopasowane wartości sięgają krańców siatek, więc profil jest granicą możliwości siatki, nie optimum.
-- Pięć stylów ma jedną mapę z celem; m01 to sama woda, caves to sam grunt ziemi, więc profil takiego stylu opisuje jeden rodzaj gruntu.
-- Nie ma jeszcze zapisanych plików profili stylów (narzędzie raportuje strojenia w JSON), ani podpięcia do GUI/`GenerationConfig`.
-- Nadal nie mierzono: podziemi, BlackTek, memoryzacji generatora względem referencji (D10), `border_error_rate`, 100 % poprawnych ID i zera zmian poza maską w pełnym potoku.
+**How to read this (caveats, none trivial):**
+- A and C are fitting to the data the profile came from. Manual parameters are far from most targets (e.g. “caves” target is almost pure ground: 3.0M ppm baseline vs 12 712 profile), so “better” is easy to achieve; this proves **generator can reproduce share distribution of a given style**, not that style is faithfully imitated.
+- Result measures share distribution, adjacency of types, vegetation and land coherence. **Does not assess appearance** (shapes of rivers and mountains, clusters, naturalness), and rivers still run mostly along axes (D6). Fitted values reach grid limits, so profile is a grid boundary, not optimum.
+- Five styles have one map with target; m01 is pure water, caves is pure ground, so profile of such style describes one ground type.
+- No style profile files recorded yet (tool reports tuning in JSON), no GUI/`GenerationConfig` wiring.
+- Still not measured: dungeons, BlackTek, generator output memorization vs. reference (D10), `border_error_rate`, 100 % correct IDs and zero changes outside mask in full pipeline.
 
-**Stan bramki G4 z planu (mapy niewidziane):** nie wykazana. Jedyny dowód na niewidzianej mapie (B, swamp, n = 2) jest korzystny, ale zbyt wąski. Aby ją wykazać, potrzeba co najmniej kilku stylów z ≥ 2 niezależnymi mapami z celem.
+**G4 gate status from plan (unseen maps):** not demonstrated. Only evidence on unseen map (B, swamp, n = 2) is favorable, but too narrow. To demonstrate it, need at least several styles with ≥ 2 independent maps with targets.
 
-## Iteracja 4 — kształt rzek (D9 część wodna, D6) (2026-11-08): kryterium D6 NIE spełnione
+## Iteration 4 — river shape (D9 water part, D6) (2026-11-08): criterion D6 NOT MET
 
-Kryteria zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 4”, commit `59b860c`); implementacja `99f617c`. Referencje z rzekami (≥ 5 składowych): tylko M06 (29 rzek, T 1626 ‰, S 0 ‰) i M19 (8 rzek, T 1669 ‰, S 0 ‰); pozostałe 10 map z ekstrakcją wody nie kwalifikuje się (kwalifikują się 2, więc ocena jest możliwa, ale na dwóch mapach, w dwóch foldach krzyżowych). Generator bez meandrowania: T 1361 ‰, S 181 ‰ (31 z 32 seedów z rzeką).
+Criteria recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 4”, commit `59b860c`); implementation `99f617c`. References with rivers (≥ 5 components): only M06 (29 rivers, T 1626 ‰, S 0 ‰) and M19 (8 rivers, T 1669 ‰, S 0 ‰); remaining 10 maps with water extraction do not qualify (2 qualify, so evaluation possible but on two maps, two cross folds). Generator without meandering: T 1361 ‰, S 181 ‰ (31 of 32 seeds with river).
 
-| Wariant | Meander (dopasowany) | T mediana | S mediana | T: lepszych/gorszych seedów (werdykt) | S: lepszych/gorszych (werdykt) | P1 (kandydat/baseline) | rzeka-wyspa |
+| Variant | Meander (fitted) | T median | S median | T: better/worse seeds (verdict) | S: better/worse (verdict) | P1 (candidate/baseline) | river-island |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 4a (pierwszy model) | 8 (maks. siatki) | 1398 | 70 | 18/9 (undecided) | 15/6 (undecided) | 99,997 % | 0 |
-| 4b (po zmianie modelu) | 8 (maks. siatki) | 1514 | 24 | 22/6 (undecided) | 16/5 (undecided) | 99,972 % | 0 |
+| 4a (first model) | 8 (grid max) | 1398 | 70 | 18/9 (undecided) | 15/6 (undecided) | 99.997 % | 0 |
+| 4b (after model change) | 8 (grid max) | 1514 | 24 | 22/6 (undecided) | 16/5 (undecided) | 99.972 % | 0 |
 
-Mediany różnic odległości od referencji (4b, fold M06→M19): T −58 ‰ (p10 −219, p90 +54), S −77 ‰ (p10 −281, p90 +79); fold M19→M06 analogicznie (−56 / −77). Wniosek mierzalny: rzeki są bardziej kręte (T +153 ‰ do referencji 1626–1669) i prawie bez długich odcinków prostych (S 181 → 24 ‰ przy referencji 0), ale kryterium (lepszy w T i S wg reguły: mediana < 0 i ≥ 75 % seedów) nie jest spełnione w żadnym z dwóch foldów: najlepszy udział seedów to 22/31 = 71 %, a nierozstrzygnięte przypadki wynikają głównie z remisów. Spełnione: P1 ≥ 95 % (kandydat ≈ baseline) i niezmiennik (0 porażek w 1200/1200 seedach: rzeka zawsze dochodzi do jeziora/krawędzi).
+Medians of distance differences from reference (4b, fold M06→M19): T −58 ‰ (p10 −219, p90 +54), S −77 ‰ (p10 −281, p90 +79); fold M19→M06 analogously (−56 / −77). Measurable conclusion: rivers are more sinuous (T +153 ‰ vs. reference 1626–1669) and nearly without long straight segments (S 181 → 24 ‰ at reference 0), but criterion (better in T and S by rule: median < 0 and ≥ 75 % seeds) not met in either fold: best seed fraction 22/31 = 71 %, and undecided cases result mostly from ties. Met: P1 ≥ 95 % (candidate ≈ baseline) and invariant (0 failures in 1200/1200 seeds: river always reaches lake/edge).
 
-**Zastrzeżenia (istotne).**
-- 4b to zmiana modelu po zobaczeniu wyniku 4a (zmiana fali, ciągłość, stemplowanie interpolowane, czyszczenie rzek-wysp); kryterium i seedy te same, ale to adaptacyjne ponowne użycie tych samych dwóch map. 4a jest wynikiem pierwotnym; 4b nie zastępuje go jako dowodu.
-- Fold jest dwuwarstwowy: dopasowanie na jednej mapie z rzekami, test na drugiej; obie dały meander 8, czyli dopasowanie nasyca się na krańcu siatki, więc optimum nie zostało znalezione.
-- Pomiar to szkielet kratowy (przybliżenie); progi (odcinek ≥ 12, składowa rzeczna) wybrane przed pomiarem bez wiedzy o czułości.
-- Nie oceniano wyglądu (ślepe A/B), rozwidleń, rozmiarów jezior, podziemi ani BlackTek. Referencja S = 0 oznacza, że w referencjach nie ma 12-kafelkowych prostych szkieletu; część tej różnicy może wynikać z samego szkieletowania.
-- Rzeki w profilach v6 mają meander 8 (profile v5 nie są już wspierane).
-- **Korekta (2026-11-08, [G4_COMPARE.md](G4_COMPARE.md)):** metryka rzek iteracji 4 pomija składowe wody ≥ 20 000 kafli (morze), więc duże rzeki połączone z morzem nie weszły ani do referencji, ani do dopasowania meandru. Referencje (M06 W ≈ 1,6) opisują wąskie strumienie, a rzeki generatora są szersze (W ≈ 4,4–6,6). Wynik iteracji 4 dotyczy tylko takich strumieni.
+**Caveats (significant).**
+- 4b is model change after seeing 4a result (wave change, continuity, interpolated stamping, river-island cleanup); criterion and seeds same, but this is adaptive reuse of same two maps. 4a is original result; 4b does not replace it as proof.
+- Fold is two-layer: fitting on one map with rivers, test on other; both yielded meander 8, so fitting saturates at grid boundary, optimum not found.
+- Measurement is grid skeleton (approximation); thresholds (segment ≥ 12, river component) chosen before measurement without sensitivity knowledge.
+- Did not assess appearance (blind A/B), bifurcations, lake sizes, dungeons or BlackTek. Reference S = 0 means no 12-tile straight skeletons in references; part of difference may come from skeletonization itself.
+- Rivers in v6 profiles have meander 8 (v5 profiles no longer supported).
+- **Correction (2026-11-08, [G4_COMPARE.md](G4_COMPARE.md)):** iteration 4 river metric skips water components ≥ 20,000 tiles (sea), so large rivers connected to sea did not enter reference or meander fitting. References (M06 W ≈ 1.6) describe narrow streams, generator rivers wider (W ≈ 4.4–6.6). Iteration 4 result concerns only such streams.
 
-## Iteracja 5a — kanały wodne, pomiar bazowy (2026-11-08)
+## Iteration 5a — water channels, baseline measurement (2026-11-08)
 
-Definicje i kryterium zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 5”, commit `f0e04bc`). Referencje (profil v7, mapowanie v3): kwalifikują się M06 (218 składowych), M08 (72), M10 (72), M19 (82), M07 i M09 mają po 1 (nie). Zgodnie z zapisem porównuję m06→M06 i m19→M19; M08 i M10 mają identyczne wartości (ta sama rodzina), nie weszły do oceny. Generator: seedy 1001–1032, bok 256, kanał w 32/32 seedach w obu profilach; dwa przebiegi bajtowo identyczne.
+Definitions and criterion recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 5”, commit `f0e04bc`). References (profile v7, map v3): qualify M06 (218 components), M08 (72), M10 (72), M19 (82), M07 and M09 have 1 each (no). By record, I compare m06→M06 and m19→M19; M08 and M10 have identical values (same family), not entered for evaluation. Generator: seeds 1001–1032, side 256, channel in 32/32 seeds in both profiles; two runs bit-identical.
 
-| Cecha | m06: generator | M06 | pasmo | m19: generator | M19 | pasmo |
+| Feature | m06: generator | M06 | band | m19: generator | M19 | band |
 | --- | --- | --- | --- | --- | --- | --- |
-| L (szkielet na 65 536 kafli) | 455 | 384 | 257–576: w paśmie | 832 | 302 | 202–453: **poza** |
-| W (szerokość, tys. kafla) | 4 679 | 2 898 | 1 942–4 347: **poza** (za szeroko) | 5 705 | 4 337 | 2 906–6 506: w paśmie |
-| B (rozgałęzienia / 100 kafli szkieletu, ×1000) | 26 987 | 41 134 | 27 560–61 701: **poza** (nieznacznie) | 32 744 | 38 913 | 26 072–58 370: w paśmie |
-| C (łączące się z wodą otwartą lub brzegiem, ‰) | 916 | 614 | 411–921: w paśmie (przy granicy) | 750 | 865 | 580–1 298: w paśmie |
-| W paśmie | **2 z 4: nie zaliczony** | | | **3 z 4: zaliczony** | | |
+| L (skeleton per 65,536 tiles) | 455 | 384 | 257–576: in band | 832 | 302 | 202–453: **out** |
+| W (width, thousandth tile) | 4,679 | 2,898 | 1,942–4,347: **out** (too wide) | 5,705 | 4,337 | 2,906–6,506: in band |
+| B (branches / 100 skeleton tiles, ×1000) | 26,987 | 41,134 | 27,560–61,701: **out** (slightly) | 32,744 | 38,913 | 26,072–58,370: in band |
+| C (connecting to open water or edge, ‰) | 916 | 614 | 411–921: in band (at border) | 750 | 865 | 580–1,298: in band |
+| In band | **2 of 4: not passed** | | | **3 of 4: passed** | | |
 
-**Wniosek (opis stanu, nie bramka).** Ilość i rozgałęzienie kanałów w generatorze są w tym samym rzędzie wielkości co w referencjach; wyjątki to zbyt szerokie kanały w m06 (4,7 vs 2,9 kafla) i 2,7 razy za dużo długości kanałów w m19. Pomiar nie wskazuje braku dopływów jako głównej różnicy między generatorem a referencjami; wcześniejsze wrażenie z oglądu (rzeki bez sieci) brało się z wycinka wybranego pod kątem największej ilości lądu oraz ze wspólnej skali szumu, której ta metryka nie opisuje.
+**Conclusion (status description, not gate).** Channel quantity and branching in generator are same order of magnitude as references; exceptions are too-wide channels in m06 (4.7 vs 2.9 tiles) and 2.7× too much channel length in m19. Measurement does not indicate lack of tributaries as main difference between generator and references; earlier visual impression (rivers without network) came from viewing angle chosen for most land and from shared noise scale this metric does not describe.
 
-**Zastrzeżenia.** Dopasowanie in-sample (profil z tej samej mapy). Dwie referencje z rzekami, dwie ocenione. Kanał to przybliżenie (otwarcie 13×13, kwadrat sprzyja osiom; wchodzą też wąskie zatoki i ramiona jezior). Nie oceniano wyglądu, struktur w dużej skali ani rzek w M08/M10. 5b (zmiana generatora) nie została wykonana, bo 5a nie wykazała wyraźnej luki w dopływach.
+**Caveats.** In-sample fitting (profile from same map). Two references with rivers, two evaluated. Channel is approximation (13×13 opening, square favors axes; also includes narrow inlets and lake arms). Did not assess appearance, large-scale structures, or rivers in M08/M10. 5b (generator change) not executed because 5a showed no clear tributary gap.
 
-## Iteracja 6 — struktury w dużej skali (2026-11-08): kryterium NIE spełnione w zapisanym układzie
+## Iteration 6 — large-scale structures (2026-11-08): criterion NOT MET in recorded layout
 
-Definicje i kryterium zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 6”, commit `5aa85a0`); rdzeń `scale_stats` z testem (PASS, wartości policzone ręcznie). Referencje (nadmiar zgodności E_d nad losowym układem, ‰): M06 E4 471, E16 394, E64 233; M19 E4 578, E16 425, E64 197. Seedy 1001–1032, bok 256, dwa przebiegi bajtowo identyczne.
+Definitions and criterion recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 6”, commit `5aa85a0`); `scale_stats` core with test (PASS, values computed manually). References (excess agreement E_d above random layout, ‰): M06 E4 471, E16 394, E64 233; M19 E4 578, E16 425, E64 197. Seeds 1001–1032, side 256, two runs bit-identical.
 
-| Wariant | Profil | E4 | E16 | E64 | E16 i E64 w paśmie |
+| Variant | Profile | E4 | E16 | E64 | E16 and E64 in band |
 | --- | --- | --- | --- | --- | --- |
-| 6a (profil v7: featureSize 24 / 12) | m06 | 454 | 147 | −12 | **0 z 2** |
-| | m19 | 310 | 16 | −1 | **0 z 2** |
-| 6b (featureSize dopasowany z siatki do 256 → 192 na seedach 1–6) | m06 | 571 | 399 (w paśmie) | 121 (pasmo 156–350: **poza**) | **1 z 2** |
-| | m19 | 606 | 399 (w paśmie) | 102 (pasmo 132–296: **poza**) | **1 z 2** |
+| 6a (profile v7: featureSize 24 / 12) | m06 | 454 | 147 | −12 | **0 of 2** |
+| | m19 | 310 | 16 | −1 | **0 of 2** |
+| 6b (featureSize fitted from grid 256 → 192 on seeds 1–6) | m06 | 571 | 399 (in band) | 121 (band 156–350: **out**) | **1 of 2** |
+| | m19 | 606 | 399 (in band) | 102 (band 132–296: **out**) | **1 of 2** |
 
-**Wniosek.** 6a pokazało lukę ilościowo: generator ma praktycznie zerową zgodność na odległości 16 i 64 ponad przypadek (referencje ok. 400 i 200–230). Zmiana samego `featureSize` na 192 zamyka lukę dla E4 i E16, ale E64 zostaje poniżej pasma w obu profilach, więc **kryterium 6b nie jest spełnione**.
+**Conclusion.** 6a showed gap quantitatively: generator has nearly zero agreement at distance 16 and 64 above chance (references ~400 and 200–230). Changing just `featureSize` to 192 closes gap for E4 and E16, but E64 stays below band in both profiles, so **6b criterion not met**.
 
-**Dodatkowa obserwacja (nie była zapisana z góry, jawnie eksploracyjna: bok 512, 8 seedów, bez oceny).** Przy boku 512 featureSize 192 daje E4/E16/E64 = 614/496/261 (m06) i 638/477/247 (m19), czyli wszystkie mieszczą się w pasmach. Zatem niedobór E64 przy boku 256 wynika w dużej części z ucinania odległości 64 przez okno 256 (zastrzeżenie zapisane z góry), a E_d zależy od wielkości obszaru. Wartość 192 nie jest więc ostatecznym wynikiem: dopasowanie zależy od wybranego boku, a w GUI użytkownik wybiera dowolny obszar.
+**Additional observation (not recorded ahead, explicitly exploratory: side 512, 8 seeds, no evaluation).** At side 512, featureSize 192 gives E4/E16/E64 = 614/496/261 (m06) and 638/477/247 (m19), all within bands. Thus E64 deficit at side 256 comes largely from lag 64 cutoff by window 256 (caveat recorded ahead), and E_d depends on area size. Value 192 is not therefore final result: fitting depends on chosen side, and in GUI user picks any area.
 
-**Zastrzeżenia.** Dopasowanie in-sample na dwóch referencjach; metryka nie odróżnia jednego dużego lądu od wielu dużych płatów; nie sprawdzono P1 (spójność chodzenia) ani niezmiennika rzek dla featureSize 192 (warunki dodatkowe 6b), więc 6b jest niepełne także z tego powodu. Wygląd oceni użytkownik w GUI na profilach `10.98-v8` (tylko m06 i m19 mają featureSize 192; to ręczna zmiana pliku profilu, nie wynik `style_styles`).
+**Caveats.** In-sample fitting on two references; metric does not distinguish one large land from many large patches; did not check P1 (walkability coherence) or river invariant for featureSize 192 (additional 6b conditions), so 6b incomplete for this reason too. User will assess appearance in GUI on profiles `10.98-v8` (only m06 and m19 have featureSize 192; this is manual profile file change, not `style_styles` output).
 
-## Iteracja 7 — plamy ziemi i szerokość plaży (2026-11-08): kryterium NIE spełnione
+## Iteration 7 — dirt patches and beach width (2026-11-08): criterion NOT MET
 
-Definicje, zmiana P na P′ i zmiana modelu zapisane przed pomiarami ([G4_METRICS.md](G4_METRICS.md), „Iteracja 7”, commity `6aa735e`, `1073167`, `79e54ad`); rdzeń `PatchStats` w `scale_stats` z testem (PASS, wartości policzone ręcznie).
+Definitions, change P to P′ and model change recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 7”, commits `6aa735e`, `1073167`, `79e54ad`); core `PatchStats` in `scale_stats` with test (PASS, values computed manually).
 
-**7a (bok 512, seedy 1001–1032, profile v8).** Referencje M06 / M19: D 421 / 451, F 749 / 625, P′ 5 638 / 5 656. Generator m06: D 112, F 975, P′ 1 987; m19: D 203, F 951, P′ 1 979. W paśmie: m06 1 z 3 (F), m19 0 z 3. Pierwotna definicja P (grubość plaży względem wszystkich komórek Shore) dała dla referencji 33 795 i 22 366 (piasek daleko od wody), więc ją zastąpiono P′ przed oceną generatora.
+**7a (side 512, seeds 1001–1032, profile v8).** References M06 / M19: D 421 / 451, F 749 / 625, P′ 5 638 / 5 656. Generator m06: D 112, F 975, P′ 1 987; m19: D 203, F 951, P′ 1 979. In band: m06 1 of 3 (F), m19 0 of 3. Original definition P (beach thickness relative to all Shore cells) gave for references 33 795 and 22 366 (sand far from water), so it was replaced with P′ before generator evaluation.
 
-**7b (dopasowanie na seedach 1–4, bok 512, zmiana reguły pierścieni plaży: próg szumu ≤ 80 %, wymagane jezioro ≤ 270 komórek, limit `shoreWidth` 8).** Spadek współrzędnych wskazał oba profile na granice siatek: `transitionWidth` 16 000 i `shoreWidth` 8. Wartości po dopasowaniu: m06 D 210, F 948, P′ 2 316; m19 D 206, F 939, P′ 2 315. **Pasma nadal niespełnione**: D (pasmo 282–632 i 302–676) jest poniżej, P′ (3 777–8 457 i 3 790–8 484) jest poniżej. Zmiana zapisanej reguły pierścieni podniosła P′ tylko z ok. 1 980 do ok. 2 315, bo pierścienie powyżej trzeciego powstają z małym prawdopodobieństwem (próg szumu 80 %). Do referencji (≈ 5 600, czyli plaża ok. 5–6 komórek) brakuje jeszcze więcej niż dwukrotnie.
+**7b (fitting on seeds 1–4, side 512, change to shore ring rule: noise threshold ≤ 80 %, required lake ≤ 270 cells, limit `shoreWidth` 8).** Descent of coordinates indicated both profiles at grid boundaries: `transitionWidth` 16 000 and `shoreWidth` 8. Values after fitting: m06 D 210, F 948, P′ 2 316; m19 D 206, F 939, P′ 2 315. **Bands still not met**: D (band 282–632 and 302–676) is below, P′ (3 777–8 457 and 3 790–8 484) is below. Change to recorded ring rule raised P′ only from ~1 980 to ~2 315, because rings above the third form with low probability (noise threshold 80 %). Relative to reference (~5 600, i.e. beach ~5–6 cells), more than twice as much is still missing.
 
-**Wnioski i zastrzeżenia.**
-- Metryki D i F pokazują, że granica ziemi w generatorze jest **gładsza** (D niższe), a nie bardziej poszarpana niż w referencjach (które mają wiele małych plam ziemi). To nie zgadza się z oceną wizualną „kropkowana ziemia”; D i F nie mierzą drobnych „kropek” (składowych ≤ 4 komórek). Dopasowanie względem D zwiększyłoby poszarpanie, więc nie jest oczywiste, że poprawia wygląd dla użytkownika.
-- Beach: pełne dopasowanie wymaga zmiany modelu (nowy parametr lub inna reguła pierścieni, zmiana schematu profilu), niezapisana jeszcze.
-- Dopasowanie in-sample na dwóch referencjach; testy rdzenia PASS (w tym zmieniony limit `shoreWidth` ≤ 8); profile v8 w `local-data` nie zostały zmienione.
+**Conclusions and caveats.**
+- Metrics D and F show that the land boundary in the generator is **smoother** (lower D), not more ragged than in references (which have many small land patches). This does not match visual assessment “dotted land”; D and F do not measure fine “dots” (components ≤ 4 cells). Fitting relative to D would increase raggedness, so it is not obvious that it improves appearance for the user.
+- Beach: full fitting requires model change (new parameter or different ring rule, profile schema change), not yet recorded.
+- In-sample fitting on two references; core tests PASS (including changed limit `shoreWidth` ≤ 8); profile v8 in `local-data` was not changed.
 
-### Iteracja 7c — plaża (2026-11-08): P′ w paśmie w obu profilach
+### Iteration 7c — beach (2026-11-08): P′ in band for both profiles
 
-Kryteria zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 7c”). Reguła pierścieni plaży: próg szumu min(5 + 10·pierścień, 40) %, wymagane jezioro min(30·3^(pierścień−1), 90) komórek. `shoreWidth` wybrany z {0..8} na seedach 1–4 (bok 512): 8 w m06 i m19 (P′ rośnie z 1 000 przy 1 do 5 835 / 5 807 przy 8, referencje 5 638 / 5 656). Ocena na seedach 1001–1032, bok 512, profile `g4-profiles/10.98-v9`:
+Criteria recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 7c”). Beach ring rule: noise threshold min(5 + 10·ring, 40) %, required lake min(30·3^(ring−1), 90) cells. `shoreWidth` chosen from {0..8} on seeds 1–4 (side 512): 8 for m06 and m19 (P′ grows from 1 000 at 1 to 5 835 / 5 807 at 8, references 5 638 / 5 656). Evaluation on seeds 1001–1032, side 512, profile `g4-profiles/10.98-v9`:
 
-| Profil | P′ generatora | referencja | pasmo | wynik |
+| Profile | P′ generator | reference | band | result |
 | --- | --- | --- | --- | --- |
-| m06 | 5 912 | 5 638 | 3 777–8 457 | **w paśmie** |
-| m19 | 5 871 | 5 656 | 3 790–8 484 | **w paśmie** |
+| m06 | 5 912 | 5 638 | 3 777–8 457 | **in band** |
+| m19 | 5 871 | 5 656 | 3 790–8 484 | **in band** |
 
-Udział Shore rośnie z ok. 1 % do 3,4 % (cel zmiany); pozostałe udziały spadają o mniej niż 3 punkty procentowe (m06 Grass 41,2 → 39,9 %, m19 Grass 28,1 → 26,4 %), więc warunek dodatkowy spełniony. **Niezmiennik rzek nie był ponownie mierzony** (plaża jest nakładana przed rzekami, które nadpisują komórki, więc reguła plaży go nie dotyka; nie sprawdzono pomiarem), nie uruchamiano regresji G1 `--commit` po zmianie reguły. Test rdzenia PASS po zmianie przypiętego odcisku Seed 1729 100×100 z 6783381837833077004 na 9975948746684599016 (zmiana reguły zmienia wynik dla `shoreWidth` ≥ 1, zgodnie z zapisem; wcześniejsze odciski w dokumentach G2 są historyczne).
+Shore share grows from ~1 % to 3.4 % (goal of change); remaining shares decline by less than 3 percentage points (m06 Grass 41.2 → 39.9 %, m19 Grass 28.1 → 26.4 %), so additional condition met. **River invariant not remeasured** (beach is laid before rivers, which overwrite cells, so beach rule does not affect it; not verified by measurement), G1 regression `--commit` not run after rule change. Core test PASS after changing pinned Seed 1729 100×100 snapshot from 6783381837833077004 to 9975948746684599016 (rule change alters result for `shoreWidth` ≥ 1, as recorded; earlier snapshots in G2 documents are historical).
 
-**Zastrzeżenia.** In-sample na dwóch referencjach; P′ to miara grubości (nie wyglądu); w referencjach plaża obejmuje także piasek wokół kałuż i rzek, a generator jej nie robi przy rzekach; ocena wzrokowa w GUI należy do użytkownika. Ziemia (D, F) nie została zmieniona w tym kroku (D pozostaje poniżej pasma), czeka na wybór kierunku.
+**Caveats.** In-sample on two references; P′ is a thickness measure (not appearance); in references beach includes sand around puddles and rivers, which generator does not do at rivers; visual assessment in GUI is user's responsibility. Land (D, F) was not changed in this step (D remains below band), awaits direction choice.
 
-### Korekta profilu m19 (2026-11-08, na prośbę użytkownika po ocenie wzrokowej)
+### m19 profile correction (2026-11-08, by user request after visual assessment)
 
-Po oglądzie v9 użytkownik uznał, że trawa i ziemia w m19 tworzą „wąskie paski” (kropkowaną mozaikę), w m06 zwarte plamy. `transitionWidth` m19 obniżony z 16 000 (górna granica siatki dopasowania) do 6 000 jak w m06: profile `g4-profiles/10.98-v10` (ręczna zmiana pliku, nie wynik `style_styles`). Decyzja wzrokowa użytkownika ma pierwszeństwo przed metryką: D (granica trawa/ziemia) m19 spada względem 7a/7c, czyli dalej od referencji M19 (451), co jest świadomą zgodą. Inne profile z `transitionWidth` 16 000 (m05, winter) nie zostały zmienione.
+After viewing v9, user found that grass and dirt in m19 form “narrow strips” (dotted mosaic), while m06 has solid patches. `transitionWidth` for m19 lowered from 16 000 (upper fitting grid boundary) to 6 000 as in m06: profile `g4-profiles/10.98-v10` (manual file change, not `style_styles` output). User's visual decision takes precedence over metric: D (grass/dirt boundary) for m19 drops relative to 7a/7c, thus farther from reference M19 (451), which is conscious agreement. Other profiles with `transitionWidth` 16 000 (m05, winter) were not changed.
 
-## Iteracja 8 — masywy skalne (2026-11-08): kryterium NIE spełnione
+## Iteration 8 — rock massifs (2026-11-08): criterion NOT MET
 
-Definicje, wynik 8a i zmiana modelu zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 8”, commity `ee52877`, `76a859e`); rdzeń `PatchStats` rozszerzony o skałę (test PASS, wartości policzone ręcznie). Referencje M06 / M19: RB (granica skały) 333 / 121, RF (zwartość ≥ 500) 167 / 862, RS (pył < 20) 36 / 15.
+Definitions, result 8a and model change recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 8”, commits `ee52877`, `76a859e`); core `PatchStats` extended for rock (test PASS, values computed manually). References M06 / M19: RB (rock boundary) 333 / 121, RF (compactness ≥ 500) 167 / 862, RS (dust < 20) 36 / 15.
 
-| Wariant (v10, bok 512, seedy 1001–1032) | m06 RB / RF / RS | m19 RB / RF / RS | w paśmie |
+| Variant (v10, side 512, seeds 1001–1032) | m06 RB / RF / RS | m19 RB / RF / RS | in band |
 | --- | --- | --- | --- |
-| 8a (3 oktawy szumu wysokości) | 49 / 998 / 0 | 33 / 1000 / 0 | m06 0 z 3, m19 2 z 3 |
-| 8b (więcej oktaw przy `featureSize` > 24, do 8; 6 dla 192) | 77 / 988 / 0 | 47 / 993 / 0 | m06 0 z 3, m19 2 z 3 |
+| 8a (3 octaves height noise) | 49 / 998 / 0 | 33 / 1000 / 0 | m06 0 of 3, m19 2 of 3 |
+| 8b (more octaves for `featureSize` > 24, up to 8; 6 for 192) | 77 / 988 / 0 | 47 / 993 / 0 | m06 0 of 3, m19 2 of 3 |
 
-**Wniosek.** Skała generatora jest gładka i zlana w duże bryły (granica 3–10 razy krótsza niż w referencjach; referencyjna skała M06 jest rozdrobniona, M19 zwarta, ale z nierówną krawędzią). Dodatkowe oktawy podniosły RB o ok. 40–55 %, ale nie wystarczyły do pasma; **kryterium nie spełnione**. Przyczyną luki było to, że podniesienie `featureSize` do 192 w iteracji 6 usunęło drobny szczegół z brzegów skały, jezior i plaż (szum miał 3 oktawy).
+**Conclusion.** Generator rock is smooth and merged into large blocks (boundary 3–10 times shorter than in references; reference rock M06 is fragmented, M19 is compact but with jagged edge). Extra octaves raised RB by ~40–55 %, but not enough for band; **criterion not met**. Cause of gap: raising `featureSize` to 192 in iteration 6 removed fine detail from rock, lake, and beach edges (noise had 3 octaves).
 
-**Skutki uboczne 8b (kontrola, nie kryterium).** Udziały rodzajów w granicach ±5 punktów procentowych wobec v10 (m06 Grass 390 ‰, Dirt 173 ‰, Shore 45 ‰; m19 Grass 277 ‰, Dirt 127 ‰, Shore 45 ‰), P′ 5 549 / 5 530 (nadal w paśmie), E4/E16/E64 przy boku 512: m06 604 / 448 / 224 (ref 471 / 394 / 233), m19 647 / 496 / 236 (ref 578 / 425 / 197). Zmiana szumu dotyczy profili z `featureSize` > 24 (m06, m19, winter); dla ≤ 24 wynik bajt w bajt jak dotąd (przypięty odcisk Seed 1729 bez zmian, test PASS).
+**Side effects of 8b (control, not criterion).** Kind shares within ±5 percentage points vs. v10 (m06 Grass 390 ‰, Dirt 173 ‰, Shore 45 ‰; m19 Grass 277 ‰, Dirt 127 ‰, Shore 45 ‰), P′ 5 549 / 5 530 (still in band), E4/E16/E64 at side 512: m06 604 / 448 / 224 (ref 471 / 394 / 233), m19 647 / 496 / 236 (ref 578 / 425 / 197). Noise change affects profiles with `featureSize` > 24 (m06, m19, winter); for ≤ 24 result is byte-for-byte as before (pinned Seed 1729 snapshot unchanged, test PASS).
 
-**Zastrzeżenia.** Dwie referencje; skała M06 to tylko ok. 5 % powierzchni; nie sprawdzono niezmiennika rzek ani regresji G1 po zmianie szumu (rzeki zależą od wysokości, więc wpływ jest możliwy); wygląd oceni użytkownik w GUI. Pozostała luka (granica skały) wymagałaby drobnoziarnistego zaburzenia progu skały, niezapisanego jeszcze.
+**Caveats.** Two references; rock M06 is only ~5 % of area; river invariant and G1 regression after noise change not checked (rivers depend on height, so impact possible); appearance to be assessed by user in GUI. Remaining gap (rock boundary) would require fine-grained disturbance of rock threshold, not yet recorded.
 
-**Ocena użytkownika (2026-11-08, GUI, m19 500×500 po iteracji 8b):** „wygląda ok” (brzegi, skała i plaża po dodaniu oktaw szumu); ocena subiektywna, nie zmienia wyniku metryk (kryterium iteracji 8 nadal niespełnione).
+**User assessment (2026-11-08, GUI, m19 500×500 after iteration 8b):** “looks ok” (edges, rock and beach after adding octaves); subjective assessment, does not change metric result (iteration 8 criterion still not met).
 
-## Iteracja 9a — szlaki: czy da się je zmierzyć w referencjach (2026-11-08)
+## Iteration 9a — paths: can they be measured in references (2026-11-08)
 
-Definicja (lista kluczy gruntu i składowa szlaku) zapisana przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9”, commit `468b8ee`); funkcja `extractKeyShapes` z testem (PASS, wartości policzone ręcznie), wyjście sondy `paths-surface.txt`. Wszystkie 19 map referencyjnych (mapowanie v3), z ≤ 7; bez oceny, tylko opis.
+Definition (list of ground keys and path component) recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 9”, commit `468b8ee`); function `extractKeyShapes` with test (PASS, values computed manually), probe output `paths-surface.txt`. All 19 reference maps (mapping v3), floor ≤ 7; no evaluation, description only.
 
-| Mapa | składowych szlaku | L (szkielet na 65 536 kafli) | W (tys. kafla) | B (rozgałęzienia, ×1000 na 100 kafli) | kafli szlaku | udział w obecnych kaflach |
+| Map | path components | L (skeleton per 65,536 tiles) | W (thousandths tile) | B (branches, ×1000 per 100 tiles) | path tiles | share of present tiles |
 | --- | --- | --- | --- | --- | --- | --- |
-| M06 | 22 | 70 | 3 642 | 30 200 | 12 905 | 0,46 % |
-| M19 | 5 | 78 | 4 606 | 26 259 | 7 346 | 0,72 % |
-| pozostałe 17 | 0 | — | — | — | ≤ 2 | ≈ 0 |
+| M06 | 22 | 70 | 3 642 | 30 200 | 12 905 | 0.46 % |
+| M19 | 5 | 78 | 4 606 | 26 259 | 7 346 | 0.72 % |
+| other 17 | 0 | — | — | — | ≤ 2 | ≈ 0 |
 
-**Wniosek.** Szlaki (wg wąskiej listy kluczy: bruk, żwir, chodnik) da się zmierzyć w dwóch mapach (M06: 22 składowe, M19: dokładnie 5, czyli na granicy kwalifikacji); zajmują 0,5–0,7 % powierzchni i mają rząd ok. 70–80 kafli szkieletu na 65 536 kafli (np. w obszarze 512×512 to ok. 300 kafli, kilka odcinków po kilkadziesiąt kafli). Warunek zapisany z góry (≥ 2 kwalifikujące się mapy) jest spełniony, więc generowanie szlaków nie jest zablokowane danymi, ale podstawa jest bardzo wąska.
+**Conclusion.** Paths (by narrow key list: cobblestone, gravel, pavement) can be measured in two maps (M06: 22 components, M19: exactly 5, at boundary of qualification); occupy 0.5–0.7 % of area and have order of ~70–80 skeleton tiles per 65 536 tiles (e.g. in 512×512 area ~300 tiles, several segments of tens of tiles each). Condition recorded ahead (≥ 2 qualifying maps) is met, so path generation is not blocked by data, but foundation is very narrow.
 
-**Zastrzeżenia.** Rozpoznanie po nazwie brusha (heurystyka); szlak z innego gruntu (np. ubita ziemia, piasek) jest niewidoczny; wartość M19 oparta na 5 składowych; generator szlaków nie istnieje, więc stan bazowy generatora jest zerowy z definicji. Generowanie wymagałoby nowego rodzaju powierzchni przechodzącego przez resolver, okno generatora (pole brusha szlaku), profil (schemat) i odcisk podglądu.
+**Caveats.** Recognition by brush name (heuristic); paths from other ground (e.g. beaten earth, sand) invisible; M19 value based on 5 components; path generator does not exist, so generator baseline is zero by definition. Generation would require new surface kind passing through resolver, generator window (path brush field), profile (schema), and preview snapshot.
 
-## Iteracja 9b — opcjonalne szlaki (2026-11-08): metryka w paśmie, integracja z GUI niezweryfikowana
+## Iteration 9b — optional paths (2026-11-08): metric in band, GUI integration unverified
 
-Model, kryteria i cele zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9”, commity `468b8ee`, `4ea15a3`). Zaimplementowano: `SurfaceKind::Path`, `SurfaceTuning::pathLength` (0 = wyłączone, nie jest częścią profilu stylu), trasy A* po Grass/Dirt/Shore między losowymi punktami lądu (odległość 48–160, koszt z szumem, szerokość 3–4), resolver z siódmym pędzlem (profil z 7 pędzlami; z 6 odrzuca siatkę ze szlakami), pola „Path length” i „Path brush” w oknie generatora (domyślnie 0, pędzel `cobblestone`), odcisk podglądu z `pathLength`.
+Model, criteria and goals recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 9”, commits `468b8ee`, `4ea15a3`). Implemented: `SurfaceKind::Path`, `SurfaceTuning::pathLength` (0 = disabled, not part of style profile), A* routes over Grass/Dirt/Shore between random land points (distance 48–160, cost with noise, width 3–4), resolver with seventh brush (profile with 7 brushes; with 6 rejects grid with paths), “Path length” and “Path brush” fields in generator window (default 0, `cobblestone` brush), preview snapshot with `pathLength`.
 
-**Pomiar (seedy 1001–1032, bok 512, profile v10; `pathLength` dobrany na seedach 1–4 z {40, 80, 160, 320}: 40 dla m06, 80 dla m19; kanał szlaku jak w 9a: pole ≥ 40, szkielet ≥ 20, szerokość ≤ 7):**
+**Measurement (seeds 1001–1032, side 512, profile v10; `pathLength` chosen on seeds 1–4 from {40, 80, 160, 320}: 40 for m06, 80 for m19; path channel as in 9a: area ≥ 40, skeleton ≥ 20, width ≤ 7):**
 
-| Profil | seedy ze szlakiem | L (ref.) | W (ref.) | B (ref.) | w paśmie |
+| Profile | seeds with paths | L (ref.) | W (ref.) | B (ref.) | in band |
 | --- | --- | --- | --- | --- | --- |
-| m06, `pathLength` 40 | 32/32 | 53,5 (70) | 3 679 (3 642) | 28 494 (30 200) | **3 z 3** |
-| m19, `pathLength` 80 | 32/32 | 92,5 (78) | 3 746 (4 606) | 29 639 (26 259) | **3 z 3** |
+| m06, `pathLength` 40 | 32/32 | 53.5 (70) | 3 679 (3 642) | 28 494 (30 200) | **3 of 3** |
+| m19, `pathLength` 80 | 32/32 | 92.5 (78) | 3 746 (4 606) | 29 639 (26 259) | **3 of 3** |
 
-Testy rdzenia PASS (`paths`: wyłączone dają wynik bajt w bajt jak dotąd — przypięty odcisk Seed 1729 bez zmian; szlak nigdy nie nadpisuje skały, jeziora ani rzeki; deterministyczne; `pathLength` 401 odrzucone).
+Core tests PASS (`paths`: disabled gives byte-for-byte result as before — pinned Seed 1729 snapshot unchanged; path never overwrites rock, lake or river; deterministic; `pathLength` 401 rejected).
 
-**Czego NIE zweryfikowano.** Pełnej ścieżki GUI: `rme.exe` nie został zlinkowany, bo RME działa (blokada pliku), więc okno generatora z polami szlaku, resolver z siedmioma pędzlami, Preview/Validate/Place/Undo ze szlakami nie były uruchamiane; nie uruchamiano regresji G1 `--commit` ani sondy palety po zmianie resolvera; warunku dodatkowego „udziały rodzajów ±1 punkt procentowy” nie mierzono osobno (szlaki zajmują 0,5–1 % powierzchni); szlaki nie mają celów (osad, bram), nie łączą się z mostami, nie dostają roślinności; cele pochodzą z dwóch map (M19: 5 składowych), więc „w paśmie” oznacza zgodność z dwiema referencjami, nie realizm.
+**What was NOT verified.** Full GUI path: `rme.exe` not linked because RME runs (file lock), so generator window with path fields, resolver with seven brushes, Preview/Validate/Place/Undo with paths were not run; G1 `--commit` regression not run nor palette probe after resolver change; additional condition “kind shares ±1 percentage point” not measured separately (paths occupy 0.5–1 % of area); paths have no targets (settlements, gates), do not connect to bridges, do not get vegetation; targets come from two maps (M19: 5 components), so “in band” means agreement with two references, not realism.
 
-### Iteracja 9c — wygładzenie szlaków (2026-11-08): L i W w paśmie, B poza pasmem (świadomie)
+### Iteration 9c — path smoothing (2026-11-08): L and W in band, B out of band (intentionally)
 
-Zapis kryteriów powstał po pomiarze (zaniedbanie procesu opisane w [G4_METRICS.md](G4_METRICS.md), „Iteracja 9c”; kryteria jak w 9b i przedstawione użytkownikowi przed zmianą): ruchy po przekątnej, koszt przy skale, wygładzenie średnią ruchomą. Pomiar (seedy 1001–1032, bok 512, v10): **m06** (`pathLength` 40): L 56,5 (ref. 70) w paśmie, W 4 546 (ref. 3 642) w paśmie, **B 3 697 (ref. 30 200) poza pasmem**; **m19** (80): L 89,5 (78) w paśmie, W 4 526 (4 606) w paśmie, **B 5 700 (26 259) poza pasmem**. Przed zmianą B wynosiło 28 494 / 29 639 (w paśmie). Udział komórek szlaku przy skale: mediana 0 ‰ / 13 ‰ (wcześniej 0 / 9 ‰), czyli nie zmieniło się (ten przypadek jest rzadki).
+Criteria recorded after measurement (process lapse described in [G4_METRICS.md](G4_METRICS.md), “Iteration 9c”; criteria as in 9b and presented to user before change): diagonal moves, cost at rock, moving average smoothing. Measurement (seeds 1001–1032, side 512, v10): **m06** (`pathLength` 40): L 56.5 (ref. 70) in band, W 4 546 (ref. 3 642) in band, **B 3 697 (ref. 30 200) out of band**; **m19** (80): L 89.5 (78) in band, W 4 526 (4 606) in band, **B 5 700 (26 259) out of band**. Before change B was 28 494 / 29 639 (in band). Share of path tiles at rock: median 0 ‰ / 13 ‰ (previously 0 / 9 ‰), so unchanged (this case is rare).
 
-**Wniosek.** Spadek B nie oznacza mniej rozgałęzień szlaków, tylko mniej „rozgałęzień” szkieletu: metryka B liczy kafle szkieletu z ≥ 3 sąsiadami, a poszarpany, schodkowy obrys szlaku daje ich wiele (artefakt szkieletowania), podobnie jak w ręcznie malowanych szlakach referencji. Wygładzone szlaki są bliższe temu, czego chciał użytkownik (płynne łuki, oględziny wycinka 200×200 potwierdzają gładki łuk o szerokości 3–4), ale **kryterium B z 9b nie jest spełnione**; decyzję wzrokową użytkownika przyjęto nad metryką. Testy rdzenia PASS (szlak nigdy na rock/lake/river, deterministyczne, wyłączone = bajt w bajt jak dotąd). Zastrzeżenia jak w 9b; ocena wzrokowa w GUI po wygładzeniu należy do użytkownika.
+**Conclusion.** B decrease does not mean fewer path branches, only fewer skeleton “branches”: metric B counts skeleton tiles with ≥ 3 neighbors, and ragged, stepped path outline produces many (skeletonization artifact), as in manually drawn reference paths. Smoothed paths are closer to what user wanted (smooth curves; view of 200×200 section confirms smooth curve width 3–4), but **criterion B from 9b not met**; accepted user's visual decision over metric. Core tests PASS (path never on rock/lake/river, deterministic, disabled = byte-for-byte as before). Caveats as in 9b; visual assessment in GUI after smoothing is user's responsibility.
 
-### Iteracja 9d — odpychanie szlaków od skały (2026-11-08): kryterium spełnione
+### Iteration 9d — path repulsion from rock (2026-11-08): criterion met
 
-Kryterium zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 9d”, commit `f8ae580`): udział komórek szlaku z Rock w promieniu 3 (średnia i mediana po seedach) o co najmniej połowę niższy; L i W w paśmie; testy rdzenia PASS. Zmiana: koszt A* rośnie z bliskością skały (60/40/25/12 dla odległości 1/2/3/4). Wynik (seedy 1001–1032, bok 512, v10, `pathLength` 40 / 80):
+Criterion recorded before change ([G4_METRICS.md](G4_METRICS.md), “Iteration 9d”, commit `f8ae580`): share of path tiles with Rock within radius 3 (mean and median across seeds) at least half lower; L and W in band; core tests PASS. Change: A* cost grows with rock proximity (60/40/25/12 for distances 1/2/3/4). Result (seeds 1001–1032, side 512, v10, `pathLength` 40 / 80):
 
-| Profil | rocknear mediana przed → po | rocknear średnia przed → po | L (ref.) | W (ref.) |
+| Profile | rocknear median before → after | rocknear mean before → after | L (ref.) | W (ref.) |
 | --- | --- | --- | --- | --- |
-| m06 | 0 → 0 ‰ | 36,9 → 8,2 ‰ | 55,5 (70), w paśmie | 4 434 (3 642), w paśmie |
-| m19 | 87,5 → 10 ‰ | 99,4 → 16,7 ‰ | 91,0 (78), w paśmie | 4 655 (4 606), w paśmie |
+| m06 | 0 → 0 ‰ | 36.9 → 8.2 ‰ | 55.5 (70), in band | 4 434 (3 642), in band |
+| m19 | 87.5 → 10 ‰ | 99.4 → 16.7 ‰ | 91.0 (78), in band | 4 655 (4 606), in band |
 
-Spadek średniej: m19 ok. 83 %, m06 ok. 78 %. Testy rdzenia PASS. **Potwierdzone przez użytkownika w GUI (2026-11-08):** Validate i Undo/Redo ze szlakami przeszły; użytkownik wybrał własny brush szlaku (ciemny), co wyjaśnia wygląd na zrzutach 9c. Zastrzeżenia: mediana w stanie bazowym była już niska (przypadek rzadki, stąd kontrola średnią); B nadal poza pasmem (artefakt opisany w 9c); ocena wzrokowa po 9d należy do użytkownika; udziały rodzajów po dodaniu szlaków nie były mierzone osobno.
+Mean decrease: m19 ~83 %, m06 ~78 %. Core tests PASS. **Confirmed by user in GUI (2026-11-08):** Validate and Undo/Redo with paths passed; user chose own path brush (dark), which explains appearance in 9c screenshots. Caveats: baseline median already low (rare case, hence mean control); B still out of band (artifact described in 9c); visual assessment after 9d user's responsibility; kind shares after adding paths not measured separately.
 
-### Regresja G1/G2 po zmianach iteracji 3–9 (2026-11-08)
+### G1/G2 regression after iteration 3–9 changes (2026-11-08)
 
-Sondy na rzeczywistym kliencie 10.98 z prywatnego profilu (`g1_run_resolver_probe.py`, bieżący kod: profile v6–v10, meander, szlaki, nowa reguła plaży, więcej oktaw szumu):
-- `--commit` (`g4-reg-commit-20261108a`): `"passed": true`, `input_assets_unchanged: true`, `stderr` pusty; PREVIEW_PASS, COMMIT_PASS, COMMIT_SIZE_PASS ×2, PREVIEW_BASE_GROUND/EXCLUDED/MASK_EPOCH_PASS, testy błędów (preparation, validation, selection) PASS.
-- `--surface` (`g4-reg-surface-20261108a`): wszystkie asercje PASS (SURFACE_RESOLVER_PASS, SURFACE_RESOLVER_SIZE_PASS ×6, SURFACE_E2E_PASS ×2, SURFACE_VEGETATION_E2E_PASS ×2, SURFACE_NEXT_TO_TERRAIN_PASS ×3, SURFACE_BORDER_STATS ×6 bez par bez borderu); `"passed": false` wyłącznie dlatego, że `stderr` nie jest pusty: 7 ostrzeżeń wxWidgets `SetFocus` (błąd Win32 87), **identycznych co do liczby i rozmiaru (1 113 bajtów) jak w historycznym przebiegu G2 `g2g-surface-182831`**, czyli znany dług D1/D2, a nie skutek tych zmian.
+Probes on real client 10.98 from private profile (`g1_run_resolver_probe.py`, current code: profiles v6–v10, meander, paths, new beach rule, more noise octaves):
+- `--commit` (`g4-reg-commit-20261108a`): `"passed": true`, `input_assets_unchanged: true`, `stderr` empty; PREVIEW_PASS, COMMIT_PASS, COMMIT_SIZE_PASS ×2, PREVIEW_BASE_GROUND/EXCLUDED/MASK_EPOCH_PASS, error tests (preparation, validation, selection) PASS.
+- `--surface` (`g4-reg-surface-20261108a`): all assertions PASS (SURFACE_RESOLVER_PASS, SURFACE_RESOLVER_SIZE_PASS ×6, SURFACE_E2E_PASS ×2, SURFACE_VEGETATION_E2E_PASS ×2, SURFACE_NEXT_TO_TERRAIN_PASS ×3, SURFACE_BORDER_STATS ×6 no pairs no border); `"passed": false` only because `stderr` not empty: 7 wxWidgets `SetFocus` warnings (Win32 error 87), **identical in number and size (1 113 bytes) as in historical G2 run `g2g-surface-182831`**, i.e. known debt D1/D2, not result of these changes.
 
-**Co regresja NIE obejmuje.** Sondy używają profilu z 6 pędzlami (bez szlaków); ścieżkę z 7 pędzlami (szlaki) potwierdził użytkownik w GUI (Preview, Validate, Place, Undo/Redo), bez osobnej sondy. Nie powtarzano pomiarów wydajności.
+**What regression does NOT cover.** Probes use profile with 6 brushes (no paths); 7-brush path (paths) confirmed by user in GUI (Preview, Validate, Place, Undo/Redo), without separate probe. Performance measurements not repeated.
 
-## Iteracja 10 — przejścia między rodzajami (2026-11-08): m06 8 z 8, m19 2 z 8; kryterium NIE spełnione dla m19
+**What regression does NOT cover.** Probes use profile with 6 brushes (no paths); 7-brush path (paths) confirmed by user in GUI (Preview, Validate, Place, Undo/Redo), without separate probe. Performance measurements not repeated.
 
-Definicje i kolejne zmiany zapisane przed wykonaniem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 10”, commity `4f5ff75`, `5ec7c07`, `354d9a7`); rdzeń `PatchStats` rozszerzony o skład granic skały i ziemi (test PASS, wartości policzone ręcznie).
+## Iteration 10 — transitions between kinds (2026-11-08): m06 8 of 8, m19 2 of 8; criterion NOT MET for m19
 
-**Referencje (skład granicy):** M06 skała RD/RG/RS/RW 33/938/24/4, ziemia DG/DR/DS/DW 951/32/12/4; M19 skała 99/502/251/147, ziemia 728/155/27/88.
+Definitions and subsequent changes recorded before execution ([G4_METRICS.md](G4_METRICS.md), “Iteration 10”, commits `4f5ff75`, `5ec7c07`, `354d9a7`); core `PatchStats` extended for rock and dirt boundary composition (test PASS, values computed manually).
 
-| Wariant (v10, bok 512, seedy 1001–1032) | m06 w paśmie | m19 w paśmie | uwagi |
+**References (boundary composition):** M06 rock RD/RG/RS/RW 33/938/24/4, dirt DG/DR/DS/DW 951/32/12/4; M19 rock 99/502/251/147, dirt 728/155/27/88.
+
+| Variant (v10, side 512, seeds 1001–1032) | m06 in band | m19 in band | notes |
 | --- | --- | --- | --- |
-| 10a (bez zmian) | 6 z 8 | 3 z 8 | ziemia styka się ze skałą i plażą proporcjonalnie do udziału (RD 254–322 wobec 33–99; DS 145–194 wobec 12–27) |
-| 10b (pełna obwódka trawy 2 komórki wokół Rock i Shore) | 8 z 8 | 2 z 8 | RD 0 (m19 ref. 99) poza pasmem, DR 0 (155) wypadło z pasma |
-| 10c (obwódka częściowa wokół Rock, ok. 75 %; pełna wokół Shore) | **8 z 8** (RD 36 wobec 33) | **2 z 8** (RD 43 wobec 99 poza pasmem; DR 21 wobec 155 poza; DS 0 w paśmie) | wybrany wariant, stały, bez parametrów |
+| 10a (no change) | 6 of 8 | 3 of 8 | dirt touches rock and beach proportionally to share (RD 254–322 vs 33–99; DS 145–194 vs 12–27) |
+| 10b (full grass border 2 cells around Rock and Shore) | 8 of 8 | 2 of 8 | RD 0 (m19 ref. 99) out of band, DR 0 (155) fell out of band |
+| 10c (partial border around Rock, ~75 %; full around Shore) | **8 of 8** (RD 36 vs 33) | **2 of 8** (RD 43 vs 99 out of band; DR 21 vs 155 out; DS 0 in band) | chosen variant, fixed, no parameters |
 
-**Wniosek.** Dla m06 reguła „ziemia nie styka się ze skałą i plażą” odtwarza skład granic (8 z 8, RD 36 wobec 33). Dla m19 jej nie wystarcza: referencja M19 ma znacznie więcej styku skały z ziemią i, przede wszystkim, **skała styka się z plażą i wodą (RS 251, RW 147)**, czego generator nie robi (RS 0), bo skała to najwyższe, a jezioro najniższe komórki wysokości. To wymagałoby zmiany modelu wysokości, nie reguły lokalnej, więc **nie** została wykonana. Kryterium z zapisu (RD i DS w paśmie w obu profilach) nie jest spełnione dla m19; zgodnie z zapisem nie szukano dalszych parametrów dla metryk. Udziały rodzajów w granicach (m06 Grass 403, Dirt 161; m19 294 / 115; zmiana < 5 punktów procentowych).
+**Conclusion.** For m06, rule “dirt does not touch rock and beach” reproduces boundary composition (8 of 8, RD 36 vs 33). For m19 it is insufficient: reference M19 has much more rock-dirt contact and, most importantly, **rock touches beach and water (RS 251, RW 147)**, which generator does not (RS 0), because rock is highest and lake is lowest height cells. This would require height model change, not local rule, so **not done**. Criterion from record (RD and DS in band for both profiles) not met for m19; per record, no further parameter search for metrics. Kind shares at boundaries (m06 Grass 403, Dirt 161; m19 294 / 115; change < 5 percentage points).
 
-**Zmiana zachowania.** Reguła obwódki zmienia wyniki Surface dla wszystkich profili i dla `pathLength` 0; przypięty odcisk Seed 1729 100×100 zmieniono z 9975948746684599016 na 17159159863505677800 (test PASS, dodany test reguły obwódki: brak Dirt w odległości 2 od Shore, część styku Dirt–Rock zostaje). **Nie sprawdzono:** wyglądu w GUI, regresji G1 po tej zmianie (zmiana jest w rdzeniu, nie w resolverze), in-sample na dwóch referencjach.
+**Behavior change.** Border rule changes Surface results for all profiles and for `pathLength` 0; pinned Seed 1729 100×100 snapshot changed from 9975948746684599016 to 17159159863505677800 (test PASS, added test for border rule: no Dirt within 2 of Shore, some Dirt–Rock contact remains). **Not checked:** appearance in GUI, G1 regression after this change (change is in core, not resolver), in-sample on two references.
 
-**Ocena użytkownika (2026-11-08, GUI, m06/m19 500×500 z obwódką trawy):** „wygląda ok”; ocena subiektywna, nie zmienia wyniku metryk (kryterium składu granic dla m19 nadal niespełnione).
+**User assessment (2026-11-08, GUI, m06/m19 500×500 with grass border):** “looks ok”; subjective assessment, does not change metric result (boundary composition criterion for m19 still not met).
 
-## Iteracja 11a — osady i struktury: budynki w referencjach (2026-11-08)
+## Iteration 11a — settlements and structures: buildings in references (2026-11-08)
 
-Definicje zapisane przed pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 11”, commit `1a16d26`); funkcja `extractBuildingShapes` z testem (PASS, wartości policzone ręcznie), wyjście sondy `buildings-surface.txt`. Budynek = 8-spójna składowa kafli z cechą Wall lub Door (≥ 12 komórek, obwiednia ≥ 4 × 4), piętra z ≤ 7; wszystkie 19 map; tylko opis.
+Definitions recorded before measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 11”, commit `1a16d26`); function `extractBuildingShapes` with test (PASS, values computed manually), probe output `buildings-surface.txt`. Building = 8-connected component of tiles with Wall or Door feature (≥ 12 cells, bounding box ≥ 4 × 4), floors ≤ 7; all 19 maps; description only.
 
-| Mapa | budynków | na 65 536 kafli | mediana boków (dłuższy × krótszy) | komórek muru | drzwi na budynek | z drzwiami |
+| Map | buildings | per 65 536 cells | median sides (longer × shorter) | wall cells | doors per building | with doors |
 | --- | --- | --- | --- | --- | --- | --- |
-| M06 | 1 313 | 31 | 9 × 7 | 30 | 1,66 | 51 % |
-| M19 | 582 | 37 | 9 × 7 | 24 | 3,44 | 61 % |
-| M05 | 13 | 37 | 11 × 8 | 39 | 2,15 | 85 % |
-| M15 | 5 | 48 | 11 × 6 | 19 | 0,20 | 20 % |
-| M01 | 47 | 94 | 5 × 4 | 16 | 0 | 0 % (to raczej płoty/murki) |
+| M06 | 1 313 | 31 | 9 × 7 | 30 | 1.66 | 51 % |
+| M19 | 582 | 37 | 9 × 7 | 24 | 3.44 | 61 % |
+| M05 | 13 | 37 | 11 × 8 | 39 | 2.15 | 85 % |
+| M15 | 5 | 48 | 11 × 6 | 19 | 0.20 | 20 % |
+| M01 | 47 | 94 | 5 × 4 | 16 | 0 | 0 % (mostly fences/walls) |
 | M11, M12 | 1–2 | — | — | — | — | — |
-| pozostałe 12 | 0 | — | — | — | — | — |
+| remaining 12 | 0 | — | — | — | — | — |
 
-**Wniosek.** Budynki da się zmierzyć w pięciu mapach (≥ 5 budynków: M01, M05, M06, M15, M19), a w M06 i M19 są liczne: ok. 1 budynek na 2 000 kafli (czyli ok. 125 w obszarze 512×512), typowo 9 × 7 kafli, ok. 30 komórek muru, w połowie z drzwiami. Generator nie tworzy żadnych budowli, więc stan bazowy jest zerowy z definicji.
+**Conclusion.** Buildings can be measured in five maps (≥ 5 buildings: M01, M05, M06, M15, M19), and in M06 and M19 they are numerous: ~1 building per 2,000 cells (i.e. ~125 in 512×512 area), typically 9 × 7 cells, ~30 wall cells, half with doors. Generator does not create any structures, so baseline is zero by definition.
 
-**Zastrzeżenia.** Cecha Wall obejmuje też płoty i wolnostojące mury (M01, część M15), więc „budynek” to heurystyka kształtu; wnętrza, dachy (piętra wyżej) i meble są poza miarą; dowody głównie z M06 i M19. **Czego generowanie wymaga (nie zrobione):** ściany i drzwi to nie grunt, lecz przedmioty na kaflu wymagające pędzla ściany z automatycznym dopasowaniem elementów oraz pędzla drzwi; obecny plan (`GroundPlan`) przenosi tylko grunt i doodady, więc podgląd, zatwierdzanie i Undo wymagają rozszerzenia o warstwę przedmiotów strukturalnych.
+**Caveats.** Wall feature includes fences and standalone walls (M01, part of M15), so “building” is a shape heuristic; interiors, roofs (higher floors) and furniture are outside the measure; evidence mainly from M06 and M19. **What generation requires (not done):** walls and doors are not ground, but items on a cell requiring wall brush with automatic element matching and door brush; current plan (`GroundPlan`) carries only ground and doodads, so preview, validation and Undo require extension with a structural items layer.
 
-## Iteracja 11b — podstawy budynków (2026-11-08): cechy w paśmie, warunek udziałów niespełniony dla m19
+## Iteration 11b — building foundations (2026-11-08): features in band, share condition not met for m19
 
-Model, kryteria i stałe gęstości zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 11”, commit `ae1c33a`). Zaimplementowano: `SurfaceKind::Floor`, `SurfaceTuning::buildingDensity` (0 = wyłączone, nie jest częścią profilu), prostokąty podłogi 7–11 × 5–9 (losowa orientacja) z marginesem 2 komórek na Grass/Dirt, resolver z ośmioma pędzlami (indeks 6 szlak, 7 podłoga), pola „Buildings” i „Floor brush” w oknie generatora (domyślnie 0, `stone floor`), odcisk podglądu z `buildingDensity`.
+Model, criteria and density constants recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 11”, commit `ae1c33a`). Implemented: `SurfaceKind::Floor`, `SurfaceTuning::buildingDensity` (0 = disabled, not part of profile), floor rectangles 7–11 × 5–9 (random orientation) with 2-cell margin on Grass/Dirt, resolver with eight brushes (index 6 path, 7 floor), “Buildings” and “Floor brush” fields in generator window (default 0, `stone floor`), preview snapshot with `buildingDensity`.
 
-**Pomiar (seedy 1001–1032, bok 512, v10; gęstość 30 dla m06, 40 dla m19, stałe z góry):**
+**Measurement (seeds 1001–1032, side 512, v10; density 30 for m06, 40 for m19, constants above):**
 
-| Profil | budynków na 65 536 (ref.) | dłuższy bok (ref.) | krótszy bok (ref.) | w paśmie |
+| Profile | buildings per 65 536 (ref.) | longer side (ref.) | shorter side (ref.) | in band |
 | --- | --- | --- | --- | --- |
-| m06 | 30 (31) | 9 (9) | 7 (7) | **3 z 3** |
-| m19 | 40 (37) | 9 (9) | 7 (7) | **3 z 3** |
+| m06 | 30 (31) | 9 (9) | 7 (7) | **3 of 3** |
+| m19 | 40 (37) | 9 (9) | 7 (7) | **3 of 3** |
 
-Warunek dodatkowy „udziały rodzajów ±1 punkt procentowy wobec stanu bez budynków”: m06 maksymalna zmiana 0,8 punktu procentowego (spełniony), **m19 1,8 punktu procentowego (Grass 294,5 → 276,5 ‰) — niespełniony**: podłogi zabierają ok. 3–4 % powierzchni lądu, więc udział trawy spada, co wynika z konstrukcji, nie z błędu. Testy rdzenia PASS (wyłączone = bajt w bajt jak dotąd; podłoga tylko na dawnym Grass/Dirt; litery prostokąta; wartość 101 odrzucona; deterministyczne). Regresja G1: sonda `--commit` `passed: true` (stderr pusty), sonda `--surface` wszystkie asercje PASS (stderr jak w historycznym przebiegu: 7 ostrzeżeń `SetFocus`, 1 113 bajtów).
+Additional constraint “category shares ±1 percentage point vs. state without buildings”: m06 max change 0.8 percentage point (met), **m19 1.8 percentage point (Grass 294.5 → 276.5 ‰) — not met**: floors consume ~3–4% of land surface, so grass share declines, which follows from design, not error. Core tests PASS (disabled = byte-for-byte as before; floor only on former Grass/Dirt; rectangle letters; value 101 rejected; deterministic). G1 regression: probe `--commit` `passed: true` (stderr empty), probe `--surface` all assertions PASS (stderr as in historical run: 7 `SetFocus` warnings, 1 113 bytes).
 
-**Zastrzeżenia.** Podłoga bez ścian, drzwi i dachów nie jest budynkiem; cechy w paśmie wynikają z zadanych rozmiarów (7–11 × 5–9 dobrane do referencji 9 × 7), więc to sprawdzenie implementacji, nie niezależny dowód; rozmieszczenie losowe (bez dróg i skupisk osad, szlaki nie prowadzą do budynków); porównanie obwiedni podłogi z obwiednią muru to przybliżenie. **Niezweryfikowane:** okno generatora z nowymi polami, Preview/Validate/Place/Undo z podłogami (ścieżka z 8 pędzlami; sondy używają 6), wygląd w GUI.
+**Caveats.** Floor without walls, doors, and roofs is not a building; features in band result from given dimensions (7–11 × 5–9 chosen for reference 9 × 7), so this is implementation check, not independent proof; random placement (no roads and settlement clusters, paths do not lead to buildings); comparing floor outline with wall outline is an approximation. **Not verified:** generator window with new fields, Preview/Validate/Place/Undo with floors (path with 8 brushes; probes use 6), appearance in GUI.
 
-## Iteracja 11c — ściany budynków (2026-11-08): metryka w paśmie, wygląd i poprawność narożników czekają na użytkownika
+## Iteration 11c — building walls (2026-11-08): metric in band, appearance and corner correctness await user
 
-Zakres, model i kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 11c”, commit `6a3048a`; decyzja użytkownika: ściany razem z podłogą, drzwi niewymagane). Zaimplementowano: `GroundProfile::wall` (pędzel ściany) i `GroundPlan::walls` (identyfikator przedmiotu ściany dla każdej komórki obrysu fundamentu; obrys = komórka Floor z 4-sąsiadem innego rodzaju), walidację w resolverze (pędzel ściany istnieje, nie jest dekoracją ściany, przedmiot nie jest gruntem ani meta-itemem) i w podglądzie (przedmiot należy do pędzla, leży na komórce planu, nie ma ściany poza maską), nałożenie po roślinności i wyrównanie elementów przez istniejący `WallBrush::doWalls` na buforze podglądu (bez drugiego silnika), odcisk planu i podglądu ze ścianami, pola „Walls” i „Wall brush” w oknie generatora (aktywne przy „Buildings” > 0).
+Scope, model, and criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 11c”, commit `6a3048a`; user decision: walls with floor, doors not required). Implemented: `GroundProfile::wall` (wall brush) and `GroundPlan::walls` (wall item ID for each outline cell of foundation; outline = Floor cell with 4-neighbor of different kind), validation in resolver (wall brush exists, is not wall decoration, item is not ground or meta-item) and in preview (item belongs to brush, lies on plan cell, no wall outside mask), placement after vegetation and element alignment via existing `WallBrush::doWalls` on preview buffer (no second engine), plan and preview snapshot with walls, “Walls” and “Wall brush” fields in generator window (active when “Buildings” > 0).
 
-**Pomiar (seedy 1001–1032, bok 512, v10, gęstość 30 / 40 jak w 11b).** Mediana komórek obrysu na budynek: m06 28 (ref. mur 30, pasmo 20,1–45), m19 28 (ref. 24, pasmo 16,1–36): **w paśmie w obu**. Test rdzenia PASS (obrys = 2·(dłuższy+krótszy)−4 komórek dla każdego fundamentu). Regresja G1: sonda `--commit` `passed: true`, stderr pusty; sonda `--surface` wszystkie asercje PASS (stderr jak historycznie: 7 ostrzeżeń `SetFocus`, 1 113 bajtów). `rme.exe` zlinkowany.
+**Measurement (seeds 1001–1032, side 512, v10, density 30 / 40 as in 11b).** Median outline cells per building: m06 28 (ref. wall 30, band 20.1–45), m19 28 (ref. 24, band 16.1–36): **in band in both**. Core test PASS (outline = 2·(longer+shorter)−4 cells for each foundation). G1 regression: probe `--commit` `passed: true`, stderr empty; probe `--surface` all assertions PASS (stderr as historically: 7 `SetFocus` warnings, 1 113 bytes). `rme.exe` linked.
 
-**Czego NIE zweryfikowano.** Pełnej ścieżki GUI ze ścianami (okno, Preview, Validate, Place, Undo/Redo), poprawnego dopasowania elementów ściany (poziome, pionowe, narożniki) przez `WallBrush::doWalls` na kliencie użytkownika, zachowania przy chronionych komórkach i masce; sonda G1 używa profilu bez ścian, więc nowa warstwa nie ma jeszcze testu e2e na rzeczywistym kliencie poza GUI użytkownika; metryka obrysu wynika z rozmiarów zadanych w 11b (sprawdzenie implementacji, nie niezależny dowód). Budynek bez drzwi i dachu nie jest wejściem do rozgrywki.
+**What was NOT verified.** Full GUI path with walls (window, Preview, Validate, Place, Undo/Redo), correct alignment of wall elements (horizontal, vertical, corners) by `WallBrush::doWalls` on user client, behavior with protected cells and mask; G1 probe uses profile without walls, so new layer does not yet have e2e test on real client outside user GUI; outline metric results from dimensions given in 11b (implementation check, not independent proof). Building without doors and roof is not gameplay entry.
 
-**Ocena użytkownika (2026-11-08, GUI, ściany budynków, `Buildings` > 0, `Walls` włączone):** „wygląda jak realne budynki”; Preview, Validate, Place, Undo i Redo przeszły bez problemu (potwierdzone przez użytkownika, nie sondą). Tym zamknięta niezweryfikowana dotąd ścieżka GUI z ośmioma pędzlami i warstwą ścian; poprawność dopasowania narożników oceniona wzrokowo przez użytkownika.
+**User assessment (2026-11-08, GUI, building walls, `Buildings` > 0, `Walls` enabled):** “looks like real buildings”; Preview, Validate, Place, Undo, and Redo passed without issues (confirmed by user, not probe). Thus closed previously unverified GUI path with eight brushes and wall layer; correctness of corner alignment assessed visually by user.
 
-## Korekta błędu: kolejność pól `SurfaceTuning` a parser profilu (wykryta 2026-11-08 przy pełnym przebiegu testów przed PR)
+## Bug fix: order of `SurfaceTuning` fields and profile parser (discovered 2026-11-08 during full test run before PR)
 
-**Błąd.** W iteracji 9 dodałem do `SurfaceTuning` pole `pathLength`, a w 11b `buildingDensity`, **przed** polem `meander`. Parser profilu inicjalizował strojenie pozycyjnie (`SurfaceTuning {v[0] … v[10]}`), więc zapisana w profilu wartość `meander` (8) trafiała od iteracji 9 do `pathLength`, a od 11b do `buildingDensity`, a `meander` zostawał 0. Test `test_procedural_style_profile` (round trip strojenia) od 13fac4d był czerwony; **nie uruchamiałem wtedy całego zestawu testów**, tylko pojedyncze (to moje zaniedbanie).
+**Bug.** In iteration 9 I added `pathLength` field to `SurfaceTuning`, then in 11b `buildingDensity`, **before** field `meander`. Profile parser initialized tuning positionally (`SurfaceTuning {v[0] … v[10]}`), so recorded profile value `meander` (8) went from iteration 9 to `pathLength`, from 11b to `buildingDensity`, and `meander` stayed 0. Test `test_procedural_style_profile` (round trip tuning) from 13fac4d was red; **did not run full test suite then**, only single tests (my oversight).
 
-**Skutki.** (1) GUI: okno po wczytaniu profilu zawsze nadpisuje `pathLength` i `buildingDensity` wartościami z pól, więc nie powstawały niechciane szlaki ani budynki, ale **od iteracji 9 do dziś profile nie stosowały meandru rzek** (rzeki w zrzutach po 9 są rzekami bez meandru). (2) Pomiary: `style_render` z profilami v10 miał od 9 do 11 `meander` 0, a w iteracji 10 dodatkowo małe szlaki (`pathLength` 8 z błędnego mapowania), w 11 `buildingDensity` podawane jawnie. Pomiary iteracji 9 (szlaki) podawały `pathLength` jawnie.
+**Effects.** (1) GUI: window after profile load always overwrites `pathLength` and `buildingDensity` with field values, so unwanted paths and buildings did not arise, but **from iteration 9 until now profiles did not apply river meander** (rivers in screenshots after 9 are rivers without meander). (2) Measurements: `style_render` with v10 profiles had `meander` 0 from 9 to 11, plus small paths in iteration 10 (`pathLength` 8 from wrong mapping), in 11 `buildingDensity` given explicitly. Iteration 9 measurements (paths) gave `pathLength` explicitly.
 
-**Naprawa.** Kolejność pól przywrócona (pierwsze jedenaście jak w profilu, potem `pathLength`, `buildingDensity`), parser przypisuje pola po nazwach. Wszystkie 14 testów rdzenia PASS.
+**Fix.** Field order restored (first eleven as in profile, then `pathLength`, `buildingDensity`), parser assigns fields by name. All 14 core tests PASS.
 
-**Powtórzenie pomiarów z poprawnym wczytywaniem profilu (seedy 1001–1032, bok 512, v10):** szlaki 9d: m06 L 53 / W 4 381 (poprzednio 55,5 / 4 434), m19 L 89 / W 4 618 (91 / 4 655), „szlak przy skale” średnia 8,2 / 16,9 ‰ (8,2 / 16,7): bez zmian w pasmach; przejścia 10c: **m06 7 z 8** (poprzednio 8 z 8: DW 55 wobec 4 wypadło o 5 ‰ poza pasmo ±50 ‰, bo rzeki z meandrem częściej stykają się z ziemią), m19 2 z 8 (bez zmian); budynki 11b: bez zmian (30 / 9 / 7, 40 / 9 / 7), udziały m06 0,8, m19 1,7 punktu procentowego. Kryteria iteracji 10 dla m06 (8 z 8) podane wcześniej były liczone bez meandru; poprawna wartość to 7 z 8.
+**Remeasurement with correct profile loading (seeds 1001–1032, side 512, v10):** paths 9d: m06 L 53 / W 4 381 (previously 55.5 / 4 434), m19 L 89 / W 4 618 (91 / 4 655), “path at rock” mean 8.2 / 16.9 ‰ (8.2 / 16.7): no change in bands; transitions 10c: **m06 7 of 8** (previously 8 of 8: DW 55 vs 4 fell 5 ‰ out of band ±50 ‰, because rivers with meander touch land more), m19 2 of 8 (unchanged); buildings 11b: unchanged (30 / 9 / 7, 40 / 9 / 7), shares m06 0.8, m19 1.7 percentage point. Iteration 10 criteria for m06 (8 of 8) given earlier were computed without meander; correct value is 7 of 8.
 
-## Iteracja 12a — osady: skupiska, szlaki i drzwi w referencjach (2026-11-09): PARTIAL, pomiar opisowy
+## Iteration 12a — settlements: clusters, paths and doors in references (2026-11-09): PARTIAL, descriptive measurement
 
-Definicje, stałe i pasma zapisane przed implementacją i pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12”, commit `46b7024`; potwierdzone grepem przed implementacją). Kod: `settlement_stats` (rdzeń; test z ręcznie policzonymi wartościami PASS, commit `ff142e6`), wyjście sondy `settlements-surface.txt`, jedno polecenie `docs/procedural/smoke/g5_reference_settlements.py`. Wszystkie 19 map (kopie w `local-data/`, runner hashuje źródło przed i po), piętra z 0..7, klient 10.98, mapowanie `accepted-10.98-v3`. Dwa przebiegi M06 dały bajtowo identyczny plik (`cmp`); pozostałe mapy raz.
+Definitions, constants, and bands recorded before implementation and measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 12”, commit `46b7024`; verified by grep before implementation). Code: `settlement_stats` (core; test with manually counted values PASS, commit `ff142e6`), probe output `settlements-surface.txt`, one command `docs/procedural/smoke/g5_reference_settlements.py`. All 19 maps (copies in `local-data/`, runner hashes source before and after), floors 0..7, client 10.98, mapping `accepted-10.98-v3`. Two runs of M06 gave byte-identical file (`cmp`); other maps once.
 
-| Mapa | budynków | G | Kn (×1000) | Ks | Ki ‰ | Kb ‰ | Bp / Cp ‰ | Bv / Cv ‰ | Dh ‰ | Dn | Db ‰ | Dp / Dp0 ‰ (\|S\|) |
+| Map | buildings | G | Kn (×1000) | Ks | Ki ‰ | Kb ‰ | Bp / Cp ‰ | Bv / Cv ‰ | Dh ‰ | Dn | Db ‰ | Dp / Dp0 ‰ (\|S\|) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- |
 | M06 | 1 313 | 4 | 11 167 | 1 | 265 | 661 | 93 / 14 | 287 / 316 | 512 | 2 | 231 | 855 / 594 (69) |
 | M19 | 582 | 4 | 11 955 | 1 | 189 | 714 | 209 / 25 | 245 / 268 | 613 | 4 | 563 | 750 / 546 (76) |
 | M01 | 47 | 4 | 34 204 | 2 | 148 | 765 | 0 / 0 | 319 / 169 | 0 | N/A | N/A | N/A (0) |
-| M05, M11, M12, M15 | 13, 1, 2, 5 | N/A (< 30 budynków) | | | | | | | | | | |
-| pozostałe 12 | 0 | N/A | | | | | | | | | | |
+| M05, M11, M12, M15 | 13, 1, 2, 5 | N/A (< 30 buildings) | | | | | | | | | | |
+| other 12 | 0 | N/A | | | | | | | | | | |
 
-Kwalifikują się trzy mapy (≥ 30 budynków): M06, M19, M01. M01 to według 11a raczej płoty (0 drzwi, 0 kafli szlaku wg listy 9a), więc dla skupisk i odstępów jest dowodem pomocniczym, a nie wzorcem osady. Cechy drzwi i orientacji dają tylko M06 i M19.
+Three maps qualify (≥ 30 buildings): M06, M19, M01. M01 appears by 11a to be fences rather (0 doors, 0 path cells per list 9a), so for clusters and spacing it is supporting evidence, not settlement pattern. Door and orientation features come from M06 and M19 only.
 
-**Co z tego wynika (opisowo, bez oceny generatora).**
-- **Skupiska.** Najbliższy sąsiad leży typowo w odstępie 4 kafli (M06, M19, M01), a 66–71 % budynków (M06, M19) należy do skupisk ≥ 3; samotnych jest 19–27 %. Skupisk jest ok. 11–12 na 65 536 kafli wobec 31–37 budynków na 65 536, więc średnio ok. 3 budynki na skupisko, ale mediana skupiska to 1 (wiele pojedynczych, kilka dużych). Losowe rozmieszczenie z 11b, o gęstości 30–40 na 65 536, daje pewnie znacznie mniej bliskich sąsiadów; to jest do zmierzenia w 12c, nie zakładam.
-- **Szlak.** Budynki leżą przy szlaku 6,6× (M06: 93 vs 14 ‰) i 8,4× (M19: 209 vs 25 ‰) częściej niż przeciętny kafel lądu. Relacja jest wyraźna, choć bezwzględnie tylko co 11. (M06) i co 5. (M19) budynek ma kafel szlaku w odległości ≤ 3: szlaki w sensie listy 9a to jedynie część dróg.
-- **Woda.** Brak związku: Bv ≤ Cv w M06 (287 vs 316) i M19 (245 vs 268); M01 (319 vs 169) jest jedyną mapą z większym Bv, ale to płoty. Wniosek: generator nie potrzebuje modelu „budynek blisko wody”, wystarczy, że budynek nie stoi na wodzie (już zapewnione marginesem na Grass/Dirt).
-- **Drzwi.** Drzwi ma 51 % (M06) i 61 % (M19) budynków, mediana kafli Door to 2 i 4, a tylko 23 % i 56 % kafli Door leży na krawędzi obwiedni. Czyli „drzwi” w referencji to często wiele kafli (okna-drzwi, bramy, drzwi wewnętrzne); założenie „jedno wejście na budynek” to **celowa idealizacja** (odstępstwo zapisane z góry), nie odwzorowanie referencji.
-- **Orientacja drzwi względem szlaku.** Wśród budynków z drzwiami brzegowymi i szlakiem w pobliżu (|S| = 69 w M06, 76 w M19) strona z drzwiami jest stroną ze szlakiem w 855 ‰ i 750 ‰ przypadków, wobec 594 ‰ i 546 ‰ przy losowej stronie: drzwi zwracają się ku szlakowi o 26 i 20 punktów procentowych częściej niż przypadek. Niepewność próby (jedna mapa, n ≈ 70): ok. ±40 ‰ (1 odchylenie standardowe z rozkładu dwumianowego), więc kierunek jest wiarygodny, wielkość nie.
+**What follows (descriptive, without generator assessment).**
+- **Clusters.** Nearest neighbor typically lies at 4-cell spacing (M06, M19, M01), and 66–71% of buildings (M06, M19) belong to clusters ≥ 3; solitary ones are 19–27%. Clusters number ~11–12 per 65 536 cells vs. 31–37 buildings per 65 536, so ~3 buildings per cluster on average, but cluster median is 1 (many singletons, few large). Random placement from 11b at density 30–40 per 65 536 likely gives far fewer near neighbors; this is to be measured in 12c, I do not assume.
+- **Path.** Buildings lie near path 6.6× (M06: 93 vs 14 ‰) and 8.4× (M19: 209 vs 25 ‰) more often than average land cell. Relationship is clear, though absolutely only every 11th (M06) and 5th (M19) building has path cell within ≤ 3: paths per list 9a are only part of roads.
+- **Water.** No relationship: Bv ≤ Cv in M06 (287 vs 316) and M19 (245 vs 268); M01 (319 vs 169) is only map with larger Bv, but those are fences. Conclusion: generator does not need “building near water” model, it suffices that building not stand on water (already ensured by Grass/Dirt margin).
+- **Doors.** Doors present in 51% (M06) and 61% (M19) of buildings, median door cells is 2 and 4, and only 23% and 56% of door cells lie on outline edge. So “doors” in reference is often many cells (door-windows, gates, internal doors); assumption “one entry per building” is **intentional idealization** (deviation recorded upfront), not reference reflection.
+- **Door orientation vs. path.** Among buildings with edge doors and nearby path (|S| = 69 in M06, 76 in M19) door side is path side in 855 ‰ and 750 ‰ of cases, vs. 594 ‰ and 546 ‰ at random side: doors face path 26 and 20 percentage points more often than chance. Sample uncertainty (one map, n ≈ 70): ~±40 ‰ (1 SD from binomial), so direction is reliable, magnitude is not.
 
-**Czego NIE zweryfikowano.**
-- Niezależności: wszystko pochodzi z M06 i M19 (D17), M01 jest tylko pomocnicza; brak trzeciej mapy z domami, więc nie ma odrębnej walidacji.
-- Rozrzutu między mapami (jedna wartość na mapę; podano tylko niepewność dwumianową dla Dp).
-- Szlaków spoza listy 9a (ubita ziemia, trawa wydeptana), a więc rzeczywistej liczby budynków przy drogach: Bp jest dolnym oszacowaniem.
-- Czy „budynek” to dom: Wall/Door w referencji obejmuje płoty, bramy i murki (D19); odległości 3, 8 i 12 są stałymi z góry, nie badano czułości na nie.
-- Piętra > 7, wnętrz, dachów, mostów.
-- Pomiaru generatora: baseline generatora w tych miarach (12c) nie był jeszcze liczony; projekt 12b nie został napisany.
+**What was NOT verified.**
+- Independence: all from M06 and M19 (D17), M01 supporting only; no third map with houses, so no separate validation.
+- Scatter across maps (one value per map; only binomial uncertainty given for Dp).
+- Paths outside list 9a (trampled earth, trodden grass), thus actual building-road count: Bp is lower bound.
+- Whether “building” means house: Wall/Door in reference includes fences, gates, and walls (D19); distances 3, 8, 12 are constants upfront, sensitivity not explored.
+- Floors > 7, interiors, roofs, bridges.
+- Generator measurement: generator baseline on these measures (12c) not yet computed; design 12b not written.
 
-## Iteracja 12b–12d — skupiska, drzwi i szlaki do drzwi w rdzeniu (2026-11-09): PARTIAL, kryterium NIE spełnione
+## Iteration 12b–12d — clusters, doors and paths to doors in core (2026-11-09): PARTIAL, criterion NOT MET
 
-Zakres od użytkownika: drzwi + szlaki do drzwi + skupiska. Model, stałe i kryteria zapisane przed implementacją i przed każdym pomiarem ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12”: definicje `46b7024`, model 12b `7bccd95`, wynik 12c i zapis 12d `99c60d7`; zapisy sprawdzone grepem). Zaimplementowano w rdzeniu (commit `49e6737`): budynki w skupiskach (kotwice losowe, reszta dołączana w odstępie 3–6 kafli do już postawionego), jedne drzwi na budynek (`SurfaceGrid::doors`, środek strony zwróconej ku najbliższemu szlakowi w ≤ 60, inaczej strona losowa), schodek Path przed drzwiami i trasa do najbliższego szlaku (wspólny `PathRouter` wyodrębniony z `drawPaths`). Adapter (pędzel drzwi RME, plan, podgląd, okno generatora) **nie jest zrobiony**.
+Scope from user: doors + paths to doors + clusters. Model, constants and criteria recorded before implementation and before each measurement ([G4_METRICS.md](G4_METRICS.md), “Iteration 12”: definitions `46b7024`, model 12b `7bccd95`, result 12c and record 12d `99c60d7`; records verified by grep). Implemented in core (commit `49e6737`): buildings in clusters (random anchors, rest added within 3–6 cells of already placed), one door per building (`SurfaceGrid::doors`, center of side facing nearest path within ≤ 60, else random side), Path step before doors and route to nearest path (shared `PathRouter` extracted from `drawPaths`). Adapter (RME door brush, plan, preview, generator window) **not done**.
 
-**Pomiar generatora (seedy 1001–1032, bok 512, profile v10; ustawienia m06 pathLength 40 / buildingDensity 30, m19 80 / 40; mediana; dwa przebiegi bajtowo identyczne).**
+**Generator measurement (seeds 1001–1032, side 512, profiles v10; settings m06 pathLength 40 / buildingDensity 30, m19 80 / 40; median; two runs byte-identical).**
 
-| Cecha | ref m06 | 12b (30 % kotwic) | 12d (60 %) | ref m19 | 12b | 12d |
+| Feature | ref m06 | 12b (30% anchors) | 12d (60%) | ref m19 | 12b | 12d |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| G (odstęp) | 4 | 4 ✓ | 4 ✓ | 4 | 4 ✓ | 4 ✓ |
-| Kn (×1000) | 11 167 | 5 875 ✗ | 9 375 ✓ | 11 955 | 4 750 ✗ | 7 500 ✗ (pasmo od 8 010) |
+| G (spacing) | 4 | 4 ✓ | 4 ✓ | 4 | 4 ✓ | 4 ✓ |
+| Kn (×1000) | 11 167 | 5 875 ✗ | 9 375 ✓ | 11 955 | 4 750 ✗ | 7 500 ✗ (band from 8 010) |
 | Ks | 1 | 2 ✗ | 2 ✗ | 1 | 3 ✗ | 2 ✗ |
 | Ki ‰ | 265 | 62 ✗ | 150 ✗ | 189 | 37 ✗ | 72 ✗ |
 | Kb ‰ | 661 | 850 ✗ | 741 ✗ (Δ 80) | 714 | 928 ✗ | 875 ✗ |
-| Bp − Cp (kierunek) | +79 | +924 ✓ | +910 ✓ | +184 | +908 ✓ | +896 ✓ |
-| Bv − Cv (kierunek) | −29 | −130 ✓ | −127 ✓ | −23 | −98 ✓ | −86 ✓ |
-| Dp − Dp0 (kierunek) | +261 | +503 ✓ | +527 ✓ | +204 | +495 ✓ | +509 ✓ |
-| **cechy zaliczone** | | 4 z 8 | **5 z 8** | | 4 z 8 | **4 z 8** |
+| Bp − Cp (direction) | +79 | +924 ✓ | +910 ✓ | +184 | +908 ✓ | +896 ✓ |
+| Bv − Cv (direction) | −29 | −130 ✓ | −127 ✓ | −23 | −98 ✓ | −86 ✓ |
+| Dp − Dp0 (direction) | +261 | +503 ✓ | +527 ✓ | +204 | +495 ✓ | +509 ✓ |
+| **features passed** | | 4 of 8 | **5 of 8** | | 4 of 8 | **4 of 8** |
 
-**Wynik: kryterium (≥ 75 % ocenianych cech) NIE spełnione ani w 12b, ani po zmianie 12d, w obu profilach.** Stałych dalej nie dobierałem (zapis z góry). Zmiana 12d (kotwice 60 %) poprawiła Kn i Ki, nie przywróciła Ki ani Ks; w stanie obecnym w kodzie jest 60 % (bliższe referencji niż 30 %), co jest odnotowane jako decyzja po zmianie modelu.
+**Result: criterion (≥ 75 % of evaluated features) NOT MET in either 12b or after change 12d, in both profiles.** Did not further tune constants (record from ahead). Change 12d (60 % anchors) improved Kn and Ki, did not restore Ki or Ks; in code now is 60 % (closer to reference than 30 %), noted as decision after model change.
 
-**Co jest spełnione z założeń.** Dokładnie jedne drzwi na budynek, drzwi na obrysie, schodek Path, odstęp ≥ 3, drzwi znikają, gdy komórka przestała być Floor po masce (test `settlements`); `buildingDensity` 0 bez zmian: pinned odcisk Seed 1729 i PNG `pathLength` 80 / `buildingDensity` 0 dla 4 seedów **bajt w bajt** identyczne z rdzeniem sprzed zmian (porównanie dwóch binariów); 15 testów rdzenia PASS (`g5_run_suite.py --probes`: obie sondy G1 PASS po przebudowaniu `rme`).
+**What is met from assumptions.** Exactly one door per building, doors on outline, Path step, spacing ≥ 3, doors vanish when cell stops being Floor after mask (test `settlements`); `buildingDensity` 0 unchanged: pinned Seed 1729 snapshot and PNG `pathLength` 80 / `buildingDensity` 0 for 4 seeds **byte-for-byte** identical to core before changes (comparison of two binaries); 15 core tests PASS (`g5_run_suite.py --probes`: both G1 probes PASS after rebuilding `rme`).
 
-**Zmiany wyników (świadome).** Dla `buildingDensity` > 0: inne rozmieszczenie budynków, Path przed drzwiami i trasy; w sondzie `--surface` liczba komórek ściany dla 100×100 zmieniła się z 150 na 164 (250×250: 1 038 bez zmiany); odcisk `SURFACE_RESOLVER_SIZE` (bez budynków) bez zmiany. Test `buildings` rozluźniony: oprócz Floor dozwolone Path (Grass/Dirt/Shore → Path).
+**Result changes (intentional).** For `buildingDensity` > 0: different building placement, Path before doors and routes; in `--surface` probe wall cell count for 100×100 changed from 150 to 164 (250×250: 1 038 unchanged); `SURFACE_RESOLVER_SIZE` snapshot (without buildings) unchanged. Test `buildings` loosened: besides Floor allowed Path (Grass/Dirt/Shore → Path).
 
-**Odchylenia, których NIE oceniano kryterium.** (1) **Szlaki:** długość (L na 65 536) rośnie z 53 / 89 (9d) do 299 / 344 przy włączonych budynkach (ref 70 / 78), bo każdy budynek dostaje trasę do najbliższej sieci; pasma 9b nie dotyczą już tej konfiguracji. Do rozstrzygnięcia: mniej tras (np. tylko do kafla Path w ≤ 25, albo wspólne trasy klastra) albo `pathLength` 0. (2) **Bp = 1000 z konstrukcji** (schodek), więc ta cecha ma tylko kierunek. (3) Dn = 1 i Db = 1000 są idealizacją (ref 2–4 i 23–56 %).
+**Deviations where criterion not evaluated.** (1) **Paths:** length (L per 65 536) grows from 53 / 89 (9d) to 299 / 344 with buildings enabled (ref 70 / 78), because each building gets route to nearest network; bands 9b no longer apply to this config. To resolve: fewer routes (e.g. only to Path cell within ≤ 25, or shared cluster routes) or `pathLength` 0. (2) **Bp = 1000 by design** (step), so this feature has direction only. (3) Dn = 1 and Db = 1000 are idealizations (ref 2–4 and 23–56 %).
 
-**Czego NIE zweryfikowano.** Adaptera i GUI (pędzel drzwi przez `DoorBrush`, Preview/Validate/Place/Undo/Redo z drzwiami i schodkami, wygląd osad); „bez dojścia” (odsetek budynków, których schodek nie łączy się z siecią) nie liczony; czułości na stałe 3–6, 12, 60; niezależnych map (D17); wpływu na udziały rodzajów (Path rośnie); wydajności; zachowania przy masce i chronionych komórkach poza testem `settlements`.
+**What was NOT verified.** Adapter and GUI (door brush via `DoorBrush`, Preview/Validate/Place/Undo/Redo with doors and steps, settlement appearance); “without route” (percentage of buildings whose step does not connect to network) not counted; sensitivity to constants 3–6, 12, 60; independent maps (D17); impact on category shares (Path grows); performance; behavior with mask and protected cells outside `settlements` test.
 
-## Iteracja 12e — adapter drzwi (2026-11-09): PARTIAL, sondy PASS, GUI czeka na użytkownika
+## Iteration 12e — door adapter (2026-11-09): PARTIAL, probes PASS, GUI awaits user
 
-Zakres i kontrole zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12e”, commit `c0f7883`; zapis sprawdzony grepem). Zaimplementowano (commit `c96a238`): `GroundProfile::door` (rodzaj z zamkniętej listy: Normal door, Locked door, Magic door, Quest door, Normal door (alt), Archway; mapowanie na `DoorType` w `door_types.h`, bez identyfikatorów przedmiotów), `GroundPlan::doors` (flaga na komórce obrysu; w odcisku planu tylko przy drzwiach), walidacja w resolverze, przygotowaniu i podglądzie, nałożenie `DoorBrush::draw` po `WallBrush::doWalls` (odmowa `InvalidItem`, gdy pędzel ściany nie ma takich drzwi dla ułożenia), pola „Doors” i „Door kind” w oknie generatora (aktywne przy włączonych ścianach).
+Scope and controls recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 12e”, commit `c0f7883`; record verified by grep). Implemented (commit `c96a238`): `GroundProfile::door` (kind from closed list: Normal door, Locked door, Magic door, Quest door, Normal door (alt), Archway; mapping to `DoorType` in `door_types.h`, no item IDs), `GroundPlan::doors` (flag on outline cell; in plan snapshot only at doors), validation in resolver, preparation and preview, placement of `DoorBrush::draw` after `WallBrush::doWalls` (refusal `InvalidItem` when wall brush lacks such doors for placement), “Doors” and “Door kind” fields in generator window (active when walls enabled).
 
-**Znaleziona i naprawiona przeszkoda.** RME zamienia element drzwi w obiekt klasy `Door`; kontrola odcisku podglądu (`hashItem`) przyjmowała wyłącznie klasę `Item` i odrzucała podgląd (`PreviewError::InvalidItem`). Dopuszczono `Door` bez przypisanego ID drzwi domu; nic innego nie zostało poluzowane.
+**Found and fixed obstacle.** RME converts door element to `Door` class object; preview snapshot check (`hashItem`) accepted only `Item` class and rejected preview (`PreviewError::InvalidItem`). Permitted `Door` without assigned house door ID; nothing else was loosened.
 
-**Wyniki.** Nowy przypadek sondy `--surface` (`SURFACE_DOORS_E2E_PASS`): 100×100 6 drzwi (6 budynków), 250×250 38 drzwi (38 budynków); po Commit dokładnie jeden element drzwi na zaplanowaną komórkę i żaden poza nią, jedna pozycja historii, po Undo zero drzwi i liczba kafli jak przed, po Redo ponownie komplet. Odmowy: drzwi bez pędzla ściany, nieznany rodzaj. Odcisk planu z drzwiami różni się od planu bez drzwi, grunt i ściany planu identyczne. `g5_run_suite.py --probes`: 15 z 15 testów rdzenia, obie sondy PASS na przebudowanym `rme` (ostrzeżeń `SetFocus` w `--surface` jest teraz 11 zamiast 9: przybyły dwa przypadki z `NewMap`; tylko ten znany rodzaj stderr).
+**Results.** New probe case `--surface` (`SURFACE_DOORS_E2E_PASS`): 100×100 6 doors (6 buildings), 250×250 38 doors (38 buildings); after Commit exactly one door element per planned cell and none outside, one history position, after Undo zero doors and cell count as before, after Redo complete again. Refusals: doors without wall brush, unknown kind. Plan snapshot with doors differs from plan without doors, ground and walls of plan identical. `g5_run_suite.py --probes`: 15 of 15 core tests, both probes PASS on rebuilt `rme` (`SetFocus` warnings in `--surface` now 11 instead of 9: two cases added from `NewMap`; only this known kind stderr).
 
-**Czego NIE zweryfikowano.** Okna generatora w RME (nowe pola, wygląd, kierunek drzwi względem szlaku, Preview/Validate/Place/Undo/Redo z drzwiami na kliencie użytkownika) czeka na ocenę użytkownika; sonda używa pędzla `stone wall` i „Normal door”; dla innych pędzli ścian i rodzajów drzwi podgląd może odmówić (brak drzwi danego rodzaju w pędzlu); ID drzwi domu nie są przypisywane; trasy do drzwi pozostają ok. 4× dłuższe niż w referencji (patrz 12d).
+**What was NOT verified.** RME generator window (new fields, appearance, door direction vs. path, Preview/Validate/Place/Undo/Redo with doors on user client) awaits user assessment; probe uses `stone wall` brush and “Normal door”; for other wall brushes and door kinds preview may refuse (no doors of that kind in brush); house door IDs not assigned; routes to doors remain ~4× longer than in reference (see 12d).
 
-## Iteracja 12f — strona drzwi ku najbliższemu budynkowi (2026-11-09): wdrożona po uwadze użytkownika, czeka na jego ocenę
+## Iteration 12f — door facing nearest building (2026-11-09): implemented per user note, awaits user assessment
 
-Reguła zapisana przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12f”). Pomiar po zmianie (seedy 1001–1032, bok 512, v10; dwa przebiegi bajtowo identyczne): G, Kn, Ks, Ki, Kb **bez zmian** względem 12d (rozmieszczenie budynków nie zależy od drzwi), Dp 1000 (jak dotąd), długość szlaków L 303 / 337 (było 299 / 344). Kryterium 12c nadal nie spełnione (5 z 8 w m06, 4 z 8 w m19). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme` (sonda drzwi: 6 i 38). **Nie zweryfikowano:** testem jednostkowym, że drzwi sąsiednich budynków bez szlaku są zwrócone ku sobie (zapisane w ocenie, ale nie napisane); poprawy na rzeczywistym zrzucie (ocena użytkownika).
+Rule recorded before change ([G4_METRICS.md](G4_METRICS.md), “Iteration 12f”). Measurement after change (seeds 1001–1032, side 512, v10; two runs byte-identical): G, Kn, Ks, Ki, Kb **unchanged** vs. 12d (building placement does not depend on doors), Dp 1000 (as before), path length L 303 / 337 (was 299 / 344). Criterion 12c still not met (5 of 8 in m06, 4 of 8 in m19). 15 core tests and both G1 probes PASS after rebuilding `rme` (door probe: 6 and 38). **Not verified:** by unit test that adjacent building doors without path face each other (noted in assessment but not written); improvement on actual screenshot (user assessment).
 
-**Ocena użytkownika po 12f (2026-11-09, GUI, dwa zrzuty, Undo/Redo i Validate działają):** drzwi i szlaki do drzwi uznane za w porządku, użytkownik chce iść dalej. Moje uwagi z tych zrzutów (nie zmierzone): budynek bez szlaku w zasięgu ma tylko krótki schodek bez trasy (zrzut 1 u dołu, zrzut 2 przy prawym budynku); drzwi lewego budynku na zrzucie 2 zwracają się ku odległemu szlaku (zasięg 60), a nie ku sąsiadowi 25 kafli obok; długie szlaki 9d kończą się zaokrąglonym „blobem” w środku lądu; szlaki zajmują dużo powierzchni (L ok. 4× referencji, 12d). Ocena ogólna użytkownika ma pierwszeństwo przed metryką kryterium 12c (nadal niespełnionego); rozbieżność odnotowana.
+**User assessment after 12f (2026-11-09, GUI, two screenshots, Undo/Redo and Validate work):** doors and paths to doors deemed okay, user wants to proceed. My notes from those screenshots (not measured): building without nearby path gets only short step without route (screenshot 1 at bottom, screenshot 2 near right building); left building doors on screenshot 2 face distant path (range 60), not neighbor 25 cells away; long paths 9d end in rounded "blob" mid-land; paths occupy much surface (L ~4× reference, 12d). User overall assessment takes precedence over criterion 12c metric (still unmet); discrepancy noted.
 
-## Iteracja 12g — krótsze szlaki do drzwi (2026-11-09): L w paśmie przy `pathLength` 0; cena: ok. 2/3 budynków bez trasy
+## Iteration 12g — shorter paths to doors (2026-11-09): L in band at `pathLength` 0; cost: ~2/3 buildings without route
 
-Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12g”; grep potwierdził). Nowa stała `doorTrailReach`: trasa od schodka tylko do kafla Path w ≤ R od środka budynku. Wynik pomiaru wariantów (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi bajtowo identyczne):
+Criteria and selection rule recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 12g”; grep confirmed). New constant `doorTrailReach`: route from step only to Path cell within ≤ R from building center. Measurement result of variants (seeds 1001–1032, side 512, v10, `pathLength` 0; median; two runs byte-identical):
 
-| R | L m06 (ref 70, pasmo 47–105) | L m19 (ref 78, 52–117) | bez dojścia m06 / m19 (‰) |
+| R | L m06 (ref 70, band 47–105) | L m19 (ref 78, 52–117) | no route m06 / m19 (‰) |
 | --- | ---: | ---: | ---: |
-| 16 | 20,5 | 25,5 | 696 / 672 |
-| **24 (wybrane wg reguły)** | **48** | **72,5** | 671 / 637 |
+| 16 | 20.5 | 25.5 | 696 / 672 |
+| **24 (selected per rule)** | **48** | **72.5** | 671 / 637 |
 | 36 | 116 ✗ | 151 ✗ | 629 / 597 |
-| poprzednio (60) | ok. 300 | ok. 340 | n/d |
+| previously (60) | ~300 | ~340 | n/d |
 
-Wybór R = 24 (największy spełniający L ≤ 1,5·ref w obu profilach). G, Kn, Ks, Ki, Kb, Bp i Dp bez zmian względem 12d/12f (rozmieszczenie to samo). **Przy domyślnych ustawieniach profilu** (`pathLength` 40 / 80 jak w GUI-owych sugestiach) L wynosi 108 / 177, bo dochodzą losowe długie szlaki 9d; wynik m06 jest tuż nad pasmem, m19 powyżej.
-**Koszt:** „bez dojścia” (schodek bez trasy do innych drzwi) to ok. 64–67 % budynków; w referencjach tylko 9–21 % budynków ma szlak w pobliżu (Bp 93 / 209 ‰), więc odsetek jest tej samej klasy, ale wynika z krótkiego zasięgu, a nie z modelu referencji. 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`. **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika, ma pierwszeństwo); innych `doorTrailReach` poza trzema z zapisu; `style_render` ma teraz wiersz `access` (odsetek bez dojścia) liczony tylko, gdy są drzwi.
+Selection R = 24 (largest satisfying L ≤ 1.5·ref in both profiles). G, Kn, Ks, Ki, Kb, Bp, and Dp unchanged vs. 12d/12f (placement same). **At default profile settings** (`pathLength` 40 / 80 as in GUI suggestions) L is 108 / 177, because random long paths 9d are added; m06 result just above band, m19 above.
+**Cost:** “no route” (step without path to other doors) is ~64–67% of buildings; in references only 9–21% of buildings have nearby path (Bp 93 / 209 ‰), so percentage is same class but results from short reach, not reference model. 15 core tests and both G1 probes PASS after rebuilding `rme`. **Not verified:** appearance in GUI (user assessment takes precedence); other `doorTrailReach` values outside three from record; `style_render` now has `access` row (percentage no route) counted only when doors present.
 
-## Iteracja 12h — szlaki do drzwi mają dokądś prowadzić (2026-11-09): kikuty usunięte, L poza pasmem w m19; czeka na ocenę użytkownika
+## Iteration 12h — paths to doors must lead somewhere (2026-11-09): stubs removed, L out of band in m19; awaits user assessment
 
-Kryteria i reguła wyboru zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 12h”; grep potwierdził). Zmiany: (1) trasy do drzwi stemplowane aż do schodka i celu (`reachEnds`; długie szlaki 9d bez zmian), (2) schodek tylko przy celu w zasięgu albo przy późniejszym partnerze w zasięgu; drzwi samotnego budynku wychodzą prosto na grunt; strona drzwi ku partnerowi.
+Criteria and selection rule recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 12h”; grep confirmed). Changes: (1) routes to doors stamped to step and goal (`reachEnds`; long paths 9d unchanged), (2) step only when goal in reach or later partner in reach; solitary building doors exit straight to ground; door side toward partner.
 
-Pomiar (seedy 1001–1032, bok 512, v10, `pathLength` 0; mediana; dwa przebiegi bajtowo identyczne):
+Measurement (seeds 1001–1032, side 512, v10, `pathLength` 0; median; two runs byte-identical):
 
-| `doorTrailReach` | L m06 (≤ 105) | L m19 (≤ 117) | kikuty m06 / m19 (‰) | drzwi bez schodka m06 / m19 (‰) |
+| `doorTrailReach` | L m06 (≤ 105) | L m19 (≤ 117) | stubs m06 / m19 (‰) | doors without step m06 / m19 (‰) |
 | --- | ---: | ---: | ---: | ---: |
 | 24 | 174 ✗ | 277 ✗ | 25 / 18 | 104 / 43 |
-| **16 (wybrane wg reguły, bo 24 nie spełnia)** | **96 ✓** | **174 ✗** | **33 / 31** | 208 / 103 |
+| **16 (selected per rule, 24 fails)** | **96 ✓** | **174 ✗** | **33 / 31** | 208 / 103 |
 
-Kryterium (a) L: **niespełnione w m19** (174 wobec ≤ 117), spełnione w m06; kryterium (b) kikuty ≤ 100 ‰: **spełnione** (było ok. 650 ‰ „izolowanych” w 12g). G, Kn, Ki, Kb, Dp bez zmian; Bp 791 / 897 ‰ (nie 1000, bo samotne budynki nie mają schodka). 15 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; test `settlements` zmieniony świadomie: schodek przed drzwiami nie jest już wymagany (dla boku ≥ 250 wymagany co najmniej jeden). **Nie zweryfikowano:** wyglądu w GUI (ocena użytkownika ma pierwszeństwo); zasięgów innych niż 16 i 24; „dokądś prowadzi” poza metryką kikutów (trasa dwóch sąsiadów może być łamana lub szeroka).
+Criterion (a) L: **not met in m19** (174 vs. ≤ 117), met in m06; criterion (b) stubs ≤ 100 ‰: **met** (was ~650 ‰ “isolated” in 12g). G, Kn, Ki, Kb, Dp unchanged; Bp 791 / 897 ‰ (not 1000, solitary buildings have no step). 15 core tests and both G1 probes PASS after rebuilding `rme`; `settlements` test changed intentionally: step before doors no longer required (for side ≥ 250 at least one required). **Not verified:** appearance in GUI (user assessment takes precedence); reaches other than 16 and 24; “leads somewhere” beyond stub metric (neighbor route may be bent or wide).
 
-**Ocena użytkownika po 12h (2026-11-09, zrzuty z GUI, dwa obszary, `rme` po 12h): „wygląda lepiej”.** Szlaki łączą drzwi sąsiednich budynków i nie widać kikutów. To potwierdza kierunek wizualnie, ale jest to ocena ogólna (bez liczb), a metryka L w m19 pozostaje poza zapisanym pasmem (174 wobec ≤ 117) – rozbieżność metryka/wzrok odnotowana; wzrok ma pierwszeństwo. Nadal otwarte: kryterium 12c jako całość niespełnione, brak badania wrażliwości stałych (60 %, 3–6, 60, 12, 16/24).
+**User assessment after 12h (2026-11-09, GUI screenshots, two areas, `rme` after 12h): “looks better”.** Paths connect adjacent building doors and no stubs visible. Visually confirms direction, but this is general assessment (no numbers), and L metric in m19 stays outside recorded band (174 vs. ≤ 117) – metric/visual discrepancy noted; visual takes precedence. Still open: criterion 12c as a whole unmet, no sensitivity study of constants (60%, 3–6, 60, 12, 16/24).
 
-## Iteracja 13 — walidator osiągalności powierzchni (2026-11-09): PARTIAL, kryterium budynków NIE spełnione
+## Iteration 13 — surface reachability validator (2026-11-09): PARTIAL, buildings criterion NOT MET
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 13”, commit `645ce8e`; grep potwierdził). Zaimplementowano `reachabilityOf(SurfaceGrid, walls)` (`source/procedural/core/reachability.{h,cpp}`): mierzy, niczego nie zmienia, bez naprawy i odrzucania seedów.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 13”, commit `645ce8e`; grep confirmed). Implemented `reachabilityOf(SurfaceGrid, walls)` (`source/procedural/core/reachability.{h,cpp}`): measures, changes nothing, no repair or seed rejection.
 
-**Testy.** Nowy `test_procedural_reachability`: układy policzone ręcznie (jezioro dzieli ląd 20 + 25; budynek bez drzwi zamknięty, z drzwiami osiągalny, bez ścian osiągalny; drzwi do wody; Preserve; błędy i `stop_token`) oraz porównanie z niezależną implementacją (union-find) na 80 losowych siatkach 16×16 w trybie ze ścianami i bez: 160 z 160 zgodnych, dwa przebiegi identyczne. 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; odcisk Seed 1729 bez zmian (test `surface`). Pamięć robocza: 9 B/komórkę (etykiety 4 + kolejka 4 + flaga 1), **kryterium z zapisu (≤ 8) było zbyt ciasne**: to odchylenie, wartość jest oszacowaniem, nie pomiarem.
+**Tests.** New `test_procedural_reachability`: layouts counted manually (lake splits land 20 + 25; building without doors closed, with doors reachable, without walls reachable; doors to water; Preserve; errors and `stop_token`) and comparison with independent implementation (union-find) on 80 random 16×16 grids with and without walls: 160 of 160 matching, two runs identical. 16 core tests and both G1 probes PASS after rebuilding `rme`; Seed 1729 snapshot unchanged (test `surface`). Working memory: 9 B/cell (labels 4 + queue 4 + flag 1), **criterion from record (≤ 8) was too tight**: this is deviation, value is estimate not measurement.
 
-**Pomiar** (seedy 1001–1032, bok 512, profile v10, ściany i drzwi, mediana [min..max], dwa przebiegi bajtowo identyczne; `g5_shape_table.py`, wiersz `reach`):
+**Measurement** (seeds 1001–1032, side 512, profiles v10, walls and doors, median [min..max], two runs byte-identical; `g5_shape_table.py`, row `reach`):
 
-| | m06 (`pathLength` 40, 30 budynków/64k) | m19 (80, 40) |
+| | m06 (`pathLength` 40, 30 buildings/64k) | m19 (80, 40) |
 | --- | ---: | ---: |
-| komórek przechodnich | 177 340 | 177 084 |
-| największa składowa (‰) | 993,5 [647..999] | 993,5 [651..1000] |
-| poza największą na 65 536 kafli | 266 [4..15 759] | 264 [0..15 495] |
-| kieszenie ≥ 16 | 2 [1..9] | 2,5 [0..9] |
-| budynki zamknięte / budynki | 0 [0..52] / 120 | 0 [0..77] / 160 |
-| seedy z zamkniętym > 0 | **10 z 32** | **10 z 32** |
+| passable cells | 177 340 | 177 084 |
+| largest component (‰) | 993.5 [647..999] | 993.5 [651..1000] |
+| outside largest per 65 536 cells | 266 [4..15 759] | 264 [0..15 495] |
+| pockets ≥ 16 | 2 [1..9] | 2.5 [0..9] |
+| closed buildings / buildings | 0 [0..52] / 120 | 0 [0..77] / 160 |
+| seeds with closed > 0 | **10 of 32** | **10 of 32** |
 
-Z `pathLength` 0 liczby są prawie takie same (np. m06 zamknięte [0..50], m19 [0..84]).
+With `pathLength` 0 numbers nearly same (e.g., m06 closed [0..50], m19 [0..84]).
 
-**Kryterium 4 (zamknięte = 0 w ≥ 90 % seedów): NIE spełnione** (22 z 32 = 69 % seedów bez zamkniętych). Diagnostyka dopisana po pomiarze (post hoc, wiersz `doorBlocked` w `style_render`, nie z zapisu kryteriów): **żadne drzwi nie są zablokowane** (0 z 32 seedów); zamknięte budynki leżą na lądzie odciętym od największej składowej przez rzekę lub jezioro (seedy z największą składową 647–989 ‰). Zamknięcie wynika więc z podziału lądu, nie z błędu drzwi; naprawa wymaga mostów, brodów albo odrzucenia seedu (następna iteracja).
+**Criterion 4 (closed = 0 in ≥ 90% seeds): NOT MET** (22 of 32 = 69% of seeds without closed). Diagnostics added post-measurement (post hoc, row `doorBlocked` in `style_render`, not from criterion record): **no doors blocked** (0 of 32 seeds); closed buildings lie on land cut from largest component by river or lake (seeds with largest component 647–989 ‰). Closure thus results from land division, not door error; fix requires bridges, fords, or seed rejection (next iteration).
 
-**Nie zweryfikowano:** przechodności Rock i Shore na kliencie (założona, D22); „POI osiągalne” i „ustalony start” (nie istnieją w generatorze, N/A); pięter i przejść Z; adaptera i GUI (walidator nie jest jeszcze wywoływany z okna generatora ani z sondy RME, tylko z `style_render`); stanu dla `buildingDensity` 0 poza testem odcisku; wydajności walidatora (nie mierzono).
+**Not verified:** Rock and Shore passability on client (assumed, D22); “POI reachable” and “fixed start” (do not exist in generator, N/A); floors and Z transitions; adapter and GUI (validator not yet called from generator window or RME probe, only from `style_render`); state for `buildingDensity` 0 outside snapshot test; validator performance (not measured).
 
-## Iteracja 14 — brody przez wodę (2026-11-09): PARTIAL, kryterium NIE spełnione dla wartości z zapisu (32), spełnione post hoc od 48
+## Iteration 14 — fords through water (2026-11-09): PARTIAL, criterion NOT MET for recorded value (32), met post hoc from 48
 
-Kryteria i reguła wyboru wartości zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14”, commit `15d5f66`; grep potwierdził). Zaimplementowano `SurfaceTuning::fordLength` (dopisane na końcu struktury, 0..64, 0 = wyłączone), `placeFords` w rdzeniu (BFS przez River i Lake, Path na trasie i wodzie obok, składowe liczone przez `walkableLabelsOf`), pole „Ford length” w oknie generatora (profil musi mieć siódmy pędzel szlaku), odcisk konfiguracji planu z `fordLength` tylko gdy ustawione.
+Criteria and value selection rule recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 14”, commit `15d5f66`; grep confirmed). Implemented `SurfaceTuning::fordLength` (appended to struct, 0..64, 0 = disabled), `placeFords` in core (BFS through River and Lake, Path on route and water edge, components counted by `walkableLabelsOf`), “Ford length” field in generator window (profile must have seventh path brush), plan snapshot with `fordLength` only when set.
 
-**Testy.** `test_procedural_reachability` rozszerzony ręcznie policzonymi układami: rzeka 3 szerokości (zasięg 2: bez zmian; zasięg 3: 6 komórek Path, rzeka 18, jedna składowa 142), kieszeń 12 komórek bez brodu, jezioro 4 szerokości (zasięg 3: bez zmian; 4: 8 komórek Path), determinizm, drugi przebieg bez zmian. 16 testów rdzenia PASS, odcisk Seed 1729 bez zmian. Sonda `--surface`: nowy przypadek `SURFACE_FORDS_E2E_PASS` (bok 250, pierwszy seed od 1729 z brodem: 6 komórek Path wyłącznie na wodzie, Preview, Validate, Commit jako jeden krok, Undo, Redo, odcisk planu się zmienia); sonda `--commit` PASS; `rme` przebudowany.
+**Tests.** `test_procedural_reachability` extended with manually counted layouts: river 3 wide (reach 2: unchanged; reach 3: 6 Path cells, river 18, one component 142), pocket 12 cells without ford, lake 4 wide (reach 3: unchanged; 4: 8 Path cells), determinism, second run unchanged. 16 core tests PASS, Seed 1729 snapshot unchanged. Probe `--surface`: new case `SURFACE_FORDS_E2E_PASS` (side 250, first seed from 1729 with ford: 6 Path cells only on water, Preview, Validate, Commit as one step, Undo, Redo, plan snapshot changes); probe `--commit` PASS; `rme` rebuilt.
 
-**Pomiar** (seedy 1001–1032, bok 512, profile v10, ściany i drzwi, ustawienia jak w iteracji 13; seedy z zamkniętymi budynkami / suma zamkniętych; mediana komórek brodów):
+**Measurement** (seeds 1001–1032, side 512, profiles v10, walls and doors, settings as in iteration 13; seeds with closed buildings / total closed; median ford cells):
 
-| `fordLength` | m06 seedy / suma | m19 seedy / suma | największa składowa, min (‰) | komórki brodów (mediana, max) |
+| `fordLength` | m06 seeds / sum | m19 seeds / sum | largest component, min (‰) | ford cells (median, max) |
 | --- | ---: | ---: | ---: | ---: |
 | 0 | 10 / 121 | 10 / 159 | 647 / 651 | 0 |
 | 8 | 9 / 69 | 9 / 82 | 733 / 730 | 8, 42 |
 | 16 | 9 / 69 | 9 / 82 | 733 / 731 | 14, 122 |
-| **32 (wybór wg reguły)** | **5 / 24** | **5 / 31** | 919 / 919 | 36, 307 |
+| **32 (selection per rule)** | **5 / 24** | **5 / 31** | 919 / 919 | 36, 307 |
 
-Kryterium (≥ 29 z 32 seedów bez zamkniętych, czyli ≤ 3 z zamkniętymi, w obu profilach): **NIE spełnione dla żadnej wartości z zapisanego zestawu {8, 16, 32}**; zgodnie z regułą wybór to 32 z werdyktem NIE spełnione (5 z 32 seedów, 69 → 84 % bez zamkniętych). **Pomiar dodatkowy po fakcie (nie z zapisu):** 48 → 2 z 32 seedów (m06 i m19; po 2 zamknięte budynki łącznie), 64 → 1 / 2 z 32; te wartości spełniałyby kryterium, ale nie były w zapisanym zestawie, więc nie zmieniają werdyktu; komórki brodów przy 48–64: max 330–373 na 262 144 kafli. Dwa przebiegi bajtowo identyczne (`g5_shape_table.py --extra fordLength=32`).
+Criterion (≥ 29 of 32 seeds without closed, i.e., ≤ 3 closed, in both profiles): **NOT MET for any value from recorded set {8, 16, 32}**; per rule selection is 32 with verdict NOT MET (5 of 32 seeds, 69 → 84% without closed). **Post-hoc measurement (not from record):** 48 → 2 of 32 seeds (m06 and m19; 2 closed buildings total each), 64 → 1 / 2 of 32; these values would meet criterion, but not in recorded set, so do not change verdict; ford cells at 48–64: max 330–373 per 262 144 cells. Two runs byte-identical (`g5_shape_table.py --extra fordLength=32`).
 
-**Wniosek.** Brody wystarczają, gdy woda nie jest szersza niż zasięg; pozostałe zamknięte budynki leżą za wodą szerszą niż 32 komórki. Domyślnie w oknie 0 (wyłączone); wartość do ręcznej oceny: 48.
+**Conclusion.** Fords suffice when water no wider than reach; remaining closed buildings lie beyond water wider than 32 cells. Default in window 0 (disabled); value for manual assessment: 48.
 
-**Nie zweryfikowano:** wyglądu brodów w GUI (ocena użytkownika ma pierwszeństwo); czy kafel Path na wodzie jest przechodni w grze (zależy od pędzla szlaku, D22); mostów z osobnym przedmiotem (poza zakresem); wpływu masek i ochrony (Preserve może zerwać bród); wydajności brodów (nie mierzono; w sweepie 32 seedów generowanie z brodami trwało 6–7 s wobec 4 s bez, ale to dwa wywołania generatora na seed w `style_render`); `test_universal_rotator` nie linkuje się przy pełnym `ninja` (inny cel, nie ruszany, nie badany).
+**Not verified:** ford appearance in GUI (user assessment takes precedence); whether Path cell on water is passable in game (depends on path brush, D22); bridges with separate item (out of scope); impact of masks and protection (Preserve can break ford); ford performance (not measured; in 32-seed sweep generation with fords took 6–7 s vs. 4 s without, but two generator calls per seed in `style_render`); `test_universal_rotator` does not link with full `ninja` (different target, not touched, not tested).
 
-## Iteracja 14b — brody z piasku, limit 256 (2026-11-09): PARTIAL, po uwadze użytkownika; kryteria 1–4 spełnione, wygląd i chodzenie w grze nie zweryfikowane
+## Iteration 14b — sand fords, limit 256 (2026-11-09): PARTIAL, per user note; criteria 1–4 met, appearance and game walking not verified
 
-Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14b”, commit `95a3971`; grep potwierdził). **Błąd iteracji 14 (uwaga użytkownika: „tym mostem nie da się przejść”):** kryteria sprawdzały łączność w modelu, a nie kafle po zatwierdzeniu. Pomiar w sondzie pokazał 5 z 6 kafli brodu blokujących: grunt `cobbled pavement`, brzeg `sand` i blokujący element `shallow water` (id 4648), krawędź wody nałożona przez obramowanie, bo pędzel szlaku ma niższy priorytet niż woda. Wynik z iteracji 14 (Path na wodzie) uznaję za **niewłaściwy**; liczby seedów z tej iteracji dotyczą modelu, nie chodzenia.
+Criteria recorded before change ([G4_METRICS.md](G4_METRICS.md), “Iteration 14b”, commit `95a3971`; grep confirmed). **Iteration 14 bug (user note: “can't walk that bridge”):** criteria checked connectivity in model, not cells after placement. Probe measurement showed 5 of 6 ford cells blocking: ground `cobbled pavement`, edge `sand`, and blocking element `shallow water` (id 4648), water edge overlaid by bordering, because path brush has lower priority than water. Result from iteration 14 (Path on water) I mark as **incorrect**; seed numbers from that iteration concern model, not walking.
 
-**Zmiana.** Kafle brodu mają rodzaj Shore (piasek, ten sam pędzel i obramowanie co plaże); brody nie wymagają już siódmego pędzla (adapter i okno wracają do wymagania pędzla szlaku tylko przy `pathLength`); limit `fordLength` 64 → 256 (walidacja i pole okna; 64 było moim arbitralnym wyborem, nie wynikało z pomiaru).
+**Change.** Ford tiles are Shore kind (sand, same brush and bordering as beaches); fords no longer require a seventh brush (adapter and window revert to requiring path brush only at `pathLength`); limit `fordLength` 64 → 256 (validation and window field; 64 was my arbitrary choice, not measurement-driven).
 
-**Kryterium 1 (sonda `--surface`): spełnione.** Po Commit 0 z 6 kafli brodu blokujących, wszystkie mają grunt (nowa asercja `FORD_TILES`, właściwość blokowania z danych klienta 10.98). **Kryterium 2: spełnione**, liczby identyczne jak w 14 (seedy z zamkniętymi z 32: m06 / m19 przy 8: 9 / 9; 16: 9 / 9; 32: 5 / 5; 48: 2 / 2; 64: 1 / 2). **Kryterium 3 (raport):** `fordLength` 256 → 0 z 32 seedów z zamkniętymi budynkami w obu profilach (suma 0), komórki brodów max 621 / 627 na 262 144 kafli; czas `style_render` 6,4 s (m06) i 7,0 s (m19), taki sam jak przy 32 (6,4 / 6,9 s) i 64. **Kryterium 4: spełnione:** 16 testów rdzenia (testy brodów przestawione na Shore, liczby bez zmian), obie sondy G1 PASS, odcisk Seed 1729 bez zmian.
+**Criterion 1 (probe `--surface`): met.** After Commit, 0 of 6 blocking ford tiles; all have ground (new assertion `FORD_TILES`, blocking property from client 10.98 data). **Criterion 2: met**, numbers identical to 14 (seeds with locked buildings out of 32: m06 / m19 at 8: 9 / 9; 16: 9 / 9; 32: 5 / 5; 48: 2 / 2; 64: 1 / 2). **Criterion 3 (report):** `fordLength` 256 → 0 of 32 seeds with locked buildings in both profiles (sum 0); ford cells max 621 / 627 of 262 144 tiles; `style_render` time 6.4 s (m06) and 7.0 s (m19), same as at 32 (6.4 / 6.9 s) and 64. **Criterion 4: met:** 16 core tests (ford tests switched to Shore, numbers unchanged); both G1 probes PASS; Seed 1729 footprint unchanged.
 
-**Nie zweryfikowano:** wyglądu brodu w GUI (piaszczysta ławica, nie most); chodzenia w grze (asercja dotyczy flagi blokowania z danych klienta, nie ruchu; sąsiednie kafle wody dostają krawędzie piasku); jak szeroki bród jest sensowny (przy 256 możliwe są bardzo długie ławice przez morze, zakres do oceny użytkownika); masek i ochrony (Preserve może przerwać bród); mostów z osobnym przedmiotem.
+**Not verified:** ford appearance in GUI (sandy shoal, not bridge); game walking (assertion concerns blocking flag from client data, not movement; adjacent water tiles get sand edges); how wide a ford makes sense (at 256 very long shoals across the sea are possible, range for user assessment); masks and preservation (Preserve can break a ford); bridges with separate item.
 
-## Iteracja 14c — rozszerzone końce brodu (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd i chodzenie w grze czekają na użytkownika
+## Iteration 14c — extended ford ends (2026-11-09): PARTIAL, criteria 1–4 met, appearance and game walking await user
 
-Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14c”, commit `5091210`; grep potwierdził). Zmiana: przy `fordLength` > 0 woda w odległości Czebyszewa ≤ 3 od pierwszej i ostatniej komórki trasy brodu staje się piaskiem (`fordMouthRadius`); środek bez zmian.
+Criteria recorded before change ([G4_METRICS.md](G4_METRICS.md), “Iteration 14c”, commit `5091210`; grep confirmed). Change: at `fordLength` > 0, water within Chebyshev distance ≤ 3 of the first and last ford route cell becomes sand (`fordMouthRadius`); center unchanged.
 
-**Co wiadomo o uwadze użytkownika.** Nowa asercja sondy (na zatwierdzonych kaflach, bok 250, `lakePermille` 250, `fordLength` 256): 0 kafli brodu i 0 lądowych kafli obok niego z flagą blokowania, 3 kieszenie połączone brodem w modelu są połączone także na mapie (ruch 4-sąsiedzki). Według flag klienta bród był więc przechodni już w 14b; skargę odczytałem jako zbyt wąski styk z lądem (rożek brzegu) i to poprawiłem. Jeśli użytkownik sprawdzał chodzenie w grze, przyczyny nie znam.
+**What is known about user attention.** New probe assertion (on approved tiles, side 250, `lakePermille` 250, `fordLength` 256): 0 ford tiles and 0 land tiles next to it with blocking flag; 3 pockets connected by ford in model are also connected on map (4-neighbor movement). By client flags, ford was passable in 14b already; I read the complaint as too narrow contact with land (corner of edge) and fixed that. If the user checked game walking, I do not know the cause.
 
-**Kryterium 1 i 2 (testy ręczne): spełnione.** Rzeka 3 szerokości (20×8): bród 12 komórek piasku (było 6), styk 4 + 4 (było 2 + 2), jedna składowa 148. Siatka 20×16 (trasa w środku): 30 komórek piasku, styk 7 po stronie szerokiego lądu i 4 po stronie wąskiego lądu (ograniczony lądem, nie brodem). Jezioro 4 szerokości zasięg 4: 16 komórek piasku. **Kryterium 3:** sonda `--surface` PASS (180 kafli brodu, 0 blokujących, 0 niepołączonych). **Kryterium 4: spełnione:** seedy z zamkniętymi budynkami identyczne jak w 14b (zasięg 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 z 32), komórki brodów rosną (mediana zasięg 48: 182, max 624; zasięg 256: mediana 256–272, max 930), czas bez zmian (6,4–7,6 s), dwa przebiegi bajtowo identyczne; 16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian.
+**Criteria 1 and 2 (manual tests): met.** River width 3 (20×8): ford 12 sand cells (was 6); contact 4 + 4 (was 2 + 2); one component 148. Grid 20×16 (route in middle): 30 sand cells; contact 7 on wide-land side and 4 on narrow-land side (limited by land, not ford). Lake width 4, range 4: 16 sand cells. **Criterion 3:** probe `--surface` PASS (180 ford tiles, 0 blocking, 0 disconnected). **Criterion 4: met:** seeds with locked buildings identical to 14b (range 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 out of 32); ford cells grow (median range 48: 182, max 624; range 256: median 256–272, max 930); time unchanged (6.4–7.6 s); two runs byte-identical; 16 core tests and both G1 probes PASS; Seed 1729 footprint unchanged.
 
-**Nie zweryfikowano:** wyglądu (większe piaszczyste łaty na końcach mogą wyglądać nienaturalnie; promień 3 to mój wybór); chodzenia w grze; czy styk 4–7 kafli wystarcza w ocenie użytkownika; masek i ochrony; mostów z przedmiotem.
+**Not verified:** appearance (larger sandy patches at ends may look unnatural; radius 3 is my choice); game walking; whether 4–7-tile contact is enough in user assessment; masks and preservation; bridges with item.
 
-## Iteracja 14d — naturalniejszy kształt brodu (2026-11-09): PARTIAL, kryteria 1–4 spełnione, „naturalny” czeka na ocenę użytkownika
+## Iteration 14d — more natural ford shape (2026-11-09): PARTIAL, criteria 1–4 met, “natural” awaits user assessment
 
-Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 14d”, commit `776a3f7`; grep potwierdził). Zmiana (tylko trasy ≥ 8 komórek wody; krótsze jak w 14c): oś brodu z poprzecznym wychyleniem do 4 komórek (0 na końcach, szum z ziarna i bezwzględnych współrzędnych), szerokość 3 lub 5 zmienna co ok. 8 komórek, wlot promienia 3 na końcach, zabezpieczenie: jeśli oś nie łączy końców po komórkach przechodnich, dodawana jest prosta trasa. `placeFords` dostaje ziarno i początek obszaru (`FordShape`).
+Criteria recorded before change ([G4_METRICS.md](G4_METRICS.md), “Iteration 14d”, commit `776a3f7`; grep confirmed). Change (routes ≥ 8 water cells only; shorter like 14c): ford axis with transverse jitter up to 4 cells (0 at ends, noise from seed and absolute coordinates); width 3 or 5 varying every ~8 cells; mouth radius 3 at ends; safeguard: if axis does not connect ends through passable cells, a straight route is added. `placeFords` takes seed and area start (`FordShape`).
 
-**Kryterium 1: spełnione** (testy ręczne 14c bez zmian). **Kryterium 2: spełnione** (test na wodzie 64×24, trasa 48 komórek): jedna składowa po brodzie; to samo ziarno daje ten sam bród, inne ziarno inny kształt; tylko woda zamieniona w piasek; w środkowej jednej trzeciej każda kolumna ma od 3 do 9 komórek piasku; średni rząd piasku zmienia się o ≥ 2 rzędy (kształt nie jest prostą linią). **Kryterium 3: spełnione:** sonda `--surface` z większymi jeziorami (`lakePermille` 450, 443 kafli brodu, 7 kieszeni): 0 blokujących kafli brodu i obok niego, wszystkie kieszenie połączone na zatwierdzonej mapie. **Kryterium 4: spełnione:** seedy z zamkniętymi budynkami identyczne jak w 14c (zasięg 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 z 32); komórki brodów: mediana przy zasięgu 48 180, przy 256 287–306, max 1059; czas generowania bez zmian (6,4–7,0 s); dwa przebiegi bajtowo identyczne; 16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian.
+**Criterion 1: met** (manual tests 14c unchanged). **Criterion 2: met** (test on water 64×24, route 48 cells): one component through ford; same seed gives same ford, different seed different shape; only water converted to sand; in middle third each column has 3 to 9 sand cells; average sand row changes by ≥ 2 rows (shape not a straight line). **Criterion 3: met:** probe `--surface` with larger lakes (`lakePermille` 450, 443 ford tiles, 7 pockets): 0 blocking ford tiles and next to it; all pockets connected on approved map. **Criterion 4: met:** seeds with locked buildings identical to 14c (range 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 out of 32); ford cells: median at range 48: 180; at 256: 287–306, max 1059; generation time unchanged (6.4–7.0 s); two runs byte-identical; 16 core tests and both G1 probes PASS; Seed 1729 footprint unchanged.
 
-**Nie zweryfikowano:** czy bród wygląda naturalnie (ocenia użytkownik; stałe 4, 8, 40 000, szerokość 3/5 to moje wybory); ile brodów w sondzie i w pomiarze miało trasę ≥ 8 komórek i ile razy zadziałało zabezpieczenie z prostą trasą (nie liczyłem); chodzenia w grze (sonda sprawdza flagi blokowania); masek i ochrony; mostów z przedmiotem.
+**Not verified:** whether ford looks natural (user assesses; constants 4, 8, 40,000, widths 3/5 are my choices); how many fords in probe and measurement had route ≥ 8 cells and how many times the straight-route safeguard triggered (not counted); game walking (probe checks blocking flags); masks and preservation; bridges with item.
 
-**Ocena użytkownika po 14d (2026-11-09, GUI): „Tak, jest dobrze”.** Naturalny kształt brodu potwierdzony wzrokowo (ocena ogólna, bez liczb; chodzenia w grze nie sprawdzano). Nadal otwarte: mosty z przedmiotem, przełęcze, graf regionów i POI, odrzucanie seedów, brody dla masek i ochrony.
+**User assessment after 14d (2026-11-09, GUI): “Yes, that's good”.** Natural ford shape confirmed visually (general assessment, no numbers; game walking not checked). Still open: bridges with item, rock passes, region graph and POI, seed rejection, fords for masks and preservation.
 
-## Pomiar przed przełęczami (2026-11-09): w tym profilu skała jest przechodnia
+## Measurement before passes (2026-11-09): in this profile rock is passable
 
-Sonda `--surface` (bok 250, `lakePermille` 450, profil `grass/dirt/rocky ground/sand/sea`, klient 10.98) liczy flagę blokowania kafli po Commit według rodzaju komórki (wiersz `KIND_BLOCKING`): **Rock 19 z 4983 blokujących (0,4 %)**, Shore 0 z 7705, Grass 116 z 17 293 (0,7 %); przykład kafla Rock: grunt `gravel` z elementami `rocks`, `grass`. Wniosek: skała z pędzla „rocky ground” **nie jest przeszkodą**, więc „przełęcz” nie rozwiązuje żadnego odcięcia osiągalności (model D22 dla Rock, Shore i Grass potwierdzony na tym profilu, z wyjątkiem pojedynczych kafli; przyczyna 19 + 116 blokujących kafli nie zbadana). Przełęcz mogłaby być tylko trasą szlaku przez skałę (dziś `PathRouter` nie przechodzi przez Rock) albo wymagałaby, żeby skała blokowała (ściany górskie, poza zakresem generatora).
+Probe `--surface` (side 250, `lakePermille` 450, profile `grass/dirt/rocky ground/sand/sea`, client 10.98) counts blocking flag of tiles after Commit by cell kind (row `KIND_BLOCKING`): **Rock 19 of 4983 blocking (0.4 %)**, Shore 0 of 7705, Grass 116 of 17 293 (0.7 %); example rock tile: ground `gravel` with elements `rocks`, `grass`. Conclusion: rock from “rocky ground” brush **is not obstacle**, so “pass” solves no reachability cut (model D22 for Rock, Shore and Grass confirmed on this profile, except single tiles; cause of 19 + 116 blocking tiles not investigated). Pass could only be path route through rock (today `PathRouter` does not cross Rock) or would require rock to block (mountain walls, beyond generator scope).
 
-## Iteracja 15 — szlaki przez skałę (2026-11-09): PARTIAL, kryterium 2 NIE spełnione
+## Iteration 15 — paths through rock (2026-11-09): PARTIAL, criterion 2 NOT MET
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 15”, commit `eae361d`; grep potwierdził). Zaimplementowano `SurfaceTuning::rockPasses` (0/1, dopisane na końcu struktury, nie jest częścią profilu stylu): przy 1 `PathRouter` może wchodzić na komórki Rock za dodatkowe 40 (stała `passCrossCost`), komórki Rock pod trasą i obramowaniem stają się Path; pole „Rock passes” w oknie generatora (aktywne przy „Path length” > 0); odcisk konfiguracji planu z `rockPasses` tylko gdy ustawione; `style_render` ma wiersz `cut` (komórki Path z Rock w odległości ≤ 3 po obu stronach w jednej osi, na 65 536).
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 15”, commit `eae361d`; grep confirmed). Implemented `SurfaceTuning::rockPasses` (0/1, appended to struct, not part of style profile): when 1 `PathRouter` can enter Rock cells for additional 40 (constant `passCrossCost`), Rock cells under route and border become Path; “Rock passes” field in generator window (active when “Path length” > 0); plan snapshot with `rockPasses` only when set; `style_render` has row `cut` (Path cells with Rock within distance ≤ 3 on both sides in one axis, per 65 536).
 
-**Kryterium 1: spełnione** (`rockPasses` 0: 16 testów rdzenia, odcisk Seed 1729 bez zmian). **Kryterium 3: spełnione** (dwa przebiegi bajtowo identyczne; obie sondy G1 PASS; sonda `--surface`: 443 kafle brodu, 0 blokujących, 7 kieszeni połączonych).
+**Criterion 1: met** (`rockPasses` 0: 16 core tests; Seed 1729 footprint unchanged). **Criterion 3: met** (two runs byte-identical; both G1 probes PASS; probe `--surface`: 443 ford tiles, 0 blocking, 7 connected pockets).
 
-**Kryterium 2: NIE spełnione.** Seedy 1001–1032, bok 512, profile v10, `pathLength` 40 / 80, `buildingDensity` 30 / 40:
+**Criterion 2: NOT met.** Seeds 1001–1032, side 512, profile v10, `pathLength` 40 / 80, `buildingDensity` 30 / 40:
 
-| `rockPasses`, koszt | m06: `cut` mediana (max), seedy z `cut` > 0 | m19: `cut` mediana (max), seedy z `cut` > 0 | L mediana m06 / m19 |
+| `rockPasses`, cost | m06: `cut` median (max), seeds with `cut` > 0 | m19: `cut` median (max), seeds with `cut` > 0 | L median m06 / m19 |
 | --- | ---: | ---: | ---: |
-| 0 | 0 (0), 0 z 32 | 0 (1), 1 z 32 | 166 / 295 |
-| **1, koszt 40 (zapisany)** | 0 (6), 3 z 32 | 0 (15), 8 z 32 | 162 / 296 |
+| 0 | 0 (0), 0 of 32 | 0 (1), 1 of 32 | 166 / 295 |
+| **1, cost 40 (recorded)** | 0 (6), 3 of 32 | 0 (15), 8 of 32 | 162 / 296 |
 
-Wymagane było: mediana ≥ 2× większa niż przy 0 i `cut` > 0 w ≥ 24 z 32 seedów; wynik 3 i 8 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt 15 → 5 i 9 z 32; koszt 0 (skała bez dopłaty) → 13 i 22 z 32 (mediana `cut` m19 9). Nawet darmowe przejście przez skałę nie daje 24 z 32, więc **koszt nie jest wąskim gardłem**: szlaki łączą losowe punkty lądu i rzadko wymagają przejścia przez pasmo skały. Długość szlaków (L) bez regresji (162 / 296 wobec 166 / 295).
+Required: median ≥ 2× larger than at 0 and `cut` > 0 in ≥ 24 of 32 seeds; result 3 and 8 of 32. **Additional measurement after the fact (not recorded):** cost 15 → 5 and 9 of 32; cost 0 (rock free) → 13 and 22 of 32 (median `cut` m19 9). Even free rock passage does not give 24 of 32, so **cost is not the bottleneck**: routes connect random land points and rarely require passage through a rock band. Route length (L) no regression (162 / 296 vs. 166 / 295).
 
-**Wniosek.** Funkcja działa i nic nie psuje, ale w tych seedach prawie nie widać przełęczy; żeby je widzieć, szlaki musiałyby celowo łączyć obszary rozdzielone skałą (zmiana wyboru końców tras, osobna iteracja). Wygląd w GUI nie sprawdzony. **Nie zweryfikowano:** wyglądu; blokowania kafli Path na skale (sonda ich nie dotyka, bo `rockPasses` jest w sondzie wyłączone); pomiaru w referencjach (odchylenie opisane w zapisie); opcji 2 (skała blokująca z przełęczami): nie zaczęta.
+**Conclusion.** Function works and breaks nothing, but in these seeds rock passes are barely visible; to see them, routes would have to deliberately connect areas separated by rock (change to route endpoint selection, separate iteration). GUI appearance not checked. **Not verified:** appearance; blocking of Path tiles on rock (probe does not touch them because `rockPasses` is off in probe); measurement in references (deviation described in record); option 2 (rock blocking with passes): not started.
 
-## Iteracja 16 — cele szlaków po drugiej stronie skały (2026-11-09): PARTIAL, kryterium 1 NIE spełnione
+## Iteration 16 — path targets on far side of rock (2026-11-09): PARTIAL, criterion 1 NOT MET
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 16”, commit `f258df4`; grep potwierdził). Zaimplementowano w `drawPaths` (tylko `rockPasses` = 1): co drugie podejście szuka startu i celu „przez skałę” (do 64 losowych komórek lądu jako start, z każdej do 8 losowych kierunków, do 48 kroków; ciąg 3–30 komórek Rock bez wody, potem ląd, cel 4 kroki dalej); bez powodzenia stary losowy cel. Przy `rockPasses` 0 strumień losowy i wynik bez zmian.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 16”, commit `f258df4`; grep confirmed). Implemented in `drawPaths` (only `rockPasses` = 1): every other attempt seeks start and target “through rock” (up to 64 random land cells as start, from each up to 8 random directions, up to 48 steps; sequence 3–30 Rock cells without water, then land, target 4 steps farther); without success old random target. At `rockPasses` 0 random stream and result unchanged.
 
-**Odkrycie przy diagnozie:** przy `pathLength` 40 cel długości (160 komórek na 512×512) wypełnia już pierwsza trasa, więc generator rysuje tylko **1–2 trasy na mapę**; „co drugie podejście” w pierwszej wersji (jedna próba startu) dawało 4 i 6 z 32 seedów, a poszukiwanie startu wśród 64 komórek podniosło to do 10 i 10.
+**Discovery during diagnosis:** at `pathLength` 40, the target length (160 cells on 512×512) is already filled by the first route, so generator draws only **1–2 routes on map**; “every other attempt” in first version (one start attempt) gave 4 and 6 of 32 seeds; searching start among 64 cells raised it to 10 and 10.
 
-**Kryterium 3: spełnione** (nowy test `surface` `rockPasses`: deterministyczny, zmienia wynik, wartość 2 odrzucona; 16 testów rdzenia, odcisk Seed 1729 bez zmian; dwa przebiegi bajtowo identyczne; obie sondy G1 PASS). **Kryterium 2: spełnione:** L (mediana) 159 / 307 przy limitach 249 / 443.
+**Criterion 3: met** (new test `surface` `rockPasses`: deterministic, changes result, value 2 rejected; 16 core tests, Seed 1729 footprint unchanged; two runs byte-identical; both G1 probes PASS). **Criterion 2: met:** L (median) 159 / 307 within limits 249 / 443.
 
-**Kryterium 1: NIE spełnione** (seedy 1001–1032, bok 512, profile v10, koszt skały 40 z zapisu):
+**Criterion 1: NOT met** (seeds 1001–1032, side 512, profile v10, rock cost 40 recorded):
 
-| | m06 `cut` mediana (max), seedy z `cut` > 0 | m19 `cut` mediana (max), seedy z `cut` > 0 |
+| | m06 `cut` median (max), seeds with `cut` > 0 | m19 `cut` median (max), seeds with `cut` > 0 |
 | --- | ---: | ---: |
-| `rockPasses` 0 | 0 (0), 0 z 32 | 0 (1), 1 z 32 |
-| `rockPasses` 1, iteracja 15 (losowe cele) | 0 (6), 3 z 32 | 0 (15), 8 z 32 |
-| **`rockPasses` 1, iteracja 16** | **0 (16), 10 z 32** | **0 (25), 10 z 32** |
+| `rockPasses` 0 | 0 (0), 0 of 32 | 0 (1), 1 of 32 |
+| `rockPasses` 1, iteration 15 (random targets) | 0 (6), 3 of 32 | 0 (15), 8 of 32 |
+| **`rockPasses` 1, iteration 16** | **0 (16), 10 of 32** | **0 (25), 10 of 32** |
 
-Wymagane: mediana ≥ 2× i `cut` > 0 w ≥ 24 z 32 seedów; jest 10 z 32. **Pomiar dodatkowy po fakcie (nie z zapisu):** koszt skały 15 → 13 i 13 z 32; koszt 0 → 21 z 32 (mediana `cut` 3) w m06 i 27 z 32 (mediana 8) w m19; L 153–304. Przy zapisanym koszcie 40 A* woli objazd niż 3–30 komórek skały, więc z wybranymi celami szlak często i tak omija skałę. Wniosek: wąskim gardłem są teraz **koszt skały i to, że mapa dostaje tylko 1–2 trasy**, a nie cele; kryterium 75 % wymagałoby kosztu bliskiego 0 (m19 tak, m06 jeszcze nie) albo wymuszenia przejścia przez skałę, co zmienia charakter szlaków.
+Required: median ≥ 2× and `cut` > 0 in ≥ 24 of 32 seeds; is 10 of 32. **Additional measurement after the fact (not recorded):** rock cost 15 → 13 and 13 of 32; cost 0 → 21 of 32 (median `cut` 3) in m06 and 27 of 32 (median 8) in m19; L 153–304. At recorded cost 40, A* prefers detour over 3–30 rock cells, so with chosen targets routes often detour anyway. Conclusion: bottleneck is now **rock cost and that map gets only 1–2 routes**, not targets; 75 % criterion would require cost near 0 (m19 yes, m06 not yet) or forcing passage through rock, which changes route character.
 
-**Nie zweryfikowano:** wyglądu w GUI (nie wiem, czy szlak przez skałę wygląda jak przełęcz, czy jak wycięty korytarz 3–4 kafle); blokowania kafli Path na skale; pomiaru w referencjach; opcji 2 (skała blokująca).
+**Not verified:** GUI appearance (I don't know whether rock passage looks like a mountain pass or like a cut corridor 3–4 tiles); blocking of Path tiles on rock; measurement in references; option 2 (rock blocking).
 
-## Iteracja 17 — szlaki dochodzą do celu i przechodzą przez rzekę (2026-11-09): PARTIAL, kryteria miary 1 i 2 NIE spełnione, ale miara okazała się zawodna
+## Iteration 17 — paths reach target and cross river (2026-11-09): PARTIAL, criteria for measure 1 and 2 NOT MET, but measure proved unreliable
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 17”, commit `610853c`; grep potwierdził). Zaimplementowano: 17a `drawPaths` stempluje do rzeczywistego startu i celu przy `rockPasses` 1; 17b przy `fordLength` > 0 router (szlaki i trasy do drzwi) przechodzi przez komórki River (koszt +25), woda pod trasą staje się piaskiem (Shore, z maską, żeby późniejszy szlak nie zrobił z niej Path), tylko gdy trasa naprawdę przecina rzekę. Odpowiedź na (2): „Path brush” to lista wszystkich pędzli gruntu, `dirt` można wybrać dziś.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 17”, commit `610853c`; grep confirmed). Implemented: 17a `drawPaths` stamps to actual start and target at `rockPasses` 1; 17b at `fordLength` > 0 router (paths and door routes) passes through River cells (cost +25); water under route becomes sand (Shore, with mask so later path does not make it Path), only when route actually crosses river. Answer to (2): “Path brush” is list of all ground brushes; `dirt` can be chosen today.
 
-**Błąd znaleziony na obrazach, nie w metryce (z iteracji 12h):** `route_` biegnie od celu do startu, a `reachEnds` łączył `start` z początkiem `smooth_` (końcem celu) i koniec `smooth_` z celem, czyli **na krzyż**. Przy krótkich trasach do drzwi (≤ 16) było to niewidoczne; przy długich szlakach daje długie proste ukośne linie i pętle (potwierdzone renderem seedu 1003 przed i po poprawce). Poprawione (`line(cel, początek smooth_)`, `line(koniec smooth_, start)`). **Skutek uboczny: zmienia wyniki przy `buildingDensity` > 0** (trasy do drzwi mają prawidłowe końce); odcisk Seed 1729 (`buildingDensity` 0) bez zmian; liczby seedów z zamkniętymi budynkami bez zmian, sumy minimalnie inne (np. zasięg 8: 71 / 90 zamiast 69 / 82).
+**Bug found on images, not in metric (from iteration 12h):** `route_` runs from target to start, and `reachEnds` connected `start` with start of `smooth_` (target end) and end of `smooth_` with target, i.e., **crossed over**. At short door routes (≤ 16) invisible; at long paths gives long straight diagonal lines and loops (confirmed by render of seed 1003 before and after fix). Fixed (`line(target, start of smooth_)`, `line(end of smooth_, start)`). **Side effect: changes results at `buildingDensity` > 0** (door routes have correct ends); Seed 1729 footprint (`buildingDensity` 0) unchanged; seed counts with locked buildings unchanged; sums slightly different (e.g., range 8: 71 / 90 instead of 69 / 82).
 
-**Pomiar** (seedy 1001–1032, bok 512, profile v10; seedy z miarą > 0 z 32, m06 / m19):
+**Measurement** (seeds 1001–1032, side 512, profile v10; seeds with measure > 0 out of 32, m06 / m19):
 
-| ustawienie | `tipRock` > 0 | `tipWater` > 0 |
+| setting | `tipRock` > 0 | `tipWater` > 0 |
 | --- | ---: | ---: |
 | `rockPasses` 0, `fordLength` 0 | 0 / 1 | 2 / 4 |
 | `rockPasses` 1, `fordLength` 0 | 16 / 24 | 10 / 17 |
 | `rockPasses` 0, `fordLength` 48 | 2 / 0 | 1 / 4 |
 | `rockPasses` 1, `fordLength` 48 | 13 / 23 | 4 / 6 |
 
-**Kryterium 1 (`tipRock` > 0 w ≤ 3 z 32 seedów przy `rockPasses` 1): NIE spełnione** (16 i 24). **Kryterium 2 (`tipWater` o połowę mniejsza przy `fordLength` 48): NIE spełnione dla `rockPasses` 0** (2 → 1, 4 → 4), spełnione tylko przy `rockPasses` 1 (10 → 4, 17 → 6; to wynik zapisany jako dodatkowy, nie z zapisu). **Wniosek o mierze:** „czubek” (komórka Path z ≤ 3 sąsiadami Path) liczy też schodkowe krawędzie szerokiego szlaku w skale i końce przy brzegu, więc rośnie, gdy szlak przechodzi przez skałę; nie rozróżnia „urwany w skale” od „prawidłowo przecina”. **Nie traktuję jej jako dowodu**; decydują obrazy i ocena użytkownika. Kryterium 3: spełnione (16 testów rdzenia, obie sondy G1 PASS, sonda `--surface` nadal 0 blokujących kafli brodu i obok niego, kieszenie połączone; dwa przebiegi bajtowo identyczne). Seedy z zamkniętymi budynkami dla `fordLength` 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 (bez zmian).
+**Criterion 1 (`tipRock` > 0 in ≤ 3 of 32 seeds at `rockPasses` 1): NOT met** (16 and 24). **Criterion 2 (`tipWater` half smaller at `fordLength` 48): NOT met for `rockPasses` 0** (2 → 1, 4 → 4); met only at `rockPasses` 1 (10 → 4, 17 → 6; this result recorded as additional, not from record). **Conclusion on measure:** “tip” (Path cell with ≤ 3 Path neighbors) also counts step-like edges of wide path in rock and ends near border; grows when path crosses rock; does not distinguish “broken in rock” from “properly crosses”. **I do not treat it as proof**; images and user assessment decide. Criterion 3: met (16 core tests; both G1 probes PASS; probe `--surface` still 0 blocking ford tiles and next to it; pockets connected; two runs byte-identical). Seeds with locked buildings for `fordLength` 8/16/32/48/64/256: m06 9/9/5/2/1/0, m19 9/9/5/2/2/0 (unchanged).
 
-**Nie zweryfikowano:** czy szlak przez rzekę wygląda dobrze i czy przechodzi na drugi brzeg we wszystkich przypadkach (obejrzałem tylko render 2 seedów w kolorach rodzajów, nie GUI); kryterium (1) poza miarą; blokowania kafli piasku pod szlakiem przez rzekę (sonda ich nie obejmuje); poszarpanych brzegów piasku i trawy (punkt 4 uwag, osobna diagnoza); wpływu poprawki końców na trasy do drzwi w GUI.
+**Not verified:** whether path through river looks good and crosses to far side in all cases (checked only render of 2 seeds in kind colors, not GUI); criterion (1) outside measure; blocking of sand tiles under river path (probe does not cover them); jagged edges of sand and grass (point 4 of notes, separate diagnosis); effect of endpoint fix on door routes in GUI.
 
-## Iteracja 18 — wygładzenie brzegu piasek / trawa (2026-11-09): PARTIAL, kryterium 2 (5×) NIE spełnione; reguła zmieniona po pomiarze
+## Iteration 18 — sand / grass edge smoothing (2026-11-09): PARTIAL, criterion 2 (5×) NOT MET; rule changed after measurement
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 18”, commit `e8be5a2`; grep potwierdził). Zaimplementowano `SurfaceTuning::shoreSmoothing` (0..4 przejść, dopisane na końcu, nie jest częścią profilu stylu; 0 = bajt w bajt jak dotąd), `smoothShores` w rdzeniu (filtr większościowy; wywołanie po pierścieniach plaży, przed `grassRim`) oraz pole wyboru „Smooth beaches” w oknie generatora (domyślnie zaznaczone = 2 przejścia) i miarę `shore` w `style_render`.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 18”, commit `e8be5a2`; grep confirmed). Implemented `SurfaceTuning::shoreSmoothing` (0..4 passes, appended at end, not part of style profile; 0 = byte-for-byte as before); `smoothShores` in core (majority filter; call after beach rings, before `grassRim`); “Smooth beaches” checkbox in generator window (default checked = 2 passes); measure `shore` in `style_render`.
 
-**Wynik reguły zapisanej z góry (okno 5×5, komórki ≤ 3 od jeziora), seedy 1001–1032, bok 512, m06 / m19, `shoreSmoothing` 2 wobec 0:** (`spurs` + `notches` + `checker`) mediana 18 → 21 / 22 (nie spadło), `boundary` 627 → 585 (−7 %), `sand` 2990 → 3069 (+3 %). **Kryterium 2 NIE spełnione** (wymagane ≥ 5× mniej). Stan bazowy jest niski (18 na 65 536 komórek), więc miara nie pokazuje „poszarpania” widocznego na zrzucie; ono nie jest samotnymi komórkami, tylko schodkową granicą.
+**Result of rule recorded upfront (5×5 window, cells ≤ 3 from lake), seeds 1001–1032, side 512, m06 / m19, `shoreSmoothing` 2 vs. 0:** (`spurs` + `notches` + `checker`) median 18 → 21 / 22 (did not drop); `boundary` 627 → 585 (−7 %); `sand` 2990 → 3069 (+3 %). **Criterion 2 NOT met** (required ≥ 5× fewer). Baseline is low (18 of 65 536 cells), so measure does not show “raggedness” visible on screenshot; it is not lone cells but step-like boundary.
 
-**Zmiana reguły po pomiarze (odchylenie od zapisu, jawnie):** próbowałem okna 7×7 i zasięgu ≤ 9 od jeziora (poza pierścieniami plaży do `shoreWidth` 8) i przyjąłem tę regułę; wybór po zobaczeniu wyników, nie z zapisu. Wynik (`shoreSmoothing` 2 wobec 0): (`spurs` + `notches` + `checker`) 18 → 9 / 10 (2× mniej), `boundary` 627 → 486 / 485 (−22 %), `sand` 2990 → 3012 / 2987 → 3016 (+0,7 %); 4 przejścia dają 9 i 464. **Kryterium 2 nadal NIE spełnione** (2× zamiast 5×); `boundary` nie większe i `sand` w ±15 % spełnione.
+**Rule change after measurement (deviation from record, explicit):** I tried 7×7 window and range ≤ 9 from lake (beyond beach rings to `shoreWidth` 8) and adopted that rule; choice after seeing results, not from record. Result (`shoreSmoothing` 2 vs. 0): (`spurs` + `notches` + `checker`) 18 → 9 / 10 (2× fewer); `boundary` 627 → 486 / 485 (−22 %); `sand` 2990 → 3012 / 2987 → 3016 (+0.7 %); 4 passes give 9 and 464. **Criterion 2 still NOT met** (2× instead of 5×); `boundary` not greater and `sand` in ±15 % met.
 
-**Kryterium 1: spełnione** (`shoreSmoothing` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 3: spełnione** (nowy test `testSmoothShores`, liczby ręczne dla reguły 7×7: pas bez zmian, dziura wypełniona, samotny piasek → trawa / dirt, pierścień 0 zostaje, deterministyczność, 0 przejść bez zmian). **Kryterium 4:** 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne (sondy G1 działają z `shoreSmoothing` 0, więc ich nie obejmują wygładzonego wyniku). 
+**Criterion 1: met** (`shoreSmoothing` 0: Seed 1729 footprint and 16 core tests unchanged). **Criterion 3: met** (new test `testSmoothShores`; manual numbers for 7×7 rule: strip unchanged, hole filled, lone sand → grass / dirt; ring 0 stays; deterministic; 0 passes unchanged). **Criterion 4:** 16 core tests and both G1 probes PASS after rebuilding `rme`; two runs byte-identical (G1 probes run at `shoreSmoothing` 0, so do not cover smoothed result).
 
-**Nie zweryfikowano:** czy brzeg wygląda dobrze (ocena użytkownika; z miary nie umiem tego ocenić); wpływu na profile stylu (skład plaży w profilach liczony tylko przez `sand`); granicy trawa / dirt i skała / trawa (nie wygładzane); wygładzenia na zatwierdzonej mapie w sondzie; czy zrzut z GUI pokazuje ten sam efekt (obrazy z `style_render` są zbyt małe, żeby to ocenić).
+**Not verified:** whether edge looks good (user assessment; I cannot assess from measure); effect on style profiles (beach composition in profiles counted only via `sand`); grass / dirt and rock / grass boundary (not smoothed); smoothing on approved map in probe; whether GUI screenshot shows same effect (images from `style_render` too small to assess).
 
-## Iteracja 19 — wąskie języki piasku między wodą (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd czeka na użytkownika
+## Iteration 19 — narrow sand spits between water (2026-11-09): PARTIAL, criteria 1–4 met, appearance awaits user
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 19”, commit `d82b1df`; grep potwierdził). **Diagnoza po czterech zrzutach z GUI po iteracji 18:** (a) wąskie pasy i półwyspy piasku 1–2 kafle szerokości między wodą (rzeka tnie pierścień plaży nakładany przed nią); filtr z 18 ich nie ruszał, bo liczył Lake jako piasek i nie widział rzek; (b) prostokątne wcięcia trawy w piasek (schodki 90° na prostych odcinkach). Pomiar na zatwierdzonej mapie (wiersz `SAND_GRASS_EDGE`): brzeg piasek / trawa **ma** elementy obramowania (1760 z 1760 kafli piasku przy trawie; trawa 106), więc brak obramowania nie jest przyczyną.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 19”, commit `d82b1df`; grep confirmed). **Diagnosis after four GUI screenshots after iteration 18:** (a) narrow sand spits and peninsulas 1–2 tiles wide between water (river cuts beach ring overlaid before it); filter from 18 did not touch them because it counted Lake as sand and did not see rivers; (b) rectangular grass notches into sand (90° steps on straight sections). Measurement on approved map (row `SAND_GRASS_EDGE`): sand / grass edge **does have** bordering elements (1760 of 1760 sand tiles near grass; grass 106), so lack of bordering is not the cause.
 
-Zaimplementowano `trimSpits` (tylko przy `shoreSmoothing` > 0, po nałożeniu rzek): komórka Shore w poziomym lub pionowym ciągu ≤ 2 komórek Shore ograniczonym po obu końcach wodą staje się wodą (River, jeśli któryś koniec to River, inaczej Lake); miara `spit` w `style_render`.
+Implemented `trimSpits` (only at `shoreSmoothing` > 0, after river overlay): Shore cell in horizontal or vertical sequence ≤ 2 Shore cells bounded at both ends by water becomes water (River if either end is River, else Lake); measure `spit` in `style_render`.
 
-**Kryterium 1: spełnione** (`shoreSmoothing` 0: 16 testów rdzenia, odcisk Seed 1729 bez zmian). **Kryterium 2: spełnione:** `spit` (mediana na 65 536 komórek, seedy 1001–1032, bok 512, m06 / m19, `shoreSmoothing` 2 wobec 0) **10 → 0** (max 19 / 20 → 1 / 2), baza > 2 więc kryterium dotyczy; `sand` 2990 → 3001 i 2987 → 3002 (+0,4–0,5 %); `boundary` 627 → 485 (−23 %). **Kryterium 3: spełnione** (nowy test `testTrimSpits`: pas 2 szerokości znika, pas 3 zostaje, pojedynczy kwadrat w wodzie znika, ciąg z trawą na jednym końcu zostaje, ciąg między rzeką a jeziorem staje się rzeką, 20 + 10 = 30 komórek rzeki). **Kryterium 4: spełnione:** 16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne.
+**Criterion 1: met** (`shoreSmoothing` 0: 16 core tests; Seed 1729 footprint unchanged). **Criterion 2: met:** `spit` (median of 65 536 cells, seeds 1001–1032, side 512, m06 / m19, `shoreSmoothing` 2 vs. 0) **10 → 0** (max 19 / 20 → 1 / 2); baseline > 2 so criterion applies; `sand` 2990 → 3001 and 2987 → 3002 (+0.4–0.5 %); `boundary` 627 → 485 (−23 %). **Criterion 3: met** (new test `testTrimSpits`: width-2 strip vanishes, width-3 strip stays; single water square vanishes; sequence with grass on one end stays; sequence between river and lake becomes river; 20 + 10 = 30 river cells). **Criterion 4: met:** 16 core tests and both G1 probes PASS after rebuilding `rme`; two runs byte-identical.
 
-**Koszt:** przecięte przesmyki piasku zwiększają liczbę odciętych budynków. Seedy z zamkniętymi budynkami / suma (m06, m19; `shoreSmoothing` 0 → 2): `fordLength` 0: 10 / 121 → 11 / 132 i 10 / 159 → 11 / 180; `fordLength` 48: 2 / 2 → 3 / 4 i 2 / 2 → 2 / 5; `fordLength` 256: 0 → 0 w obu. Brody (zasięg ≥ 48) to naprawiają prawie w całości.
+**Cost:** cut sand spits increase count of locked buildings. Seeds with locked buildings / sum (m06, m19; `shoreSmoothing` 0 → 2): `fordLength` 0: 10 / 121 → 11 / 132 and 10 / 159 → 11 / 180; `fordLength` 48: 2 / 2 → 3 / 4 and 2 / 2 → 2 / 5; `fordLength` 256: 0 → 0 in both. Fords (range ≥ 48) fix almost all.
 
-**Nie rozwiązane:** (b) prostokątne wcięcia i schodki 90° trawy w piasek na prostych odcinkach (to kształt granicy z progu szumu na siatce kafli, nie szum; usunięcie wymaga innego kształtu granicy); ocena wyglądu przez użytkownika; czy zrzut 3 (wcięcie trawy) ma dalej ten sam wygląd (nie zmieniałem); sonda G1 nadal nie obejmuje wygładzonego wyniku (działa z `shoreSmoothing` 0). **Nie zweryfikowano:** wyglądu na zatwierdzonej mapie po `trimSpits`.
+**Unresolved:** (b) rectangular notches and 90° steps of grass into sand on straight sections (this is boundary shape from noise threshold on tile grid, not noise; removal requires different boundary shape); user appearance assessment; whether screenshot 3 (grass notch) still looks the same (did not change it); G1 probe still does not cover smoothed result (runs at `shoreSmoothing` 0). **Not verified:** appearance on approved map after `trimSpits`.
 
-**Ocena użytkownika po 19 (2026-11-09, GUI): „Lepiej”.** Brzegi po usunięciu wąskich języków piasku wyglądają lepiej (ocena ogólna, bez liczb). Nadal otwarte: prostokątne wcięcia trawy w piasek (schodki 90°), szlaki przez skałę i rzekę oceniane tylko po renderach, mosty z przedmiotem, skała blokująca z przełęczami, graf regionów i POI, odrzucanie seedów.
+**User assessment after 19 (2026-11-09, GUI): “Better”.** Edges after removing narrow sand spits look better (general assessment, no numbers). Still open: rectangular grass notches into sand (90° steps); paths through rock and river assessed only by renders; bridges with item; rock blocking with passes; region graph and POI; seed rejection.
 
-**Ocena użytkownika (2026-11-09, GUI): „Szlaki wyglądają ok”** (szlaki przez skałę, przez rzekę i z poprawionymi końcami; ocena ogólna, bez liczb).
+**User assessment (2026-11-09, GUI): “Paths look ok”** (paths through rock, through river, and with corrected ends; general assessment, no numbers).
 
-## Iteracja 20 — schodki i wcięcia 90° na granicy piasek / trawa (2026-11-09): PARTIAL, kryterium 2 NIE spełnione; domyślnie nie włączone w oknie
+## Iteration 20 — steps and 90° notches at sand / grass boundary (2026-11-09): PARTIAL, criterion 2 NOT MET; disabled by default in window
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 20”, commit `efcfa40`; grep potwierdził). Zaimplementowano `SurfaceTuning::shoreRadius` (0..8, dopisane na końcu; 0 = promień 3 jak w 19), `smoothShores` z parametrem promienia (okno (2r+1)², zasięg od jeziora 3r), miarę `corners` w `style_render`.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 20”, commit `efcfa40`; grep confirmed). Implemented `SurfaceTuning::shoreRadius` (0..8, appended at end; 0 = radius 3 as in 19); `smoothShores` with radius parameter (window (2r+1)², range from lake 3r); measure `corners` in `style_render`.
 
-**Kryterium 1: spełnione** (`shoreSmoothing` 0 i `shoreRadius` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 3: spełnione** (nowy `testShoreRadius`, 20×15: występ głębokości 1 i długości 5 zostaje przy r = 3 (np. 26 piasku z 49), znika przy r = 5 (60 z 121), prosta granica bez zmian przy r = 5, r = 0 znaczy 3, deterministyczność). **Kryterium 4: spełnione** (16 testów rdzenia i obie sondy G1 PASS, dwa przebiegi bajtowo identyczne).
+**Criterion 1: met** (`shoreSmoothing` 0 and `shoreRadius` 0: Seed 1729 footprint and 16 core tests unchanged). **Criterion 3: met** (new `testShoreRadius`, 20×15: protrusion depth 1, length 5 stays at r = 3 (e.g., 26 sand of 49); vanishes at r = 5 (60 of 121); straight boundary unchanged at r = 5; r = 0 means 3; deterministic). **Criterion 4: met** (16 core tests and both G1 probes PASS; two runs byte-identical).
 
-**Kryterium 2: NIE spełnione.** `corners` (okna 2×2 z 1 lub 3 komórkami piasku, na 65 536, mediana, seedy 1001–1032, bok 512, m06 / m19; `shoreSmoothing` 2):
+**Criterion 2: NOT met.** `corners` (2×2 windows with 1 or 3 sand cells; of 65 536; median; seeds 1001–1032, side 512, m06 / m19; `shoreSmoothing` 2):
 
-| promień | `corners` | `boundary` | `sand` | czas `style_render` na 32 seedy |
+| radius | `corners` | `boundary` | `sand` | `style_render` time on 32 seeds |
 | --- | ---: | ---: | ---: | ---: |
-| (bez wygładzania) | 573 / 572 | 627 / 626 | 2990 / 2987 | 3,3 s |
-| 3 (stan z 19) | 460 / 459 | 485 / 484 | 3001 / 3002 | 4,6 s |
-| 4 | 435 / 435 | 471 / 469 | 3010 / 3011 | 5,8 s |
-| **5** | **415 / 415** | 455 / 453 | 2993 / 3004 | 6,8 s |
-| 6 | 404 / 403 | 447 / 447 | 3006 / 3017 | 9,0 s |
+| (no smoothing) | 573 / 572 | 627 / 626 | 2990 / 2987 | 3.3 s |
+| 3 (state from 19) | 460 / 459 | 485 / 484 | 3001 / 3002 | 4.6 s |
+| 4 | 435 / 435 | 471 / 469 | 3010 / 3011 | 5.8 s |
+| **5** | **415 / 415** | 455 / 453 | 2993 / 3004 | 6.8 s |
+| 6 | 404 / 403 | 447 / 447 | 3006 / 3017 | 9.0 s |
 
-Wymagane było −25 % wobec promienia 3, jest −10 % (promień 5) i −12 % (promień 6); `boundary` i `sand` spełniają warunki. **Wniosek:** liczba narożników rośnie razem z długością granicy (stosunek narożników do granicy ≈ 0,9–0,95 przy każdym promieniu), czyli to zwykłe schodki siatki kafli, a nie osobne występy; filtr większościowy usuwa pojedyncze występy (test), ale nie zmienia charakteru schodkowej granicy. Dłuższy czas (+2 s przy promieniu 5 na 512×512, pomiar z jednego uruchomienia 32 seedów) to koszt pętli zasięgu 3r wokół każdej komórki jeziora.
+Required: −25 % vs. radius 3; is −10 % (radius 5) and −12 % (radius 6); `boundary` and `sand` meet conditions. **Conclusion:** corner count grows with boundary length (corner-to-boundary ratio ≈ 0.9–0.95 at each radius), so this is ordinary tile-grid steps, not separate protrusions; majority filter removes single protrusions (test), but does not change step-like boundary character. Longer time (+2 s at radius 5 on 512×512; measurement from one run of 32 seeds) is cost of range-3r loop around each lake cell.
 
-**Decyzja:** pole „Smooth beaches” w oknie zostaje przy promieniu 3 (`shoreRadius` 0), bo promień 5 daje −10 % narożników za +2 s i nie zmienia wyglądu w skali, którą widać na zrzucie. `shoreRadius` jest dostępne w rdzeniu i w `style_render`. **Nie zweryfikowano:** czy promień 5 wygląda lepiej w GUI (nie włączony w oknie, nie oceniany); wpływu na wygląd zrzutu 3; zamkniętych budynków (nie mierzone).
+**Decision:** “Smooth beaches” checkbox in window stays at radius 3 (`shoreRadius` 0); radius 5 gives −10 % corners for +2 s and does not change appearance at scale visible in screenshot. `shoreRadius` available in core and in `style_render`. **Not verified:** whether radius 5 looks better in GUI (not enabled in window, not assessed); effect on appearance of screenshot 3; locked buildings (not measured).
 
-## Iteracja 21 — układ okna „Generate Terrain” (2026-11-09): wdrożone, czeka na ocenę użytkownika
+## Iteration 21 — “Generate Terrain” window layout (2026-11-09): implemented, awaits user assessment
 
-Kryteria zapisane przed zmianą ([G4_METRICS.md](G4_METRICS.md), „Iteracja 21”, commit `2f078ca`; grep potwierdził). Pola okna trafiły do zakładek `wxNotebook`: **Area**, **Terrain** (z „Smooth beaches”, przeniesionym z miejsca między brodami a skałą), **Paths**, **Buildings**, **Vegetation**; podgląd, tekst pomocniczy, status i przyciski poza zakładkami. Kontrolki tworzone są na stronie bieżącej zakładki (`host`), nazwy i wartości domyślne bez zmian.
+Criteria recorded before change ([G4_METRICS.md](G4_METRICS.md), “Iteration 21”, commit `2f078ca`; grep confirmed). Window fields went into `wxNotebook` tabs: **Area**, **Terrain** (with “Smooth beaches”, moved from between fords and rock), **Paths**, **Buildings**, **Vegetation**; preview, help text, status and buttons outside tabs. Controls created on current tab page (`host`), names and defaults unchanged.
 
-**Kryterium 1: spełnione** (`rme` buduje się; 16 testów rdzenia i obie sondy G1 PASS; sondy nie otwierają okna). **Kryterium 3: spełnione według liczby nazw `terrain-`:** 39 przed, 40 po (dodana `terrain-sections` dla zakładek), żadna nie zniknęła. **Kryteria 2 i 4: nie sprawdzone**, bo wymagają oceny w GUI (wysokość okna na ekranie 1080p, brak przycinania, brak nakładania statusu na pola, działanie Preview / Validate / Place / Undo i logika włączania pól).
+**Criterion 1: met** (`rme` builds; 16 core tests and both G1 probes PASS; probes do not open window). **Criterion 3: met by count of `terrain-` names:** 39 before, 40 after (added `terrain-sections` for tabs); none disappeared. **Criteria 2 and 4: not checked**, require GUI assessment (window height on 1080p screen, no clipping, no status overlapping fields, Preview / Validate / Place / Undo behavior and field-enable logic).
 
-**Nie zweryfikowano:** wyglądu okna (natywny `wxNotebook` w ciemnym motywie); działania przełączania zakładek z klawiatury i mnemoników; czy zakładki mają sensowną wysokość (Terrain ma 11 wierszy, najwięcej); czy pola nieaktywne (np. wagi przy stylu Natural surface) są czytelne.
+**Not verified:** window appearance (native `wxNotebook` in dark theme); keyboard tab switching and mnemonics; whether tabs have sensible height (Terrain has 11 rows, most); whether inactive fields (e.g., weights at Natural surface style) are readable.
 
-**Ocena użytkownika po 21 (2026-11-09, GUI): „Wygląda ok”.** Układ okna w zakładkach potwierdzony wzrokowo (kryterium 2 spełnione według użytkownika; zachowanie Preview / Validate / Place / Undo nie było osobno opisane).
+**User assessment after 21 (2026-11-09, GUI): “Looks ok”.** Window layout in tabs confirmed visually (criterion 2 met per user; Preview / Validate / Place / Undo behavior not separately described).
 
-## Iteracja 22 — POI i ustalony start w walidatorze osiągalności (2026-11-09): PARTIAL, kryterium 2 spełnione dla `fordLength` 256
+## Iteration 22 — POI and fixed start in reachability validator (2026-11-09): PARTIAL, criterion 2 met for `fordLength` 256
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 22”, commit `089c45d`; grep potwierdził). Zaimplementowano `poiReachabilityOf` w `reachability.*`: start = przechodnia komórka najbliższa środkowi obszaru (nie musi leżeć w największej składowej), wejścia = komórki drzwi, wyjścia = po jednej na bok (przechodnia komórka brzegu najbliższa środkowi boku); punkt osiągnięty, gdy leży w składowej startu. Czysta funkcja liczącą, generator i GUI bez zmian; wiersz `poi` w `style_render`. Zakres: powierzchnia jednego piętra (wyjścia Z i podziemia: osobny etap; decyzja domyślna, użytkownik nie odpowiedział na pytanie o zakres).
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 22”, commit `089c45d`; grep confirmed). Implemented `poiReachabilityOf` in `reachability.*`: start = passable cell nearest area center (need not be in largest component); entries = door cells; exits = one per side (passable border cell nearest side center); point reached when in start component. Pure counting function; generator and GUI unchanged; row `poi` in `style_render`. Scope: surface of one floor (exits Z and basement: separate stage; default decision, user did not answer scope question).
 
-**Kryterium 1: spełnione.** Testy ręczne (jezioro: start (3,2) z remisu, 4 wyjścia, 3 osiągnięte, składowa startu 20 z 40; budynek z drzwiami: wejście i 4 wyjścia osiągnięte; bez drzwi start w zamkniętej izbie nie osiąga żadnego wyjścia, składowa 9; bok z wodą bez wyjścia; siatka z samą wodą bez startu; pusta siatka nieprawidłowa) oraz porównanie z niezależną implementacją (przeszukiwanie od startu) na 80 losowych siatkach w dwóch trybach: 160 z 160 zgodnych. **Kryterium 3: spełnione** (16 testów rdzenia i obie sondy G1 PASS, odcisk Seed 1729 bez zmian; dwa przebiegi bajtowo identyczne).
+**Criterion 1: met.** Manual tests (lake: start (3,2) from tie, 4 exits, 3 reached, start component 20 of 40; building with doors: entry and 4 exits reached; no doors, start in closed room reaches no exit, component 9; side with water no exit; grid with only water no start; empty grid invalid) and comparison with independent implementation (search from start) on 80 random grids in two modes: 160 of 160 matching. **Criterion 3: met** (16 core tests and both G1 probes PASS; Seed 1729 footprint unchanged; two runs byte-identical).
 
-**Kryterium 2: spełnione dla `fordLength` 256.** Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80; seedy ze **wszystkimi** wejściami i wyjściami osiągniętymi z startu (m06 / m19), suma nieosiągniętych wejść / wyjść:
+**Criterion 2: met for `fordLength` 256.** Seeds 1001–1032, side 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80; seeds with **all** entries and exits reached from start (m06 / m19); sum of unreached entries / exits:
 
-| `fordLength` | m06 | m19 | nieosiągnięte wejścia (m06 / m19) | nieosiągnięte wyjścia (m06 / m19) |
+| `fordLength` | m06 | m19 | unreached entries (m06 / m19) | unreached exits (m06 / m19) |
 | --- | ---: | ---: | ---: | ---: |
-| 0 | 19 z 32 | 20 z 32 | 121 / 159 | 13 / 13 |
-| 48 | 28 z 32 | 29 z 32 | 2 / 2 | 3 / 3 |
-| **256** | **32 z 32** | **32 z 32** | 0 / 0 | 0 / 0 |
+| 0 | 19 of 32 | 20 of 32 | 121 / 159 | 13 / 13 |
+| 48 | 28 of 32 | 29 of 32 | 2 / 2 | 3 / 3 |
+| **256** | **32 of 32** | **32 of 32** | 0 / 0 | 0 / 0 |
 
-Wymagane było ≥ 29 z 32 w obu profilach przy 256: jest 32 z 32 (przy 0 i 48 raportuję bez pasma; przy 48 m06 ma 28). Najmniejszy udział składowej startu w komórkach przechodnich: 647 ‰ przy 0, 978 ‰ przy 48, 999 ‰ przy 256.
+Required: ≥ 29 of 32 in both profiles at 256; is 32 of 32 (at 0 and 48 report without band; at 48 m06 has 28). Smallest share of start component in passable cells: 647 ‰ at 0; 978 ‰ at 48; 999 ‰ at 256.
 
-**Zastrzeżenia (z zapisu i nowe):** start „najbliższy środkowi” to mój wybór (w prawdziwej mapie start to miasto lub temple, którego generator nie tworzy); POI to dziś tylko drzwi i wyjścia brzegowe (nie ma ruin, obozowisk ani punktów z listy); wyjścia na bokach nie wiedzą, co leży w sąsiednich obszarach; **zasięg 256 oznacza bardzo długie ławice przez morze**, więc spełnienie kryterium kosztuje wygląd (oceniane wcześniej tylko przy 48); nie ma jeszcze naprawy ani odrzucania seedów (kolejny punkt planu); walidator nie jest podłączony do okna; model przechodności z D22. **Nie zweryfikowano:** wejść i wyjść Z, podziemi, piętra innego niż 7 (rdzeń jest od piętra niezależny, ale nie testowany), POI w oknie lub w sondzie RME.
+**Caveats (from record and new):** start “nearest center” is my choice (on real map, start is city or temple, which generator does not create); POI today are only doors and border exits (no ruins, camps, or list points); exits on sides do not know what lies in adjacent areas; **range 256 means very long shoals across sea**, so criterion met costs appearance (assessed earlier only at 48); no repair or seed rejection yet (next plan point); validator not connected to window; passability model from D22. **Not verified:** Z exits and basement; floor other than 7 (core is floor-independent, not tested); POI in window or RME probe.
 
-## Iteracja 23 — naprawa osiągalności i odrzucanie seedów (2026-11-09): PARTIAL, kryteria 1–4 spełnione, wygląd naprawy czeka na użytkownika
+## Iteration 23 — reachability repair and seed rejection (2026-11-09): PARTIAL, criteria 1–4 met, repair appearance awaits user
 
-Kryteria zapisane przed implementacją ([G4_METRICS.md](G4_METRICS.md), „Iteracja 23”, commit `a47cec8`; grep potwierdził). Zaimplementowano: `SurfaceTuning::repairReach` (0/1, dopisane na końcu, nie jest częścią profilu stylu; 0 = bajt w bajt jak dotąd) i tryb naprawy `placeFords` (`FordShape::repair`): po zwykłych brodach każda składowa zawierająca wejście lub wyjście i różna od składowej startu dostaje bród przez wodę do 256 komórek (start liczony raz, bez względu na rozmiar składowej, kształt i wlot jak w 14d); `generateReachableSurface` (odrzucanie seedów: próby `seed`, `seed + 1`, … do `maxAttempts`, pierwsza siatka z wszystkimi POI osiągniętymi, inaczej pierwsza próba z `allReached` = false); wspólne `fixedStartOf` i `exitCellsOf` w `reachability.*`; pole „Repair unreachable places” w zakładce Paths (domyślnie zaznaczone); `repairReach` w odcisku konfiguracji planu tylko gdy ustawione.
+Criteria recorded before implementation ([G4_METRICS.md](G4_METRICS.md), “Iteration 23”, commit `a47cec8`; grep confirmed). Implemented: `SurfaceTuning::repairReach` (0/1, appended to end, not part of style profile; 0 = byte-for-byte as before) and repair mode `placeFords` (`FordShape::repair`): after regular fords each component containing entry or exit and different from start component gets ford through water up to 256 cells (start counted once, regardless of component size, shape and mouth as in 14d); `generateReachableSurface` (seed rejection: attempts `seed`, `seed + 1`, … to `maxAttempts`, first grid with all POI reached, else first attempt with `allReached` = false); shared `fixedStartOf` and `exitCellsOf` in `reachability.*`; “Repair unreachable places” field in Paths tab (default checked); `repairReach` in plan snapshot only when set.
 
-**Kryterium 1: spełnione** (`repairReach` 0: odcisk Seed 1729 i 16 testów rdzenia bez zmian). **Kryterium 2: spełnione** (testy ręczne 24×9: rzeka 6 szerokości, zwykły bród zasięgu 3 nic nie robi, naprawa daje 24 komórki piasku i 30 rzeki, po niej wejście i 4 wyjścia osiągnięte, deterministyczność; wyspa bez drzwi i wyjścia zostaje sama; pokój 2 komórki z drzwiami w wodzie dostaje bród; test `reachableSurface`: pierwsza próba, arytmetyka ziarna, determinizm, `maxAttempts` 1 zwraca pierwszą siatkę z `allReached` = false, `maxAttempts` 0 odrzucone). **Kryterium 4: spełnione** (16 testów rdzenia i obie sondy G1 PASS po przebudowaniu `rme`; dwa przebiegi bajtowo identyczne).
+**Criterion 1: met** (`repairReach` 0: Seed 1729 footprint and 16 core tests unchanged). **Criterion 2: met** (manual tests 24×9: river width 6; normal ford range 3 does nothing; repair gives 24 sand cells and 30 river; after it entry and 4 exits reached; deterministic; island without doors and exits stays alone; 2-cell room with doors in water gets ford; test `reachableSurface`: first attempt; seed arithmetic; determinism; `maxAttempts` 1 returns first grid with `allReached` = false; `maxAttempts` 0 rejected). **Criterion 4: met** (16 core tests and both G1 probes PASS after rebuilding `rme`; two runs byte-identical).
 
-**Kryterium 3: spełnione.** Seedy 1001–1032, bok 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80 (próby odrzucania liczone na seedach 1001–1039, `maxAttempts` 8); wszystkie POI osiągnięte z startu, m06 / m19:
+**Criterion 3: met.** Seeds 1001–1032, side 512, profile v10, `buildingDensity` 30 / 40, `pathLength` 40 / 80 (rejection attempts counted on seeds 1001–1039; `maxAttempts` 8); all POI reached from start; m06 / m19:
 
-| `fordLength`, `repairReach` | wszystkie POI osiągnięte | pierwsza próba zawodzi | średnia liczba prób |
+| `fordLength`, `repairReach` | all POI reached | first attempt fails | average attempts |
 | --- | ---: | ---: | ---: |
-| 0, 0 | 19 / 20 z 32 | 13 / 12 | 1,53 / 1,50 |
-| 48, 0 | 28 / 29 z 32 | 4 / 3 | 1,12 / 1,09 |
-| **48, 1** | **32 / 32 z 32** | **0 / 0** | **1,00 / 1,00** |
-| 0, 1 | 32 / 32 z 32 | 0 / 0 | 1,00 / 1,00 |
-| 256, 0 | 32 / 32 z 32 | 0 / 0 | 1,00 / 1,00 |
+| 0, 0 | 19 / 20 of 32 | 13 / 12 | 1.53 / 1.50 |
+| 48, 0 | 28 / 29 of 32 | 4 / 3 | 1.12 / 1.09 |
+| **48, 1** | **32 / 32 of 32** | **0 / 0** | **1.00 / 1.00** |
+| 0, 1 | 32 / 32 of 32 | 0 / 0 | 1.00 / 1.00 |
+| 256, 0 | 32 / 32 of 32 | 0 / 0 | 1.00 / 1.00 |
 
-Wymagane było ≥ 31 z 32 w obu profilach przy `fordLength` 48 z naprawą: jest 32 z 32. Naprawa działa też bez zwykłych brodów (`fordLength` 0). **Zastrzeżenie do miary „komórki brodów”:** wiersz `reach` liczy różnicę względem tej samej siatki z `fordLength` 0, a od iteracji 17 szlaki przechodzą przez rzeki tylko przy `fordLength` > 0, więc ta różnica obejmuje też zmianę tras (mediana 13 495–13 735 w m19), nie tylko brody; dla naprawy bez zwykłych brodów jest 0 (różnica nie widzi naprawy). Porównanie „nie więcej niż przy samym 256” spełnione tylko formalnie (mediana m06 571 wobec 674, m19 13 495 wobec 13 735; max 25 457 wobec 25 850), **nie traktuję go jako dowodu**.
+Required: ≥ 31 of 32 in both profiles at `fordLength` 48 with repair; is 32 of 32. Repair works without normal fords too (`fordLength` 0). **Caveat on measure “ford cells”:** row `reach` counts difference vs. same grid at `fordLength` 0, but since iteration 17 paths cross rivers only at `fordLength` > 0, so difference also includes route change (median 13,495–13,735 in m19), not only fords; for repair without normal fords is 0 (difference does not see repair). Comparison “no more than at 256 alone” met only formally (median m06 571 vs. 674, m19 13,495 vs. 13,735; max 25,457 vs. 25,850); **I do not treat it as proof**.
 
-**Nie zweryfikowano:** wyglądu brodów z naprawy (zasięg do 256 daje bardzo długie ławice; w GUI oceniałeś tylko brody do 48); odrzucania seedów w oknie (funkcja tylko w rdzeniu); wpływu masek i ochrony (Preserve może przerwać bród); wejść i wyjść Z oraz podziemi; czasu generowania (`style_render` na 39 seedach: 8,6–9,2 s z naprawą wobec 8,1–8,7 s bez, ale to jeden pomiar).
+**Not verified:** appearance of repair fords (range to 256 gives very long shoals; in GUI you assessed only fords to 48); seed rejection in window (function in core only); effect of masks and preservation (Preserve can break a ford); Z exits and basement; generation time (`style_render` on 39 seeds: 8.6–9.2 s with repair vs. 8.1–8.7 s without, but single measurement).
 
-**Ocena użytkownika po 23 (2026-11-09, GUI): „Wygląda dobrze”.** Brody z naprawy osiągalności (do 256 komórek) wyglądają dobrze według użytkownika (ocena ogólna, bez liczb; chodzenia w grze nie sprawdzano).
+**User assessment after 23 (2026-11-09, GUI): “Looks good”.** Repair fords (up to 256 cells) look good per user (general assessment, no numbers; game walking not checked).

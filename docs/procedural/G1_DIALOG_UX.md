@@ -1,52 +1,52 @@
-# G1 — komunikat Undo i prezentacja zaznaczenia
+# G1 — Undo message and selection presentation
 
-Aktualizacja 2026-11-03: [kolejny krok — pomiar pamięci i blokowania GUI](G1_RESOURCES.md). Kod produkcyjny tego raportu zachował się bez zmian; responsywne anulowanie nadal otwarte.
+Update 2026-11-03: [next step — memory measurement and GUI blocking](G1_RESOURCES.md). Product code of this report kept unchanged; responsive cancellation still open.
 
-2026-11-03: poprawka UX zakończona i sprawdzona w natywnym Windows GUI. Pełne **G1 IN PROGRESS**; G2 nierozpoczęte. Codex wykonał ten krok **bez nowego uruchomienia Claude**.
+2026-11-03: UX fix completed and verified in native Windows GUI. Full **G1 IN PROGRESS**; G2 not started. Codex performed this step **without new Claude run**.
 
-## Efekt
+## Effect
 
-Odmowa historii pokazuje aktualne limity pamięci/liczby akcji, proponuje mniejszy obszar albo sprawdzenie **File → Preferences → General** i dopiero potem nowe Preview. Reguły przyjmowania akcji i limity produktu nie zmieniły się.
+History refusal shows current memory/action limits, proposes smaller area or checking **File → Preferences → General**, then new Preview. Action acceptance rules and product limits unchanged.
 
-![Odmowa przy 40 MiB i wskazówki postępowania](screenshots/g1-dialog-ux-history-20261103.jpg)
+![Refusal at 40 MiB with procedure guidance](screenshots/g1-dialog-ux-history-20261103.jpg)
 
-W trybie Current selection pola prostokąta i ich etykiety są ukryte. Powrót do Empty rectangle zachowuje wcześniejsze wartości. Nad minimapą pojawia się rzeczywisty zakres przechwycony przez Preview, pozycja i liczba wybranych pól. Po zwolnieniu preview opis ponownie prosi o przechwycenie obszaru.
+In Current selection mode rectangle fields and their labels are hidden. Return to Empty rectangle preserves earlier values. Above minimap appears actual range captured by Preview, position and number of selected fields. After releasing preview description again asks to capture area.
 
-![Wycentrowane pięć pól w obszarze 4×4](screenshots/g1-dialog-ux-selection-20261103.jpg)
+![Five fields centered in 4×4 area](screenshots/g1-dialog-ux-selection-20261103.jpg)
 
-Minimapa korzysta z `wxMemoryDC::SelectObjectAsSource` i `StretchBlit` z jawnym prostokątem docelowym. Margines nie jest zaokrąglany do całych pikseli źródła. Kontekst GDI ma lokalny czas życia; bitmapa pozostaje buforowana, bez tworzenia przeskalowanego obrazu w paint. Nie ma zmian w algorytmie, historii ani formacie OTBM. API sprawdzono przez Context7 dla wxWidgets 3.3.
+Minimap uses `wxMemoryDC::SelectObjectAsSource` and `StretchBlit` with explicit destination rectangle. Margin not rounded to whole source pixels. GDI context has local lifetime; bitmap cached, no rescaled image created on paint. No changes to algorithm, history, or OTBM format. API checked via Context7 for wxWidgets 3.3.
 
-![Ten sam wynik w węższym oknie](screenshots/g1-dialog-ux-narrow-20261103.jpg)
+![Same result in narrower window](screenshots/g1-dialog-ux-narrow-20261103.jpg)
 
-Oryginalne JPEG z computer-use, bez przetwarzania. Oceniono centrowanie, opis, kontrolki i przyciski przy 866×660 oraz 716×660. Zielone pola i czarny pusty kafel to minimapa danych, nie podgląd sprite’ów.
+Original JPEG from computer-use, no processing. Centering, description, controls, and buttons evaluated at 866×660 and 716×660. Green fields and black empty tile are minimap data, not sprite preview.
 
-## Wyniki i granice dowodu
+## Results and proof limits
 
-| Przebieg w `local-data/procedural-smoke/` | Wynik i zakres |
+| Run in `local-data/procedural-smoke/` | Result and scope |
 |---|---|
-| `g1-dialog-polish-rme-20261103` | **FAIL / exit 8**: test wymagał frazy bez podziału wiersza. Zachowany; nie zaliczono. |
-| `g1-dialog-polish-retry-rme-20261103` | **PASS_G1_NATIVE_DIALOG_UX_MATRIX_ONLY / exit 0**: 500×500, pięć pól z otworami, odmowy wejść/starego membership, limit historii 40 MiB, ponowienie przy 512 MiB oraz oba cykle Place/Undo/Redo. Centrowanie nadal nie przeszło oceny wizualnej. |
-| `g1-dialog-centering-rme-20261103` | **PASS_G1_NATIVE_DIALOG_SELECTION_UX_ONLY / exit 0**: końcowe rysowanie, opis i ukryte pola, resize, odmowa starego membership, Preview/Validate/Place/Undo/Redo pięciu pól. **To test selection-only, nie pełna macierz.** |
+| `g1-dialog-polish-rme-20261103` | **FAIL / exit 8**: test required phrase without line break. Kept; not passed. |
+| `g1-dialog-polish-retry-rme-20261103` | **PASS_G1_NATIVE_DIALOG_UX_MATRIX_ONLY / exit 0**: 500×500, five fields with holes, input/old membership refusals, history limit 40 MiB, retry at 512 MiB, and both Place/Undo/Redo cycles. Centering still not passed visual evaluation. |
+| `g1-dialog-centering-rme-20261103` | **PASS_G1_NATIVE_DIALOG_SELECTION_UX_ONLY / exit 0**: final drawing, description and hidden fields, resize, old membership refusal, Preview/Validate/Place/Undo/Redo of five fields. **This is selection-only test, not full matrix.** |
 
-Pierwsza porażka dotyczyła porównania zawiniętego tekstu; obserwator normalizuje teraz podziały wierszy i zapisuje surowy komunikat. Drugi przebieg potwierdził `MATRIX_HISTORY_GUIDANCE_PASS` i `MATRIX_HISTORY_RETRY_PASS`. Limit 40→512 zmieniono rzeczywistym GUI tylko w prywatnej instancji, z zachowaniem 400 akcji. Źródła curated profilu zachowały hashe.
+First failure concerned wrapped text comparison; observer now normalizes line breaks and records raw message. Second run confirmed `MATRIX_HISTORY_GUIDANCE_PASS` and `MATRIX_HISTORY_RETRY_PASS`. Limit 40→512 changed via real GUI only in private instance, keeping 400 actions. Curated profile sources kept hashes.
 
-Pierwsza poprawka centrowania przez skalowanie i device origin nie wystarczyła na Windows. Po tej obserwacji zmieniono wyłącznie sposób rysowania; końcowy test selection-only sprawdził tę wersję. **Nie powtarzano 500×500 ani odmowy 40 MiB na końcowym EXE**. Dowód ich wykonania dotyczy wcześniejszego EXE poniżej. Oba przebiegi PASS miały normalny shutdown, pusty runtime stderr i niezmienione wejściowe assets.
+First centering fix via scaling and device origin insufficient on Windows. After this observation only drawing method changed; final selection-only test checked this version. **500×500 and 40 MiB refusal not re-run on final EXE**. Proof of their execution concerns earlier EXE below. Both PASS runs had normal shutdown, empty runtime stderr, and unchanged input assets.
 
-Obserwator niezależnie porównuje cały kontekst kafli z przygotowanym wynikiem, historię, rewizję i chroniony sentinel poza obszarem. Dla zaznaczenia kontroluje otwory, dokładne membership bez dopisywania flag selected oraz tożsamość oryginalnych kafli po Undo. Fixture i zmiana membership są programowe; polecenia GUI są rzeczywistymi wejściami operatora. Test nie zalicza gestów myszy tworzących zaznaczenie.
+Observer independently compares whole tile context against prepared result, history, revision, and protected sentinel outside area. For selection checks holes, exact membership without adding selected flags, and original tile identity after Undo. Fixture and membership change are programmatic; GUI commands are real operator inputs. Test does not cover mouse gestures creating selection.
 
-Kanoniczny `build_ninja.bat`: **exit 0** po końcowej zmianie. Log: `g1-dialog-polish-canonical-20261103.log`. Niezależny verifier końcowego przebiegu sprawdził **421 obiektów RME, 421 wejść kompilacji (w tym PCH), moduł obserwatora, źródła UI, oba EXE i curated assets**. Od wcześniejszej macierzy GUI zmienił się tylko produkcyjny CPP dialogu oraz jego nagłówek. Wejścia core pozostają zgodne z historycznym dowodem; G0 i fault injection core nie były uruchamiane ponownie. Przy linkowaniu probe pozostały dwa wcześniejsze C4723 w nagłówku wxWidgets `gdiimage.h:117–118`; vendora nie zmieniano.
+Canonical `build_ninja.bat`: **exit 0** after final change. Log: `g1-dialog-polish-canonical-20261103.log`. Independent verifier of final run checked **421 RME objects, 421 compile inputs (including PCH), observer module, UI sources, both EXE, and curated assets**. From earlier matrix GUI only product dialog CPP and its header changed. Core inputs remain consistent with historical proof; G0 and core fault injection not re-run. At probe link two earlier C4723 warnings in wxWidgets header `gdiimage.h:117–118` remain; vendor not changed.
 
-| Binarium | SHA256 |
+| Binary | SHA256 |
 |---|---|
-| Końcowy normalny EXE | `163537e3314739b40d5b305320149ba75a4170a317dc940b6bdc26a2a1231e32` |
-| Końcowy probe selection-only | `b39b9994f9fa5caed7241fbe45d7b9c8bbe7a203bb3d2db33719616c0a92ce2e` |
-| Normalny EXE macierzy przed końcową poprawką paint | `a40cd2e339c4f63e919d403bafc3efc1a28b08c3b67963e9e94df64569a65c6d` |
-| Probe tej macierzy | `b415eae4093db0e2c5da5558863e73a84488c848e6ebcc336ef850ab2d31d660` |
+| Final normal EXE | `163537e3314739b40d5b305320149ba75a4170a317dc940b6bdc26a2a1231e32` |
+| Final probe selection-only | `b39b9994f9fa5caed7241fbe45d7b9c8bbe7a203bb3d2db33719616c0a92ce2e` |
+| Normal EXE of matrix before final paint fix | `a40cd2e339c4f63e919d403bafc3efc1a28b08c3b67963e9e94df64569a65c6d` |
+| Probe of that matrix | `b415eae4093db0e2c5da5558863e73a84488c848e6ebcc336ef850ab2d31d660` |
 
-## Odtworzenie i dalszy krok
+## Reproduction and next step
 
-`g1_run_dialog_probe.py OUTPUT PROFILE_DATA CONFIG --selection-only` uruchamia wyłącznie fixture pięciu pól. W GUI: Current selection, seed 1729, wagi 1/0/0, Preview → Validate → po `MATRIX_STALE_MEMBERSHIP_INJECTED` Place (odmowa) → Preview → Validate → resize → Place → Undo → Redo. Weryfikacja: `g1_verify_dialog_probe.py OUTPUT --selection-only`. Polecenia uruchamiać przez `rtk proxy` i Python wskazany w [poprzednim scenariuszu](G1_DIALOG_MATRIX.md). `--matrix` nadal wymaga całej macierzy, teraz również obu markerów historii i prezentacji zaznaczenia.
+`g1_run_dialog_probe.py OUTPUT PROFILE_DATA CONFIG --selection-only` runs only five-field fixture. In GUI: Current selection, seed 1729, weights 1/0/0, Preview → Validate → after `MATRIX_STALE_MEMBERSHIP_INJECTED` Place (refusal) → Preview → Validate → resize → Place → Undo → Redo. Verification: `g1_verify_dialog_probe.py OUTPUT --selection-only`. Run commands via `rtk proxy` and Python pointed to in [previous scenario](G1_DIALOG_MATRIX.md). `--matrix` still requires full matrix, now also both history and selection-presentation markers.
 
-Kolejne trzy zadania: (1) responsywne anulowanie/harmonogram i RSS, (2) pozostałe odmowy/awarie GUI: live, busy, brak klienta, wielopiętrowe zaznaczenie i alokacje, (3) końcowy generatorowy GUI save/reopen OTBM ze wszystkimi companionami i macierz G1. Nie zweryfikowano innych DPI/platform, sprite preview, współistnienia wyników ani pełnego round-trip. Nie uznano częściowego pokrycia za pełne G1.
+Next three tasks: (1) responsive cancellation/schedule and RSS, (2) remaining GUI refusals/faults: live, busy, no client, multi-floor selection, and allocations, (3) final generator GUI save/reopen OTBM with all companions and G1 matrix. Other DPI/platforms, sprite preview, result coexistence, nor full round-trip verified. Partial coverage not recognized as full G1.
 
-Wspólne niezacommitowane zmiany zachowano; brak commit/push. Nie otwierano map użytkownika ani forbidden map/companionów; bez ingerencji w Docker, bazę i świat użytkownika.
+Shared uncommitted changes kept; no commit/push. User maps and forbidden map/companions not opened; Docker, database, and user world not touched.

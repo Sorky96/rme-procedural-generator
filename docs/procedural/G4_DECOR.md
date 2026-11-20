@@ -1,33 +1,37 @@
-# G4-D — reguły kontekstowe wegetacji (klasyfikacja doodadów po nazwie brusha), 2026-11-08
+# G4-D — contextual vegetation rules (doodad classification by brush name), 2026-11-08
 
-**PARTIAL, dowody wegetacji są cienkie.** Mechanizm (klasyfikacja po nazwie, statystyki kontekstowe, strojenie dekoracji, dopasowanie zamknięte) działa i jest powtarzalny. Na walidacji dopasowanie wegetacji poprawia dystans w 2 z 4 foldów z porównywalnym kontekstem, w 2 pogarsza. Nic nie liczono na zbiorze testowym.
+**PARTIAL, vegetation evidence is thin.** The mechanism (name classification, contextual statistics, decoration tuning, closed fitting) works and is repeatable. On validation, vegetation fitting improves distance in 2 of 4 folds with comparable context and worsens it in 2. Nothing was calculated on the test set.
 
-## Co jest
-- `doodad_class`: reguły po całych słowach nazwy brusha → Tree / Bush / Stone / None (None = nie wegetacja i nie kamień dla generatora: meble, pola ognia, posągi, gruz). Wynik na 247 brushach stylu: Tree 13 brushy (20 032 szt. na z≤7), Bush 19 (148 919), Stone 13 (19 835), None 202 (44 291). Lista do przeglądu: `local-data/procedural-smoke/g4-keymap/d/doodad-review.md`.
-- Trzy nowe bity cech w mapie semantycznej (`TreeDoodad`, `BushDoodad`, `StoneDoodad`, poza raportowanymi 16): raporty G3 bez zmian (liczą tylko 16 cech): 190 plików 19 map bajtowo identycznych z oryginałem (0 różnic) na końcowym binarium.
-- `decoration`: `DecorTuning` (6 szans w ‰: skala drzew, drzewa przy wodzie, krzak, krzak przy wodzie, kamień na ziemi, kamień przy skale). Domyślny `DecorTuning` daje bajtowo ten sam wynik co dotychczasowa reguła (test na 3 seedach); wartości poza zakresem są odrzucane (`InvalidParameters`). Wzorce klastrów lasu (szum) i zasięg 2 kroków bez zmian.
-- `decor_context`: liczniki kafli trawy i ziemi (rzeczywiste: z mapy semantycznej przez zaakceptowane mapowanie; generator: z `DecorGrid`) w 8 kontekstach (trawa/ziemia × blisko wody lub brzegu × blisko skały, zasięg 2 kroki 4-sąsiedztwa, ta sama definicja po obu stronach), cel z wielu map (każda rodzina tyle samo, każda mapa w rodzinie tyle samo, mapy poniżej 200 kafli w kontekście nie liczą się), odległość (średnia różnic 24 stawek w ‰ po kontekstach porównywalnych), dopasowanie zamknięte (każda szansa = stawka referencji w jej kontekście; skala drzew = stosunek stawki referencji do stawki wbudowanych reguł na tej samej powierzchni).
-- Profil `g4-profile/3` (dodano `decor`: cel i strojenie). `style_fit` dopasowuje wegetację z map treningowych, a mapy walidacyjne tylko mierzą.
-- Testy: `test_procedural_decor` PASS (m.in. dopasowanie zbliża się ≥ 4× do celu wygenerowanego znaną konfiguracją), `test_procedural_style_profile` PASS, `test_procedural_surface` PASS bez zmian. Dwie serie `style_fit` bajtowo identyczne (35 s każda).
+## Included
 
-## Dane wegetacji w referencjach (powierzchnia, mapy stylu)
-Dekoracja istnieje w praktyce tylko w **M06, M19 i M05** (trawa); M12, M14–M18 mają łącznie < 400 kafli trawy/ziemi. Sumarycznie (‰ kafli): trawa daleko od wody i skał: drzewa 22, krzaki 154, kamienie 4 (626 tys. kafli); trawa blisko wody: drzewa 11, krzaki 78 (89 tys.); ziemia daleko od skał: kamienie 18 (119 tys.); ziemia blisko skał: kamienie 30 (5 tys.). Wbudowane reguły generatora: krzaki 40‰ (60‰ przy wodzie), kamienie na ziemi 30‰ (80‰ przy skale), drzewa 0 przy wodzie. Reguła „drzewa przy wodzie = 0” jest więc w referencjach słabo, ale nie zupełnie, prawdziwa (11‰ na trawie).
+- doodad_class: whole-word brush-name rules → Tree / Bush / Stone / None (None means neither vegetation nor generator stone: furniture, fire fields, statues, rubble). Among 247 style brushes: Tree 13 brushes (20 032 objects at z≤7), Bush 19 (148 919), Stone 13 (19 835), None 202 (44 291). Review list: local-data/procedural-smoke/g4-keymap/d/doodad-review.md.
+- Three new semantic-map feature bits (TreeDoodad, BushDoodad, StoneDoodad, beyond the reported 16). G3 reports are unchanged (they count only 16 features): 190 files for 19 maps are byte-identical to the original (0 differences) on the final binary.
+- decoration: DecorTuning (six chances in ‰: tree scale, trees near water, bush, bush near water, stone on dirt, stone near rock). Default DecorTuning gives the exact previous result (test on three seeds); out-of-range values are rejected (InvalidParameters). Forest-cluster patterns (noise) and two-step range are unchanged.
+- decor_context: counts of grass and dirt tiles (real: from semantic maps through the accepted mapping; generator: from DecorGrid) in eight contexts (grass/dirt × near water or shore × near rock, two-step four-neighbor range, same definition on both sides). Target from multiple maps (each family equal, each map within a family equal, maps below 200 tiles in a context excluded), distance (mean difference of 24 rates in ‰ across comparable contexts), closed fit (each chance = reference rate in its context; tree scale = reference rate / built-in-rule rate on the same surface).
+- Profile g4-profile/3 adds decor, target and tuning. style_fit fits vegetation from training maps, while validation maps only measure it.
+- Tests: test_procedural_decor PASS (including fit approaching at least 4× closer to a target generated from a known configuration), test_procedural_style_profile PASS, test_procedural_surface PASS unchanged. Two style_fit series are byte-identical (35 s each).
 
-## Wynik dopasowania na walidacji (dystans = średnia różnic stawek w ‰, suma po kontekstach porównywalnych)
-| Fold (test) | Walidacja | Wyrazów | Wbudowane → dopasowane |
+## Vegetation data in references (surface, style maps)
+
+In practice decoration exists only in **M06, M19 and M05** (grass). M12 and M14–M18 together have fewer than 400 grass/dirt tiles. In total (‰ of tiles): grass far from water and rock: trees 22, bushes 154, stones 4 (626k tiles); grass near water: trees 11, bushes 78 (89k); dirt far from rock: stones 18 (119k); dirt near rock: stones 30 (5k). Built-in generator rules: bushes 40‰ (60‰ near water), stones on dirt 30‰ (80‰ near rock), trees 0 near water. The “trees near water = 0” rule is therefore weakly, but not completely, true in references (11‰ on grass).
+
+## Validation fit (distance = mean difference of rates in ‰, summed over comparable contexts)
+
+| Fold (test) | Validation | Terms | Built-in → fitted |
 | --- | --- | ---: | ---: |
-| M01 | M05 | 6 | 176 → 414 (gorzej) |
-| M05 | M06 | 21 | 550 → 1 008 (gorzej) |
-| M17 | M19 | 24 | 1 839 → 1 559 (lepiej) |
-| zima | caves (M14, M16) | 3 | 19 → 3 (lepiej) |
-| pozostałe 4 foldy | – | 0 | brak porównywalnego kontekstu |
+| M01 | M05 | 6 | 176 → 414 (worse) |
+| M05 | M06 | 21 | 550 → 1 008 (worse) |
+| M17 | M19 | 24 | 1 839 → 1 559 (better) |
+| winter | caves (M14, M16) | 3 | 19 → 3 (better) |
+| other 4 folds | – | 0 | no comparable context |
 
-Dopasowane strojenia dla wszystkich map stylu: skala drzew 437, drzewa przy wodzie 11‰, krzaki 172‰, krzaki przy wodzie 107‰, kamienie na ziemi 13‰, przy skale 29‰.
+Fitted tuning for all style maps: tree scale 437, trees near water 11‰, bushes 172‰, bushes near water 107‰, stones on dirt 13‰, near rock 29‰.
 
-## Czego NIE zrobiono / nie zweryfikowano
-- **Klasyfikacja po nazwie to heurystyka.** Do akceptacji: krzaki obejmują grzyby, trawy wysokie, kwiaty, `bamboo plant`, `lilypads`; kamienie to m.in. `kamienie`, `staglamites`; `leaves`, `debris`, `ramp`, `sand pile` są None.
-- Ścieżki (potrzebne do reguły „ścieżki”) i przejścia biomów: nie wyodrębniono (D9).
-- Zasięg wody/skały to stałe 2 kroki; nie badano innych.
-- Dopasowanie zamknięte pomija zależności drugiego rzędu (np. krzak losowany po drzewie), więc stawki wygenerowane są nieco niższe niż zadane.
-- Wpływ na wygląd: brak oceny wizualnej. Strojenie nie jest podpięte do GUI/`GenerationConfig` (zmiana tej struktury zmieniłaby odciski podglądu).
-- Mała liczba map z wegetacją (3) nie pozwala na sensowny przedział niepewności.
+## Not done / not verified
+
+- **Name classification is a heuristic.** Accepted examples include bushes such as mushrooms, tall grass, flowers, bamboo plant and lilypads; stones include kamienie and staglamites; leaves, debris, ramp and sand pile are None.
+- Routes (needed for a “route” rule) and biome transitions were not extracted (D9).
+- Water/rock range is fixed at two steps; other values were not studied.
+- Closed fitting omits second-order dependencies (for example, a bush sampled after a tree), so generated rates are slightly lower than requested.
+- Appearance impact was not visually reviewed. Tuning is not connected to GUI/GenerationConfig (changing that structure would change preview fingerprints).
+- The small number of maps with vegetation (3) does not support a meaningful uncertainty interval.

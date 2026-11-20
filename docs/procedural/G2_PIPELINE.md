@@ -1,39 +1,39 @@
-# G2-B2 — algorytm Surface w istniejącym potoku, stan na 2026-11-07
+# G2-B2 — Surface algorithm in the existing pipeline, state as of 2026-11-07
 
-**PARTIAL.** Przebieg przygotowania, walidacji, podglądu, commitu z jednym Undo i Redo działa dla powierzchni v2 na rzeczywistym kliencie 1098-BlackTek (100×100 i 250×250), a regresje G1 (resolver, preview, commit) przeszły. Nie sprawdzono dialogu w natywnym GUI ani wyglądu terenu w RME, więc kryterium G2 „czytelny w RME” pozostaje otwarte.
+**PARTIAL.** Preparation, validation, preview, commit with one Undo and Redo work for the v2 surface on the real 1098-BlackTek client (100×100 and 250×250), and the G1 regressions (resolver, preview, commit) pass. The dialog in native GUI and terrain appearance in RME were not checked, so the G2 criterion “readable in RME” remains open.
 
-## Zmiany
+## Changes
 
-- `GenerationConfig` ma `algorithm` (`GroundRoll` domyślnie, `Surface`) i `surface` (`SurfaceTuning`, parametry v2) oraz `operator==`, który zastąpił dwie ręczne kopie porównania konfiguracji (podgląd, walidacja).
-- `GroundProfile` ma sześć miejsc na nazwy i `count` (domyślnie 3, dla Surface 6), `active()` zwraca użyte nazwy. Pętle po nazwach w resolverze G1, podglądzie, przygotowaniu i commicie używają `active()`. Resolver G1 odrzuca `count != 3`. Inicjalizacje G1 trzema brushami kompilują się bez zmian.
-- Hash źródła podglądu: dla `GroundRoll` bez zmiany układu bajtów; algorytm i parametry v2 dopisywane tylko dla Surface.
-- `prepareTerrain`: rozgałęzienie po algorytmie, rezerwacja pamięci roboczej generatora (`validateSurface`) w jednym wspólnym liczniku, profil musi mieć 3 (GroundRoll) lub 6 (Surface) brushy. Nowy `PreparationInputError::InvalidParameters`.
-- `resolveSurfacePlan` zwraca zwykły `GroundPlan` (profil: Grass, Dirt, Rock, Shore, Lake, River).
-- Dialog: lista „Terrain style” (Classic domyślnie, Natural surface), pola brushy skały (`rocky ground`) i brzegu (`sand`); jezioro i rzeka dzielą pole wody. Parametry v2 nie mają kontrolek (wartości domyślne).
+- `GenerationConfig` has `algorithm` (`GroundRoll` by default, `Surface`) and `surface` (`SurfaceTuning`, v2 parameters), plus `operator==`, which replaced two manual configuration-comparison copies (preview, validation).
+- `GroundProfile` has six name slots and `count` (3 by default, 6 for Surface), and `active()` returns the used names. Name loops in the G1 resolver, preview, preparation and commit use `active()`. The G1 resolver rejects `count != 3`. G1 initializations with three brushes compile unchanged.
+- Preview source hash: the byte layout is unchanged for `GroundRoll`; the algorithm and v2 parameters are appended only for Surface.
+- `prepareTerrain`: branches by algorithm, reserves generator working memory (`validateSurface`) in one shared counter, and requires a profile with 3 (GroundRoll) or 6 (Surface) brushes. New `PreparationInputError::InvalidParameters`.
+- `resolveSurfacePlan` returns an ordinary `GroundPlan` (profile: Grass, Dirt, Rock, Shore, Lake, River).
+- Dialog: a “Terrain style” list (Classic by default, Natural surface), rock (`rocky ground`) and shore (`sand`) brush fields. Lake and river share the water field. v2 parameters have no controls (default values).
 
-## Wyniki (profil `g0-reference-profile-20261030`, prywatne przebiegi, ukryte okno)
+## Results (profile `g0-reference-profile-20261030`, private runs, hidden window)
 
-| Próbnik | Przebieg | Wynik |
+| Probe | Run | Result |
 | --- | --- | --- |
-| resolver G1 | `g2-b2-resolver-b-20261106` | `RESOLVER_PASS`, fingerprinty 15173774556512220455 i 2039901658534265928 jak w [G1_RESOLVER.md](G1_RESOLVER.md) |
-| `--preview` | `g2-b2-preview-c-20261107` | `passed: true`, stderr pusty |
-| `--commit` | `g2-b2-commit-c-20261107` | `passed: true`, stderr pusty; wiersze 100×100 i 500×500 (8881480 / 3965894 / 80195 / 6608263949644166501 oraz 218763816 / 98785798 / 1987447 / 173161415496114986) zgodne z [G1_COMMIT.md](G1_COMMIT.md) |
-| `--surface` | `g2-b2-surface-e-20261107` | exit 0, wszystkie znaczniki PASS (`SURFACE_RESOLVER_PASS`, `SURFACE_E2E_PASS` 100×100: 10 000 zmian, ok. 14,6 MB szacunku; 250×250: 62 500 zmian, ok. 84,2 MB). Runner zapisał `passed: false`, bo stderr zawiera dwa ostrzeżenia `SetFocus` 0x57 (patrz dług D1) |
+| G1 resolver | `g2-b2-resolver-b-20261106` | `RESOLVER_PASS`, fingerprints 15173774556512220455 and 2039901658534265928 as in [G1_RESOLVER.md](G1_RESOLVER.md) |
+| `--preview` | `g2-b2-preview-c-20261107` | `Ppassed: true`, empty stderr |
+| `--commit` | `g2-b2-commit-c-20261107` | `Ppassed: true`, empty stderr; 100×100 and 500×500 rows (8881480 / 3965894 / 80195 / 6608263949644166501 and 218763816 / 98785798 / 1987447 / 173161415496114986) match [G1_COMMIT.md](G1_COMMIT.md) |
+| `--surface` | `g2-b2-surface-e-20261107` | exit 0, all PASS markers (`SURFACE_RESOLVER_PASS`, `SURFACE_E2E_PASS` 100×100: 10 000 changes, approx. 14.6 MB estimate; 250×250: 62 500 changes, approx. 84.2 MB). The runner recorded `Ppassed: false` because stderr contains two `SetFocus` 0x57 warnings (see debt D1) |
 
-Test end-to-end w `--surface` sprawdza: przygotowanie, walidację, odrzucenie zmienionych parametrów v2, zmienionego algorytmu i profilu o złej liczbie brushy (obie strony), commit jako jeden krok historii, równość położonego gruntu z planem dla każdej komórki, Undo (brak wygenerowanego gruntu, liczba kafli jak przed) i Redo.
+The `--surface` end-to-end test checks preparation, validation, rejection of changed v2 parameters, changed algorithm and a profile with the wrong brush count (both directions), commit as one history step, placed ground matching the plan in every cell, Undo (no generated ground, tile count as before) and Redo.
 
-Szczegóły wyników borderów dla tego samego resolvera: [G2_BORDERS.md](G2_BORDERS.md).
+Details of border results for the same resolver: [G2_BORDERS.md](G2_BORDERS.md).
 
-## Ustalenia
+## Findings
 
-- **Limit pamięci Undo.** Domyślne `undo_mem_size` to 40 MiB. Pierwszy przebieg 250×250 przy domyślnym limicie zwrócił `HistoryRefused` (wartość 6 w `TerrainCommitFailure`, ustalona z kodu); po podniesieniu do 512 MiB, jak w próbnikach G1, commit przeszedł. Przyczynę wywnioskowałem z liczb (84 MB > 40 MiB), nie śledziłem kodu kolejki. Dialog już dziś pokazuje komunikat o limitach Undo w File → Preferences → General. Przy domyślnych 40 MiB graniczny rozmiar Place szacuję na około 170×170, to ekstrapolacja z jednego pomiaru.
-- **Okno „Warnings” przy starcie klienta** blokowało próbniki do ręcznego zamknięcia. Dodano test-only `tests/procedural_probe_warnings.h` (zamyka tylko modalne „Warnings” i zapisuje `warnings-dialog-dismissed.txt`), użyty w próbniku `--surface` i w `test_procedural_preview.cpp` (zmieniono tylko obsługę bezczynności). Treści ostrzeżeń nie zapisano ani nie zbadano; w aplikacji nie ma ustawienia, które je wyłącza.
-- **Okno „Save changes”** przy zamknięciu zawieszało próbnik po commicie; test `--surface` czyści teraz flagę zmian (`map.clearChanges()`). Próbnik commitu G1 nie był zmieniany.
-- Poprzedni przebieg `g2-b2-surface-d-20261107` przekroczył 180 s na tym oknie i zostaje bez zaliczenia (log miał te same znaczniki PASS). Pierwsze uruchomienie czterech próbników (`*-20261106`) przerwano tracebackiem po limicie czasu; w tamtym przebiegu nie zebrano wyników preview i commit.
+- **Undo memory limit.** The default `undo_mem_size` is 40 MiB. The first 250×250 run at the default limit returned `HistoryRefused` (value 6 in `errainCommitFailure`, determined from the code); after raising it to 512 MiB, as in the G1 probes, commit passed. I inferred the cause from the numbers (84 MB > 40 MiB), without tracing the queue code. The dialog already shows an Undo-limit message in File → Preferences → General. At the default 40 MiB, I estimate the boundary for Place at about 170×170, extrapolated from one measurement.
+- **The “Warnings” window at client startup** blocked probes until it was closed manually. Test-only `tests/procedural_probe_warnings.h` was added (it closes only the modal “Warnings” window and writes `warnings-dialog-dismissed.txt`), used by the `--surface` probe and `test_procedural_preview.cpp` (only idle handling was changed). Warning text was not recorded or investigated; the application has no setting to disable it.
+- **The “Save changes” window** at close hung the probe after commit. The `--surface` test now clears the change flag (`map.clearChanges()`). The G1 commit probe was not changed.
+- The previous `g2-b2-surface-d-20261107` run exceeded 180 s on this window and is not counted (the log had the same PASS markers). The first run of four probes (`*-20261106`) was interrupted by a timeout traceback; no preview or commit results were collected from that run.
 
-## Czego nie zweryfikowano
+## Not verified
 
-- Zachowania dialogu po zmianach (lista stylu, brushe skały i brzegu, komunikaty) w natywnym RME oraz tego, że tryb Classic działa w GUI jak w G1. Próbniki G1 nie sterują dialogiem w tym przebiegu.
-- Wyglądu terenu i borderów w RME, w tym rzeki o szerokości jednego kafla.
-- Dwóch ostrzeżeń `SetFocus` w `--surface`: ich pochodzenie uznaję za to samo co D1 (`MapTabbook::DeleteTab` przy zamykaniu), ale nie śledziłem stosu. Preview i commit nie miały ich w stderr.
-- Zachowania dla innych klientów niż 1098-BlackTek, 500×500 w pełnym potoku v2 (próbnik end-to-end sprawdza 100 i 250), czasu i pamięci poza szacunkami, oraz D5 (bordery poza obszarem przy cudzym sąsiedzie), które pozostaje otwarte.
+- Dialog behavior after the changes (style list, rock and shore brushes, messages) in native RME, and that Classic behaves in the GUI as in G1. The G1 probes do not drive the dialog in this run.
+- Terrain and border appearance in RME, including a one-tile-wide river.
+- The two `SetFocus` warnings in `--surface`: I assume their origin is the same as D1 (`MapTabbook::DeleteTab` during close), but did not trace the stack. Preview and commit had no stderr warnings.
+- Behavior for clients other than 1098-BlackTek, 500×500 in the full v2 pipeline (the end-to-end probe checks 100 and 250), time and memory outside the estimates, and D5 (borders outside the area next to an existing neighbor), which remains open.

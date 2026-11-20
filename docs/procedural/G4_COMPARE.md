@@ -1,17 +1,17 @@
-# G4: porównanie wizualne generatora z referencjami (2026-11-08)
+# G4: visual comparison of the generator with references (2026-11-08)
 
-Narzędzia: `style_render` (generator → PNG rodzajów, jeden piksel na kafel) i sonda `g3_reference_import_probe` (`kind-map-zNN.png` dla map referencyjnych, tylko lokalnie w `local-data/`, nie w repo). Profile v7, wycinki 256×256 z poziomu z=7 (wycinek referencji wybrany automatycznie jako obszar z największą ilością lądu), ten sam kolor na rodzaj. **To jest oględziny jednego wycinka na styl, nie pomiar**; obrazy referencji są prywatne i nie są w repo.
+Tools: style_render (generator → PNG of kinds, one pixel per tile) and g3_reference_import_probe (kind-map-zNN.png for reference maps, local only in local-data/, not the repository). Profile v7, 256×256 slices at z=7 (reference slice selected automatically as the area with the most land), same color per kind. **This is an inspection of one slice per style, not a measurement**; reference images are private and are not in the repository.
 
-## Obserwacje (M06 i M19 vs profile m06 i m19)
+## Observations (M06 and M19 versus m06 and m19 profiles)
 
-1. **Skala struktur.** Referencje mają duże spójne struktury: kontynenty i wyspy otoczone morzem (M19), rozległe równiny trawy (M06). Generator daje jedną skalę szumu: równomierną mozaikę jezior, skał i ziemi na całej powierzchni (profil m19 szczególnie).
-2. **Rzeki (poprawione 2026-11-08 po pomiarze).** Wstępny opis „w generatorze 2–3 kafle, referencje 6–10” był błędny. Pomiar `style_render` (profil m06/m19, 6 seedów, 256×256): szerokość W rzek generatora 4,4–6,6 kafla, szkielet rzek 53–613 kafli na wycinek. W referencji M06 ten sam pomiar daje W ≈ 1,2–2,2 kafla i średnio ok. 50 kafli szkieletu na wycinek 256×256 (1829 na całą mapę). Wycinek M06 użyty do oględzin został wybrany jako „najwięcej lądu”, więc trafił na rzadki, wyjątkowo bogaty w rzeki fragment: nie reprezentuje mapy.
-   Wniosek z pomiaru: generator ma **więcej** i **szersze** rzeki niż to, co mierzy metryka iteracji 4. Ale ta metryka pomija duże sieci rzeczne połączone z morzem (składowa wody ≥ 20 000 kafli jest klasyfikowana jako morze i pomijana), więc **szerokie rzeki widoczne na wycinku M06 nie weszły do pomiaru**. Metryka iteracji 4 (krętość, odcinki proste, szerokość) opisuje więc tylko wąskie, krótkie strumienie referencji; wnioski D6 z iteracji 4 dotyczą tylko ich.
-3. **Ziemia.** W M06 to prostokątne i okrągłe plamy rozrzucone w trawie (ręcznie malowane). W generatorze ziemia występuje głównie jako pas przy skale i wodzie.
-4. **Skała.** W M19 zwarte masywy z postrzępionym brzegiem; w generatorze mniejsze, pocięte plamy.
-5. **Brzeg.** W M19 szerokie plaże; w generatorze zawsze cienki pas (ok. 1–2 kafle).
-6. **Człowiek.** Referencje mają budynki, drogi, nietypowe grunty (kolory „Other”/„Unmapped”); generator ich nie robi (poza zakresem fazy).
+1. **Structure scale.** References have large connected structures: continents and islands surrounded by sea (M19), extensive grass plains (M06). The generator uses one noise scale: an even mosaic of lakes, rock and dirt across the whole surface, especially in profile m19.
+2. **Rivers (corrected 2026-11-08 after measurement).** The initial statement “2–3 tiles in the generator, 6–10 in references” was wrong. style_render measurement (m06/m19 profile, 6 seeds, 256×256): generator river width W is 4.4–6.6 tiles, with 53–613 river-skeleton tiles per slice. The same measurement on M06 gives W ≈ 1.2–2.2 tiles and about 50 skeleton tiles per 256×256 slice on average (1829 for the whole map). The M06 slice used for inspection was selected as “most land”, so it is a rare fragment with exceptionally many rivers and is not representative of the map.
+   The measurement shows that the generator has **more** and **wider** rivers than what iteration-4 metrics measure. That metric omits large river networks connected to the sea (a water component ≥ 20 000 tiles is classified as sea and skipped), so **wide rivers visible in the M06 slice were excluded from the measurement**. Iteration-4 metrics (tortuosity, straight segments, width) therefore describe only narrow, short reference streams, and D6 conclusions from iteration 4 apply only to them.
+3. **Dirt.** In M06 it appears as rectangular and round patches scattered through grass (hand-painted). In the generator, dirt is found mainly as a band beside rock and water.
+4. **Rock.** M19 has compact ranges with jagged edges; the generator has smaller, cut-up patches.
+5. **Shore.** M19 has wide beaches; the generator always has a thin band (about 1–2 tiles).
+6. **Human features.** References have buildings, roads and unusual grounds (Other/Unmapped colors). The generator does not create them (out of phase scope).
 
-## Wniosek
+## Conclusion
 
-Dopasowanie udziałów rodzajów (obecna miara G4) nie daje podobieństwa kształtu. Brakuje przede wszystkim: wieloskalowej struktury (duże masy lądu i wody), sieci rzecznej połączonej z morzem (rzeki nie kończą się na jeziorach, mają dopływy), plam ziemi w trawie i szerokości brzegów. Nie sprawdzono podobieństwa wyglądu metryką; ocena jest wizualna i subiektywna.
+Matching kind shares (the current G4 measure) does not produce shape similarity. The main missing pieces are multi-scale structure (large land and water masses), a river network connected to sea (rivers do not end at lakes and have tributaries), dirt patches in grass and wider shores. Appearance similarity was not measured. The assessment is visual and subjective.

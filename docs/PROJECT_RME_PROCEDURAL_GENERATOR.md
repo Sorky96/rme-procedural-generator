@@ -1,82 +1,82 @@
 # RME Procedural World Generator - Master Plan
 
-> Dokument startowy projektu dla Codex / Claude Code. Stan: FAZA 0 w toku; G0 niezaliczone. Wersja planu: 1.1 (2026-10-26). Aktualne dowody: `docs/PROGRESS.md` oraz `docs/procedural/TEST_PLAN.md`.
+> Project starting document for Codex / Claude Code. Status: PHASE 0 in progress; G0 not passed. Plan version: 1.1 (2026-10-26). Current evidence: `docs/PROGRESS.md` and `docs/procedural/TEST_PLAN.md`.
 >
-> **Główny cel:** pełny, zintegrowany z Remere's Map Editor generator map Tibii, który potrafi analizować dostarczone mapy referencyjne i coraz wierniej odtwarzać **ich styl, logikę przestrzenną i grywalność**, bez kopiowania całych fragmentów 1:1.
+> **Main goal:** a complete map generator integrated with Remere's Map Editor that can analyze supplied reference maps and increasingly reproduce **their style, spatial logic, and playability**, without copying complete regions 1:1.
 
-## 0. Zasady dla agenta AI (PRZECZYTAJ NAJPIERW)
+## 0. Rules for the AI agent (READ FIRST)
 
-1. Pracuj w repozytorium użytkownika. **Najpierw wykonaj audyt aktualnego kodu i wersji**, potem przedstaw konkretne zmiany. Nie zakładaj, że nazwy API i katalogów podane w planie faktycznie istnieją.
-2. Nie deklaruj funkcjonalności jako gotowej, dopóki nie jest zaimplementowana, przetestowana i zademonstrowana.
-3. Rozwijaj funkcjonalności etapowo, w małych commitach. Każdy etap musi przechodzić testy regresyjne oraz mieć kryterium akceptacji.
-4. Wykorzystuj istniejący kod RME: mapy, tiles, brushes, autoborder, undo/redo, OTBM, obsługę assets, Lua, dialogi. Unikaj równoległej implementacji tych samych mechanizmów.
-5. Nie modyfikuj oryginalnych map treningowych. Operuj na kopiach i zapisuj backupy.
-6. **Separacja:** analiza referencji -> model/gramatyka świata -> generator -> walidator -> konwersja na elementy RME -> zatwierdzanie na mapie.
-7. Priorytety: poprawność danych > bezpieczeństwo mapy > grywalność > wiarygodność stylu > wydajność > liczba dodatków.
-8. Projekt ma wspierać wiele wersji klienta/assetów, ale konkretną zgodność należy uzgadniać z danymi rzeczywiście dostępnymi w repozytorium.
-9. Nie pobieraj, nie publikuj i nie dołączaj do repozytorium zastrzeżonych map ani assetów bez odpowiednich praw. Traktuj wejściowe mapy jako dane lokalne użytkownika. Nie używaj ich do trenowania zewnętrznych usług bez wyraźnej zgody.
-10. Po każdej sesji uzupełnij `docs/PROGRESS.md`: wykonane, dowody testów, problemy, następne 3 zadania. Jeżeli testu nie uruchomiono, napisz to wprost.
-11. Stosuj `AGENTS.md` i `C:\Users\Sorky\.codex\RTK.md`. Przed zmianami utwórz dedykowaną gałąź z `master`, jeżeli dostępne jest repozytorium Git. Brak metadanych zgłoś; nie inicjalizuj Git ani nie zmieniaj nazw katalogów w celu obejścia problemu. Redakcja tego planu nie uruchamia automatycznie implementacji ani jego przykładowego promptu z sekcji 11.
-12. Narzędzia: CodeGraph najpierw do orientacji w kodzie, **tylko gdy istnieje `.codegraph/`**; bez indeksu nie uruchamiaj indeksowania samodzielnie. Context7 do aktualnej dokumentacji zależności, najlepiej właściwej wersji. `ast-grep` do zapytań strukturalnych (podgląd przed zmianą), `rg` do tekstu i konfiguracji. Polecenia shell uruchamiaj przez RTK, pozostałe CLI przez `rtk proxy`. Narzędzia i skille ProjectSorky dobieraj do rzeczywistego zakresu: kontrakty API/protokołu i OTClient HTML UI nie są częścią tego generatora RME.
+1. Work in the user's repository. **First audit the current code and versions**, then present concrete changes. Do not assume that API and directory names in this plan exist.
+2. Do not declare functionality complete until it is implemented, tested, and demonstrated.
+3. Develop functionality incrementally in small commits. Every stage must pass regression tests and have an acceptance criterion.
+4. Reuse existing RME code for maps, tiles, brushes, autoborder, undo/redo, OTBM, assets, Lua, and dialogs. Avoid parallel implementations of the same mechanisms.
+5. Do not modify original training maps. Work on copies and keep backups.
+6. **Separation:** reference analysis -> world model/grammar -> generator -> validator -> conversion to RME elements -> map commit.
+7. Priorities: data correctness > map safety > playability > style fidelity > performance > number of extras.
+8. The project must support multiple client/asset versions, but each compatibility claim must be matched to data actually available in the repository.
+9. Do not download, publish, or include proprietary maps or assets without the appropriate rights. Treat input maps as the user's local data. Do not use them to train external services without explicit consent.
+10. After every session update `docs/PROGRESS.md` with completed work, test evidence, problems, and the next three tasks. If a test was not run, state that explicitly.
+11. Follow `AGENTS.md` and `C:\Users\Sorky\.codex\RTK.md`. Before changes create a dedicated branch from `master` when Git is available. Report missing metadata. Do not initialize Git or rename directories to work around it. Editing this plan does not automatically run implementation or its example prompt from section 11.
+12. Tools: use CodeGraph first for code orientation, **only when `.codegraph/` exists**. Without an index, do not index the repository yourself. Use Context7 for current dependency documentation, preferably the correct version. Use `ast-grep` for structural queries with a preview before changes, and `rg` for text and configuration. Run shell commands through RTK and other CLIs through `rtk proxy`. Choose ProjectSorky tools and skills according to the actual scope. API/protocol contracts and OTClient HTML UI are outside this RME generator.
 
-## 1. Kontekst techniczny i granice systemu
+## 1. Technical context and system boundaries
 
-Docelowy edytor: **Remere's Map Editor Redux**. Źródłem prawdy jest lokalny kod użytkownika i jego `AGENTS.md`; adres upstream jest jedynie odniesieniem:
+Target editor: **Remere's Map Editor Redux**. The local user code and its `AGENTS.md` are authoritative. The upstream address is only a reference:
 - https://github.com/Open-Tibia-Tools/remeres-map-editor-redux
-- Dokumentacja skryptów: `scripts/README.md` w wybranym commicie (zweryfikuj, nie zakładaj kompletności).
+- Script documentation: `scripts/README.md` at the selected commit. Verify it instead of assuming it is complete.
 
-Lokalny `CMakeLists.txt` wymaga CMake 3.28+, C++23 i wxWidgets 3.3; `vcpkg.json` deklaruje m.in. Lua i Sol2 oraz baseline `1940ee77e81573713c0d364c42f5990172198be1`. Faktyczne wersje zainstalowanych bibliotek i toolchaina należy zapisać podczas G0; nie wnioskuj o wersji Lua wyłącznie z README. Kanoniczny build Windows x64: `rtk proxy cmd /c build_ninja.bat`, wynik `build-ninja/rme.exe`. Nie zmieniaj vendored FastNoiseLite ani wygenerowanego protobuf.
+The local `CMakeLists.txt` requires CMake 3.28+, C++23, and wxWidgets 3.3. `vcpkg.json` declares Lua, Sol2, and baseline `1940ee77e81573713c0d364c42f5990172198be1`. Record the actual installed library and toolchain versions during G0. Do not infer the Lua version from README alone. The canonical Windows x64 build is `rtk proxy cmd /c build_ninja.bat`, producing `build-ninja/rme.exe`. Do not modify vendored FastNoiseLite or generated protobuf.
 
-### 1.0 Wynik przeglądu przygotowawczego (2026-10-26)
+### 1.0 Initial review result (2026-10-26)
 
-Pierwszy przegląd dotyczył źródeł, nie działania programu. W jego trakcie brakowało `.git` i `.codegraph`; istniało `.gito`, którego nie zmieniano. Poniższa tabela zachowuje ustalenia tego przeglądu, a aktualny stan audytu znajduje się w `docs/PROGRESS.md`.
+The first review covered source code rather than runtime behavior. `.git` and `.codegraph` were missing, while `.gito` existed and was left unchanged. The table below preserves the review findings. The current audit state is in `docs/PROGRESS.md`.
 
-Po przygotowaniu środowiska przez użytkownika rozpoczęto FAZĘ 0: Git i CodeGraph działają, baza lokalna to `5a01a8fe1c34465559701d50681cc2210ef32c67`, gałąź `docs/procedural-phase0-audit`. Powstały `docs/procedural/ARCHITECTURE.md` i `docs/procedural/TEST_PLAN.md`; wyniki buildu i testów aktualizuje raport postępu. Nie oznacza to zaliczenia G0.
+After the user prepared the environment, PHASE 0 began. Git and CodeGraph work, the local base is `5a01a8fe1c34465559701d50681cc2210ef32c67`, and the branch is `docs/procedural-phase0-audit`. `docs/procedural/ARCHITECTURE.md` and `docs/procedural/TEST_PLAN.md` were created. The progress report records build and test results. This does not mean that G0 has passed.
 
-| Potwierdzony punkt | Lokalizacja i konsekwencja dla planu |
+| Confirmed point | Location and consequence for the plan |
 |---|---|
-| Istnieją proceduralne API Lua i demonstrator | `source/lua/lua_api.cpp`: `registerNoise`, `registerAlgo`, `registerGeo`; `scripts/terrain_generator_demo.lua`. Najpierw oceń ponowne użycie; demo ma sztywne item ID i bezpośrednie zmiany tile, więc nie jest wzorcem bezpiecznej integracji. |
-| Rysowanie zależy od GUI i tworzy akcje | `source/editor/operations/draw_operations.cpp`: przeciążenia `DrawOperations::draw` pobierają `g_gui.GetCurrentBrush()` i stosują akcje/batche. To nie jest gotowe API do izolowanego preview. |
-| Historia może grupować sąsiednie akcje | `source/editor/action_queue.cpp`: `ActionQueue::addBatch`, `addAction`; `source/editor/action_queue.h`: fabryki akcji/batchy. Generator musi mieć sprawdzoną granicę transakcji i nie scalać się z ręcznym rysowaniem. |
-| Istnieje transakcja skryptowa | `source/lua/lua_api_app.cpp`: `LuaTransaction`, `transaction`, eksport `app.transaction`. Zweryfikuj rzeczywisty rollback i śledzenie wszystkich mutacji; sama nazwa nie dowodzi atomowości dowolnego generatora. |
-| Warianty brushy nie wynikają z seeda noise | `source/brushes/ground/ground_brush.cpp`: `GroundBrush::draw` wywołuje `random`; `source/util/common.cpp`: `getRandomGenerator` używa `random_device` i lokalnego dla wątku `mt19937`. Wymagany kontrolowany RNG również przy rozwiązywaniu brushy. |
-| Identyfikacja mapy nie zastępuje kontroli zmian | `source/map/map.h`: `Map::getGeneration`; `source/map/map.cpp`: konstrukcja, `initializeEmpty`, `open`. Nie traktuj tej wartości jako licznika każdej edycji. |
-| Zapis obejmuje pliki pomocnicze | `source/io/iomap_otbm.cpp`: `IOMapOTBM::saveMapToDisk` zapisuje również spawny, domy oraz zależnie od formatu strefy i waypointy. Testuj komplet danych i zgodność wybranego formatu. |
+| Procedural Lua APIs and a demonstrator exist | `source/lua/lua_api.cpp`: `registerNoise`, `registerAlgo`, `registerGeo`; `scripts/terrain_generator_demo.lua`. Assess reuse first. The demo has hard-coded item IDs and mutates tiles directly, so it is not a safe integration pattern. |
+| Drawing depends on the GUI and creates actions | `source/editor/operations/draw_operations.cpp`: `DrawOperations::draw` overloads read `g_gui.GetCurrentBrush()` and use actions/batches. This is not a ready API for isolated preview. |
+| History can group adjacent actions | `source/editor/action_queue.cpp`: `ActionQueue::addBatch`, `addAction`; `source/editor/action_queue.h`: action/batch factories. The generator needs a verified transaction boundary and must not merge with manual drawing. |
+| A script transaction exists | `source/lua/lua_api_app.cpp`: `LuaTransaction`, `transaction`, and the `app.transaction` export. Verify actual rollback and tracking of every mutation. The name alone does not prove that an arbitrary generator is atomic. |
+| Brush variants do not derive from the noise seed | `source/brushes/ground/ground_brush.cpp`: `GroundBrush::draw` calls `random`; `source/util/common.cpp`: `getRandomGenerator` uses `random_device` and a thread-local `mt19937`. Brush resolution also needs a controlled RNG. |
+| Map identity does not replace change tracking | `source/map/map.h`: `Map::getGeneration`; `source/map/map.cpp`: construction, `initializeEmpty`, and `open`. Do not treat this value as a counter for every edit. |
+| Saving includes companion files | `source/io/iomap_otbm.cpp`: `IOMapOTBM::saveMapToDisk` also writes spawns, houses, and, depending on the format, zones and waypoints. Test the complete data set and the selected format's compatibility. |
 
-Context7: sprawdzono dokumentację wxWidgets 3.3: [wątki i komunikacja](https://docs.wxwidgets.org/3.3/overview_thread.html), [wxThread](https://docs.wxwidgets.org/3.3/classwx_thread.html). GUI obsługuj w głównym wątku, wyniki workera przekazuj zdarzeniami, np. `wxQueueEvent`; odbiorca musi pozostawać żywy. Dokumentacja biblioteki nie dowodzi bezpieczeństwa wątkowego klas RME.
+Context7: wxWidgets 3.3 documentation was checked for [threads and communication](https://docs.wxwidgets.org/3.3/overview_thread.html) and [wxThread](https://docs.wxwidgets.org/3.3/classwx_thread.html). Keep GUI work on the main thread and deliver worker results through events such as `wxQueueEvent`. The receiver must remain alive. Library documentation does not prove thread safety for RME classes.
 
-### 1.1 Zakres końcowego rozwiązania
+### 1.1 Final solution scope
 
-- Generowanie całych nowych obszarów, wypełnianie zaznaczeń, rozszerzanie istniejących map i łączenie obszaru ze starym terenem.
-- Powierzchnia oraz poziomy Z: góry, wejścia/wyjścia, podziemia, jaskinie, wyspy, archipelagi.
-- Biomy i przejścia: trawy, lasy, bagna, pustynie, śnieg/lód, skały, tereny nadmorskie, rzeki, jeziora; konfiguracja rozszerzalna.
-- Struktury: ścieżki, drogi, przełęcze, mosty, wioski/ruiny/obozowiska, pomieszczenia i dungeony, miejsca zainteresowania (POI).
-- Sensowne dekoracje, krawędzie, przejścia pięter, poprawne item ID/brush mapping i spawn placement tylko na życzenie.
-- Możliwość ustawienia parametrów, seedów, masek, stref ochronnych i ograniczeń (np. zachowaj domy, UID/AID, spawny).
-- UI w RME z podglądem, historią seedów, generacją wariantów, oceną podobieństwa do stylu, możliwością odrzucenia lub zatwierdzenia.
-- Import referencyjnych map OTBM oraz w miarę możliwości innych formatów, jeśli istnieje bezpieczny importer.
-- **Uczenie stylu z map użytkownika:** statystyki, wzorce, relacje przestrzenne, przejścia, budowle i wielopiętrowa topologia; opcjonalnie wytrenowane modele wspierające wybór/regenerację wariantów.
-- Ewaluacja z mapami referencyjnymi, testowanie ścieżek i możliwość kontroli postępu jakości.
+- Generation of complete new areas, filling selections, extending existing maps, and joining an area to old terrain.
+- Surface and Z levels: mountains, entrances/exits, underground areas, caves, islands, and archipelagos.
+- Biomes and transitions: grass, forests, swamps, deserts, snow/ice, rock, coastal terrain, rivers, and lakes. Configuration remains extensible.
+- Structures: paths, roads, passes, bridges, villages/ruins/camps, rooms and dungeons, and points of interest (POIs).
+- Meaningful decoration, edges, floor transitions, correct item ID/brush mapping, and spawn placement only on request.
+- Configurable parameters, seeds, masks, protected zones, and constraints such as preserving houses, UID/AID, and spawns.
+- RME UI with preview, seed history, variant generation, style similarity scoring, and explicit reject or approve actions.
+- Import of OTBM reference maps and, where a safe importer exists, other formats.
+- **Style learning from user maps:** statistics, patterns, spatial relationships, transitions, structures, and multi-floor topology, with optional trained models supporting variant selection or regeneration.
+- Evaluation against reference maps, path testing, and quality-progress tracking.
 
-### 1.2 Niefunkcjonalne wymagania
+### 1.2 Non-functional requirements
 
-- Deterministyczność względem konfiguracji + seeda + wersji algorytmu/profilu.
-- Zero destrukcyjnych zmian przed wyraźnym zatwierdzeniem. Zatwierdzenie jako jedna logiczna transakcja Undo/Redo.
-- Kontrola pamięci, anulowanie długich operacji, raport błędów, logi, brak freeze GUI.
-- Poprawny round-trip: wygeneruj -> zapisz OTBM -> otwórz -> waliduj.
-- Testy jednostkowe bez uruchomienia pełnego edytora tam, gdzie to możliwe.
-- Brak zależności od serwisów zewnętrznych do samego generowania i uczenia na lokalnych mapach.
+- Determinism for a given configuration, seed, and algorithm/profile version.
+- No destructive changes before explicit approval. Approval is one logical Undo/Redo transaction.
+- Memory control, cancellation of long operations, error reports, logs, and no GUI freeze.
+- Correct round trip: generate -> save OTBM -> open -> validate.
+- Unit tests without starting the full editor wherever possible.
+- No external-service dependency for generation or learning from local maps.
 
-### 1.3 Pierwszy użyteczny zakres (MVP, G1)
+### 1.3 First useful scope (MVP, G1)
 
-MVP: jeden poziom Z, maska dokładnego zaznaczenia lub pusty prostokąt, grass/dirt/water, ręczny profil semantyczny dla jednego **zweryfikowanego** zestawu klient/assets, seed, preview, walidacja, jawny commit i jedno Undo/Redo. Góry wielopiętrowe, hydrologia zaawansowana, struktury, uczenie i ML należą do dalszych faz. Typy mogą uwzględniać Z od początku, ale G1 nie obiecuje generacji wielu pięter.
+MVP: one Z level, an exact-selection mask or empty rectangle, grass/dirt/water, a manual semantic profile for one **verified** client/assets set, seed, preview, validation, explicit commit, and one Undo/Redo. Multi-floor mountains, advanced hydrology, structures, learning, and ML belong to later phases. Types may account for Z from the start, but G1 does not promise multi-floor generation.
 
-Minimalny dialog uruchamiający ten workflow powstaje w FAZIE 1; FAZA 7 rozbudowuje GUI. Nie twórz wszystkich modułów i pustych katalogów z wyprzedzeniem. Każdy powstaje wraz z pierwszą potrzebną funkcjonalnością i testami.
+The minimal dialog that starts this workflow is created in PHASE 1. PHASE 7 expands the GUI. Do not create every module and empty directory in advance. Create each one with its first required functionality and tests.
 
-## 2. Architektura logiczna
+## 2. Logical architecture
 
 ```text
-Mapy referencyjne (*.otbm + właściwe assets)
+Reference maps (*.otbm + appropriate assets)
    | -> Importer/Validator -> Canonical Tile/World Representation
    | -> Feature Extractor -> Dataset + Anonymized Style Metrics
    | -> Style Profiles / Statistical Models / Optional ML Models
@@ -101,27 +101,27 @@ GUI RME -> GenerationConfig -> World Planner -> Terrain Generator
                               OTBM Round-Trip + Quality Report
 ```
 
-**Ważne:** abstrakcyjny model mapy nie może wymagać konkretnych sprite ID. To adapter określa, jak abstrakcyjna `water_edge`, `forest_floor`, `mountain_wall` itd. staje się brushami/elementami właściwej wersji Tibii.
+**Important:** the abstract map model must not require concrete sprite IDs. The adapter determines how abstract `water_edge`, `forest_floor`, `mountain_wall`, and similar concepts become brushes/elements for the selected Tibia version.
 
-Walidacja po resolverze jest obowiązkowa: rzeczywiste przedmioty, warianty doodadów, ich footprinty i bordery mogą zmienić przechodniość oraz zasięg zmian. Naprawa wymaga ponownego rozwiązania i walidacji; ustal limit prób, po którym kandydat jest odrzucany.
+Validation after resolution is mandatory. Actual items, doodad variants, their footprints, and borders can change walkability and the change range. Repair requires resolving and validating again. Set an attempt limit after which the candidate is rejected.
 
-### 2.1 Moduły
+### 2.1 Modules
 
-| Moduł | Odpowiedzialność | Testy |
+| Module | Responsibility | Tests |
 |---|---|---|
-| `core` | typy, RNG, konfiguracja, siatki, praca na poziomach Z | determinism/property |
-| `reference` | import, sanity-check, anonimizowane cechy map | fixture/golden |
-| `learning` | statystyki, wzorce, profile biomów/stylów, opcjonalny ML | holdout/metrics |
-| `planning` | plan dużych struktur świata, regiony, punkty POI, trasy | connectivity |
-| `terrain` | heightmap, maski, biomy, hydrologia | distribution |
-| `structures` | góry, jaskinie, miasta, ruiny, ścieżki, mosty | reachability |
-| `decoration` | flora, fauna jako dekoracja, detale, item clusters | density/overlap |
-| `validation` | grywalność, zgodność assetów, reguły mapy | property/integration |
+| `core` | types, RNG, configuration, grids, work on Z levels | determinism/property |
+| `reference` | import, sanity-check, anonymized map features | fixture/golden |
+| `learning` | statistics, patterns, biome/style profiles, optional ML | holdout/metrics |
+| `planning` | plan for large world structures, regions, POIs, and routes | connectivity |
+| `terrain` | heightmap, masks, biomes, hydrology | distribution |
+| `structures` | mountains, caves, cities, ruins, paths, and bridges | reachability |
+| `decoration` | flora, fauna as decoration, details, item clusters | density/overlap |
+| `validation` | playability, asset compatibility, and map rules | property/integration |
 | `rme_adapter` | map tiles, brushes, borders, undo, OTBM | integration |
-| `ui` | dialog, podgląd, presety, status, dry-run, commit | manual/UI |
-| `benchmark` | wydajność, jakość, porównanie seeda i stylu | benchmark/golden |
+| `ui` | dialog, preview, presets, status, dry-run, and commit | manual/UI |
+| `benchmark` | performance, quality, and seed/style comparison | benchmark/golden |
 
-Przykładowy układ katalogów (dostosować po audycie):
+Example directory layout. Adjust it after the audit:
 
 ```text
 source/procedural/{core,reference,learning,planning,terrain,structures,decoration,validation,rme_adapter,ui}/
@@ -130,399 +130,399 @@ tests/procedural/{unit,integration,regression,fixtures}/
 tools/reference_dataset/
 docs/procedural/{ARCHITECTURE,DATASET,STYLE_MODEL,TEST_PLAN}.md
 docs/PROGRESS.md
-profiles/                  # tylko neutralne sample profile, bez cudzych map
+profiles/                  # only neutral sample profiles, no third-party maps
 local-data/references/     # gitignored
-local-data/models/         # gitignored, o ile nie ma praw do publikacji
+local-data/models/         # gitignored, unless publication rights exist
 ```
 
-## 3. Model danych
+## 3. Data model
 
-Projektuj struktury, nie przywiązuj się do poniższych nazw w kodzie:
+Design around the structures, without treating the following names as fixed code names:
 
-- `WorldRegion`: bounding box, poziomy Z, granice/otoczenie, maska obszaru, protected areas.
-- `GenerationConfig`: region, seed, wersja algorytmu, `styleProfileId`, biomeWeights, water, roughness, roads, density, caveRate, targetFloor, mode, constraints.
-- `WorldCell`: współrzędne (x,y,z), wysokość konceptualna, biome, ground semantic, water classification, features, occupancy, passability.
-- `RegionGraph`: POI, wejścia do podziemi, przełęcze, drogi, połączenia i ich wymagania.
-- `TileStyleFeatures`: histogramy ground/brush, adjacency, border sequences, obiekty/cluster, topologia, gęstości per biome, floor relationships.
-- `StyleProfile`: wersja schematu, klient/assets, identyfikatory referencji, statystyki + rozkłady + tolerancje + model opcjonalny.
-- `GenerationResult`: wygenerowane komórki, lista zmian dla RME, metryki jakości, warnings, seed, provenance.
+- `WorldRegion`: bounding box, Z levels, boundaries/surroundings, area mask, protected areas.
+- `GenerationConfig`: region, seed, algorithm version, `styleProfileId`, biomeWeights, water, roughness, roads, density, caveRate, targetFloor, mode, constraints.
+- `WorldCell`: coordinates (x,y,z), conceptual elevation, biome, ground semantic, water classification, features, occupancy, and passability.
+- `RegionGraph`: POIs, underground entrances, passes, roads, connections, and their requirements.
+- `TileStyleFeatures`: ground/brush histograms, adjacency, border sequences, objects/clusters, topology, per-biome densities, and floor relationships.
+- `StyleProfile`: schema version, client/assets, reference identifiers, statistics, distributions, tolerances, and an optional model.
+- `GenerationResult`: generated cells, the list of RME changes, quality metrics, warnings, seed, and provenance.
 
-**RNG:** dziel seed na stabilne strumienie dla regionów, dróg, rzek, biomów, dekoracji, jaskiń. Ten sam seed odtwarza identyczny rezultat w obrębie przypiętej wersji algorytmu.
+**RNG:** split the seed into stable streams for regions, roads, rivers, biomes, decoration, and caves. The same seed reproduces the same result within the pinned algorithm version.
 
-Kontrakt powtarzalności obejmuje również snapshot wejściowej mapy i halo, maskę, chronione dane, ustawienia autoborder, manifest brushy/materials/assets, wersję resolvera oraz build/toolchain. Zapisuj ich identyfikatory lub hashe w provenance. Ustal stabilną kolejność iteracji, rozstrzygania remisów i wyprowadzania strumieni RNG; nie opieraj tego na `std::hash` ani kolejności kontenerów haszujących. Nie obiecuj identycznych wyników zmiennoprzecinkowych pomiędzy platformami bez osobnych testów.
+The reproducibility contract also covers the input-map and halo snapshot, mask, protected data, autoborder settings, brush/material/asset manifest, resolver version, and build/toolchain. Store their identifiers or hashes in provenance. Define stable iteration, tie-breaking, and RNG-stream derivation order. Do not rely on `std::hash` or hash-container order. Do not promise identical floating-point results across platforms without dedicated tests.
 
-Mierz dwa hashe: kanonicznego wyniku semantycznego i finalnego diffu RME (współrzędne, kolejność stosu itemów, atrybuty). Preview i Commit wykorzystują ten sam przygotowany wynik, bez ponownego losowania brushy. Redo odtwarza zapisane zmiany, nie uruchamia generatora ponownie. Rozwiązanie kontrolowanego RNG dla adaptera musi zostać wybrane i przetestowane w G0/G1 bez globalnego reseedowania RNG ręcznej edycji.
+Measure two hashes: the canonical semantic result and the final RME diff, including coordinates, item-stack order, and attributes. Preview and Commit use the same prepared result without drawing brushes again. Redo replays saved changes and does not run the generator again. Select and test the adapter's controlled RNG in G0/G1 without globally reseeding the manual-editing RNG.
 
-## 4. Uczenie na mapach referencyjnych - kluczowy wyróżnik
+## 4. Learning from reference maps - the key differentiator
 
-### 4.1 Co oznacza "uczenie"
+### 4.1 What "learning" means
 
-Generator nie będzie magicznie uczony po jednokrotnym podaniu pliku. Wprowadź **reprodukowalny lokalny pipeline**:
+The generator will not magically learn after receiving one file. Implement a **reproducible local pipeline**:
 
-1. Zaimportuj i sprawdź mapy OTBM oraz zgodność wersji itemów/assets.
-2. Zamień tile/item ID na reprezentację semantyczną; zmapuj nierozpoznane elementy do `unknown` z raportem, **nie zgaduj**.
-3. Wydziel regiony i biomy, poziomy Z, struktury i relacje pomiędzy nimi.
-4. Wyciągnij mierzalne cechy, policz rozkłady i zachowaj przykładowe wzorce.
-5. Zapisz **wersjonowany profil stylu** oraz dane diagnostyczne.
-6. Generuj kandydatów według profilu i oceń, które najbardziej pasują.
-7. Dopuszczaj korekty użytkownika (`good/bad`, wybór wariantu, maski, ręczne poprawki) jako sygnał do aktualizacji profilu; tylko po jego świadomym zatwierdzeniu.
-8. Jeżeli uzyskasz wystarczająco duży i zróżnicowany zbiór: trenuj oddzielny model ML i porównaj go z baseline statystycznym na danych niewidzianych.
+1. Import and check OTBM maps and item/asset-version compatibility.
+2. Convert tile/item IDs to a semantic representation. Map unrecognized elements to `unknown` with a report. **Do not guess.**
+3. Extract regions and biomes, Z levels, structures, and relationships between them.
+4. Extract measurable features, calculate distributions, and retain representative patterns.
+5. Save **versioned style profiles** and diagnostic data.
+6. Generate candidates from the profile and score which ones fit best.
+7. Allow user corrections (`good/bad`, variant selection, masks, and manual edits) to update the profile only after explicit approval.
+8. If the data set is large and diverse enough, train a separate ML model and compare it with the statistical baseline on unseen data.
 
-**Priorytet:** najpierw skuteczny model statystyczny / regułowy, później ML, a nie odwrotnie. Mała liczba dostarczonych map najpewniej nie wystarczy do wytrenowania wiarygodnego modelu generatywnego od zera.
+**Priority:** build an effective statistical/rule-based model first and ML later. A small number of supplied maps is unlikely to be enough to train a reliable generative model from scratch.
 
-### 4.2 Cechy do wydobywania
+### 4.2 Features to extract
 
-- Proporcje terenu i regionów w różnych skalach (16x16, 32x32, 64x64, większe).
-- Matryce sąsiedztwa typów podłoża i borderów (N/E/S/W oraz diagonale).
-- Długości, krętość, szerokość, rozwidlenia, ujścia rzek; wielkość jezior i wysp.
-- Las: rozkład drzew, przerwy, klastry, gęstość w funkcji biomu i odległości od wody.
-- Góry: powierzchnie, krawędzie, stosunek ścian do plateau, wysokość i liczba pięter, dostępność przełęczy.
-- Rozmieszczenie skał, roślin, gruzu, detali, przedmiotów i zestawów brushy.
-- Jaskinie: rozmiar komór, długość korytarzy, cykle, przewężenia, liczba wejść, relacje pięter.
-- Sieć szlaków: odstępy, szerokości, częstości rozwidleń, mosty, łączenie regionów/POI.
-- Rozmieszczenie budowli, osad, ruin, ważnych obiektów w relacji do otoczenia.
-- Mikrostruktury: powtarzalne aranżacje małych fragmentów i reguły ich modyfikacji.
-- Mapa przechodniości: składowe spójne, wąskie gardła, obszary niedostępne, możliwe odległości przejścia.
+- Terrain and region proportions at different scales (16x16, 32x32, 64x64, and larger).
+- Adjacency matrices for ground types and borders (N/E/S/W and diagonals).
+- River length, tortuosity, width, branches, and outlets, plus lake and island size.
+- Forests: tree distribution, gaps, clusters, and density by biome and distance from water.
+- Mountains: surfaces, edges, wall-to-plateau ratio, elevation, floor count, and pass availability.
+- Placement of rocks, plants, debris, details, items, and brush sets.
+- Caves: room size, corridor length, cycles, constrictions, entrance count, and floor relationships.
+- Route network: spacing, widths, branch frequency, bridges, and region/POI connections.
+- Placement of buildings, settlements, ruins, and important objects relative to their surroundings.
+- Microstructures: repeated arrangements of small regions and rules for modifying them.
+- Walkability map: connected components, bottlenecks, inaccessible areas, and possible traversal distances.
 
-### 4.3 Jak naśladować styl bez kopiowania map
+### 4.3 How to reproduce style without copying maps
 
-- Ucz **reguł, rozkładów, relacji i mikrostruktur**. Nie wklejaj bez zmian obszarów referencyjnych.
-- Przy ponownym użyciu motywu transformuj semantykę i ponownie rozwiąż elementy kierunkowe. Nie obracaj mechanicznie item ID: ściany, drzwi i przejścia Z wymagają jawnych odpowiedników; brak mapowania oznacza odrzucenie transformacji. Sam obrót/odbicie nie zapewnia nowości ani praw do publikacji.
-- Dodaj test podobieństwa lokalnych fragmentów, aby wykrywać niezamierzone kopie całych obszarów.
-- Oddziel profile np. `classic-tibia-forest`, `classic-tibia-mountain`, `user-custom-v1` zamiast jednego rozkładu dla całego świata.
-- Obsłuż **hierarchię skali**: układ świata -> region -> kompleks (np. las/jaskinia) -> segment -> tile/dekoracja.
-- Styl zależy od **wersji Tibii i użytych assetów**; zapisuj tę informację w profilu.
+- Learn **rules, distributions, relationships, and microstructures**. Do not paste unchanged reference regions.
+- When reusing a motif, transform its semantics and resolve directional elements again. Do not mechanically rotate item IDs. Walls, doors, and Z transitions need explicit counterparts. Missing mapping means rejecting the transformation. Rotation or mirroring alone does not provide novelty or publication rights.
+- Add a local-fragment similarity test to detect unintended copies of complete areas.
+- Keep profiles separate, for example `classic-tibia-forest`, `classic-tibia-mountain`, and `user-custom-v1`, instead of one distribution for the entire world.
+- Support a **scale hierarchy**: world layout -> region -> complex such as forest/cave -> segment -> tile/decoration.
+- Style depends on the **Tibia version and used assets**. Store that information in the profile.
 
-### 4.4 Dane i podział na zbiory
+### 4.4 Data and dataset splits
 
-- Referencje lokalne: `local-data/references/` z manifestem (nazwa, sha256, format, wersja klienta, licencja/pochodzenie, biomy, region, piętra, uwagi).
-- Zbiory train/validation/test rozdzielaj **po niezależnych mapach lub dużych regionach z buforem przestrzennym**, nie przez losowanie sąsiednich kafelków. Inaczej wyniki będą sztucznie zawyżone.
-- Unikaj dominowania dużej mapy nad małymi: ważenie per map/region/biome.
-- Rozdziel osobno testy podobieństwa wizualnego od testów grywalności i technicznej poprawności.
-- Nie zapisuj surowych map w repozytorium Git, jeśli nie istnieje zgoda/licencja.
+- Local references: `local-data/references/` with a manifest containing name, sha256, format, client version, license/origin, biomes, region, floors, and notes.
+- Split train/validation/test **by independent maps or large regions with a spatial buffer**, not by randomly selecting neighboring tiles. Otherwise results will be artificially inflated.
+- Prevent a large map from dominating small ones by weighting per map/region/biome.
+- Keep visual-similarity tests separate from playability and technical-correctness tests.
+- Do not store raw maps in Git when permission or a license is unavailable.
 
-### 4.5 Etapy zaawansowania modelu
+### 4.5 Model maturity stages
 
-- **L0 (baseline):** ręczne presety + noise + zasady generowania.
-- **L1:** automatyczne statystyki referencji i dopasowywanie parametrów generatora.
-- **L2:** reguły warunkowe, n-gramy sąsiedztwa / wzorce 2D, rozkłady skupień, modele grafów POI i przejść.
-- **L3:** ranking wielu wygenerowanych kandydatów na podstawie similarity/quality score oraz feedback użytkownika.
-- **L4 (opcjonalnie, jeśli dane uzasadniają):** trenowany lokalny model do rozkładania biomów, rozmieszczania dekoracji lub proponowania fragmentów, z porównaniem do L3 na holdout. Nie wymuszaj sieci neuronowej, jeśli nie daje poprawy.
-- **L5:** iteracyjne uczenie po korektach użytkownika i wersjonowanie profili, z historią zmian i możliwością rollbacku.
+- **L0 (baseline):** manual presets + noise + generation rules.
+- **L1:** automatic reference statistics and generator-parameter fitting.
+- **L2:** conditional rules, neighborhood n-grams/2D patterns, cluster distributions, and POI/transition graph models.
+- **L3:** ranking multiple generated candidates using similarity/quality scores and user feedback.
+- **L4 (optional when justified by data):** a locally trained model for biome allocation, decoration placement, or fragment proposals, compared with L3 on holdout data. Do not force a neural network without an improvement.
+- **L5:** iterative learning from user corrections and profile versioning with change history and rollback.
 
-### 4.6 Metryki jakości i ewaluacja
+### 4.6 Quality metrics and evaluation
 
-Mierz co najmniej:
+Measure at least:
 
-1. `valid_item_ratio` oraz liczba nierozpoznanych ID.
-2. `border_error_rate`, konflikty warstw i niepożądane puste tile.
-3. `reachable_poi_ratio`, `reachable_walkable_ratio`, liczba odciętych regionów oraz błędnych połączeń Z.
-4. Odchylenie rozkładów biomów/obiektów względem map referencyjnych.
-5. Różnicę rozkładów sąsiedztw oraz wieloskalowych fragmentów, długości rzek, rozmiarów jezior, gęstości lasów.
-6. Similarity score po konwersji do map semantycznych i, jeśli dostępne, rendered minimap.
-7. Oceny człowieka: naturalność, podobieństwo stylistyczne, różnorodność, grywalność (ślepe A/B na mapach niewidzianych).
-8. `novelty / memorization`: procent podejrzanie identycznych dużych fragmentów danych referencyjnych.
-9. Czas, pamięć peak i rozmiar transakcji dla 100x100 / 500x500 / 1000x1000 na 1 oraz wielu poziomach.
+1. `valid_item_ratio` and the number of unrecognized IDs.
+2. `border_error_rate`, layer conflicts, and unintended empty tiles.
+3. `reachable_poi_ratio`, `reachable_walkable_ratio`, disconnected regions, and invalid Z connections.
+4. Deviation of biome/object distributions from reference maps.
+5. Difference in neighborhood and multi-scale-fragment distributions, river lengths, lake sizes, and forest density.
+6. Similarity score after conversion to semantic maps and, when available, a rendered minimap.
+7. Human ratings for naturalness, stylistic similarity, diversity, and playability through blind A/B tests on unseen maps.
+8. `novelty / memorization`: percentage of suspiciously identical large fragments from reference data.
+9. Time, peak memory, and transaction size for 100x100 / 500x500 / 1000x1000 at one and multiple levels.
 
-**Nie optymalizuj wyłącznie jednego similarity score**, bo model zacznie imitować teksturę zamiast tworzyć sensowne przejścia. Brak "idealnego" obiektywnego wyniku podobieństwa.
+**Do not optimize only one similarity score**, because the model will imitate texture instead of creating meaningful transitions. There is no "ideal" objective similarity score.
 
-Dla każdej metryki określ dziedzinę, mianownik, sposób agregacji, fixture, zestaw seedów i próg przed oceną holdout. Brak wymaganych POI oznacza `N/A`, nie 100% osiągalności. Wygenerowany diff musi mieć 100% poprawnych ID, zero naruszeń ochrony i zero zmian poza dozwoloną maską; `unknown` w referencji raportuj z pokryciem analizy. `border_error_rate` wymaga jawnych reguł/orakla, a ocena wizualna jest osobnym dowodem. Dla G4 zapisz porównanie z baseline na stałym zestawie seedów, rozrzut wyników i niepewność; progi jakości ustal przed testem, nie po obejrzeniu wyników.
+For each metric define the domain, denominator, aggregation, fixture, seed set, and threshold before holdout evaluation. Missing required POIs means `N/A`, not 100% reachability. The generated diff must have 100% valid IDs, no protection violations, and no changes outside the permitted mask. Report `unknown` reference elements with analysis coverage. `border_error_rate` needs explicit rules/an oracle, and visual review is separate evidence. For G4 record the baseline comparison on a fixed seed set, result spread, and uncertainty. Set quality thresholds before testing, not after reviewing results.
 
-## 5. Silnik proceduralny
+## 5. Procedural engine
 
-### 5.1 Generacja hierarchiczna
+### 5.1 Hierarchical generation
 
-1. **World Planner**: granice obszaru, sąsiedztwo istniejących terenów, docelowe regiony i główne POI.
-2. **Macro Terrain**: wysokość, wilgotność, temperatura, kierunki odpływu, wybrzeża, woda.
-3. **Biome Assignment**: biom na podstawie klimatu, wysokości, odległości od wody i stylu.
-4. **Topology**: sieć dróg, głównych przejść, mostów, przełęczy, wejść do jaskiń i poziomów Z.
-5. **Structures**: wioski, ruiny, jaskinie, dungeony, budowle w odpowiednich lokalizacjach.
-6. **Micro Terrain**: patch'e ground, mniejsze skarpy, detale terenu.
-7. **Decoration**: klastry roślin, skał, elementy charakterystyczne dla biomu.
-8. **Resolver + Autoborder**: mapa semantyki na brushes/items i spójne brzegi.
-9. **Validation + Repair**: sprawdzenie dostępności, zamkniętych przejść i konfliktów; naprawa lub odrzucenie seeda.
-10. **Preview/Commit**: pokaż wynik/diff; zastosuj dopiero po zatwierdzeniu.
+1. **World Planner**: area boundaries, existing-terrain adjacency, target regions, and main POIs.
+2. **Macro Terrain**: elevation, humidity, temperature, drainage directions, coasts, and water.
+3. **Biome Assignment**: biome from climate, elevation, distance from water, and style.
+4. **Topology**: roads, main passages, bridges, passes, cave entrances, and Z-level network.
+5. **Structures**: villages, ruins, caves, dungeons, and buildings in suitable locations.
+6. **Micro Terrain**: ground patches, smaller ledges, and terrain details.
+7. **Decoration**: plant and rock clusters and biome-specific elements.
+8. **Resolver + Autoborder**: semantic mapping to brushes/items and consistent borders.
+9. **Validation + Repair**: check reachability, closed passages, and conflicts, then repair or reject the seed.
+10. **Preview/Commit**: show the result/diff and apply it only after approval.
 
-### 5.2 Algorytmy (dobierz po benchmarkach)
+### 5.2 Algorithms (select after benchmarking)
 
-- Heightmap: layered Simplex/Perlin, domain warp, ridged noise, maski regionów.
-- Rzeki: kierunkowy odpływ/flow accumulation albo prostsze constrained routing, obsługa jezior i ujść, kontrola szerokości.
-- Biomy: reguły ekologiczne + profile z referencji, wygładzanie granic z zachowaniem organiczności.
-- Drogi: A* / Dijkstra na grafie kosztów (nachylenie, woda, biome, teren chroniony).
-- Lasy/zdobienia: grupowanie warunkowe + Poisson sampling tam, gdzie ma sens; style-dependent density.
-- Jaskinie: cellular automata, room-and-corridor, graph repair, łączenie pięter.
-- Osady: graf ulic, parcelacja i biblioteka reguł/prefabów; zabudowa ma respektować przejścia.
-- Poprawa stylu: stochastic local search i reranking wariantów przez oceny jakości.
+- Heightmap: layered Simplex/Perlin, domain warp, ridged noise, and region masks.
+- Rivers: directional drainage/flow accumulation or simpler constrained routing, with lakes, outlets, and width control.
+- Biomes: ecological rules plus reference profiles, smoothing boundaries while preserving organic shapes.
+- Roads: A* / Dijkstra on a cost graph using slope, water, biome, and protected terrain.
+- Forests/decorations: conditional grouping plus Poisson sampling where appropriate, with style-dependent density.
+- Caves: cellular automata, room-and-corridor, graph repair, and floor connections.
+- Settlements: street graph, parceling, and a rule/prefab library. Buildings must respect passages.
+- Style improvement: stochastic local search and variant reranking by quality scores.
 
-### 5.3 Reguły bezpieczeństwa
+### 5.3 Safety rules
 
-- Tryby: `new_area`, `replace_empty_only`, `replace_allowed_types`, `selection_only`, `blend_edges`.
-- Domy, teleporty, spawny, UID/AID, strefy PZ, questowe przedmioty i elementy oznaczone jako chronione muszą być zachowane domyślnie.
-- Konflikt -> ostrzeżenie + odrzucenie/dry-run, nigdy ciche kasowanie.
-- Generowanie w workerze na kopii danych, stosowanie zmian do mapy wyłącznie zgodnie z zasadami wątkowości RME.
-- Rozszerz generowany obszar o halo sąsiadów do obliczeń borderów; **nie modyfikuj** zewnętrznych tile bez jawnie określonej polityki.
+- Modes: `new_area`, `replace_empty_only`, `replace_allowed_types`, `selection_only`, `blend_edges`.
+- Houses, teleports, spawns, UID/AID, PZ zones, quest items, and elements marked as protected must be preserved by default.
+- Conflict -> warning plus rejection/dry-run, never silent deletion.
+- Generate in a worker on a data copy. Apply map changes only according to RME threading rules.
+- Extend the generated area with a neighbor halo for border calculations. **Do not modify** external tiles without an explicit policy.
 
-### 5.4 Kontrakt Preview -> Commit i ograniczenia zasobów
+### 5.4 Preview -> Commit contract and resource limits
 
-1. Przypnij wynik do konkretnego edytora i tożsamości mapy. Na głównym wątku pobierz spójny snapshot maski, halo i chronionych danych oraz wersji assets. Worker otrzymuje wyłącznie własne dane; nie używa wskaźników do żywych `Tile`, GUI, Lua ani globalnych managerów bez potwierdzonego kontraktu wątkowego.
-2. Przed Commit sprawdź, czy edytor istnieje, mapa i assets są te same oraz czy wejściowe dane maski/halo i istotne metadane nie zmieniły się od snapshotu. Sama aktywna karta, `hasChanged`, indeks Undo lub `getGeneration()` nie wystarczają do wykrywania edycji. Niezgodność unieważnia preview i wymaga regeneracji; nie przenoś wyniku automatycznie do innej mapy.
-3. Polityka ochrony dotyczy całych tile i footprintów, zawartości zagnieżdżonych kontenerów oraz powiązanych danych domów, spawnów, stref, waypointów i pozycji specjalnych. Maska zaznaczenia nie jest tylko bounding boxem. Halo jest domyślnie tylko do odczytu; jeśli poprawnego bordera nie można uzyskać w masce, odrzuć wynik albo pokaż rozszerzenie zasięgu do jawnego zatwierdzenia.
-4. Planowane tryby rozdziel na politykę zapisu (`empty_only` / `allowed_types`), maskę obszaru i politykę krawędzi (`blend_edges`). Zaznaczenie samo w sobie nie upoważnia do nadpisania istniejących danych. W MVP użyj `empty_only`; definicja pustego tile musi obejmować metadane, nie tylko brak ground.
-5. Przygotuj cały konkretny diff i stan potrzebny do cofania przed zmianą mapy. Integrację rysowania prowadź przez `DrawOperations`, rozszerzając je w niezbędnym zakresie o jawny kontekst brush/RNG/batch, jeśli audyt to potwierdzi. Nie symuluj kliknięć ani nie przełączaj globalnego brusha GUI. `Action`/`Change`/`ActionQueue` pozostają jedyną historią zmian; nie twórz konkurencyjnego Undo.
-6. Pojedynczy `BatchAction` oznacza grupowanie historii, a nie automatycznie atomowy commit i rollback po błędzie. Udowodnij testem: brak częściowego wyniku po błędzie, brak pustego wpisu historii, brak scalenia z poprzednią/następną edycją, zachowane metadane i indeksy. Jeśli istniejące operacje wymagają zmian, zaplanuj mały osobny PR integracyjny przed generatorem.
-7. Anulowanie przygotowania zawsze pozostawia mapę i historię bez zmian. W MVP finalne zastosowanie przygotowanego batcha jest krótką sekcją bez anulowania i bez ponownego wejścia do obsługi edycji. Jeśli pomiary wykażą długi commit, wdrożenie większych obszarów wymaga bezpiecznego etapowania z rollbackiem i blokadą konfliktujących edycji, a nie częściowych commitów widocznych dla użytkownika.
-8. Oszacuj szczyt pamięci przed alokacją: snapshot + halo + komórki + warianty + konkretne tile + undo/redo. Sprawdzaj przepełnienia rozmiarów i granice z `Position::isValid()` oraz aktualnych limitów mapy; oddziel wysokość koncepcyjną od Z (wyższe piętro Tibii ma mniejsze Z). Limit komórek, pamięci, kandydatów i prób naprawy musi prowadzić do czytelnego odrzucenia przed mutacją. Chunking nie usuwa kosztu całego Undo.
-9. Zamknięcie okna/mapy, zmiana wersji klienta i nowa generacja anulują lub unieważniają zadanie. Odrzucaj opóźnione wyniki po identyfikatorze zadania; nie wysyłaj zdarzeń do zniszczonego odbiorcy. Minimalny preview może być semantyczny; rzeczywisty render i finalny diff pozostają rozróżnione w UI.
-10. MVP działa offline. W sesji live/collaboration blokuj Commit z czytelnym komunikatem do czasu osobnego projektu kontroli konfliktów i testów integracyjnych. Nie zakładaj atomowości rozproszonej istniejących akcji.
+1. Pin the result to a specific editor and map identity. On the main thread, take a consistent snapshot of the mask, halo, protected data, and asset versions. The worker receives only owned data. It must not use pointers to live `Tile`, GUI, Lua, or global managers without a verified threading contract.
+2. Before Commit, check that the editor exists, the map and assets are unchanged, and mask/halo input data and relevant metadata still match the snapshot. The active tab, `hasChanged`, Undo index, or `getGeneration()` alone cannot detect edits. A mismatch invalidates preview and requires regeneration. Never move the result automatically to another map.
+3. Protection covers complete tiles and footprints, nested container contents, and related house, spawn, zone, waypoint, and special-position data. A selection mask is not only a bounding box. The halo is read-only by default. If a correct border cannot be produced within the mask, reject the result or show an explicit range extension for approval.
+4. Separate planned modes into write policy (`empty_only` / `allowed_types`), area mask, and edge policy (`blend_edges`). A selection alone does not authorize overwriting existing data. Use `empty_only` in the MVP. Empty-tile definition must include metadata, not only missing ground.
+5. Prepare the complete concrete diff and rollback state before changing the map. Integrate drawing through `DrawOperations`, extending it only as needed with an explicit brush/RNG/batch context if the audit confirms it. Do not simulate clicks or switch the global GUI brush. `Action`/`Change`/`ActionQueue` remain the only change history. Do not create a competing Undo.
+6. A single `BatchAction` groups history. It does not automatically provide atomic commit and rollback after an error. Prove with tests that errors leave no partial result or empty history entry, do not merge with adjacent edits, and preserve metadata and indexes. If existing operations need changes, plan a small integration PR before the generator.
+7. Cancelling preparation always leaves the map and history unchanged. In the MVP, applying the prepared batch is a short section without cancellation or re-entry into edit handling. If measurements show a long commit, larger areas need safe staging with rollback and conflicting-edit locking rather than user-visible partial commits.
+8. Estimate peak memory before allocation: snapshot + halo + cells + variants + concrete tiles + undo/redo. Check size overflows and `Position::isValid()`/current map limits. Separate conceptual elevation from Z, where higher Tibia floors have lower Z. Cell, memory, candidate, and repair-attempt limits must produce a clear rejection before mutation. Chunking does not remove the cost of the complete Undo.
+9. Closing the window/map, changing the client version, or starting a new generation cancels or invalidates the task. Reject delayed results by task ID and never send events to a destroyed receiver. Minimal preview may be semantic. Actual render and final diff remain distinct in the UI.
+10. The MVP is offline. In a live/collaboration session, block Commit with a clear message until conflict control and integration tests are designed separately. Do not assume that existing actions are distributed-transaction atomic.
 
-### 5.5 Przechodniość i zgodność zapisu
+### 5.5 Reachability and save compatibility
 
-Walidator używa konkretnych stosów itemów, flag klienta i jawnej polityki ruchu (kierunki, diagonale, narożniki). Przejścia Z są skierowanymi krawędziami o znanych wymaganiach; schody, drabiny, rope spots, teleporty, drzwi i akcje skryptowe mogą wymagać danych serwera. Nieznane zachowanie oznacz jako `unknown/conditional` i nie zaliczaj go automatycznie jako grywalne. Statyczny test edytora nie zastępuje testu na docelowym OTS.
+The validator uses concrete item stacks, client flags, and an explicit movement policy for directions, diagonals, and corners. Z transitions are directed edges with known requirements. Stairs, ladders, rope spots, teleports, doors, and scripted actions may require server data. Mark unknown behavior as `unknown/conditional` and do not automatically count it as playable. A static editor test does not replace a test on the target OTS.
 
-Round-trip obejmuje `.otbm` i wszystkie używane pliki pomocnicze w osobnym katalogu testowym. Porównuj kanoniczną zawartość (w tym atrybuty i kolejność stosu), nie bajtowy hash pliku z kompresją. Wybierz wersję OTBM i odbiorcę testu; istniejący kod obsługuje m.in. OTBM 5, więc nie obiecuj zgodności każdego formatu z oryginalnym RME. Zachowaj zgodność już wspieranych formatów; nie dodawaj atrybutów ani nie zmieniaj serializacji w ramach generatora.
+Round-trip includes `.otbm` and every used companion file in a separate test directory. Compare canonical content, including attributes and stack order, rather than a byte hash of compressed files. Choose the OTBM version and test consumer. Existing code supports OTBM 5 among others, so do not promise compatibility with every format in original RME. Preserve supported formats. Do not add attributes or change serialization within the generator.
 
-## 6. UI wewnątrz RME
+## 6. UI inside RME
 
 ### Panel "Generate Area"
 
 - Tabs: `Area`, `Terrain`, `Biomes`, `Structures`, `Decoration`, `Reference Style`, `Advanced`, `Validation`.
-- Rozmiar, pozycja X/Y/Z, wybór zaznaczenia, seed + randomize, biom główny i mieszane biomy.
-- Suwaki: mountains, water, forests, paths, rough edges, vegetation, details, floor count, POI density.
-- Panel stylu: wybór profilu wyuczonego z map, lista referencji, analiza i aktualizacja profilu.
-- Podgląd: minimapa semantyczna oraz (później) rzeczywisty render z assetów; warianty A/B/C i ich score.
+- Size, X/Y/Z position, selection choice, seed + randomize, primary biome, and mixed biomes.
+- Sliders: mountains, water, forests, paths, rough edges, vegetation, details, floor count, and POI density.
+- Style panel: choose a profile learned from maps, reference list, analysis, and profile update.
+- Preview: semantic minimap and, later, an asset-backed render, with A/B/C variants and scores.
 - `Preview`, `Regenerate`, `Compare`, `Validate`, `Place on map`, `Cancel`.
-- Statystyki: udziały biomów/wody, przechodniość, nieznane item ID, ostrzeżenia, runtime/memory.
-- Zapis/odczyt presetów do plików o wersjonowanym schemacie.
+- Statistics: biome/water shares, reachability, unknown item IDs, warnings, and runtime/memory.
+- Save/load presets using versioned schemas.
 
-### UX wymagany
+### Required UX
 
-- Płynny podgląd z throttlingiem, aktualizacją w tle i możliwością anulowania.
-- Rozdzielona operacja `Preview` i `Commit`.
-- Jedno cofnięcie logicznie odwraca całą zatwierdzoną generację.
-- Przy regenerowaniu czyść tylko preview, nie mapę użytkownika.
-- Używaj `Theme` dla kolorów, fontów i odstępów oraz wspólnych `VirtualItemGrid` / `VirtualBrushGrid` dla katalogów itemów/brushy. Podgląd mapy integruj z właściwą warstwą overlay lub osobną powierzchnią; zasoby GL/NanoVG muszą mieć RAII, a pętle renderujące nie mogą alokować per tile/frame.
+- Smooth preview with throttling, background updates, and cancellation.
+- Separate `Preview` and `Commit` operations.
+- One Undo logically reverses the entire approved generation.
+- Regeneration clears only the preview, never the user's map.
+- Use `Theme` for colors, fonts, and spacing, and shared `VirtualItemGrid` / `VirtualBrushGrid` for item/brush catalogs. Integrate the map preview in the correct overlay tier or a separate surface. GL/NanoVG resources must use RAII, and render loops must not allocate per tile/frame.
 
-## 7. Harmonogram wdrożenia z bramkami akceptacji
+## 7. Implementation schedule with acceptance gates
 
-Statusy do uzupełniania: `[ ] TODO`, `[~] IN PROGRESS`, `[x] VERIFIED`, `[!] BLOCKED`. Nie zaznaczaj punktu bez testu.
+Statuses to fill in: `[ ] TODO`, `[~] IN PROGRESS`, `[x] VERIFIED`, `[!] BLOCKED`. Do not mark an item without a test.
 
-### FAZA 0 - Repozytorium i audyt
+### PHASE 0 - Repository and audit
 
-**Końcowa ocena 2026-11-02: VERIFIED.** Wszystkie sześć pozycji audytu i G0-01…09 oceniono w [raporcie końcowym](procedural/G0_FINAL_20261102.md), z konkretnymi dowodami oraz jawną różnicą semantyki aktualnego odbiorcy spawnów. Bramka build + punkty integracji + round-trip RME została spełniona; nie oznacza to pełnej zgodności świata OTS ani gwarancji przyszłego generatora. G1 nierozpoczęte. Datowane opisy 27–28.10 poniżej pozostają historią audytu.
+**Final assessment 2026-11-02: VERIFIED.** All six audit items and G0-01…09 were assessed in the [final report](procedural/G0_FINAL_20261102.md), with concrete evidence and an explicit semantic difference in the current spawn consumer. The build + integration points + RME round-trip gate passed. This does not mean full OTS-world compatibility or guarantee the future generator. G1 had not started. The dated entries for 27–28 October below remain audit history.
 
-- [x] Użyj istniejącego checkoutu, sprawdź Git i gałąź z `master`, zapisz SHA oraz lokalne zmiany. Potwierdź licencję, Windows x64, `build_ninja.bat`, wersje toolchaina i zależności. Dowody w audycie: lokalny snapshot `5a01a8f`, build zakończony z `--parallel 2`; pochodzenie upstream niepotwierdzone.
-- [x] Zidentyfikuj API Map/Tile/Item/Brush/Autoborder/Undo i Lua; linkuj konkretne pliki i funkcje. Dowód: przegląd CodeGraph oraz tabela w `docs/procedural/ARCHITECTURE.md`; nie jest to walidacja runtime.
-- [x] Sprawdź odczyt/zapis OTBM i kwestie multi-floor, house/spawn/UID/AID. Końcowe rzeczywiste RME round-trip i pełne niezależne porównania fixture OTBM 3, osobna strefa OTBM 5; aktualny odbiorca zbadany oddzielnie. Radius/direction legacy nie są zachowane przez jego konwerter, czego nie zaliczono jako pełnej zgodności spawnów. Dowody i granice: `docs/procedural/G0_FINAL_20261102.md`.
-- [x] Zbuduj RME, otwórz testową mapę, zapisz kopię, uruchom minimalny skrypt modyfikujący 20x20 z Undo. 2026-10-26/27: 400 ground, Undo/Redo i odczyt zapisu PASS dla syntetycznego fixture; szczegóły i ograniczenia w `TEST_PLAN.md`.
-- [x] Oceń istniejące `noise`/`algo`/`geo`, demonstrator terenu i transakcje Lua; wybierz granicę C++/Lua na podstawie testu, nie nazwy API. Decyzja 2026-11-01: rdzeń/snapshot/resolver/commit C++, Lua opcjonalne presety/konfiguracja/demo. Dowody: próbki noise/algo/geo, Draw/Lua/Draw, reprodukcje i regresje callbacków/setterów/metod, analiza RNG i snapshotu/halo w `ARCHITECTURE.md` oraz `TEST_PLAN.md`. Wybór nie oznacza gotowości adaptera ani pełnej atomowości; pozostałe testy G0 i projekt G1 nadal otwarte.
-- [x] Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` i plan małych PR. Dokumenty utworzono; zawierają rzeczywiste symbole i jawne wyniki wykonanych kontroli. Nie nadpisano istniejącej dokumentacji ogólnej.
+- [x] Use existing checkout, verify Git and branch from `master`, record SHA and local changes. Confirm license, Windows x64, `build_ninja.bat`, toolchain versions and dependencies. Evidence in audit: local snapshot `5a01a8f`, build completed with `--parallel 2`; upstream origin unconfirmed.
+- [x] Identify API for Map/Tile/Item/Brush/Autoborder/Undo and Lua; link specific files and functions. Evidence: CodeGraph review and table in `docs/procedural/ARCHITECTURE.md`; this is not runtime validation.
+- [x] Verify OTBM read/write and multi-floor, house/spawn/UID/AID issues. Final actual RME round-trip and complete independent fixture comparisons for OTBM 3, separate zone OTBM 5; current consumer examined separately. Radius/direction legacy not preserved by its converter, not counted as full spawn compatibility. Evidence and limits: `docs/procedural/G0_FINAL_20261102.md`.
+- [x] Build RME, open test map, save copy, run minimal script modifying 20x20 with Undo. 2026-10-26/27: 400 ground, Undo/Redo and save/load PASS for synthetic fixture; details and limits in `TEST_PLAN.md`.
+- [x] Assess existing `noise`/`algo`/`geo`, terrain demonstrator and Lua transactions; select C++/Lua boundary based on tests, not API names. Decision 2026-11-01: core/snapshot/resolver/commit in C++, Lua optional for presets/config/demo. Evidence: noise/algo/geo samples, Draw/Lua/Draw, callback/setter/method reproductions and regressions, RNG and snapshot/halo analysis in `ARCHITECTURE.md` and `TEST_PLAN.md`. Selection does not imply adapter readiness or full atomicity; remaining G0 tests and G1 planning still open.
+- [x] Create `docs/procedural/ARCHITECTURE.md`, `docs/PROGRESS.md`, `docs/procedural/TEST_PLAN.md` and plan for small PRs. Documents created; contain actual symbols and explicit results of executed checks. Did not overwrite existing general documentation.
 
-**Bramka G0:** reproducible build + opis rzeczywistych punktów integracji + round-trip testowej mapy.
+**G0 gate:** reproducible build + description of actual integration points + round-trip of a test map.
 
-Stan 2026-10-27: smoke pustej mapy przeszedł, lecz G0 pozostaje niezaliczone. Odtworzony błąd callbacka `app.transaction` (401 zamiast 400 pól) naprawiono w G0-B przez kontrolę wyniku chronionego wywołania Sol2. Regresja na mapie potwierdziła propagację błędów, rollback sześciu mutacji i brak wpisów historii po trzech nieudanych transakcjach; udane transakcje i Undo/Redo działają. Nie jest to dowód pełnej atomowości generatora: testy metadanych i rozdzielenia historii od ręcznej edycji nadal wymagane. Dowody w `TEST_PLAN.md`.
+Status 2026-10-27: empty-map smoke test passed, but G0 remains uncertified. Reproduced callback error in `app.transaction` (401 instead of 400 fields) fixed in G0-B through validating Sol2 protected call results. Map regression confirmed error propagation, rollback of six mutations, and no history entries after three failed transactions; successful transactions and Undo/Redo work. This is not proof of full generator atomicity: metadata tests and separation from manual edits still required. Evidence in `TEST_PLAN.md`.
 
-Późniejsza próba G0-06 przeszła dla `Draw` → Lua → `Draw`, także przy włączonym grupowaniu historii. Test zapisu/odczytu objął piętra 6/7, ground UID/AID, flagi i spawn z potworem. Odkryto dwa blokery: bezpośrednia zmiana `Item.actionId` w transakcji nie jest śledzona ani cofana, a „Save As” nowej mapy w tym samym katalogu zachowało stare nazwy plików pomocniczych i nadpisało XML spawnu używany przez źródłową mapę. Dane testowe były syntetyczne, przywrócone. Naprawa obu błędów i testy regresyjne są wymagane przed zakończeniem G0. Domy, strefy i zewnętrzny odbiorca pozostają niezweryfikowane.
+Later G0-06 attempt passed for `Draw` → Lua → `Draw`, also with history grouping enabled. Save/load test covered floors 6/7, ground UID/AID, flags and spawn with creature. Discovered two blockers: direct `Item.actionId` change in transaction not tracked or undone, and “Save As” of new map in same directory retained old companion-file names and overwrote spawn XML used by source map. Test data was synthetic, restored. Fixes for both errors and regression tests required before G0 completion. Houses, zones and external consumer remain unverified.
 
-Aktualizacja 2026-10-28: przygotowana poprawka Save As i backupu przeszła ograniczone testy kolizji oraz błędu dostępu; pełna atomowość i crash recovery nie są wykazane. Osobny fixture domu zachował w RME po ponownym odczycie nazwę, miasto, ID, czynsz i rozmiar. Wykryto również utratę niezapisanej zmiany czynszu przy zamknięciu bez ostrzeżenia. Próby noise oraz wybranych operacji algo/geo przeszły dla opisanych danych, nie dowodzą deterministyczności całego generatora. Na ich podstawie pozostaje robocza granica: rdzeń, snapshot, resolver i commit w C++; Lua jako opcjonalna konfiguracja i narzędzie demonstracyjne. Ostateczna decyzja oraz G0 nadal wymagają rozwiązania rollbacku itemów i pozostałych testów z `TEST_PLAN.md`.
+Update 2026-10-28: prepared Save As and backup fix passed limited collision and access-error tests; full atomicity and crash recovery not demonstrated. Separate house fixture retained name, town, ID, rent and size in RME after re-open. Also discovered loss of unsaved rent change on close without warning. Noise tests and selected algo/geo operations passed for described data, do not prove full generator determinism. Working boundary remains: core, snapshot, resolver and commit in C++; Lua as optional config and demo tool. Final decision and G0 still require resolving item rollback and remaining tests from `TEST_PLAN.md`.
 
-### FAZA 1 - Rdzeń abstrakcyjny i podstawowa integracja
+### PHASE 1 - Abstract core and basic integration
 
-**G1 ZAMKNIĘTE Z DŁUGIEM, 2026-11-06** ([dług techniczny](procedural/TECH_DEBT.md), [stan bramki](procedural/G1_GATE_STATUS.md)). Rozpoczęto 2026-11-02 G1-A na gałęzi `feature/procedural-g1-core`. [Rdzeń i ograniczenia](procedural/G1_CORE.md); test C++ 100×100/500×500 PASS nie zastępuje bramki integracyjnej G1 poniżej.
+**G1 CLOSED WITH DEBT, 2026-11-06** ([technical debt](procedural/TECH_DEBT.md), [gate status](procedural/G1_GATE_STATUS.md)). G1-A started on 2026-11-02 on `feature/procedural-g1-core`. [Core and limits](procedural/G1_CORE.md). A passing C++ 100×100/500×500 test does not replace the G1 integration gate below.
 
-- [x] `GenerationConfig`, stabilne strumienie RNG, siatka jednego piętra z jawnym Z, maski i chronione obszary. Rdzeń C++ i testy gotowe; ochrona i dokładna maska z rzeczywistego snapshotu i zaznaczenia: [snapshot](procedural/G1_SNAPSHOT.md), [maska](procedural/G1_MASK.md), a w pełnych round-tripach 100×100 i 500×500 pięć kafli fixture pozostało bez zmian.
-- [x] Generowanie grass/dirt/water bez zależności od item ID, zgodnie z MVP z sekcji 1.3. Pierwszy semantyczny baseline v1, bez noise i oceny naturalności; rzeczywiste testy C++ 100×100/500×500 PASS.
-- [x] Prosty resolver do właściwych brushy/items zgodnie z klientem. [Resolver](procedural/G1_RESOLVER.md); według raportu resolver odrzuca brak brusha i itemu, a brak klienta sprawdzono w natywnych odmowach ([odmowy](procedural/G1_REFUSALS.md)); testów resolvera nie uruchamiałem ponownie przy tej aktualizacji.
-- [x] Dry-run (Preview i Validate), commit i Undo/Redo, logi. [Commit](procedural/G1_COMMIT.md), [round-trip](procedural/G1_ROUNDTRIP.md); logi dialogu mają dowód runtime dla Preview, Validate, Place, Cancel i odmów ([stan bramki](procedural/G1_GATE_STATUS.md)).
-- [x] Test deterministyczności i błędnych parametrów. Rdzeń C++ PASS; fingerprinty podglądu, maski i commitu 100×100 i 500×500 są identyczne w kolejnych buildach ([regresja etapowa](procedural/G1_STAGED_CORE.md)), a trzy próby 500×500 zapisały komplet plików identyczny bajtowo ([powtarzalność](procedural/G1_PLACE_TIMING_REPEATABILITY.md)). Zakres: seed 1729 i dwa rozmiary.
-- [x] Minimalny dialog: seed, obszar, Preview, Validate, Commit, Cancel; obsługa braku klienta/assets i nieaktualnego wyniku. [Dialog](procedural/G1_DIALOG.md), [macierz](procedural/G1_DIALOG_MATRIX.md), [odmowy](procedural/G1_REFUSALS.md), [unieważnienie](procedural/G1_INVALIDATION.md).
-- [~] Test konkretnego diffu, anulowania, błędu zastosowania, zmiany mapy/assets po preview, przekroczenia budżetu oraz oddzielnego wpisu Undo. Commit offline. Wykonane: [commit](procedural/G1_COMMIT.md), [anulowanie](procedural/G1_CANCEL.md), [unieważnienie](procedural/G1_INVALIDATION.md), [budżet](procedural/G1_BUDGET.md), [zasoby](procedural/G1_ASSETS.md). Poza zakresem: rzeczywista sesja sieciowa live (tryb offline sprawdzono na nieuruchomionym hoście live). Otwarte: błędy alokacji sprawdzono w opisanych miejscach, nie we wszystkich.
+- [x] `GenerationConfig`, stable RNG streams, single-floor grid with explicit Z, masks and protected areas. C++ core and tests ready; protection and exact mask from real snapshot and selection: [snapshot](procedural/G1_SNAPSHOT.md), [mask](procedural/G1_MASK.md), and in full round-trips 100×100 and 500×500 five fixture tiles remained unchanged.
+- [x] Grass/dirt/water generation without item ID dependency, per MVP from section 1.3. First semantic baseline v1, without noise and naturalness scoring; actual C++ tests 100×100/500×500 PASS.
+- [x] Simple resolver to proper brushes/items per client. [Resolver](procedural/G1_RESOLVER.md); per report resolver rejects missing brush and item, missing client checked in native refusals ([refusals](procedural/G1_REFUSALS.md)); resolver tests not rerun at this update.
+- [x] Dry-run (Preview and Validate), commit and Undo/Redo, logs. [Commit](procedural/G1_COMMIT.md), [round-trip](procedural/G1_ROUNDTRIP.md); dialog logs have runtime proof for Preview, Validate, Place, Cancel and refusals ([gate status](procedural/G1_GATE_STATUS.md)).
+- [x] Determinism and error parameter tests. C++ core PASS; preview, mask and commit fingerprints 100×100 and 500×500 identical across builds ([staged regression](procedural/G1_STAGED_CORE.md)), and three 500×500 trials saved complete files byte-identical ([repeatability](procedural/G1_PLACE_TIMING_REPEATABILITY.md)). Scope: seed 1729 and two sizes.
+- [x] Minimal dialog: seed, area, Preview, Validate, Commit, Cancel; handling missing client/assets and stale result. [Dialog](procedural/G1_DIALOG.md), [matrix](procedural/G1_DIALOG_MATRIX.md), [refusals](procedural/G1_REFUSALS.md), [invalidation](procedural/G1_INVALIDATION.md).
+- [~] Test concrete diff, cancellation, application error, map/assets change after preview, budget overflow and separate Undo entry. Offline commit. Completed: [commit](procedural/G1_COMMIT.md), [cancellation](procedural/G1_CANCEL.md), [invalidation](procedural/G1_INVALIDATION.md), [budget](procedural/G1_BUDGET.md), [resources](procedural/G1_ASSETS.md). Out of scope: actual live network session (offline mode tested on stopped live host). Open: allocation errors checked at described locations, not all.
 
-**G1:** 100x100 i 500x500 na jednym piętrze w zmierzonym budżecie zasobów, preview zgodny z zastosowanym diffem, zapis i otwarcie kompletu plików, jedno Undo i Redo, zero zmian poza maską i w danych chronionych. Brak budżetu dla 500x500 jest ograniczeniem, nie zaliczeniem G1.
+**G1:** 100x100 and 500x500 on single floor within measured resource budget, preview matches applied diff, save and open complete file set, one Undo and Redo, zero changes outside mask and protected data. Lack of budget for 500x500 is a constraint, not G1 failure.
 
-**Stan 2026-11-06:** wszystkie pozycje listy mają dowód poza jednym wyjątkiem opisanym przy ostatniej pozycji. Pełny round-trip obu rozmiarów powtórzono na bieżącym binarium, progi zasobów 100×100 zatwierdzono, a wzrost pamięci w 200 cyklach uznano za niebędący blokerem (decyzja użytkownika). Bramka jest **zamknięta z długiem** (decyzja użytkownika 2026-11-06; zastrzeżenia: czasy Place 500×500 z EXE `15c25557…`, nie z obecnego `b87d1abb…`; wiele dowodów to pojedyncze serie; PR bez CI, commity pośrednie nie były budowane osobno). Rzeczywiste sesje sieciowe live uznano za poza zakresem G1. Nie rozstrzygnięto pozostałych miejsc awarii alokacji ani stosu `SetFocus` z aktywacji ramki przy otwartym generatorze (2026-11-04); `SetFocus` przy zamykaniu i w przebiegu odmów wyjaśniono. Część dowodów to pojedyncze serie. Odłożone pozycje: [dług techniczny](procedural/TECH_DEBT.md). Szczegóły: [stan bramki](procedural/G1_GATE_STATUS.md).
+**Status 2026-11-06:** all list items have evidence except one noted at last item. Full round-trip of both sizes repeated on current binary, 100×100 resource thresholds approved, and memory growth in 200 cycles deemed non-blocking (user decision). Gate is **closed with debt** (user decision 2026-11-06; disclaimers: Place 500×500 times from EXE `15c25557…`, not current `b87d1abb…`; many proofs are single runs; PR without CI, intermediate commits not built separately). Actual live network sessions deemed out of scope for G1. Unresolved remaining allocation failures and `SetFocus` stack from frame activation with open generator (2026-11-04); `SetFocus` on close and in refusal traces explained. Some proofs are single runs. Deferred items: [technical debt](procedural/TECH_DEBT.md). Details: [gate status](procedural/G1_GATE_STATUS.md).
 
-### FAZA 2 - Sensowna powierzchnia i border
+### PHASE 2 - Meaningful surface and borders
 
-- [~] Naturalne rzeki, jeziora, teren skalny i brzegi; strefy przejściowe biomów. Wielopiętrowe góry pozostają w FAZIE 5. G2 zamknięte z długiem 2026-11-07 ([G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md)); dalsze zmiany w G4 (2026-11-08): meander rzek (D6 częściowo, kryterium nie spełnione), duże struktury (`featureSize`, kryterium E64 nie spełnione przy boku 256), szersza plaża (P′ w paśmie w m06 i m19), ziemia bez zmiany metryką; [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), [G4_COMPARE.md](procedural/G4_COMPARE.md). Rzeki nadal bez rozwidleń z danych (D9); masywy skalne (iteracja 8) gładsze niż w referencjach, kryterium nie spełnione.
-- [~] Rozszerzenie mapowania semantycznego i testy istniejącego autoborder: wielokierunkowe krawędzie, zachowanie okolicy; bez drugiego silnika borderowania. Dowody G2-B w [G2_BORDERS.md](procedural/G2_BORDERS.md) (`pairs_without_border=0`, tylko klient 1098-BlackTek); nie weryfikowane ponownie po zmianach G4 poza jednym profilem w GUI; brushe z zewnętrzną bordurą obsłużone pierścieniem w G4.
-- [x] Roślinność i detale warunkowe zależne od terenu. G2-C (testy rdzenia, ocena GUI użytkownika) i G4-D (wegetacja kontekstowa z profilu, [G4_DECOR.md](procedural/G4_DECOR.md)); ocena wegetacji względem referencji niejednoznaczna (2 z 4 foldów gorsze).
-- [~] Testy rozkładów, brak nieobsługiwanych itemów, testy wizualne na kilku seedach. Testy rozkładów i seedów w rdzeniu PASS; oceny wizualne to oceny użytkownika z GUI (pojedyncze podglądy), bez ślepego A/B.
+- [~] Natural rivers, lakes, rocky terrain, and shores, plus biome transition zones. Multi-floor mountains remain in PHASE 5. G2 closed with debt on 2026-11-07 ([G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md)). Further G4 changes on 2026-11-08 covered river meander (D6 partial, criterion not met), large structures (`featureSize`, E64 criterion not met at side 256), a wider beach (P′ in range for m06 and m19), and ground without metric change. See [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md) and [G4_COMPARE.md](procedural/G4_COMPARE.md). Data still has no river branches (D9). Rock masses (iteration 8) are smoother than references and the criterion is not met.
+- [~] Extended semantic mapping and existing-autoborder tests for multi-directional edges and neighborhood preservation, without a second border engine. G2-B evidence is in [G2_BORDERS.md](procedural/G2_BORDERS.md) (`pairs_without_border=0`, client 1098-BlackTek only). It was not rerun after G4 changes except for one GUI profile. Brushes with external borders are handled by a ring in G4.
+- [x] Terrain-dependent vegetation and conditional details. G2-C covers core tests and user GUI review. G4-D covers profile-based contextual vegetation in [G4_DECOR.md](procedural/G4_DECOR.md). Vegetation quality against references is inconclusive, with 2 of 4 folds worse.
+- [~] Distribution tests, no unsupported items, and visual tests on several seeds. Core distribution and seed tests PASS. Visual assessments are user GUI reviews of individual previews without blind A/B testing.
 
-**G2:** wygenerowany teren czytelny w RME, brak znanych krytycznych błędów borderów.
+**G2:** generated terrain is legible in RME, with no known critical border errors.
 
-### FAZA 3 - Import i analiza map referencyjnych
+### PHASE 3 - Reference-map import and analysis
 
-**G3 ZAMKNIĘTE Z DŁUGIEM, 2026-11-07 (decyzja użytkownika): kryterium bramki spełnione dla 20 map (19 zwykłego 10.98, 1 BlackTek), zakres z planu nie w całości.** Kryteria, dowody i luki: [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md).
+**G3 CLOSED WITH DEBT, 2026-11-07 (user decision): gate criterion met for 20 maps (19 standard 10.98, 1 BlackTek), with the planned scope incomplete.** Criteria, evidence, and gaps: [G3_GATE_STATUS.md](procedural/G3_GATE_STATUS.md).
 
-- [~] Lokalny import OTBM, wykrywanie zgodności item/asset. Część wykonana 2026-11-07, jedna referencja: [G3_IMPORT.md](procedural/G3_IMPORT.md).
+- [~] Local OTBM import and item/asset compatibility detection. Partially completed on 2026-11-07 with one reference: [G3_IMPORT.md](procedural/G3_IMPORT.md).
 - [~] Normalizator map do reprezentacji semantycznej + `unknown` reports. 2026-11-07, fixture i jedna referencja: [G3_NORMALIZER.md](procedural/G3_NORMALIZER.md).
-- [~] Rozpoznawanie regionów, biomów, cech topologicznych, pięter. 2026-11-07, bez wąskich gardeł i nazwanych biomów: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md).
-- [~] Feature extraction + raport CSV/JSON/HTML lub MD. 2026-11-07, JSON/MD/CSV, bez HTML i bez części cech z 4.2: [G3_FEATURES.md](procedural/G3_FEATURES.md).
-- [~] Testy na minimum kilku własnych fixture i na referencjach użytkownika, bez publikacji referencji. 2026-11-07: fixture własne, `forgotten.otbm` (BlackTek) i 19 map zwykłego 10.98, dwie serie bajtowo identyczne; bez limitu pamięci/anulowania importu (D8) i bez oceny sensowności cech: [G3_REFERENCES.md](procedural/G3_REFERENCES.md).
+- [~] Region, biome, topology-feature, and floor recognition. On 2026-11-07, without bottlenecks or named biomes: [G3_TOPOLOGY.md](procedural/G3_TOPOLOGY.md).
+- [~] Feature extraction with CSV/JSON/HTML or MD reporting. On 2026-11-07, JSON/MD/CSV without HTML and without some features from 4.2: [G3_FEATURES.md](procedural/G3_FEATURES.md).
+- [~] Tests on several local fixtures and user references without publishing references. On 2026-11-07: local fixtures, `forgotten.otbm` (BlackTek), and 19 standard 10.98 maps, with two byte-identical series. Import memory limits/cancellation (D8) and feature usefulness were not assessed: [G3_REFERENCES.md](procedural/G3_REFERENCES.md).
 
-**G3:** dla każdej mapy referencyjnej generowany jest powtarzalny raport, statystyki i mapa semantyczna.
+**G3:** every reference map produces a reproducible report, statistics, and semantic map.
 
-### FAZA 4 - Uczenie stylu L1/L2
+### PHASE 4 - L1/L2 style learning
 
-- [x] Profile stylu i manifest referencji z wersjonowanym schematem. `g4-manifest/1`, `g4-profile/6` z `checkProfile`, testy rdzenia PASS, powtarzalność dwóch przebiegów; [G4_PROFILE.md](procedural/G4_PROFILE.md), [G4_SPLIT.md](procedural/G4_SPLIT.md). Profile pochodzą z prywatnych map i nie są w repo.
-- [~] Dopasowanie rozkładów ground, adjacency, clustering, biome transitions. Rozkłady, sąsiedztwa i przejście trawa/ziemia dopasowane ([G4_FIT.md](procedural/G4_FIT.md)); clustering i skala struktur tylko częściowo (iteracja 6, kryterium nie spełnione); biomy bez nazw (D9).
-- [~] Reguły zależne od kontekstu: las przy wodzie, kamienie przy górach, ścieżki, przejścia. Las i kamienie kontekstowe są ([G4_DECOR.md](procedural/G4_DECOR.md)); szlaki opcjonalne (iteracja 9, metryka w paśmie, GUI niezweryfikowane); budynki opcjonalne: podłogi i ściany bez drzwi i dachów (iteracja 11, GUI potwierdzone przez użytkownika); przejścia między rodzajami częściowo (obwódka trawy wokół skały i plaży, iteracja 10: m06 8 z 8, m19 2 z 8); przejść biomów jako takich nie ma (D9, D15).
-- [~] Profile niezależne dla powierzchni / podziemi / wersji assetów. Profil per klient i hash assetów (oferta w GUI); tylko powierzchnia z ≤ 7, bez podziemi.
-- [~] Holdout evaluation: porównanie z baseline na mapach niewidzianych. Wykonana w iteracjach 1–3 ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md)); poprawa na mapach niewidzianych nie wykazana (jedyny dowód: swamp, n = 2).
+- [x] Style profiles and a reference manifest with a versioned schema. `g4-manifest/1`, `g4-profile/6` with `checkProfile`, passing core tests, and repeatability across two runs. See [G4_PROFILE.md](procedural/G4_PROFILE.md) and [G4_SPLIT.md](procedural/G4_SPLIT.md). Profiles come from private maps and are not in the repository.
+- [~] Fitting ground, adjacency, clustering, and biome-transition distributions. Distributions, adjacency, and grass/ground transition are fitted in [G4_FIT.md](procedural/G4_FIT.md). Clustering and structure scale are partial, iteration 6 criterion not met. Biomes are unnamed (D9).
+- [~] Context-dependent rules for forest near water, rocks near mountains, paths, and transitions. Contextual forest and rocks exist in [G4_DECOR.md](procedural/G4_DECOR.md). Routes are optional, iteration 9 metric is in range but GUI is unverified. Optional buildings have floors and walls without doors or roofs, iteration 11 with user GUI confirmation. Transitions are partial, with grass around rock and beach, iteration 10: m06 8 of 8, m19 2 of 8. Biome transitions as such do not exist (D9, D15).
+- [~] Independent profiles for surface/underground and asset versions. The GUI offers a profile per client and asset hash, but only surface with Z ≤ 7 and no underground.
+- [~] Holdout evaluation comparing with a baseline on unseen maps. Completed in iterations 1–3 ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md)). Improvement on unseen maps was not demonstrated, with the only evidence being swamp, n = 2.
 
-**G4:** mierzalna i powtarzalna poprawa wybranych metryk stylu nad ręcznymi presetami, bez pogorszenia krytycznych metryk grywalności.
+**G4:** measurable and reproducible improvement in selected style metrics over manual presets without worsening critical playability metrics.
 
-**G4 NIE SPEŁNIONA (2026-11-08):** mechanizmy z listy powyżej istnieją i są powtarzalne (manifest, podział po rodzinach, profile, dopasowanie rozkładów, reguły wegetacji, ewaluacja na foldach), ale ocena na mapach niewidzianych nie wykazała poprawy ponad ręczne presety bez pogorszenia spójności lądu. Kryteria, wyniki i luki: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
+**G4 NOT MET (2026-11-08):** the mechanisms above exist and are reproducible, including manifest, family split, profiles, distribution fitting, vegetation rules, and fold evaluation. However, unseen-map evaluation did not show improvement over manual presets without worsening land consistency. Criteria, results, and gaps: [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md).
 
-### FAZA 5 - Topologia i wielopiętrowe światy
+### PHASE 5 - Topology and multi-floor worlds
 
-- [~] Połączenia świata: graph regionów, POI, trasy, mosty, przełęcze. Zrobione (2026-11-09): brody z piasku (Shore przez rzekę/jezioro, `fordLength` do 256) łączące odcięty ląd w obrębie jednego obszaru; kafle brodu sprawdzone sondą pod kątem blokowania, chodzenie w grze i wygląd nie sprawdzone ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 14b”); mosty z przedmiotem i przełęcze: nie zrobione. Graf regionów zrobiony 2026-11-09 (`buildRegionGraph`, iteracja 24 w [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), tylko rdzeń). Mosty z przedmiotem zrobione 2026-11-12 (iteracja 37); przełęcze: nie zrobione.
-- [~] Multi-level mountain logic i przejścia Z. Zrobione w rdzeniu (2026-11-09, iteracja 27): wejścia Z na brzegu skały, jaskinia piętro niżej, walidator osiągalności przez Z ([G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md)); rysowanie na mapie zrobione 2026-11-09 (iteracja 28: przedmiot wejścia, jaskinia na z + 1, rampa w górę, dwa kroki Undo, zakładka „Underground”; GUI i gra nie sprawdzone; 2026-11-10 iteracja 29: ściany jaskini, wejście w ścianie skały albo dziura, wyjścia poza skałą; za mało wejść w stylu ściany; 2026-11-10 iteracja 30: rampa wyjścia pod wejściem, bez dziury na powierzchni; iteracja 31: jaskinia bez budynków, brak wejścia nad rampą w GUI nieodtworzony; iteracja 32: płaskowyż z − 1 z roślinnością i rampami, wygląd nie sprawdzony), iteracja 33: do trzech pięter, limit w %; iteracja 34: czapy na własnym zboczu; wygląd nie sprawdzony), schody w budynkach: nie zrobione. 2026-11-12: iteracje 37–39 łączą piętra czap i jaskini w walidatorze i naprawie (bramka G5 PASS); wygląd nadal niesprawdzony.
-- [~] Jaskinie, dungeony, korytarze, komory, wejścia, wyjścia. Prosta jaskinia (tunele, sale, lądowiska pod wejściami Z) w rdzeniu 2026-11-09, iteracja 27; rysowana na mapie z wyjściem rampą przy wejściu od iteracji 28 (wygląd nie sprawdzony); dungeony, korytarze z drzwiami i wyjścia na innym końcu: nie zrobione. 2026-11-12: więcej wejść (mediana 18,5 / 33, iteracja 39), jaskinia bez wejścia usuwana (iteracja 38).
-- [~] Struktury: osady/ruiny/obozowiska, placement z kontrolą kolizji. Osady na powierzchni: rdzeń ma skupiska, drzwi i trasy do drzwi (2026-11-09), kryterium pomiarowe 12c nie spełnione, adapter i GUI drzwi zrobione, wygląd potwierdzony przez użytkownika ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 12”); ruiny (budynek bez drzwi z lukami w murze) i obozowiska (polana z otwartym namiotem) zrobione 2026-11-09 ([G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), „Iteracja 25”; wygląd nie sprawdzony, bez doodadów i bez pomiaru w referencjach); podziemia: nie zrobione.
-- [~] Walidator osiągalności i automatyczny repair / seed rejection. Zrobione (2026-11-09): pomiar osiągalności powierzchni w rdzeniu (`reachabilityOf`), bez podłączenia do GUI; budynki odcięte rzeką w 10 z 32 seedów, kryterium nie spełnione ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), „Iteracja 13”); POI i ustalony start w walidatorze (iteracja 22, powierzchnia jednego piętra, bez GUI): wszystkie wejścia i wyjścia osiągnięte w 32 z 32 seedów przy `fordLength` 256; naprawa (`repairReach`, pole „Repair unreachable places”) i odrzucanie seedów (`generateReachableSurface`, tylko rdzeń) zrobione 2026-11-09: wszystkie POI osiągnięte w 32 z 32 seedów przy `fordLength` 48 z naprawą; wygląd naprawy nie sprawdzony, przejścia Z i podziemia: nie zrobione. 2026-11-12: walidator przez wszystkie piętra (iteracja 36), naprawa wielopiętrowa i mosty (37), naprawa na końcowej masce po autoborderze (39), niedostępne wyspy jako piasek (40): **G5_GATE_PASS** w m06 i m19, 32/32 seedów.
+- [~] World connections: region graph, POIs, routes, bridges, passes. Completed (2026-11-09): sand fords (Shore across river/lake, `fordLength` up to 256) connecting isolated land within one area; ford tiles checked with probe for blocking, in-game walking and appearance not verified ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), “Iteration 14b”); item bridges and passes: not done. Region graph built 2026-11-09 (`buildRegionGraph`, iteration 24 in [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), core only). Item bridges completed 2026-11-12 (iteration 37); passes: not done.
+- [~] Multi-level mountain logic and Z transitions. Completed in core (2026-11-09, iteration 27): Z entrances on rock edge, cave one floor below, Z reachability validator ([G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md)); drawing on map completed 2026-11-09 (iteration 28: entrance item, cave at z + 1, ramp up, two Undo steps, “Underground” tab; GUI and in-game not verified; 2026-11-10 iteration 29: cave walls, entrance in rock wall or hole, exits outside rock; too few wall-style entrances; 2026-11-10 iteration 30: exit ramp below entrance, no hole on surface; iteration 31: cave without buildings, missing entrance above ramp in GUI not reproduced; iteration 32: plateau at z − 1 with vegetation and ramps, appearance not verified), iteration 33: up to three floors, limit by %; iteration 34: caps on own slope; appearance not verified), stairs in buildings: not done. 2026-11-12: iterations 37–39 connect cap and cave floors in validator and repair (G5 gate PASS); appearance still not verified.
+- [~] Caves, dungeons, corridors, chambers, entrances, exits. Simple cave (tunnels, rooms, landings under Z entrances) in core 2026-11-09, iteration 27; drawn on map with ramp exit at entrance from iteration 28 (appearance not verified); dungeons, corridors with doors and exits at other end: not done. 2026-11-12: more entrances (median 18.5 / 33, iteration 39), cave without entrance removed (iteration 38).
+- [~] Structures: settlements/ruins/camps, placement with collision control. Surface settlements: core has clusters, doors and routes to doors (2026-11-09), measurement criterion 12c not met, door adapter and GUI completed, appearance confirmed by user ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), “Iteration 12”); ruins (building without doors with wall gaps) and camps (clearing with open tent) completed 2026-11-09 ([G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md), “Iteration 25”; appearance not verified, without doodads and without measurement in references); underground: not done.
+- [~] Reachability validator and automatic repair / seed rejection. Completed (2026-11-09): surface reachability measure in core (`reachabilityOf`), not connected to GUI; buildings cut off by river in 10 of 32 seeds, criterion not met ([G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), “Iteration 13”); POIs and fixed start in validator (iteration 22, single-floor surface, no GUI): all entrances and exits reached in 32 of 32 seeds at `fordLength` 256; repair (`repairReach`, “Repair unreachable places” field) and seed rejection (`generateReachableSurface`, core only) completed 2026-11-09: all POIs reached in 32 of 32 seeds at `fordLength` 48 with repair; repair appearance not verified, Z transitions and underground: not done. 2026-11-12: validator across all floors (iteration 36), multi-floor repair and bridges (37), repair on final mask after autoborder (39), unreachable islands as sand (40): **G5_GATE_PASS** in m06 and m19, 32/32 seeds.
 
-**G5:** z ustalonego startu osiągalne są wymagane POI, prawidłowe wejścia i wyjścia Z oraz brak krytycznych odcięć.
+**G5:** required POIs, valid Z entrances/exits, and no critical disconnections are reachable from the fixed start.
 
-### FAZA 6 - Zaawansowane uczenie i rankowanie L3/L4/L5
+### PHASE 6 - Advanced learning and L3/L4/L5 ranking
 
-- [ ] Generowanie wielu kandydatów + quality scoring + wybór najlepszego.
-- [ ] Feedback `approve/reject/adjust` i historia profili.
-- [ ] Opcjonalny eksperyment ML dla wybranego podzadania tylko gdy dane są wystarczające i zgodne z prawami. Udokumentowane odstąpienie od ML nie blokuje wydania generatora statystycznego.
-- [ ] Porównanie na holdout z L2/L3, analiza overfittingu oraz wykrywanie kopiowanych fragmentów.
-- [ ] Mechanizm wersjonowania modeli i rollbacku.
+- [ ] Multiple candidate generation + quality scoring + best selection.
+- [ ] Feedback `approve/reject/adjust` and profile history.
+- [ ] Optional ML experiment for selected subtask only when data sufficient and rights-compliant. Documented ML deferral does not block statistical generator release.
+- [ ] Holdout comparison with L2/L3, overfitting analysis and copied-fragment detection.
+- [ ] Model versioning and rollback mechanism.
 
-**G6:** ranking i wersjonowany feedback ocenione na nieznanych mapach oraz w ślepym teście użytkownika; opcjonalny model ML zostaje wdrożony tylko jeśli przewyższa prostszy baseline według wcześniej ustalonych kryteriów.
+**G6:** ranking and versioned feedback evaluated on unseen maps and in blind user test; optional ML model deployed only if it exceeds simpler baseline per pre-set criteria.
 
-### FAZA 7 - Pełne GUI i workflow
+### PHASE 7 - Full GUI and workflow
 
-- [ ] Dialog `Generate Area` z opisanymi zakładkami i parametrami.
-- [ ] Podgląd danych i render mapy, warianty, nawigacja, porównanie jakości.
-- [ ] Import/analiza referencji i panel profili stylu.
-- [ ] Generowanie w tle, anulowanie, progress, cache preview, commit/undo.
-- [ ] Obsługa ochrony obszarów i ostrzeżeń.
+- [ ] `Generate Area` dialog with described tabs and parameters.
+- [ ] Data preview and map render, variants, navigation, quality comparison.
+- [ ] Reference import/analysis and style profile panel.
+- [ ] Background generation, cancellation, progress, preview cache, commit/undo.
+- [ ] Area protection and warning handling.
 
-**G7:** cały workflow możliwy z GUI, bez terminala i bez ręcznego uruchamiania skryptów.
+**G7:** entire workflow possible from GUI, without terminal and without manual script invocation.
 
-### FAZA 8 - Optymalizacja i niezawodność
+### PHASE 8 - Optimization and reliability
 
-- [ ] Benchmarki 100x100, 500x500, 1000x1000 na 1 i wielu piętrach; zapisz wyniki i sprzęt.
-- [ ] Chunking, caching, optymalizacja pamięci i inkrementalny preview.
-- [ ] Testy crash recovery, anulowania, dużych map, dziwnych item ID i brakujących brushy.
+- [ ] Benchmarks 100x100, 500x500, 1000x1000 at 1 and multiple floors; record results and hardware.
+- [ ] Chunking, caching, memory optimization and incremental preview.
+- [ ] Crash recovery, cancellation, large-map, odd item ID and missing-brush tests.
 - [ ] CI: build, unit, integration smoke, format/lint, release artifacts.
-- [ ] Kompatybilność zapisu/odczytu ze wskazanym serwerem i klientem OTS, jeśli dostarczone.
+- [ ] Save/load compatibility with specified OTS server and client, if supplied.
 
-**G8:** brak błędów krytycznych, benchmarki udokumentowane, regresje przechodzą automatycznie.
+**G8:** no critical errors, benchmarks documented, regressions pass automatically.
 
-Testy regresyjne i podstawowy CI dodawaj wraz z funkcjonalnością od FAZY 1; FAZA 8 rozszerza pokrycie i pomiary. Nie odkładaj limitów pamięci, anulowania ani sprawdzania granic do optymalizacji końcowej.
+Add regression tests and basic CI with functionality from PHASE 1; PHASE 8 expands coverage and measurements. Do not defer memory limits, cancellation or bounds checking to final optimization.
 
-### FAZA 9 - Beta, dokumentacja, wydanie v1.0
+### PHASE 9 - Beta, documentation, v1.0 release
 
-- [ ] Przykładowe profile, presety i demo bez rozpowszechniania map chronionych.
-- [ ] Instrukcja instalacji, uruchomienia, importu referencji, uczenia profilu, generowania i eksportu.
-- [ ] Dokumentacja formatów/profili, konfiguracji, troubleshooting, rozszerzania generatora.
-- [ ] Test końcowy: generuj dużą mapę powierzchni i podziemi, oceń, zatwierdź, zapisz, ponownie otwórz, przejdź ścieżki.
-- [ ] Release notes, tag `v1.0.0`, przykładowe nagranie/wizualizacje, lista znanych ograniczeń.
+- [ ] Sample profiles, presets and demo without publishing protected maps.
+- [ ] Installation, launch, reference import, profile learning, generation and export instructions.
+- [ ] Format/profile, configuration, troubleshooting and generator extension documentation.
+- [ ] Final test: generate large surface and underground map, evaluate, approve, save, re-open, traverse paths.
+- [ ] Release notes, tag `v1.0.0`, sample recording/visualizations, known-limitations list.
 
-**G9 / Definition of Done:** użytkownik może w GUI RME dostarczyć mapy, wytrenować/dopasować profil stylu, wygenerować kompletny spójny wielopoziomowy obszar, podejrzeć wynik, zatwierdzić go bez niszczenia istniejącej mapy, zapisać i otworzyć OTBM. Rezultat przechodzi testy kompatybilności, topologii i jakości na mapach niewidzianych.
+**G9 / Definition of Done:** user can supply maps in RME GUI, train/tune style profile, generate complete coherent multi-floor area, preview result, approve it without destroying existing map, save and open OTBM. Result passes compatibility, topology and quality tests on unseen maps.
 
-## 8. Minimalne scenariusze testów end-to-end
+## 8. Minimal end-to-end test scenarios
 
-1. **Determinism:** ten sam seed/config/style/model version -> ten sam hash semantycznego wyniku na tym samym buildzie.
-2. **Undo:** wygenerowanie 500x500, Commit, Undo -> oryginalny snapshot mapy; Redo -> identyczny wynik.
-3. **Protected objects:** obszar zawiera dom/spawn/UID/AID/PZ -> generator nie zmienia chronionych danych.
-4. **Neighbor blending:** generacja w środku starej mapy -> poprawne brzegi, brak zmian poza dopuszczonym zasięgiem.
-5. **OTBM:** round-trip bez uszkodzeń i nieoczekiwanej utraty atrybutów.
-6. **Reachability:** POI naziemne i podziemne są połączone zgodnie z konfiguracją.
-7. **Reference learning:** trening na A/B, test na C -> raport metryk porównany z baseline.
-8. **Novelty:** wykrywanie dużych identycznych fragmentów również po obrotach/odbiciach; wyklucz trywialne jednolite obszary według jawnej reguły. Raportuj podejrzane kopie i stosuj ustalony próg odrzucenia. Zgoda na użycie danych nie zastępuje wymagania generowania nowych obszarów.
-9. **Cancel:** anulowanie podglądu lub operacji -> brak zmian mapy i wycieków.
-10. **Scale:** kilka pięter 1000x1000 -> stabilne zasoby, czytelny progres, brak niekontrolowanego OOM.
-11. **Stale preview:** zmień tile/halo, wykonaj Undo/Redo, zamknij mapę, przełącz kartę albo assets po Preview -> brak zastosowania wyniku do niewłaściwego stanu/mapy.
-12. **Transaction failure:** kontrolowany błąd przygotowania lub zastosowania -> brak częściowej mutacji i uszkodzenia indeksów/historii; następna ręczna edycja ma osobny Undo.
-13. **Footprint/mask:** doodad przecina nieregularne zaznaczenie lub chroniony tile, border wymaga wyjścia poza maskę -> odrzucenie albo jawnie zatwierdzony szerszy diff.
-14. **Resource limits:** skrajne wymiary/Z, przepełnienie rozmiaru, brak budżetu na Undo i wiele wariantów -> odrzucenie przed zmianą mapy; opóźniony wynik anulowanego zadania nie zastępuje nowego preview.
+1. **Determinism:** same seed/config/style/model version → same semantic-result hash on same build.
+2. **Undo:** generate 500x500, Commit, Undo → original map snapshot; Redo → identical result.
+3. **Protected objects:** area contains house/spawn/UID/AID/PZ → generator does not change protected data.
+4. **Neighbor blending:** generation in middle of old map → correct edges, no changes outside permitted range.
+5. **OTBM:** round-trip without corruption and unexpected attribute loss.
+6. **Reachability:** surface and underground POIs connected per configuration.
+7. **Reference learning:** train on A/B, test on C → metrics report compared with baseline.
+8. **Novelty:** detect large identical fragments including after rotations/mirrors; exclude trivial uniform areas by explicit rule. Report suspicious copies and apply fixed rejection threshold. Data-use agreement does not replace requirement to generate new areas.
+9. **Cancel:** cancel preview or operation → no map changes and no leaks.
+10. **Scale:** several 1000x1000 floors → stable resources, clear progress, no uncontrolled OOM.
+11. **Stale preview:** change tile/halo, Undo/Redo, close map, switch tab or assets after Preview → no result applied to wrong state/map.
+12. **Transaction failure:** controlled prepare or apply error → no partial mutation and no index/history corruption; next manual edit has separate Undo.
+13. **Footprint/mask:** doodad crosses irregular selection or protected tile, border requires exit beyond mask → rejection or explicitly approved wider diff.
+14. **Resource limits:** extreme dimensions/Z, size overflow, no Undo budget and many variants → rejection before map change; delayed cancelled-task result does not replace new preview.
 
-## 9. Ryzyka i decyzje projektowe
+## 9. Risks and design decisions
 
-| Ryzyko | Reakcja |
+| Risk | Response |
 |---|---|
-| Mało map treningowych | reguły/statystyki + ostrożna walidacja, bez obietnic zaawansowanego ML |
-| Różne item IDs | adapter wersji + mapowanie semantyczne + raport unknown |
-| Mapy nie są jednorodne | segmentacja biomów i profile per region |
-| Cechy nierozpoznawalne automatycznie | ręczne etykiety / narzędzia adnotacji / heurystyki z confidence |
-| Niepoprawne autobordery | integracja brush + testy sąsiadów i golden fixtures |
-| Nieprzechodnie mapy | graf topologii + walidacja + repair |
-| Zależność od rozwijającego się forka | pin SHA, branch projektu, testy CI i adapter zamiast masowych zmian core |
-| Przeuczenie / kopiowanie referencji | spatial holdout, dedup, novelty tests, ograniczenie patch reuse |
-| Koszt obliczeniowy | profiling, chunking i generowanie wieloetapowe |
-| Prawa do map/assetów | prywatny dataset i jawne prawa do użycia |
+| Few training maps | rules/statistics + careful validation, no advanced ML promises |
+| Different item IDs | version adapter + semantic mapping + unknown report |
+| Maps not uniform | biome segmentation and per-region profiles |
+| Features not auto-recognizable | manual labels / annotation tools / heuristics with confidence |
+| Incorrect autoborders | brush integration + neighbor tests and golden fixtures |
+| Unreachable maps | topology graph + validation + repair |
+| Dependency on developing fork | pin SHA, project branch, CI tests and adapter instead of core mass changes |
+| Overfitting / reference copying | spatial holdout, dedup, novelty tests, limit patch reuse |
+| Computational cost | profiling, chunking and multi-stage generation |
+| Map/asset rights | private dataset and explicit use rights |
 
-## 10. Strategia pracy Codex/Claude
+## 10. Codex/Claude work strategy
 
-Każdą fazę rozbij na PR o pojedynczej odpowiedzialności. Dla każdego PR agent ma przedstawić:
+Break each phase into PRs with a single responsibility. For each PR the agent must present:
 
 ```text
-Cel:
-Zweryfikowane pliki/API:
-Zakres zmian:
-Ryzyka i zabezpieczenia:
-Testy dodane:
-Testy uruchomione + wynik:
-Demo/screenshot/log (jeśli dotyczy):
-Co pozostało:
+Goal:
+Verified files/API:
+Scope of changes:
+Risks and safeguards:
+Tests added:
+Tests run + result:
+Demo/screenshot/log (if applicable):
+What remains:
 ```
 
-- Agent nie może „zaliczyć” testów opisem ani pozornym mockiem, gdy istnieje wymóg integracji z prawdziwym RME.
-- W każdej fazie uaktualnij `docs/PROGRESS.md` z dokładnym stanem i blokadami.
-- Nie wprowadzaj modelu ML, zanim baseline statystyczny i ewaluacja nie działają.
-- Ostatnim krokiem każdej fazy jest krótki manualny test w RME i zrzut/raport do weryfikacji człowieka.
+- The agent cannot “pass” tests by description or mock-ups when real RME integration is required.
+- In each phase, update `docs/PROGRESS.md` with the exact status and blockers.
+- Do not introduce an ML model until the statistical baseline and evaluation are working.
+- The last step of each phase is a short manual test in RME and a screenshot/report for human verification.
 
-## 11. Pierwszy prompt dla agenta (skopiuj dosłownie)
+## 11. First prompt for the agent (copy exactly)
 
-> Jesteś głównym inżynierem projektu proceduralnego generatora map Tibii wewnątrz Remere's Map Editor. Przeczytaj `docs/PROJECT_RME_PROCEDURAL_GENERATOR.md` w całości i traktuj go jako plan projektu oraz kontrakt kryteriów akceptacji, z zachowaniem `AGENTS.md` i zakresu aktualnego polecenia użytkownika.
+> You are the lead engineer of the Tibia procedural map generator project within Remere's Map Editor. Read `docs/PROJECT_RME_PROCEDURAL_GENERATOR.md` in its entirety and treat it as the project plan and acceptance criteria contract, while following `AGENTS.md` and the scope of the current user command.
 >
-> Zacznij **WYŁĄCZNIE od FAZY 0**. Zidentyfikuj repozytorium, SHA, istniejące API Lua/C++ i build. Korzystaj z CodeGraph, jeśli istnieje indeks, Context7 dla dokumentacji zależności oraz RTK/ast-grep/rg zgodnie z zasadami projektu. Nie zakładaj nazw funkcji bez przejrzenia kodu. Zbuduj przez `rtk proxy cmd /c build_ninja.bat` i uruchom minimalny bezpieczny smoke test importu, edycji 20x20, Undo/Redo i zapisu/otwarcia OTBM wraz z plikami pomocniczymi, jeśli środowisko i dane na to pozwalają. Utwórz `docs/procedural/ARCHITECTURE.md`, `docs/procedural/TEST_PLAN.md` i uzupełnij `docs/PROGRESS.md`. Wskazuj rzeczywiste symbole i lokalizacje kodu. Sprawdź ryzyka z sekcji 5.4; nie wdrażaj jeszcze finalnego generatora ani ML. Testów niewykonanych nie zaliczaj. Na końcu podaj raport zgodny z sekcją 10, wykaz blokerów i maksymalnie trzy kolejne zadania.
+> Start **PHASE 0 ONLY**. Identify the repository, SHA, existing Lua/C++ API, and build. Use CodeGraph if an index exists, Context7 for dependency documentation, and RTK/ast-grep/rg according to project rules. Do not assume function names without reading the code. Build via `rtk proxy cmd /c build_ninja.bat` and run a minimal safe smoke test of import, 20x20 editing, Undo/Redo, and saving/opening OTBM along with companion files if the environment and data permit. Create `docs/procedural/ARCHITECTURE.md`, `docs/procedural/TEST_PLAN.md`, and complete `docs/PROGRESS.md`. Point to actual symbols and code locations. Check risks from section 5.4; do not yet implement the final generator or ML. Do not pass tests that were not run. At the end, provide a report according to section 10, list blockers, and at most three next tasks.
 
-## 12. Lista informacji/danych do dostarczenia przez użytkownika
+## 12. Information/data to be supplied by the user
 
-Do G0 potrzebne są przynajmniej jeden zgodny zestaw assets i bezpieczna mapa testowa (może być syntetyczna). Nie pobieraj ich automatycznie. Pozostałe referencje i oceny można dostarczać etapowo przed G3/G4:
+G0 needs at least one compatible asset set and a safe test map, which may be synthetic. Do not download them automatically. Other references and evaluations may be supplied incrementally before G3/G4:
 
-- Wersja klienta Tibii i odpowiadające jej `items.otb`, `items.xml`, `dat/spr` lub assets obsługiwane przez konkretny build.
-- Kilka map referencyjnych OTBM; najlepiej obejmujących powierzchnię, góry, jaskinie, miasta, różne style regionów i poziomy Z.
-- Informacja, które mapy to pożądany styl i które elementy są szczególnie wartościowe.
-- Przykładowa mapa, do której generator powinien dopasowywać nowy obszar.
-- Zestaw 5-10 ręcznych przykładów "dobry wynik / zły wynik", gdy pierwsze wersje będą dostępne.
-- Docelowy OTS i wymagana zgodność OTBM; ograniczenia dotyczące spawnów, stref PZ, domów itd.
+- Tibia client version and corresponding `items.otb`, `items.xml`, `dat/spr`, or assets supported by the specific build.
+- Several OTBM reference maps; ideally covering surface, mountains, caves, cities, different regional styles, and Z levels.
+- Information about which maps represent the desired style and which elements are particularly valuable.
+- An example map to which the generator should adapt new areas.
+- A set of 5-10 manual examples of "good result / bad result" when the first versions are available.
+- Target OTS and required OTBM compatibility; constraints regarding spawns, PZ zones, houses, etc.
 
-## 13. Śledzenie projektu
+## 13. Project tracking
 
-W `docs/PROGRESS.md` trzymaj aktualny stan. Poniżej szablon startowy, nie raport wykonania:
+Keep the current state in `docs/PROGRESS.md`. The following is a starter template, not an execution report:
 
-| Phase | Status | Commit | Dowody/testy | Blokery | Następne zadanie |
+| Phase | Status | Commit | Evidence/tests | Blockers | Next task |
 |---|---|---|---|---|---|
 | 0 | VERIFIED | 2026-11-02 | [G0_FINAL_20261102.md](procedural/G0_FINAL_20261102.md) | - | G1 |
-| 1 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-06 (PR #1, `54cec96`) | [G1_GATE_STATUS.md](procedural/G1_GATE_STATUS.md) | pozostałe awarie alokacji, `SetFocus` przy aktywacji | G2 |
-| 2 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 (PR #3, `794b068`) | [G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md) | D5, D6 | G3 |
-| 3 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-07 (PR #4, `33b5c88`) | G3_GATE_STATUS.md | D8 (resztki), D9–D11 | G4 |
-| 4 | W TOKU, bramka G4 NIE spełniona | 2026-11-08 (gałąź `feature/procedural-g4-style-learning`, bez PR) | [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), [G4_COMPARE.md](procedural/G4_COMPARE.md) | brak poprawy na mapach niewidzianych, wąskie dane (caves, swamp), D9 | Cechy D9 (struktury wielkoskalowe, góry, szlaki), więcej map |
-| 5 | ZAMKNIĘTE Z DŁUGIEM | 2026-11-17 (gałąź `feature/procedural-g5-settlements`, bez PR) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) | D23 (test w grze), D24 (lica ścian „mountain”, wygląd w grze) | G6 |
-| 6 | DO ROZPOCZĘCIA | - | - | - | ranking kandydatów, feedback |
-| 7 | TODO | - | - | - | Po G6 |
-| 8 | TODO | - | - | - | Po G7 |
-| 9 | TODO | - | - | - | Po G8 |
+| 1 | CLOSED WITH DEBT | 2026-11-06 (PR #1, `54cec96`) | [G1_GATE_STATUS.md](procedural/G1_GATE_STATUS.md) | remaining allocation failures, `SetFocus` on activation | G2 |
+| 2 | CLOSED WITH DEBT | 2026-11-07 (PR #3, `794b068`) | [G2_GATE_STATUS.md](procedural/G2_GATE_STATUS.md) | D5, D6 | G3 |
+| 3 | CLOSED WITH DEBT | 2026-11-07 (PR #4, `33b5c88`) | G3_GATE_STATUS.md | D8 (remnants), D9–D11 | G4 |
+| 4 | IN PROGRESS, G4 gate NOT met | 2026-11-08 (branch `feature/procedural-g4-style-learning`, no PR) | [G4_GATE_STATUS.md](procedural/G4_GATE_STATUS.md), [G4_COMPARE.md](procedural/G4_COMPARE.md) | no improvement on unseen maps, narrow data (caves, swamp), D9 | Features D9 (large-scale structures, mountains, trails), more maps |
+| 5 | CLOSED WITH DEBT | 2026-11-17 (branch `feature/procedural-g5-settlements`, no PR) | [G5_GATE_STATUS.md](procedural/G5_GATE_STATUS.md) | D23 (test in-game), D24 (mountain wall faces, in-game appearance) | G6 |
+| 6 | TO START | - | - | - | ranking candidates, feedback |
+| 7 | TODO | - | - | - | After G6 |
+| 8 | TODO | - | - | - | After G7 |
+| 9 | TODO | - | - | - | After G8 |
 
 ---
 
-## 14. Zmiany redakcyjne w wersji 1.1
+## 14. Editorial changes in version 1.1
 
-- Dopasowano plan do lokalnego CMake/build i udokumentowano brak Git/CodeGraph bez udawania wykonania G0.
-- Wskazano istniejące API proceduralne i ryzyka demonstratora; ograniczono MVP oraz przesunięto minimalne GUI do G1.
-- Dodano konkretną walidację po resolverze, kontrolowany RNG brushy i identyczność Preview/Commit/Redo.
-- Doprecyzowano snapshot, konflikt ze zmianami mapy, ochronę halo/footprintów, atomowość i pamięć Undo; live poza MVP.
-- Rozdzielono walidację statyczną od testu OTS, dodano pliki pomocnicze do round-trip i mierzalne kryteria ewaluacji.
-- Dokumentacja szczegółowa trafia do `docs/procedural/`; ML pozostaje opcjonalne. Implementacja generatora nie została rozpoczęta.
+- Aligned the plan with local CMake/build and documented the absence of Git/CodeGraph without claiming G0 completion.
+- Identified existing procedural APIs and demonstrator risks; limited MVP and moved minimal GUI to G1.
+- Added concrete validation after resolver, controlled RNG for brushes, and Preview/Commit/Redo identity.
+- Clarified snapshot, conflict with map changes, halo/footprint protection, atomicity, and Undo memory; live outside MVP.
+- Separated static validation from OTS testing, added companion files to round-trip, and measurable evaluation criteria.
+- Detailed documentation goes to `docs/procedural/`; ML remains optional. Generator implementation has not started.
 
 ---
 
-**Cel końcowy nie jest „losową ładną mapą”.** Jest nim lokalny, powtarzalny i bezpieczny generator map o spójnym stylu zmapowanym z referencji, który umożliwia świadome projektowanie świata i weryfikację grywalności, a jego jakość można mierzyć i poprawiać wraz z kolejnymi mapami i ocenami użytkownika.
+**The end goal is not “a random pretty map”.** It is a local, reproducible, and safe map generator with consistent style mapped from references, which enables conscious world design and playability verification, and whose quality can be measured and improved with each map and user evaluation.

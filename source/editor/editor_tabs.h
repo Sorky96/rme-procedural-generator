@@ -32,6 +32,10 @@ public:
 	void SetTabLabel(int idx, wxString label);
 	void SetFocusedTab(int idx);
 	void DeleteTab(int idx);
+	// Removes the page from the notebook, which selects and focuses the next
+	// page, without destroying it. Pass the result to DestroyDetachedTab.
+	wxWindow* DetachTab(int idx);
+	void DestroyDetachedTab(wxWindow* page);
 	int GetTabCount();
 	int GetTabIndex(wxWindow* tab);
 	int GetSelection();

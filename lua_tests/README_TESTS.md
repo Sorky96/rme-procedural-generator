@@ -73,7 +73,7 @@ This test suite provides comprehensive coverage of **every Lua API call** availa
 
 `test_transaction_rollback.lua` is an opt-in integration test requiring the saved
 400-ground-tile `g0-smoke.otbm` fixture described in
-[`docs/procedural/TEST_PLAN.md`](../docs/procedural/TEST_PLAN.md#powtórzenie-ręcznego-smoke).
+[`docs/procedural/TEST_PLAN.md`](../docs/procedural/TEST_PLAN.md#repeat-the-manual-smoke).
 It is deliberately excluded from the general test runners because it mutates a map.
 
 Copy it into `scripts/` beside the test EXE, reopen the fixture with its matching
