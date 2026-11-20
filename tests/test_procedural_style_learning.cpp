@@ -25,28 +25,44 @@ int main(int argc, char** argv) {
     auto mapping = proposeKeyMap(m.groundKeys(), defaultKeyRules());
     check(mapping.back().kind == StyleKind::Unmapped, "unknown names not guessed");
     auto badMapping = mapping; badMapping[0].kind = StyleKind::Grass;
-    check(!inspectLearningSample(m, badMapping, true), "unresolved ground cannot become natural");
+    check(!inspectLearningSample(m, badMapping, {}, true), "unresolved ground cannot become natural");
     badMapping = mapping; badMapping[1].kind = static_cast<StyleKind>(255);
-    check(!inspectLearningSample(m, badMapping, true), "invalid class refused safely");
-    check(!inspectLearningSample(m, mapping, false), "permission required");
-    const auto sample = inspectLearningSample(m, mapping, true);
+    check(!inspectLearningSample(m, badMapping, {}, true), "invalid class refused safely");
+    check(!inspectLearningSample(m, mapping, {}, false), "permission required");
+    const auto sample = inspectLearningSample(m, mapping, {}, true);
     check(sample && sample->recognized == 1024 && sample->present == 2048, "inclusive minimum sample/50 percent");
     auto small = fixture(1023);
-    check(!inspectLearningSample(small, proposeKeyMap(small.groundKeys(), defaultKeyRules()), true), "1023 refused");
+    check(!inspectLearningSample(small, proposeKeyMap(small.groundKeys(), defaultKeyRules()), {}, true), "1023 refused");
     auto low = fixture(1024, 1025);
-    check(!inspectLearningSample(low, mapping, true), "below 50 percent refused");
+    check(!inspectLearningSample(low, mapping, {}, true), "below 50 percent refused");
     auto unknown = fixture(0, 2048);
-    check(!inspectLearningSample(unknown, mapping, true), "all unknown refused");
+    check(!inspectLearningSample(unknown, mapping, {}, true), "all unknown refused");
     mapping.back().kind = StyleKind::Dirt;
-    check(inspectLearningSample(m, mapping, true)->recognized == 2048, "reviewed correction used");
+    check(inspectLearningSample(m, mapping, {}, true)->recognized == 2048, "reviewed correction used");
     mapping.back().kind = StyleKind::Unmapped;
     std::stop_source cancelled; cancelled.request_stop();
-    check(!inspectLearningSample(m, mapping, true, cancelled.get_token()), "cancel sample");
+    check(!inspectLearningSample(m, mapping, {}, true, cancelled.get_token()), "cancel sample");
     check(!fitLearningSample(*sample, mapping, "10.98", "otb", "dat", cancelled.get_token()), "cancel fit");
     const auto a = fitLearningSample(*sample, mapping, "10.98", "otb", "dat");
     const auto b = fitLearningSample(*sample, mapping, "10.98", "otb", "dat");
     check(a && b && *a == *b, "deterministic G4 fit");
     if (!a) return 1;
+    {
+        // Every grass tile holds a palm: the learned profile keeps the palm brush and a vegetation fit.
+        FloorBounds fb{7, 0, 0, 64, 64};
+        auto forest = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+        const auto grass = forest.internGroundKey("grass").value();
+        for (int i = 0; i < 4096; ++i)
+            check(bool(forest.set(i % 64, i / 64, 7, grass, bit(Trait::HasGround) | bit(Trait::TreeDoodad))), "forest cell");
+        const auto forestMapping = proposeKeyMap(forest.groundKeys(), defaultKeyRules());
+        const std::vector<KeyTiles> palms{{"jungle palm", 4096}};
+        const auto learned = inspectLearningSample(forest, forestMapping, palms, true);
+        check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned");
+        const auto fitted = learned ? fitLearningSample(*learned, forestMapping, "10.98", "otb", "dat")
+                                    : std::expected<StyleProfile, std::string>(std::unexpected("no sample"));
+        check(fitted && fitted->decorTuning && fitted->decorTarget && fitted->decorPalette[0] == "jungle palm", "vegetation fitted");
+        check(fitted && parseProfile(*serializeProfile(*fitted)) == *fitted, "learned vegetation round-trips");
+    }
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
     check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");
     check(checkProfile(*a,"wrong","otb","dat",7) == ProfileCompatibility::WrongClient, "client bound");

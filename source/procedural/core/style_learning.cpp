@@ -11,7 +11,7 @@
 
 namespace rme::procedural {
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
-    std::span<const KeyMapEntry> mapping, bool permission, std::stop_token stop) try {
+    std::span<const KeyMapEntry> mapping, std::span<const KeyTiles> doodadItems, bool permission, std::stop_token stop) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
     if (stop.stop_requested()) return std::unexpected("Analysis cancelled.");
     if (map.floors().size() != 1) return std::unexpected("Choose one surface rectangle.");
@@ -36,6 +36,10 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     for (size_t i = 0; i < map.groundKeys().size(); ++i)
         keys.push_back({map.groundKeys()[i], summary.groundKeyStats[i].tiles});
     sample.palette = choosePalette(mapping, keys);
+    auto decor = extractDecorContext(map, mapping, b.z, b.z, stop);
+    if (!decor) return std::unexpected("Invalid mapping or analysis cancelled.");
+    sample.decor = *decor;
+    sample.decorPalette = chooseDecorPalette(doodadItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -56,6 +60,12 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.sources = {{"user-local-surface", 1000}};
     profile.keymap = std::move(mapping); profile.stats = sample.stats; profile.target = target;
     profile.tuning = steps->back().tuning; profile.palette = sample.palette;
+    const MapDecor own{"user-local-surface", "user-local-surface", sample.decor};
+    profile.decorTarget = buildDecorTarget(std::span(&own, 1));
+    auto decorTuning = fitDecorTuning(*profile.decorTarget, *profile.tuning, options.eval, stop);
+    if (!decorTuning) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Vegetation fit failed.");
+    profile.decorTuning = *decorTuning;
+    profile.decorPalette = sample.decorPalette;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

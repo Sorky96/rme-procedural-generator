@@ -95,6 +95,7 @@ void StyleLearningDialog::Invalidate(bool discardSample) {
         captured_ = false;
         source_valid_ = false;
         sample_.reset();
+        doodads_.clear();
         if (mapping_) mapping_->ChangeValue(wxEmptyString);
     }
     if (cancel_) cancel_->Disable();
@@ -140,7 +141,7 @@ void StyleLearningDialog::Read() {
     if (bounds.x0 + bounds.width > map_width_ || bounds.y0 + bounds.height > map_height_) { Status("Rectangle lies outside map dimensions."); return; }
     auto sample = SemanticMap::create(std::span(&bounds, 1), {512 * 512});
     if (!sample) { Status("Cannot allocate sample."); return; }
-    sample_ = std::move(*sample); source_valid_ = true; row_ = 0; reading_ = true;
+    sample_ = std::move(*sample); doodads_.clear(); source_valid_ = true; row_ = 0; reading_ = true;
     read_->Disable(); analyze_->Disable(); cancel_->Enable(); Status("Reading the rectangle...");
 }
 void StyleLearningDialog::Analyze() {
@@ -150,7 +151,9 @@ void StyleLearningDialog::Analyze() {
     if (mappingText.size() > (1u << 20)) { Status("Mapping exceeds the 1 MiB limit."); return; }
     auto mapping = parseKeyMap(mappingText);
     if (!mapping) { Status("Invalid G4 mapping. Keep the schema, tab separators and exact brush names."); return; }
-    auto sample = inspectLearningSample(*sample_, *mapping, permission_->GetValue());
+    std::vector<KeyTiles> doodadItems;
+    for (const auto& [name, items] : doodads_) doodadItems.push_back({name, items});
+    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue());
     if (!sample) { Status(sample.error()); return; }
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));
     result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); stop_ = std::stop_source{};
@@ -173,7 +176,7 @@ void StyleLearningDialog::Tick() {
     if (reading_) {
         const auto* e = g_gui.GetCurrentEditor();
         if (!e || !CurrentSource()) return;
-        const auto read = readLearningRow(e->map, *sample_, row_++);
+        const auto read = readLearningRow(e->map, *sample_, doodads_, row_++);
         if (!read) { Invalidate(); Status(read.error()); return; }
         const int rows = sample_->floors().front().bounds.height;
         progress_->SetValue(row_ * 100 / rows);

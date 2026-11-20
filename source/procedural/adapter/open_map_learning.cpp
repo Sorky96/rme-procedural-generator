@@ -3,11 +3,12 @@
 #include "procedural/adapter/open_map_learning.h"
 #include "brushes/ground/ground_brush.h"
 #include "game/item.h"
+#include "procedural/core/doodad_class.h"
 #include "map/map.h"
 #include "map/tile.h"
 #include <wx/thread.h>
 namespace rme::procedural {
-std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, int row) try {
+std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads, int row) try {
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
     const auto b = destination.floors().front().bounds;
     if (b.z < 0 || b.z > 7 || b.width > 512 || b.height > 512 || row < 0 || row >= b.height
@@ -26,6 +27,14 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
                 if (!interned) return std::unexpected("Too many ground names.");
                 key = *interned;
             }
+        }
+        for (const auto& item : tile->items) {
+            if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
+            const auto* doodad = item->getDoodadBrush();
+            if (!doodad || item->isWall() || item->isDoor() || item->isTable() || item->isCarpet() || item->isBorder()) continue;
+            auto name = doodad->getName();
+            traits |= decorTraitBit(classifyDoodadBrush(name));
+            ++doodads[std::move(name)];
         }
         if (!destination.set(x, b.y0 + row, b.z, key, traits)) return std::unexpected("Invalid sample cell.");
     }

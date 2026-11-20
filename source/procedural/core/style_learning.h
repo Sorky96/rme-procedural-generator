@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "procedural/core/decor_context.h"
 #include "procedural/core/style_fit.h"
 #include <filesystem>
 
@@ -8,10 +9,13 @@ struct LearningSample {
     StyleStats stats;
     uint64_t present = 0, recognized = 0;
     StylePalette palette;
+    DecorContext decor;               // tree/bush/stone counts by ground context, from the decor traits
+    StyleDecorPalette decorPalette;
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.
-std::expected<LearningSample, std::string> inspectLearningSample(
-    const SemanticMap& map, std::span<const KeyMapEntry> mapping, bool permission, std::stop_token stop = {});
+// `doodadItems` are the stacked items per doodad brush name read from the same rectangle.
+std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
+    std::span<const KeyMapEntry> mapping, std::span<const KeyTiles> doodadItems, bool permission, std::stop_token stop = {});
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,
     std::stop_token stop = {});
