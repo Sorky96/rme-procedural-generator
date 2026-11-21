@@ -9,7 +9,7 @@ class Map;
 namespace rme::procedural {
 // Stacked items per (ground key of the sample, doodad brush name), summed over the rows read so far.
 using DoodadItemCounts = std::map<std::pair<uint16_t, std::string>, uint64_t>;
-// Every stacked item of the sample (walls, doors, tables, carpets and borders aside) by server ID: how many,
+// Every stacked item of the sample (blocking walls, doors, tables, carpets and borders aside) by server ID: how many,
 // its client name and the doodad brush it belongs to (empty when it has none, e.g. placed from the RAW palette).
 struct SampleItem { uint64_t count = 0; std::string name, brush; };
 using SampleItemCounts = std::map<uint16_t, SampleItem>;

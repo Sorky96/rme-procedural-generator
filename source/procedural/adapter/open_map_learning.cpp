@@ -33,7 +33,8 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
         std::vector<std::string> tileOverlays;
         for (const auto& item : tile->items) {
             if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
-            if (item->isWall() || item->isDoor() || item->isTable() || item->isCarpet() || item->isBorder()) continue;
+            // A wall piece one can walk through (spider webs are a wall brush) is decoration, learned as an overlay.
+            if ((item->isWall() && item->isBlocking()) || item->isDoor() || item->isTable() || item->isCarpet() || item->isBorder()) continue;
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }

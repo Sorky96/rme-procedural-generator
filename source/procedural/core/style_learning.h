@@ -11,7 +11,7 @@ struct GroundDoodadItems {
     std::string doodad;
     uint64_t items = 0;
 };
-// Stacked items that are not trees, bushes or stones (or walls, doors, tables, carpets, borders) of one name
+// Stacked items that are not trees, bushes or stones (or blocking walls, doors, tables, carpets, borders) of one name
 // (doodad brush or "raw:item:<id>") on tiles of one ground key: onTree on tiles that also hold a tree, onGround on the others.
 struct GroundOverlayItems {
     uint16_t ground = noGroundKey;
