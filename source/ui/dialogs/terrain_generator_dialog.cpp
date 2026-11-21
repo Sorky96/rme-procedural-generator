@@ -1832,6 +1832,15 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 for (const auto& category : levels.report.categories) { reached += category.reached; total += category.total; }
                 message += std::format(" Reachable: {}/{} places. Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.",
                     reached, total, levels.repair.repairs, levels.repair.bridges, levels.repair.removedCaps, levels.repair.removedPois);
+                // Where the hardFail comes from: the first places that cannot be walked to, and closed-off pockets.
+                static constexpr const char* poiNames[] {"door", "site", "cave entrance", "cave exit", "cap", "cave cell", "storey", "dungeon"};
+                static_assert(std::size(poiNames) == rme::procedural::levelPoiKindCount);
+                for (size_t k = 0; k < std::min<size_t>(levels.report.firstUnreachable.size(), 5); ++k) {
+                    const auto& place = levels.report.firstUnreachable[k];
+                    message += std::format("{} {} at {},{},{}", k ? "," : " Unreachable:", poiNames[size_t(place.kind)], place.x, place.y, place.z);
+                }
+                if (!levels.report.firstUnreachable.empty()) message += ".";
+                if (!levels.report.pockets.empty()) message += std::format(" Closed pockets: {}.", levels.report.pockets.size());
             }
             SetStatus(wxstr(message), hardFail);
             preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
