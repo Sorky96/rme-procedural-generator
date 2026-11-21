@@ -119,7 +119,8 @@ int main(int argc, char** argv) {
         }
         const auto islandMapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
         const auto islandSample = inspectLearningSample(map, islandMapping, {}, true);
-        check(islandSample && islandSample->seaTiles == 4096 - 1024, "sea told from the pond");
+        check(islandSample && islandSample->seaTiles == 4096 - 1024 && islandSample->pondTiles == 16 && islandSample->pondEdges == 16,
+            "sea told from the pond");
         const auto island = islandSample ? fitLearningSample(*islandSample, islandMapping, "10.98", "otb", "dat")
                                          : std::expected<StyleProfile, std::string>(std::unexpected("no sample"));
         check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16, "sea and lakes learned apart");

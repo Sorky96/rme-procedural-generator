@@ -23,6 +23,7 @@ struct LearningSample {
     std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // vegetation on each grassMix ground
     uint32_t clumpPermille = 0;       // DecorTuning::clumpPermille measured on the grass of the sample
     uint64_t seaTiles = 0;            // water tiles connected to the edge of the sample or to tiles without ground
+    uint64_t pondTiles = 0, pondEdges = 0; // the other water tiles and their land neighbours (4-connected pairs)
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.
 // `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.

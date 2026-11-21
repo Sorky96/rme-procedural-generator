@@ -93,9 +93,48 @@ uint32_t vegetationClump(const SemanticMap& map, std::span<const KeyMapEntry> ma
     const double r = (double(plantedPairs) / double(pairs)) / (double(planted) / double(cells));
     return uint32_t(std::clamp((r - 1.0) * 500.0, 0.0, 1000.0));
 }
-// Water tiles 4-connected to the edge of the sample or to a tile without mapped ground: the sea around an
-// island, as opposed to its ponds.
-uint64_t seaTiles(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
+// Water 4-connected to the edge of the area or to a tile without ground is the sea around an island; the rest
+// are ponds. pondEdges counts the (pond tile, land neighbour) pairs: per pond tile it is small for big round
+// ponds and large for small ones, so it measures the scale of the ponds.
+struct WaterShape { uint64_t sea = 0, pondTiles = 0, pondEdges = 0; };
+template <class Present, class Water>
+WaterShape waterShape(int w, int h, Present present, Water water) {
+    std::vector<uint8_t> sea(size_t(w) * h, 0);
+    std::vector<size_t> stack;
+    constexpr std::pair<int, int> steps[] {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        const size_t i = size_t(y) * w + x;
+        if (!water(i)) continue;
+        bool open = x == 0 || y == 0 || x + 1 == w || y + 1 == h;
+        for (const auto [dx, dy] : steps)
+            if (!open && !present(size_t(y + dy) * w + (x + dx))) open = true;
+        if (open && !sea[i]) { sea[i] = 1; stack.push_back(i); }
+    }
+    WaterShape shape;
+    while (!stack.empty()) {
+        const size_t i = stack.back(); stack.pop_back(); ++shape.sea;
+        const int x = int(i % w), y = int(i / w);
+        for (const auto [dx, dy] : steps) {
+            const int nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const size_t j = size_t(ny) * w + nx;
+            if (!sea[j] && water(j)) { sea[j] = 1; stack.push_back(j); }
+        }
+    }
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        const size_t i = size_t(y) * w + x;
+        if (sea[i] || !water(i)) continue;
+        ++shape.pondTiles;
+        for (const auto [dx, dy] : steps) {
+            const int nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const size_t j = size_t(ny) * w + nx;
+            shape.pondEdges += present(j) && !water(j);
+        }
+    }
+    return shape;
+}
+WaterShape sampleWaterShape(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
     const auto& floor = map.floors().front();
     std::vector<uint8_t> waterKey(map.groundKeys().size(), 0);
     for (size_t k = 0; k < waterKey.size(); ++k) {
@@ -104,29 +143,7 @@ uint64_t seaTiles(const SemanticMap& map, std::span<const KeyMapEntry> mapping) 
     }
     const auto present = [&](size_t i) { return (floor.traits[i] & bit(Trait::Present)) != 0; };
     const auto water = [&](size_t i) { return present(i) && floor.ground[i] < waterKey.size() && waterKey[floor.ground[i]]; };
-    const int w = floor.bounds.width, h = floor.bounds.height;
-    std::vector<uint8_t> sea(size_t(w) * h, 0);
-    std::vector<size_t> stack;
-    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
-        const size_t i = size_t(y) * w + x;
-        if (!water(i)) continue;
-        bool open = x == 0 || y == 0 || x + 1 == w || y + 1 == h;
-        for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}})
-            if (!open && !present(size_t(y + dy) * w + (x + dx))) open = true;
-        if (open && !sea[i]) { sea[i] = 1; stack.push_back(i); }
-    }
-    uint64_t count = 0;
-    while (!stack.empty()) {
-        const size_t i = stack.back(); stack.pop_back(); ++count;
-        const int x = int(i % w), y = int(i / w);
-        for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
-            const int nx = x + dx, ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-            const size_t j = size_t(ny) * w + nx;
-            if (!sea[j] && water(j)) { sea[j] = 1; stack.push_back(j); }
-        }
-    }
-    return count;
+    return waterShape(floor.bounds.width, floor.bounds.height, present, water);
 }
 } // namespace
 
@@ -217,7 +234,8 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         for (size_t k = 0; k < 3; ++k) if (palette[k] != sample.decorPalette[k]) d.brushes[k] = palette[k];
     }
     sample.clumpPermille = vegetationClump(map, mapping);
-    sample.seaTiles = seaTiles(map, mapping);
+    const auto shape = sampleWaterShape(map, mapping);
+    sample.seaTiles = shape.sea; sample.pondTiles = shape.pondTiles; sample.pondEdges = shape.pondEdges;
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -253,20 +271,41 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.tuning->islandPermille = natural ? uint32_t(std::min<uint64_t>(900, (sea * 1000 + natural / 2) / natural)) : 0;
     const uint64_t land = natural - sea;
     profile.tuning->lakePermille = land ? uint32_t(std::min<uint64_t>(500, ((water - sea) * 1000 + land / 2) / land)) : 0;
-    // The feature size was chosen for the fit's own lake share; with the real one the ponds and patches can come
-    // out far larger than in the sample. Pick it again for the final shares by the neighbour pairs.
+    // The feature size was chosen for the fit's own lake share and scored on all water, the sea included, which
+    // favours big smooth shapes. With ponds in the sample it is picked again so that the generated ponds have
+    // the same land edge per water tile; otherwise by the neighbour pairs of the final shares.
     {
+        constexpr uint32_t sizes[] {6, 8, 12, 16, 24, 32, 48};
+        const bool ponds = sample.pondTiles >= 8;
+        const uint64_t side = options.eval.side, cells = side * side;
         uint64_t best = UINT64_MAX;
         uint32_t chosen = profile.tuning->featureSize;
-        for (const uint32_t size : {6u, 8u, 12u, 16u, 24u, 32u, 48u}) {
+        for (const uint32_t size : sizes) {
             auto tuning = *profile.tuning;
             tuning.featureSize = size;
-            const auto stats = evaluateTuning(tuning, options.eval, stop);
-            if (!stats) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
-            const auto generated = targetFromStats(*stats);
-            if (!generated) continue;
-            const auto d = distance(*generated, *target);
-            if (d.adjacency < best) { best = d.adjacency; chosen = size; }
+            uint64_t score = UINT64_MAX;
+            if (ponds) {
+                uint64_t pondTiles = 0, pondEdges = 0;
+                for (const uint64_t seed : options.eval.seeds) {
+                    const SurfaceConfig config {{100, 100, 7, uint32_t(side), uint32_t(side)}, seed, tuning};
+                    const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, {cells, cells * 8, cells * 64 + (1u << 20)}, {}, {}, stop);
+                    if (!grid) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
+                    const auto& c = grid->cells;
+                    const auto shape = waterShape(int(side), int(side), [&](size_t i) { return c[i] != SurfaceKind::Preserve; },
+                        [&](size_t i) { return c[i] == SurfaceKind::Lake || c[i] == SurfaceKind::River; });
+                    pondTiles += shape.pondTiles; pondEdges += shape.pondEdges;
+                }
+                // Edges per 1000 pond tiles, generated against sampled; no ponds at all scores worst.
+                if (pondTiles) {
+                    const uint64_t made = pondEdges * 1000 / pondTiles, wanted = sample.pondEdges * 1000 / sample.pondTiles;
+                    score = made > wanted ? made - wanted : wanted - made;
+                }
+            } else {
+                const auto stats = evaluateTuning(tuning, options.eval, stop);
+                if (!stats) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
+                if (const auto generated = targetFromStats(*stats)) score = distance(*generated, *target).adjacency;
+            }
+            if (score < best) { best = score; chosen = size; }
         }
         profile.tuning->featureSize = chosen;
     }
