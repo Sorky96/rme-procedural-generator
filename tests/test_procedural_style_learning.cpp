@@ -137,6 +137,35 @@ int main(int argc, char** argv) {
             "sea and lakes learned apart");
         check(island && parseProfile(*serializeProfile(*island)) == *island, "island round-trips");
     }
+    {
+        // A desert: sand everywhere, a little swamp, two walled ruins of sandstone floor (one with half its outline walled)
+        // and a patch of cave floor with rock walls, which is the mountain's, not a building.
+        FloorBounds fb{7, 0, 0, 64, 64};
+        auto map = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+        const auto sand = map.internGroundKey("sand").value();
+        const auto swamp = map.internGroundKey("swamp").value();
+        const auto floorKey = map.internGroundKey("sandstone floor").value();
+        const auto caveKey = map.internGroundKey("cave").value();
+        for (int i = 0; i < 4096; ++i) {
+            const int x = i % 64, y = i / 64;
+            const bool house = x >= 10 && x < 15 && y >= 10 && y < 15, ruin = x >= 30 && x < 35 && y >= 10 && y < 15;
+            const bool cavern = x >= 50 && x < 55 && y >= 50 && y < 55;
+            const bool outline = (x == 10 || x == 14 || y == 10 || y == 14) || (ruin && (x == 30 || x == 34) && y >= 10);
+            const bool walledRuin = ruin && (x == 30 || x == 34) && (y == 10 || y == 11 || y == 12);
+            const uint16_t key = house || ruin ? floorKey : cavern ? caveKey : i % 50 == 0 ? swamp : sand;
+            const uint32_t walls = (house && outline) || walledRuin || (cavern && (x == 50 || y == 50)) ? bit(Trait::Wall) : 0;
+            check(bool(map.set(x, y, 7, key, bit(Trait::HasGround) | walls)), "desert cell");
+        }
+        std::vector<KeyRule> rules{{"swamp", StyleKind::Grass}};
+        rules.insert(rules.end(), defaultKeyRules().begin(), defaultKeyRules().end());
+        auto desert = proposeKeyMap(map.groundKeys(), rules);
+        promoteMainLand(desert, map);
+        check(std::ranges::find(desert, std::string("sand"), &KeyMapEntry::key)->kind == StyleKind::Grass, "sand is the main land of a desert");
+        const std::vector<GroundDoodadItems> walls{{floorKey, "limestone wall", 20}, {caveKey, "rock wall", 30}};
+        const auto learned = inspectLearningSample(map, desert, {}, true, {}, {}, walls);
+        check(learned && learned->buildings.density == 32 && learned->buildings.ruinPercent == 50 &&
+            learned->buildings.floor == "sandstone floor" && learned->buildings.wall == "limestone wall", "buildings and ruins, not caves");
+    }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")
         && !rawDecorId("raw:rock:12a") && !rawDecorId("palm"), "RAW vegetation names");

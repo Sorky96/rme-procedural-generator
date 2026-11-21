@@ -173,6 +173,15 @@ struct StyleMixDecor {
 	bool operator==(const StyleMixDecor&) const = default;
 };
 
+// Buildings of the sample (floor tiles of a non-natural ground, walls and doors, in 4-connected groups of at least 9
+// tiles with a wall piece or door): how many per 65536 tiles (SurfaceTuning::buildingDensity, 1..100), the share that are ruins (outline less
+// than 80% walled, SurfaceTuning::ruinPercent) and the floor ground and wall brush most used; density 0 = none.
+struct StyleBuildings {
+	uint32_t density = 0, ruinPercent = 0;
+	std::string floor, wall; // wall empty = no walls
+	bool operator==(const StyleBuildings&) const = default;
+};
+
 struct StyleProfile {
 	std::string client;
 	std::string otbSha256, datSha256;   // lowercase hex of the client's items.otb and Tibia.dat
@@ -195,6 +204,7 @@ struct StyleProfile {
 	std::array<StyleMix, maxTreeMix> treeMix;
 	std::array<StyleMix, maxTreeMix> bushMix;
 	std::array<StyleOverlay, maxOverlays> overlays;
+	StyleBuildings buildings;
 	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };

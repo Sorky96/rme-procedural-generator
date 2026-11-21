@@ -16,8 +16,15 @@ using SampleItemCounts = std::map<uint16_t, SampleItem>;
 // Overlay items (not a tree, bush or stone) per (ground key, doodad brush name or "raw:item:<id>"): how many stand on a
 // tile that also holds a tree, and how many on the other tiles.
 using OverlayItemCounts = std::map<std::pair<uint16_t, std::string>, std::pair<uint64_t, uint64_t>>;
+// Everything counted while reading a sample; walls are blocking wall pieces per (ground key, wall brush name).
+struct SampleCounts {
+    DoodadItemCounts doodads;
+    SampleItemCounts items;
+    OverlayItemCounts overlays;
+    DoodadItemCounts walls;
+};
 // GUI-thread read only. One row (at most 512 cells) per call; never holds tile/brush pointers.
-// A tile holding a tree, bush or stone doodad gets the matching decor trait (classifyDoodadBrush).
-std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads,
-    SampleItemCounts& items, OverlayItemCounts& overlays, int row);
+// A tile holding a tree, bush or stone doodad gets the matching decor trait (classifyDoodadBrush); a tile with a
+// blocking wall piece gets Trait::Wall, one with a door Trait::Door.
+std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row);
 }

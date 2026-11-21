@@ -203,6 +203,74 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
     }
     return out;
 }
+// Buildings: 4-connected groups of at least 9 tiles of a built ground (Other, but not a cave or hole), a blocking wall
+// or a door. Cave floors and walls standing on rock or in caves are the mountains', not buildings.
+StyleBuildings findBuildings(const SemanticMap& map, std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> wallBrushes) {
+    constexpr size_t smallest = 9;
+    constexpr uint32_t walledPercent = 80; // an outline walled less than this is a ruin
+    const auto& floor = map.floors().front();
+    const int w = floor.bounds.width, h = floor.bounds.height;
+    std::vector<uint8_t> other(map.groundKeys().size(), 0), cave(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < other.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        if (entry == mapping.end()) continue;
+        cave[k] = entry->kind == StyleKind::Rock || entry->rule == "cave" || entry->rule == "hole";
+        other[k] = entry->kind == StyleKind::Other && !cave[k];
+    }
+    const uint32_t walled = bit(Trait::Wall) | bit(Trait::Door);
+    const auto onCave = [&](size_t i) { return floor.ground[i] < cave.size() && cave[floor.ground[i]]; };
+    const auto built = [&](size_t i) {
+        return (floor.traits[i] & bit(Trait::Present)) &&
+            (((floor.traits[i] & walled) && !onCave(i)) || (floor.ground[i] < other.size() && other[floor.ground[i]]));
+    };
+    std::vector<uint8_t> seen(size_t(w) * h, 0);
+    std::vector<size_t> group, stack;
+    std::map<uint16_t, uint64_t> floors;
+    uint64_t buildings = 0, ruins = 0, present = 0;
+    constexpr std::pair<int, int> steps[] {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    for (size_t start = 0; start < seen.size(); ++start) {
+        present += (floor.traits[start] & bit(Trait::Present)) != 0;
+        if (seen[start] || !built(start)) continue;
+        group.clear();
+        seen[start] = 1; stack.push_back(start);
+        while (!stack.empty()) {
+            const size_t i = stack.back(); stack.pop_back(); group.push_back(i);
+            const int x = int(i % w), y = int(i / w);
+            for (const auto [dx, dy] : steps) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const size_t j = size_t(ny) * w + nx;
+                if (!seen[j] && built(j)) { seen[j] = 1; stack.push_back(j); }
+            }
+        }
+        if (group.size() < smallest) continue;
+        ++buildings;
+        uint64_t outline = 0, closed = 0;
+        for (const size_t i : group) {
+            const int x = int(i % w), y = int(i / w);
+            bool edge = false;
+            for (const auto [dx, dy] : steps) {
+                const int nx = x + dx, ny = y + dy;
+                edge = edge || nx < 0 || ny < 0 || nx >= w || ny >= h || !built(size_t(ny) * w + nx);
+            }
+            if (edge) { ++outline; closed += (floor.traits[i] & walled) != 0; }
+            if (floor.ground[i] < other.size() && other[floor.ground[i]]) ++floors[floor.ground[i]];
+        }
+        ruins += closed * 100 < outline * walledPercent;
+    }
+    StyleBuildings out;
+    const auto top = std::ranges::max_element(floors, {}, [](const auto& entry) { return entry.second; });
+    if (!buildings || !present || top == floors.end()) return out;
+    out.density = uint32_t(std::clamp<uint64_t>((buildings * 65536 + present / 2) / present, 1, 100));
+    out.ruinPercent = uint32_t(ruins * 100 / buildings);
+    out.floor = map.groundKeys()[top->first];
+    std::map<std::string, uint64_t> walls;
+    for (const auto& piece : wallBrushes)
+        if (piece.ground >= cave.size() || !cave[piece.ground]) walls[piece.doodad] += piece.items;
+    const auto wall = std::ranges::max_element(walls, {}, [](const auto& entry) { return entry.second; });
+    if (wall != walls.end()) out.wall = wall->first;
+    return out;
+}
 // The sea and the land-to-water distances of the sample.
 void measureWater(const SemanticMap& map, std::span<const KeyMapEntry> mapping, LearningSample& sample) {
     const auto& floor = map.floors().front();
@@ -229,14 +297,29 @@ void measureWater(const SemanticMap& map, std::span<const KeyMapEntry> mapping, 
     sample.mixEdgePermille = patchEdgePermille(floor.bounds.width, floor.bounds.height,
         [&](size_t i) { return present(i) && floor.ground[i] < mixKey.size() && mixKey[floor.ground[i]]; },
         [&](size_t i) { const auto k = kind(i); return k == StyleKind::Grass || k == StyleKind::Dirt; });
+    sample.rockEdgePermille = patchEdgePermille(floor.bounds.width, floor.bounds.height, [&](size_t i) { return kind(i) == StyleKind::Rock; },
+        [&](size_t i) { const auto k = kind(i); return size_t(k) < naturalKindCount && k != StyleKind::Water; });
     sample.dirtEdgePermille = patchEdgePermille(floor.bounds.width, floor.bounds.height, [&](size_t i) { return kind(i) == StyleKind::Dirt; },
         [&](size_t i) { const auto k = kind(i); return k == StyleKind::Grass || k == StyleKind::Dirt; });
 }
 } // namespace
 
+void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map) {
+    const auto summary = summarize(map);
+    uint64_t grass = 0, shore = 0;
+    for (size_t k = 0; k < map.groundKeys().size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        if (entry == mapping.end()) continue;
+        if (entry->kind == StyleKind::Grass) grass += summary.groundKeyStats[k].tiles;
+        if (entry->kind == StyleKind::Shore) shore += summary.groundKeyStats[k].tiles;
+    }
+    if (grass * 10 >= shore) return;
+    for (auto& entry : mapping) if (entry.kind == StyleKind::Shore) entry.kind = StyleKind::Grass;
+}
+
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop,
-    std::span<const GroundOverlayItems> overlayItems) try {
+    std::span<const GroundOverlayItems> overlayItems, std::span<const GroundDoodadItems> wallBrushes) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
     if (stop.stop_requested()) return std::unexpected("Analysis cancelled.");
     if (map.floors().size() != 1) return std::unexpected("Choose one surface rectangle.");
@@ -362,6 +445,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         }
     }
     measureWater(map, mapping, sample);
+    sample.buildings = findBuildings(map, mapping, wallBrushes);
     sample.overlays = chooseOverlays(map, mapping, overlayItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
@@ -403,11 +487,15 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     // Dirt is the driest share of the land; the fit can trade it away for neighbour pairs, so it is set directly too.
     const uint64_t dry = sample.stats.kindTiles[size_t(StyleKind::Dirt)], ground = natural - water;
     profile.tuning->dirtPermille = ground ? uint32_t(std::min<uint64_t>(1000, (dry * 1000 + ground / 2) / ground)) : 0;
-    // How far land lies from water is the scale of the style: narrow strips between ponds and channels, or wide
-    // meadows. The fit scored all water, the sea included, which favours big smooth shapes, and drops lakes smaller
-    // than minLakeCells; both are chosen again so that the land of a sample-sized area has the sample's distances.
-    if (sample.shoreDistance[1]) {
-        constexpr uint32_t sizes[] {3, 4, 5, 6, 8, 12, 16, 24, 32}, smallest[] {2, 3, 4, 6, 8, 12};
+    // The feature size shapes the ponds and the rock alike. How far land lies from water is the scale of the ponds:
+    // narrow strips between ponds and channels, or wide meadows; the land edge per rock tile is the scale of the
+    // rock: one range or scattered outcrops. The fit scored all water, the sea included, which favours big smooth
+    // shapes, and drops lakes smaller than minLakeCells; both are chosen again on a sample-sized area for whichever
+    // of the two the sample has (a tile of distance weighs as much as a tenth of rock edge per tile).
+    const bool ponds = sample.shoreDistance[1] && profile.tuning->lakePermille;
+    const bool rocks = sample.rockEdgePermille && profile.tuning->rockPermille;
+    if (ponds || rocks) {
+        constexpr uint32_t sizes[] {3, 4, 5, 6, 8, 12, 16, 24, 32, 48, 64}, smallest[] {2, 3, 4, 6, 8, 12};
         const uint32_t w = std::clamp<uint32_t>(sample.width, 64, 256), h = std::clamp<uint32_t>(sample.height, 64, 256);
         const uint64_t cells = uint64_t(w) * h;
         uint64_t best = UINT64_MAX;
@@ -422,10 +510,17 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
                 const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, {cells, cells * 8, cells * 64 + (1u << 20)}, {}, {}, stop);
                 if (!grid) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
                 const auto& c = grid->cells;
-                const auto made = shoreDistances(int(w), int(h), [&](size_t i) { return c[i] != SurfaceKind::Preserve; },
-                    [&](size_t i) { return c[i] == SurfaceKind::Lake || c[i] == SurfaceKind::River; });
-                for (size_t k = 0; k < made.size(); ++k)
-                    score += made[k] > sample.shoreDistance[k] ? made[k] - sample.shoreDistance[k] : sample.shoreDistance[k] - made[k];
+                if (ponds) {
+                    const auto made = shoreDistances(int(w), int(h), [&](size_t i) { return c[i] != SurfaceKind::Preserve; },
+                        [&](size_t i) { return c[i] == SurfaceKind::Lake || c[i] == SurfaceKind::River; });
+                    for (size_t k = 0; k < made.size(); ++k)
+                        score += 100 * (made[k] > sample.shoreDistance[k] ? made[k] - sample.shoreDistance[k] : sample.shoreDistance[k] - made[k]);
+                }
+                if (rocks) {
+                    const uint64_t edge = patchEdgePermille(int(w), int(h), [&](size_t i) { return c[i] == SurfaceKind::Rock; },
+                        [&](size_t i) { return c[i] != SurfaceKind::Preserve && c[i] != SurfaceKind::Lake && c[i] != SurfaceKind::River; });
+                    score += edge > sample.rockEdgePermille ? edge - sample.rockEdgePermille : sample.rockEdgePermille - edge;
+                }
             }
             if (score < best) { best = score; chosen = tuning; }
         }
@@ -508,6 +603,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.treeMix = sample.treeMix;
     profile.bushMix = sample.bushMix;
     profile.overlays = sample.overlays;
+    profile.buildings = sample.buildings;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

@@ -2,6 +2,7 @@
 #include "app/main.h"
 #include "procedural/adapter/open_map_learning.h"
 #include "brushes/ground/ground_brush.h"
+#include "brushes/wall/wall_brush.h"
 #include "game/item.h"
 #include "procedural/core/doodad_class.h"
 #include "map/map.h"
@@ -10,7 +11,8 @@
 #include <vector>
 #include <wx/thread.h>
 namespace rme::procedural {
-std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads, SampleItemCounts& items, OverlayItemCounts& overlays, int row) try {
+std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row) try {
+    auto& [doodads, items, overlays, walls] = counts;
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
     const auto b = destination.floors().front().bounds;
     if (b.z < 0 || b.z > 7 || b.width > 512 || b.height > 512 || row < 0 || row >= b.height
@@ -34,7 +36,13 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
         for (const auto& item : tile->items) {
             if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
             // A wall piece one can walk through (spider webs are a wall brush) is decoration, learned as an overlay.
-            if ((item->isWall() && item->isBlocking()) || item->isDoor() || item->isTable() || item->isCarpet() || item->isBorder()) continue;
+            if (item->isDoor()) { traits |= bit(Trait::Door); continue; }
+            if (item->isWall() && item->isBlocking()) {
+                traits |= bit(Trait::Wall);
+                if (const auto* wall = item->getWallBrush()) ++walls[{key, wall->getName()}];
+                continue;
+            }
+            if (item->isTable() || item->isCarpet() || item->isBorder()) continue;
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }

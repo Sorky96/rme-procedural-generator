@@ -1126,6 +1126,21 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
+	// Buildings and ruins the profile learned: density, ruin share, floor and walls (a brush this client lacks is skipped).
+	if (const auto& buildings = entry.profile.buildings; buildings.density) {
+		building_density_spin_->SetValue(int(buildings.density));
+		ruin_percent_spin_->SetValue(int(buildings.ruinPercent));
+		const Brush* floorBrush = g_brushes.getBrush(buildings.floor);
+		const auto* floorGround = floorBrush ? floorBrush->as<GroundBrush>() : nullptr;
+		if (floorGround && floorGround->getTotalChance() > 0) setBrush(floor_brush_choice_, wxstr(buildings.floor));
+		note(floorGround ? applied : skipped, "building floor", wxstr(buildings.floor));
+		const Brush* wallBrush = buildings.wall.empty() ? nullptr : g_brushes.getBrush(buildings.wall);
+		const bool walls = wallBrush && wallBrush->as<WallBrush>() && !wallBrush->is<WallDecorationBrush>();
+		walls_check_->SetValue(walls);
+		if (walls) setBrush(wall_brush_choice_, wxstr(buildings.wall));
+		if (!buildings.wall.empty()) note(walls ? applied : skipped, "building walls", wxstr(buildings.wall));
+		note(applied, "buildings", wxstr(std::format("{} per 65536 tiles, {}% ruins", buildings.density, buildings.ruinPercent)));
+	}
 	for (const auto& mix : entry.profile.grassMix)
 		if (!mix.brush.empty()) note(applied, "grass patches", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	for (const auto& mix : entry.profile.treeMix)

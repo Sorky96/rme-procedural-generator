@@ -187,6 +187,8 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	}
 	// The brush of the trees standing in the water is set exactly when they are on.
 	if (bad(p.shoreTree) || p.shoreTree.empty() != (!p.decorTuning || !p.decorTuning->shoreTreePermille)) return std::unexpected(ProfileError::InvalidRange);
+	if (const auto& b = p.buildings; bad(b.floor) || bad(b.wall) || b.density > 100 || b.ruinPercent > 100 ||
+		b.floor.empty() != (b.density == 0) || (!b.density && (b.ruinPercent || !b.wall.empty()))) return std::unexpected(ProfileError::InvalidRange);
 	for (const StyleOverlay& o : p.overlays) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
 		if (o.onTreePpm > 1000000 || o.onGroundPpm > 1000000 || o.name.empty() != (o.onTreePpm + o.onGroundPpm == 0))
@@ -239,6 +241,8 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	}
 	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
 	for (const auto& mix : p.bushMix) if (!mix.brush.empty()) out += std::format("mix\tBush\t{}\t{}\n", mix.permille, mix.brush);
+	if (const auto& b = p.buildings; b.density)
+		out += std::format("buildings\t{}\t{}\t{}\t{}\n", b.density, b.ruinPercent, b.floor, b.wall.empty() ? std::string("-") : b.wall);
 	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
 	if (p.target) {
 		out += "target\tshares";
@@ -372,6 +376,12 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             const auto slot = std::ranges::find_if(slots, [](const StyleMix& m) { return m.brush.empty(); });
             if (slot == slots.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(mix);
+        } else if (type == "buildings" && f.size() == 5 && !p.buildings.density) {
+            if (!parseU32(f[1], p.buildings.density) || !parseU32(f[2], p.buildings.ruinPercent) || f[3].empty() || f[4].empty())
+                return std::unexpected(ProfileError::BadFormat);
+            p.buildings.floor = f[3];
+            p.buildings.wall = f[4] == "-" ? std::string() : std::string(f[4]);
+            if (!p.buildings.density) return std::unexpected(ProfileError::BadFormat);
         } else if (type == "overlay" && f.size() == 4) {
             StyleOverlay overlay;
             if (!parseU32(f[1], overlay.onTreePpm) || !parseU32(f[2], overlay.onGroundPpm) || f[3].empty())

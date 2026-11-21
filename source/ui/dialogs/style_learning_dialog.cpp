@@ -137,7 +137,7 @@ void StyleLearningDialog::Invalidate(bool discardSample) {
         captured_ = false;
         source_valid_ = false;
         sample_.reset();
-        doodads_.clear(); items_.clear(); overlays_.clear();
+        counts_ = {};
         if (mapping_) mapping_->ChangeValue(wxEmptyString);
         if (items_text_) items_text_->ChangeValue(wxEmptyString);
     }
@@ -184,7 +184,7 @@ void StyleLearningDialog::Read() {
     if (bounds.x0 + bounds.width > map_width_ || bounds.y0 + bounds.height > map_height_) { Status("Rectangle lies outside map dimensions."); return; }
     auto sample = SemanticMap::create(std::span(&bounds, 1), {512 * 512});
     if (!sample) { Status("Cannot allocate sample."); return; }
-    sample_ = std::move(*sample); doodads_.clear(); items_.clear(); overlays_.clear(); source_valid_ = true; row_ = 0; reading_ = true;
+    sample_ = std::move(*sample); counts_ = {}; source_valid_ = true; row_ = 0; reading_ = true;
     read_->Disable(); analyze_->Disable(); cancel_->Enable(); Status("Reading the rectangle...");
 }
 void StyleLearningDialog::Analyze() {
@@ -195,10 +195,12 @@ void StyleLearningDialog::Analyze() {
     auto mapping = parseKeyMap(mappingText);
     if (!mapping) { Status("Invalid G4 mapping. Keep the schema, tab separators and exact brush names."); return; }
     std::vector<GroundDoodadItems> doodadItems;
-    for (const auto& [where, items] : doodads_) doodadItems.push_back({where.first, where.second, items});
+    for (const auto& [where, items] : counts_.doodads) doodadItems.push_back({where.first, where.second, items});
     std::vector<GroundOverlayItems> overlayItems;
-    for (const auto& [where, counts] : overlays_) overlayItems.push_back({where.first, where.second, counts.first, counts.second});
-    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems);
+    for (const auto& [where, counts] : counts_.overlays) overlayItems.push_back({where.first, where.second, counts.first, counts.second});
+    std::vector<GroundDoodadItems> wallBrushes;
+    for (const auto& [where, pieces] : counts_.walls) wallBrushes.push_back({where.first, where.second, pieces});
+    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems, wallBrushes);
     if (!sample) { Status(sample.error()); return; }
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));
     result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); stop_ = std::stop_source{};
@@ -221,7 +223,7 @@ void StyleLearningDialog::Tick() {
     if (reading_) {
         const auto* e = g_gui.GetCurrentEditor();
         if (!e || !CurrentSource()) return;
-        const auto read = readLearningRow(e->map, *sample_, doodads_, items_, overlays_, row_++);
+        const auto read = readLearningRow(e->map, *sample_, counts_, row_++);
         if (!read) { Invalidate(); Status(read.error()); return; }
         const int rows = sample_->floors().front().bounds.height;
         progress_->SetValue(row_ * 100 / rows);
@@ -231,7 +233,9 @@ void StyleLearningDialog::Tick() {
             // (which keep it Other), so the generator can reproduce it.
             std::vector<KeyRule> rules{{"swamp", StyleKind::Grass}};
             rules.insert(rules.end(), defaultKeyRules().begin(), defaultKeyRules().end());
-            const auto mapping = serializeKeyMap(proposeKeyMap(sample_->groundKeys(), rules));
+            auto proposed = proposeKeyMap(sample_->groundKeys(), rules);
+            promoteMainLand(proposed, *sample_);
+            const auto mapping = serializeKeyMap(proposed);
             if (!mapping) { Invalidate(); Status("Cannot display ground mapping."); return; }
             mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable(); cancel_->Disable();
             ShowItems();
@@ -275,7 +279,7 @@ void StyleLearningDialog::Save() {
 }
 void StyleLearningDialog::ShowItems() {
     std::vector<std::pair<uint16_t, const SampleItem*>> sorted;
-    for (const auto& [id, item] : items_) sorted.emplace_back(id, &item);
+    for (const auto& [id, item] : counts_.items) sorted.emplace_back(id, &item);
     std::ranges::sort(sorted, [](const auto& a, const auto& b) { return a.second->count != b.second->count ? a.second->count > b.second->count : a.first < b.first; });
     const auto kindName = [](DecorKind kind) -> std::string_view {
         switch (kind) {
