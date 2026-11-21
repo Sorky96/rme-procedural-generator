@@ -1522,6 +1522,13 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		};
 		copyMix(profile.treeMix, request.profile.treeMix, request.profile.treeMixPermille);
 		copyMix(profile.bushMix, request.profile.bushMix, request.profile.bushMixPermille);
+		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
+			const auto& overlay = profile.overlays[i];
+			if (overlay.name.empty() || !usableDecor(overlay.name)) continue;
+			request.profile.overlay[used] = overlay.name;
+			request.profile.overlayTreePermille[used] = uint16_t(overlay.onTreePermille);
+			request.profile.overlayGroundPermille[used++] = uint16_t(overlay.onGroundPermille);
+		}
 	}
 
 	if (selection_) {

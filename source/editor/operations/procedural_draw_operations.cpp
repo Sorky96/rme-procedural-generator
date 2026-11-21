@@ -154,6 +154,17 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.fires.size());
 		for (const auto id : plan.fires) hashField(hash, id, 2);
 	}
+	// Only with overlays, so plans without them keep their hash.
+	if (!plan.overlays.empty()) {
+		hashField(hash, 0x76, 1);
+		for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
+			string(plan.profile.overlay[i]);
+			hashField(hash, plan.profile.overlayTreePermille[i], 2);
+			hashField(hash, plan.profile.overlayGroundPermille[i], 2);
+		}
+		hashField(hash, plan.overlays.size());
+		for (const auto id : plan.overlays) hashField(hash, id, 2);
+	}
 	for (const auto layer : {std::span(plan.entrances), std::span(plan.exits)}) {
 		if (layer.empty()) continue;
 		hashField(hash, layer.size());
@@ -428,6 +439,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (const auto& name : plan.profile.treeMix) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.bushMix) decorNames.push_back(&name);
 	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.overlay) decorNames.push_back(&name);
+	const bool overlaid = std::ranges::any_of(plan.profile.overlay, [](const std::string& name) { return !name.empty(); });
+	if (overlaid != !plan.overlays.empty() || (overlaid && (!vegetation || plan.overlays.size() != plan.items.size())))
+		co_return std::unexpected(PreviewError::InvalidPlan);
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
 		const std::string& name = *decorNames[i];
 		if (i >= GroundProfile::decorationCount && name.empty()) continue; // optional slots
@@ -645,6 +660,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!fireDefinition || !fireDefinition.clientId() || fireDefinition.isMetaItem() || fireDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 			++decorPlacements;
 		}
+		if (!plan.overlays.empty() && plan.overlays[i]) {
+			if (!plan.items[i] || !std::ranges::binary_search(decorIds, plan.overlays[i])) co_return std::unexpected(PreviewError::InvalidItem);
+			const auto overlayDefinition = g_item_definitions.get(plan.overlays[i]);
+			if (!overlayDefinition || !overlayDefinition.clientId() || overlayDefinition.isMetaItem() || overlayDefinition.isGroundTile() ||
+				overlayDefinition.hasFlag(ItemFlag::Unpassable)) co_return std::unexpected(PreviewError::InvalidItem);
+			++decorPlacements;
+		}
 		if (!plan.items[i]) continue;
 		++placements;
 		if (!plan.decor.empty() && plan.decor[i]) {
@@ -799,6 +821,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.decor[i]));
+		}
+		// Overlays go over the vegetation of their cell.
+		for (size_t i = 0; i < plan.overlays.size(); ++i) {
+			if (!plan.overlays[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->addItem(Item::Create(plan.overlays[i]));
 		}
 		for (size_t i = 0; i < plan.fires.size(); ++i) {
 			if (!plan.fires[i]) continue;

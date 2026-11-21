@@ -48,6 +48,14 @@ uint64_t GroundPlan::fingerprint() const {
 			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
 		}
 	}
+	// Appended only with overlays, so plans without them keep their fingerprint.
+	if (!overlays.empty()) {
+		hash = (hash ^ 0x76) * 1099511628211ULL;
+		for (const auto id : overlays) {
+			hash = (hash ^ uint8_t(id)) * 1099511628211ULL;
+			hash = (hash ^ uint8_t(id >> 8)) * 1099511628211ULL;
+		}
+	}
 	for (const auto [tag, layer] : {std::pair{0x65, std::span(entrances)}, std::pair{0x78, std::span(exits)}}) {
 		if (layer.empty()) continue;
 		hash = (hash ^ tag) * 1099511628211ULL;

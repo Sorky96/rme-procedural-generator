@@ -51,6 +51,12 @@ struct GroundProfile {
 	std::array<uint16_t, treeMixCount> treeMixPermille {};
 	std::array<std::string, treeMixCount> bushMix;
 	std::array<uint16_t, treeMixCount> bushMixPermille {};
+	// Overlay items laid over the vegetation (vegetation only; empty name = off): overlay[i] is a doodad brush or
+	// "raw:item:<id>" placed on overlayTreePermille[i] of the tree cells and on overlayGroundPermille[i] of the other
+	// Grass and Dirt cells; one overlay per cell, the first that hits.
+	static constexpr size_t overlayCount = 3;
+	std::array<std::string, overlayCount> overlay;
+	std::array<uint16_t, overlayCount> overlayTreePermille {}, overlayGroundPermille {};
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;
@@ -85,6 +91,9 @@ struct GroundPlan {
 	std::vector<uint8_t> doors;
 	// Camp fire item per cell (0 = none); empty when the profile has no campfire brush, otherwise one entry per cell.
 	std::vector<uint16_t> fires;
+	// Overlay item per cell, placed after the vegetation (0 = none); empty when the profile has no overlay, otherwise one
+	// entry per cell.
+	std::vector<uint16_t> overlays;
 	[[nodiscard]] uint64_t fingerprint() const;
 	std::vector<uint16_t> entrances;
 	std::vector<uint16_t> exits;

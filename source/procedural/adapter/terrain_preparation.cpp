@@ -294,7 +294,7 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2]}) {
+	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2], &profile.overlay[0], &profile.overlay[1], &profile.overlay[2]}) {
 		if (name->empty()) continue;
 		if (!validName(name->size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name->size());
@@ -565,7 +565,7 @@ TerrainPreparationSteps runPreparation(
                             floorProfile.brushes[0] = profile.plateauGround;
                             floorProfile.wall.clear(); floorProfile.door.clear(); floorProfile.campfire.clear();
                             floorProfile.grassMix = {}; floorProfile.grassMixPermille = {};
-                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {}; floorProfile.bushMix = {}; floorProfile.bushMixPermille = {};
+                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {}; floorProfile.bushMix = {}; floorProfile.bushMixPermille = {}; floorProfile.overlay = {}; floorProfile.overlayTreePermille = {}; floorProfile.overlayGroundPermille = {};
                         }
                         auto resolved = resolveSurfacePlan(floorInput, floorGrid, floorProfile, semanticBytes, stop,
                             input.config.vegetation ? &world->decor[f] : nullptr, clear);
@@ -728,11 +728,11 @@ TerrainPreparationSteps runPreparation(
                             } else if (input.config.surface.rockBlocks && entranceGround && grid->cells[e] == SurfaceKind::Rock) {
                                 // Impassable rock: the rock-face entrance stands on the profile's dirt ground (iteration 44).
                                 plan.items[e] = entranceGround;
-                                if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0;
+                                if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0; if (!plan.overlays.empty()) plan.overlays[e + grid->region.width] = 0;
                             }
-                            if (!plan.decor.empty()) plan.decor[e] = 0;
+                            if (!plan.decor.empty()) plan.decor[e] = 0; if (!plan.overlays.empty()) plan.overlays[e] = 0;
                         }
-                        if (exit.distant && !plan.decor.empty()) plan.decor[arrival] = 0;
+                        if (exit.distant && !plan.decor.empty()) plan.decor[arrival] = 0; if (exit.distant && !plan.overlays.empty()) plan.overlays[arrival] = 0;
                         if (hole && brushes->landing && lowerPlan.caveFloor[p] == 1) {
                             // Under a hole the cave has walkable ground, not a ramp (iteration 48c).
                             lowerPlan.items[p] = brushes->landing;
@@ -791,7 +791,7 @@ TerrainPreparationSteps runPreparation(
                             if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
                             // Visible stairs down replace the building floor (iteration 45b).
                             plan.entrances[d.descent] = plan.items[d.descent] = dungeonBrushes->descent;
-                            if (!plan.decor.empty()) plan.decor[d.descent] = 0;
+                            if (!plan.decor.empty()) plan.decor[d.descent] = 0; if (!plan.overlays.empty()) plan.overlays[d.descent] = 0;
                         }
                     }
 					auto lowerSteps = DrawOperations::prepareTerrainPreviewSteps(map, *lowerSnapshot, lowerPlan,
@@ -835,7 +835,7 @@ TerrainPreparationSteps runPreparation(
                     }
                     std::vector<uint8_t> occupied(cellCount);
                     for (size_t i = 0; i < cellCount; ++i) {
-                        occupied[i] = (!plan.decor.empty() && plan.decor[i]) || (!plan.entrances.empty() && plan.entrances[i])
+                        occupied[i] = (!plan.decor.empty() && plan.decor[i]) || (!plan.overlays.empty() && plan.overlays[i]) || (!plan.entrances.empty() && plan.entrances[i])
                             || (!plan.exits.empty() && plan.exits[i]);
                     }
                     if (cave) {
@@ -947,7 +947,7 @@ TerrainPreparationSteps runPreparation(
                         upperProfile.campfire.clear();
                         // Caps and storeys use their own ground; the learned mixes belong to the surface below.
                         upperProfile.grassMix = {}; upperProfile.grassMixPermille = {};
-                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {}; upperProfile.bushMix = {}; upperProfile.bushMixPermille = {};
+                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {}; upperProfile.bushMix = {}; upperProfile.bushMixPermille = {}; upperProfile.overlay = {}; upperProfile.overlayTreePermille = {}; upperProfile.overlayGroundPermille = {};
                         auto upperPlan = resolveSurfacePlan(
                             upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
                         );
