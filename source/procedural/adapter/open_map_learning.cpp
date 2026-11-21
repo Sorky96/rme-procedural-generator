@@ -38,10 +38,12 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }
-            // An item without a doodad brush (placed from the RAW palette) is vegetation by its own name and is
-            // learned as a source of that one item.
-            const DecorKind kind = classifyDoodadBrush(doodad ? std::string_view(doodad->getName()) : seen.name);
-            auto name = doodad ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
+            // The item's own client name decides its kind, whatever brush placed it (a cobweb inside a plant brush is
+            // no bush); the brush name only stands in for an item without a name. Vegetation keeps the brush as its
+            // source when the brush is of the same kind, for its variants; anything else is learned as that one item.
+            const DecorKind kind = classifyDoodadBrush(!seen.name.empty() || !doodad ? std::string_view(seen.name) : std::string_view(doodad->getName()));
+            const bool brushSource = doodad && kind != DecorKind::None && classifyDoodadBrush(doodad->getName()) == kind;
+            auto name = brushSource ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
             // Only plain items can be generated (see decorItemPlaceable); containers, teleports and the like stay out.
             if (kind == DecorKind::None) {
                 if (typeid(*item) == typeid(Item)) tileOverlays.push_back(std::move(name));
