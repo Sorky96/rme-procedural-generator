@@ -56,8 +56,16 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/utils.h>
+#include "procedural/adapter/decor_source.h"
+#include "procedural/core/doodad_class.h"
 
 namespace {
+
+// A vegetation source of a profile (doodad brush or "raw:<id>") whose first item the loaded client can place.
+bool usableDecor(const std::string& name) {
+	const auto source = rme::procedural::findDecorSource(name, 100000);
+	return source && rme::procedural::decorItemPlaceable(source.item(1));
+}
 
 using namespace rme::procedural;
 
@@ -528,6 +536,9 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("S&hore brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	shore_brush_choice_ = brushChoice("terrain-shore-brush", "sand", false);
 	form->Add(shore_brush_choice_, 1, wxEXPAND);
+	for (auto* brush : {grass_brush_choice_, dirt_brush_choice_, water_brush_choice_, rock_brush_choice_, shore_brush_choice_}) {
+		brush->SetToolTip("Natural surface can leave a one-tile gap next to existing ground outside the writable area.");
+	}
 
 	form->Add(label("Smooth &beaches:"), 0, wxALIGN_CENTER_VERTICAL);
 	smooth_beaches_check_ = newd wxCheckBox(host, wxID_ANY, "Round the sand edge near lakes");
@@ -679,8 +690,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(cave_ground_brush_choice_, 1, wxEXPAND);
 
 	form->Add(label("Cave wall brush:"), 0, wxALIGN_CENTER_VERTICAL);
-	// Iteration 50: the natural rock wall brush, aligned on every side of the floor; the "mountain" ground (faces only
-	// towards the east and south) when the client lacks it.
+	// Default to mountain ground. A wall brush can align pieces on all sides of the cave floor.
 	const wxString caveWall = "mountain";
 	cave_wall_brush_choice_ = brushChoice("terrain-cave-wall-brush", caveWall, 4);
 	cave_wall_brush_choice_->SetToolTip("Wall brush drawn on cave ground around the cave floor, or a ground brush for the whole wall band.");
@@ -1111,12 +1121,17 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		const std::string& name = entry.profile.decorPalette[kind];
 		if (name.empty()) continue;
 		const wxString wanted = wxstr(name);
-		const Brush* brush = doodad_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
-		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-		const bool usable = doodad && doodad->hasSingleObjects(0);
+		// A RAW item ("raw:<id>") is not in the brush list; it is usable when the loaded client can place it.
+		const bool usable = (rme::procedural::rawDecorId(name) || doodad_names_.Index(wanted) != wxNOT_FOUND) && usableDecor(name);
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
+	for (const auto& mix : entry.profile.grassMix)
+		if (!mix.brush.empty()) note(applied, "grass patches", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
+	for (const auto& mix : entry.profile.treeMix)
+		if (!mix.brush.empty()) note(applied, "trees with vegetation", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
+	for (const auto& mix : entry.profile.bushMix)
+		if (!mix.brush.empty()) note(applied, "bushes with vegetation", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
 	wxString message = "Style profile \"" + wxstr(entry.name) + "\": ";
 	message += applied.empty() ? wxString("tuning only, brushes at their defaults.") : "brushes set (" + applied + ").";
 	if (!skipped.empty()) message += " Not usable in this client, kept the default: " + skipped + ".";
@@ -1475,6 +1490,47 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 				decorFields[i]->SetFocus();
 				return std::nullopt;
 			}
+		}
+	}
+
+	// Learned mixes of the chosen profile; a brush this client cannot place is left out, as for the palette.
+	if (const int picked = profile_choice_->GetSelection(); natural && picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
+		const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
+		for (size_t i = 0, used = 0; i < profile.grassMix.size() && used < GroundProfile::grassMixCount; ++i) {
+			const auto& mix = profile.grassMix[i];
+			const auto* brush = mix.brush.empty() ? nullptr : g_brushes.getBrush(mix.brush);
+			const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+			if (!ground || ground->getTotalChance() <= 0) continue;
+			request.profile.grassMix[used] = mix.brush;
+			request.profile.grassMixPermille[used] = uint16_t(mix.permille);
+			// The patch vegetation applies with vegetation on; a brush this client lacks falls back to the main one.
+			if (config.vegetation) {
+				const auto& decor = profile.grassMixDecor[i];
+				for (size_t k = 0; k < GroundProfile::decorationCount; ++k) {
+					request.profile.grassMixDecorKeep[used][k] = uint16_t(decor.keepPermille[k]);
+					if (!decor.brushes[k].empty() && usableDecor(decor.brushes[k])) request.profile.grassMixDecor[used][k] = decor.brushes[k];
+				}
+			}
+			++used;
+		}
+		if (profile.grassPatchStep) request.profile.grassPatchStep = uint16_t(profile.grassPatchStep);
+		const auto copyMix = [&](const auto& from, auto& names, auto& permille) {
+			for (size_t i = 0, used = 0; config.vegetation && i < from.size() && used < GroundProfile::treeMixCount; ++i) {
+				if (from[i].brush.empty() || !usableDecor(from[i].brush)) continue;
+				names[used] = from[i].brush;
+				permille[used++] = uint16_t(from[i].permille);
+			}
+		};
+		copyMix(profile.treeMix, request.profile.treeMix, request.profile.treeMixPermille);
+		copyMix(profile.bushMix, request.profile.bushMix, request.profile.bushMixPermille);
+		if (config.vegetation && !profile.shoreTree.empty() && usableDecor(profile.shoreTree)) request.profile.waterTree = profile.shoreTree;
+		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
+			const auto& overlay = profile.overlays[i];
+			// An overlay one cannot walk through would block the planned paths; it is left out.
+			if (overlay.name.empty() || !usableDecor(overlay.name) || !rme::procedural::decorItemPassable(rme::procedural::findDecorSource(overlay.name, 100000).item(1))) continue;
+			request.profile.overlay[used] = overlay.name;
+			request.profile.overlayTreePpm[used] = overlay.onTreePpm;
+			request.profile.overlayGroundPpm[used++] = overlay.onGroundPpm;
 		}
 	}
 
@@ -1848,7 +1904,7 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
 	return preview_bitmap_.IsOk();
 }
 
-void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) {
+void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) try {
 	if (!prepared_) {
 		return;
 	}
@@ -1880,41 +1936,58 @@ void TerrainGeneratorDialog::OnValidate(wxCommandEvent&) {
 	}
 	SetStatus(wxstr(std::format("Preview validated. {} tiles. Similarity: {}.",
 		prepared_->preview.getChanges().size(), copyStateName(prepared_->copyAssessment.state))), prepared_->copyAssessment.hardFail());
+} catch (const std::bad_alloc&) {
+	SetStatus(memoryMessage, true);
 }
 
 void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
-	if (!prepared_) {
+	try {
+		if (!prepared_) {
+			return;
+		}
+		if (!CurrentTarget()) {
+			ReleasePreview();
+			UpdateControlStates();
+			return;
+		}
+		auto request = ReadRequest();
+		if (!request) {
+			ReleasePreview();
+			UpdateControlStates();
+			return;
+		}
+		if (!CandidateAllowed()) {
+			SetStatus("Only a validated, admissible candidate can be placed.", true);
+			return;
+		}
+		if (!SeriesCurrent() || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile) {
+			ReleasePreview();
+			UpdateControlStates();
+			SetStatus(staleMessage, true);
+			return;
+		}
+		request->config.seed = prepared_->plan.config.seed;
+		// The commit validates again and copies the owned diff; it never regenerates or reborders.
+		const auto receipt = selection_ ?
+			DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :
+			DrawOperations::commitTerrainPreview(*prepared_, request->config, request->profile, commitBudget);
+		if (!receipt) {
+			if (const auto* failure = std::get_if<TerrainCommitFailure>(&receipt.error());
+				failure && *failure == TerrainCommitFailure::AllocationFailed) {
+				SetStatus(describe(*failure), true);
+				return;
+			}
+			const wxString message = describe(receipt.error());
+			ReleasePreview();
+			UpdateControlStates();
+			SetStatus(message, true);
+			return;
+		}
+	} catch (const std::bad_alloc&) {
+		SetStatus(memoryMessage, true);
 		return;
 	}
-	if (!CurrentTarget()) {
-		ReleasePreview();
-		UpdateControlStates();
-		return;
-	}
-	auto request = ReadRequest();
-	if (!request) {
-		ReleasePreview();
-		UpdateControlStates();
-		return;
-	}
-    if (!CandidateAllowed()) { SetStatus("Only a validated, admissible candidate can be placed.", true); return; }
-    if (!SeriesCurrent() || !series_request_ || request->config != series_request_->config || request->profile != series_request_->profile) {
-        ReleasePreview(); UpdateControlStates(); SetStatus(staleMessage, true); return;
-    }
-    request->config.seed = prepared_->plan.config.seed;
-	// The commit validates again and copies the owned diff; it never regenerates or reborders.
-	const auto receipt = selection_ ?
-		DrawOperations::commitSelectedTerrainPreview(*prepared_, *selection_, request->config, request->profile, commitBudget) :
-		DrawOperations::commitTerrainPreview(*prepared_, request->config, request->profile, commitBudget);
-	if (receipt) {
-        spdlog::info("Terrain generator: placed {} tiles", receipt->changes);
-        EndModal(wxID_OK);
-		return;
-	}
-	const wxString message = describe(receipt.error());
-	ReleasePreview();
-	UpdateControlStates();
-	SetStatus(message, true);
+	EndModal(wxID_OK);
 }
 
 void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {

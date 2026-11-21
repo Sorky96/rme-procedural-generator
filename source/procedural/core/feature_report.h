@@ -35,6 +35,8 @@ struct ReportInput {
 	const SemanticSummary* semantic = nullptr;
 	const TopologyReport* topology = nullptr;
 	const FeatureSet* features = nullptr;
+	uint64_t nestedItems = 0;
+	uint64_t unknownNestedItems = 0;
 };
 
 enum class CsvTable : uint8_t { GroundKeys, Floors, Adjacency, Scales, Distance };

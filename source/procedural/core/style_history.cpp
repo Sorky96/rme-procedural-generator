@@ -32,6 +32,9 @@ Json surfaceJson(const SurfaceTuning& t) {
 #define ENCODE_FIELD(name) j[#name]=t.name;
     SURFACE_FIELDS(ENCODE_FIELD)
 #undef ENCODE_FIELD
+    if(t.islandPermille)j["islandPermille"]=t.islandPermille; // optional: older histories have no sea
+    if(t.dirtSize)j["dirtSize"]=t.dirtSize;
+    if(t.cleanEdges)j["cleanEdges"]=t.cleanEdges;
     j["caveEntranceStyle"]=static_cast<uint8_t>(t.caveEntranceStyle);return j;
 }
 uint64_t unsignedValue(const Json& j,uint64_t maximum=UINT64_MAX) {
@@ -47,6 +50,9 @@ SurfaceTuning surfaceFrom(const Json& j) {
 #define DECODE_FIELD(name) surfaceField(j.at(#name),t.name);
     SURFACE_FIELDS(DECODE_FIELD)
 #undef DECODE_FIELD
+    if(j.contains("islandPermille"))surfaceField(j.at("islandPermille"),t.islandPermille);
+    if(j.contains("dirtSize"))surfaceField(j.at("dirtSize"),t.dirtSize);
+    if(j.contains("cleanEdges"))surfaceField(j.at("cleanEdges"),t.cleanEdges);
     t.caveEntranceStyle=static_cast<CaveEntranceStyle>(unsignedValue(j.at("caveEntranceStyle"),1));
     if(!validateSurface({{100,100,7,100,100},0,t},{65001,65001,16},{10000,UINT64_MAX,UINT64_MAX}))
         throw std::runtime_error("Invalid Surface settings.");

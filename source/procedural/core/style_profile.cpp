@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <format>
 #include <map>
 #include <new>
 #include <set>
@@ -175,6 +176,31 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	}
 	for (const auto& name : p.palette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
 	for (const auto& name : p.decorPalette) if (bad(name)) return std::unexpected(ProfileError::InvalidKey);
+	for (const auto* group : {&p.grassMix, &p.treeMix, &p.bushMix}) {
+		uint32_t share = 0;
+		for (const StyleMix& mix : *group) {
+			if (bad(mix.brush)) return std::unexpected(ProfileError::InvalidKey);
+			if (mix.brush.empty() != (mix.permille == 0) || mix.permille > 1000) return std::unexpected(ProfileError::InvalidRange);
+			share += mix.permille;
+		}
+		if (share > 1000) return std::unexpected(ProfileError::InvalidRange);
+	}
+	// The brush of the trees standing in the water is set exactly when they are on.
+	if (bad(p.shoreTree) || p.shoreTree.empty() != (!p.decorTuning || !p.decorTuning->shoreTreePermille)) return std::unexpected(ProfileError::InvalidRange);
+	for (const StyleOverlay& o : p.overlays) {
+		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
+		if (o.onTreePpm > 1000000 || o.onGroundPpm > 1000000 || o.name.empty() != (o.onTreePpm + o.onGroundPpm == 0))
+			return std::unexpected(ProfileError::InvalidRange);
+	}
+	for (size_t m = 0; m < maxGrassMix; ++m) {
+		const auto& d = p.grassMixDecor[m];
+		if (p.grassMix[m].brush.empty() && d != StyleMixDecor {}) return std::unexpected(ProfileError::InvalidRange);
+		if (p.grassPatchStep > 64) return std::unexpected(ProfileError::InvalidRange);
+		for (size_t k = 0; k < 3; ++k) {
+			if (d.keepPermille[k] > 1000) return std::unexpected(ProfileError::InvalidRange);
+			if (bad(d.brushes[k])) return std::unexpected(ProfileError::InvalidKey);
+		}
+	}
 	std::set<std::string_view> seen;
 	for (const auto& e : p.keymap) {
 		if (bad(e.key) || bad(e.rule)) return std::unexpected(ProfileError::InvalidKey);
@@ -202,6 +228,18 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	for (size_t k = 0; k < 3; ++k) {
 		if (!p.decorPalette[k].empty()) out += std::string("doodad\t") + decorNames[k] + '\t' + p.decorPalette[k] + '\n';
 	}
+	for (const auto& mix : p.grassMix) if (!mix.brush.empty()) out += std::format("mix\tGrass\t{}\t{}\n", mix.permille, mix.brush);
+	if (p.grassPatchStep) out += std::format("mixpatch\t{}\n", p.grassPatchStep);
+	for (size_t m = 0; m < maxGrassMix; ++m) {
+		const auto& d = p.grassMixDecor[m];
+		if (d == StyleMixDecor {}) continue;
+		const auto name = [](const std::string& b) { return b.empty() ? std::string("-") : b; };
+		out += std::format("mixdecor\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n", m, d.keepPermille[0], d.keepPermille[1], d.keepPermille[2],
+			name(d.brushes[0]), name(d.brushes[1]), name(d.brushes[2]));
+	}
+	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
+	for (const auto& mix : p.bushMix) if (!mix.brush.empty()) out += std::format("mix\tBush\t{}\t{}\n", mix.permille, mix.brush);
+	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
 	if (p.target) {
 		out += "target\tshares";
 		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
@@ -226,6 +264,9 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 			out += '\t' + std::to_string(v);
 		}
 		out += '\n';
+		// Its own line, after the tuning and only when set, so profiles without clumps keep their bytes.
+		if (d.clumpPermille) out += std::format("decor\tclump\t{}\n", d.clumpPermille);
+		if (d.shoreTreePermille) out += std::format("decor\tshoretree\t{}\t{}\n", d.shoreTreePermille, p.shoreTree);
 	}
 	if (p.tuning) {
 		const SurfaceTuning& t = *p.tuning;
@@ -233,6 +274,10 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		for (const uint32_t v : {t.featureSize, t.lakePermille, t.minLakeCells, t.riverCount, t.minRiverLength, t.shoreWidth,
 			t.rockPermille, t.minRockCells, t.dirtPermille, t.transitionWidth, t.meander}) out += '\t' + std::to_string(v);
 		out += '\n';
+		// Its own line, only when set, so profiles without a sea keep their bytes.
+		if (t.islandPermille) out += std::format("tuning\tisland\t{}\n", t.islandPermille);
+		if (t.dirtSize) out += std::format("tuning\tdirtsize\t{}\n", t.dirtSize);
+		if (t.cleanEdges) out += "tuning\tcleanedges\t1\n";
 	}
 	return out;
 }
@@ -244,6 +289,7 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 	std::array<bool, naturalKindCount> haveAdjacency {};
 	std::array<bool, 8> haveDecorCell {};
 	bool haveShares = false;
+	std::array<bool, maxGrassMix> haveMixDecor {};
 	while (!text.empty()) {
 		const size_t end = text.find('\n');
 		std::string_view line = text.substr(0, end);
@@ -318,6 +364,33 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			if (k == 3) return std::unexpected(ProfileError::UnknownKind);
 			if (!p.decorPalette[k].empty() || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
 			p.decorPalette[k] = f[2];
+        } else if (type == "mix" && f.size() == 4 && (f[1] == "Grass" || f[1] == "Tree" || f[1] == "Bush")) {
+            StyleMix mix;
+            if (!parseU32(f[2], mix.permille) || f[3].empty()) return std::unexpected(ProfileError::BadFormat);
+            mix.brush = f[3];
+            auto& slots = f[1] == "Grass" ? p.grassMix : f[1] == "Tree" ? p.treeMix : p.bushMix;
+            const auto slot = std::ranges::find_if(slots, [](const StyleMix& m) { return m.brush.empty(); });
+            if (slot == slots.end()) return std::unexpected(ProfileError::BadFormat);
+            *slot = std::move(mix);
+        } else if (type == "overlay" && f.size() == 4) {
+            StyleOverlay overlay;
+            if (!parseU32(f[1], overlay.onTreePpm) || !parseU32(f[2], overlay.onGroundPpm) || f[3].empty())
+                return std::unexpected(ProfileError::BadFormat);
+            overlay.name = f[3];
+            const auto slot = std::ranges::find_if(p.overlays, [](const StyleOverlay& o) { return o.name.empty(); });
+            if (slot == p.overlays.end()) return std::unexpected(ProfileError::BadFormat);
+            *slot = std::move(overlay);
+        } else if (type == "mixpatch" && f.size() == 2 && !p.grassPatchStep) {
+            if (!parseU32(f[1], p.grassPatchStep) || p.grassPatchStep < 1 || p.grassPatchStep > 64) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "mixdecor" && f.size() == 8) {
+            uint32_t slot = 0;
+            if (!parseU32(f[1], slot) || slot >= maxGrassMix || haveMixDecor[slot]) return std::unexpected(ProfileError::BadFormat);
+            auto& d = p.grassMixDecor[slot];
+            for (size_t k = 0; k < 3; ++k) {
+                if (!parseU32(f[2 + k], d.keepPermille[k]) || f[5 + k].empty()) return std::unexpected(ProfileError::BadFormat);
+                d.brushes[k] = f[5 + k] == "-" ? std::string() : std::string(f[5 + k]);
+            }
+            haveMixDecor[slot] = true;
         } else if (type == "target" && f.size() == 2 + naturalKindCount && f[1] == "shares" && !haveShares) {
             if (!p.target) {
                 p.target = StyleTarget {};
@@ -345,6 +418,21 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             uint32_t v[6];
             for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
 			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
+        } else if (type == "decor" && f.size() == 4 && f[1] == "shoretree" && p.decorTuning && !p.decorTuning->shoreTreePermille) {
+            if (!parseU32(f[2], p.decorTuning->shoreTreePermille) || !p.decorTuning->shoreTreePermille || p.decorTuning->shoreTreePermille > 1000 || f[3].empty())
+                return std::unexpected(ProfileError::BadFormat);
+            p.shoreTree = f[3];
+        } else if (type == "decor" && f.size() == 3 && f[1] == "clump" && p.decorTuning && !p.decorTuning->clumpPermille) {
+            if (!parseU32(f[2], p.decorTuning->clumpPermille) || !p.decorTuning->clumpPermille || p.decorTuning->clumpPermille > 1000)
+                return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "tuning" && f.size() == 3 && f[1] == "cleanedges" && p.tuning && !p.tuning->cleanEdges) {
+            if (f[2] != "1") return std::unexpected(ProfileError::BadFormat);
+            p.tuning->cleanEdges = 1;
+        } else if (type == "tuning" && f.size() == 3 && f[1] == "dirtsize" && p.tuning && !p.tuning->dirtSize) {
+            if (!parseU32(f[2], p.tuning->dirtSize) || !p.tuning->dirtSize || p.tuning->dirtSize > 4096) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "tuning" && f.size() == 3 && f[1] == "island" && p.tuning && !p.tuning->islandPermille) {
+            if (!parseU32(f[2], p.tuning->islandPermille) || !p.tuning->islandPermille || p.tuning->islandPermille > 900)
+                return std::unexpected(ProfileError::BadFormat);
         } else if (type == "tuning" && f.size() == 12 && !p.tuning) {
             uint32_t v[11];
             for (size_t i = 0; i < 11; ++i) if (!parseU32(f[1 + i], v[i])) return std::unexpected(ProfileError::BadFormat);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/water_shape.h"
 
+#include <bit>
+
 #include <algorithm>
 #include <charconv>
 #include <new>
@@ -88,11 +90,58 @@ size_t branchCells(const std::vector<uint8_t>& bitmap, size_t width, size_t heig
 	return count;
 }
 
-} // namespace
+// Keep diagonals only where there is no orthogonal route around the same corner.
+uint8_t skeletonLinks(const std::vector<uint8_t>& bitmap, size_t i, size_t width) {
+	const bool n = bitmap[i - width], e = bitmap[i + 1], s = bitmap[i + width], w = bitmap[i - 1];
+	return static_cast<uint8_t>(int(n) | ((!n && !e && bitmap[i - width + 1]) << 1) |
+		(e << 2) | ((!e && !s && bitmap[i + width + 1]) << 3) |
+		(s << 4) | ((!s && !w && bitmap[i + width - 1]) << 5) |
+		(w << 6) | ((!w && !n && bitmap[i - width - 1]) << 7));
+}
 
-std::expected<void, StatsError> addWaterShapes(
+uint32_t countPathJunctions(std::vector<uint8_t>& bitmap, size_t width) {
+	std::vector<size_t> pending;
+	// Two rounds of endpoint removal exclude spurs one or two skeleton edges long.
+	constexpr int spurLength = 2;
+	for (int step = 0; step < spurLength; ++step) {
+		for (size_t i = width + 1; i + width < bitmap.size(); ++i) {
+			if (bitmap[i] && std::popcount(skeletonLinks(bitmap, i, width)) <= 1) pending.push_back(i);
+		}
+		for (const size_t i : pending) bitmap[i] = 0;
+		pending.clear();
+	}
+
+	std::vector<uint8_t> junction(bitmap.size(), 0);
+	for (size_t i = width + 1; i + width < bitmap.size(); ++i) {
+		junction[i] = bitmap[i] && std::popcount(skeletonLinks(bitmap, i, width)) >= 3;
+	}
+	const auto stride = static_cast<std::ptrdiff_t>(width);
+	const std::ptrdiff_t offsets[] = {-stride, 1 - stride, 1, stride + 1, stride, stride - 1, -1, -stride - 1};
+	uint32_t count = 0;
+	for (size_t i = width + 1; i + width < bitmap.size(); ++i) {
+		if (!junction[i]) continue;
+		++count;
+		pending.push_back(i);
+		junction[i] = 0;
+		while (!pending.empty()) {
+			const size_t cell = pending.back();
+			pending.pop_back();
+			const uint8_t links = skeletonLinks(bitmap, cell, width);
+			for (size_t direction = 0; direction < std::size(offsets); ++direction) {
+				if (!(links & (1u << direction))) continue;
+				const size_t next = static_cast<size_t>(static_cast<std::ptrdiff_t>(cell) + offsets[direction]);
+				if (!junction[next]) continue;
+				junction[next] = 0;
+				pending.push_back(next);
+			}
+		}
+	}
+	return count;
+}
+
+std::expected<void, StatsError> addShapes(
 	std::span<const uint8_t> water, uint32_t width, uint32_t height, WaterShapes& out, std::stop_token stop,
-	std::span<const uint8_t> openWater) {
+	std::span<const uint8_t> openWater, uint64_t* pathJunctions) {
 	if (uint64_t(width) * height != water.size() || (!openWater.empty() && openWater.size() != water.size())) return std::unexpected(StatsError::InvalidRange);
 	try {
 		std::vector<uint8_t> seen(water.size(), 0);
@@ -133,6 +182,7 @@ std::expected<void, StatsError> addWaterShapes(
 				}
 				out.rivers.push_back({area, static_cast<uint32_t>(skeleton), static_cast<uint32_t>(std::max(x1 - x0 + 1, y1 - y0 + 1)),
 					static_cast<uint32_t>(straightCells(bitmap, bw, bh)), static_cast<uint32_t>(branchCells(bitmap, bw, bh)), touches});
+				if (pathJunctions) *pathJunctions += countPathJunctions(bitmap, bw);
 			} else {
 				out.lakeAreas.push_back(area);
 			}
@@ -141,6 +191,14 @@ std::expected<void, StatsError> addWaterShapes(
 		return std::unexpected(StatsError::AllocationFailed);
 	}
 	return {};
+}
+
+} // namespace
+
+std::expected<void, StatsError> addWaterShapes(
+	std::span<const uint8_t> water, uint32_t width, uint32_t height, WaterShapes& out, std::stop_token stop,
+	std::span<const uint8_t> openWater) {
+	return addShapes(water, width, height, out, stop, openWater, nullptr);
 }
 
 std::expected<WaterShapes, StatsError> extractWaterShapes(
@@ -306,7 +364,8 @@ std::expected<ChannelShapes, StatsError> extractKeyShapes(
 				result.regionCells += present;
 				if (present && listed[floor.ground[i]]) { mask[i] = 1; ++result.maskCells; }
 			}
-			if (auto added = addWaterShapes(mask, static_cast<uint32_t>(floor.bounds.width), static_cast<uint32_t>(floor.bounds.height), result.shapes, stop); !added) {
+			if (auto added = addShapes(mask, static_cast<uint32_t>(floor.bounds.width), static_cast<uint32_t>(floor.bounds.height),
+					result.shapes, stop, {}, &result.pathJunctions); !added) {
 				return std::unexpected(added.error());
 			}
 		}
@@ -322,7 +381,9 @@ std::expected<ChannelShapes, StatsError> pathShapesOf(const SurfaceGrid& grid, s
 		ChannelShapes result;
 		result.regionCells = mask.size();
 		for (size_t i = 0; i < mask.size(); ++i) { mask[i] = grid.cells[i] == SurfaceKind::Path; result.maskCells += mask[i]; }
-		if (auto added = addWaterShapes(mask, grid.region.width, grid.region.height, result.shapes, stop); !added) return std::unexpected(added.error());
+		if (auto added = addShapes(mask, grid.region.width, grid.region.height, result.shapes, stop, {}, &result.pathJunctions); !added) {
+			return std::unexpected(added.error());
+		}
 		return result;
 	} catch (const std::bad_alloc&) {
 		return std::unexpected(StatsError::AllocationFailed);
@@ -357,6 +418,7 @@ ChannelSummary summarizeChannels(const ChannelShapes& channels) {
 	s.lengthPer64k = static_cast<uint32_t>(skeleton * 65536 / channels.regionCells);
 	s.widthMilli = static_cast<uint32_t>(area * 1000 / std::max<uint64_t>(skeleton, 1));
 	s.branchesPer100Milli = static_cast<uint32_t>(branches * 100 * 1000 / std::max<uint64_t>(skeleton, 1));
+	s.junctionsPer100Milli = static_cast<uint32_t>(channels.pathJunctions * 100 * 1000 / std::max<uint64_t>(skeleton, 1));
 	s.connectedPermille = static_cast<uint32_t>(connected * 1000 / list.size());
 	return s;
 }

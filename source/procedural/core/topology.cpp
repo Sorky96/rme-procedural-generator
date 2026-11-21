@@ -9,16 +9,24 @@ namespace rme::procedural {
 
 namespace {
 
-// Union-find labelling of one floor box. Buffers are owned by the caller and reused.
+struct CellState {
+	uint8_t nextDirection : 3 = 0; // four directions and the completed state
+	uint8_t parentDirection : 2 = 0;
+	uint8_t bottleneck : 1 = 0;
+	uint8_t touchesEdge : 1 = 0;
+};
+static_assert(sizeof(CellState) == 1);
+
+// Scratch for union-find ground regions and the depth-first walkability traversal.
 struct Labeler {
 	std::vector<uint32_t> parent;
 	std::vector<uint32_t> size;
-	std::vector<uint8_t> touchesEdge;
+	std::vector<CellState> state;
 
 	void reserve(size_t cells) {
 		parent.resize(cells);
 		size.resize(cells);
-		touchesEdge.resize(cells);
+		state.resize(cells);
 	}
 
 	uint32_t find(uint32_t i) {
@@ -41,7 +49,7 @@ struct Labeler {
 	template <class Active, class Same>
 	bool run(int width, int height, Active active, Same same, std::stop_token stop) {
 		const auto cells = static_cast<size_t>(width) * static_cast<size_t>(height);
-		for (size_t i = 0; i < cells; ++i) { parent[i] = static_cast<uint32_t>(i); size[i] = 0; touchesEdge[i] = 0; }
+		for (size_t i = 0; i < cells; ++i) { parent[i] = static_cast<uint32_t>(i); size[i] = 0; state[i] = {}; }
 		for (int y = 0; y < height; ++y) {
 			if (stop.stop_requested()) return false;
 			for (int x = 0; x < width; ++x) {
@@ -60,7 +68,7 @@ struct Labeler {
 				if (!active(i)) continue;
 				const uint32_t root = find(i);
 				++size[root];
-				if (x == 0 || y == 0 || x == width - 1 || y == height - 1) touchesEdge[root] = 1;
+				if (x == 0 || y == 0 || x == width - 1 || y == height - 1) state[root].touchesEdge = true;
 			}
 		}
 		return true;
@@ -82,6 +90,71 @@ void addComponent(ComponentStats& stats, uint64_t size, uint32_t smallLimit) {
 			break;
 		}
 	}
+}
+
+// Iterative depth-first search. If a child's subtree cannot reach an ancestor of
+// this cell, removing the cell separates the subtree from the rest of the component.
+template <class Walkable>
+bool analyzeWalkability(uint32_t width, uint32_t height, Walkable walkable, Labeler& scratch,
+	FloorTopology& out, uint32_t smallLimit, std::stop_token stop) {
+	const uint32_t cells = width * height;
+	// Directions are left, right, up, down. Flipping bit 0 reverses a step.
+	const std::array<int64_t, 4> offsets {-1, 1, -static_cast<int64_t>(width), width};
+	const auto neighbor = [&](uint32_t cell, uint8_t direction) {
+		return static_cast<uint32_t>(cell + offsets[direction]);
+	};
+	auto& discovered = scratch.parent;
+	auto& low = scratch.size;
+	std::fill_n(discovered.begin(), cells, 0);
+	uint32_t time = 0;
+	uint32_t steps = 0;
+	for (uint32_t root = 0; root < cells; ++root) {
+		if ((root % 4096 == 0) && stop.stop_requested()) return false;
+		if (!walkable(root) || discovered[root] != 0) continue;
+		const uint32_t start = time;
+		uint32_t rootChildren = 0;
+		low[root] = discovered[root] = ++time;
+		scratch.state[root] = {};
+		uint32_t cell = root;
+		for (;;) {
+			if ((++steps % 4096 == 0) && stop.stop_requested()) return false;
+			CellState& state = scratch.state[cell];
+			if (state.nextDirection == offsets.size()) {
+				if (cell == root) {
+					out.bottleneckCells += rootChildren > 1;
+					break;
+				}
+				out.bottleneckCells += state.bottleneck;
+				const uint32_t parent = neighbor(cell, state.parentDirection);
+				low[parent] = std::min(low[parent], low[cell]);
+				scratch.state[parent].bottleneck |= low[cell] >= discovered[parent];
+				cell = parent;
+				continue;
+			}
+
+			const uint8_t direction = state.nextDirection++;
+			if (cell != root && direction == state.parentDirection) continue;
+			switch (direction) {
+				case 0: if (cell % width == 0) continue; break;
+				case 1: if (cell % width == width - 1) continue; break;
+				case 2: if (cell < width) continue; break;
+				default: if (cell >= cells - width) continue; break;
+			}
+			const uint32_t next = neighbor(cell, direction);
+			if (!walkable(next)) continue;
+			if (discovered[next] != 0) {
+				low[cell] = std::min(low[cell], discovered[next]);
+			} else {
+				rootChildren += cell == root;
+				low[next] = discovered[next] = ++time;
+				scratch.state[next] = {};
+				scratch.state[next].parentDirection = direction ^ 1;
+				cell = next;
+			}
+		}
+		addComponent(out.walkable, time - start, smallLimit);
+	}
+	return !stop.stop_requested();
 }
 
 } // namespace
@@ -127,11 +200,8 @@ std::expected<TopologyReport, TopologyError> analyzeTopology(
 			const uint32_t t = floor.traits[i];
 			return (t & bit(Trait::HasGround)) && !(t & walkBlockers);
 		};
-		if (!labeler.run(w, h, walkable, [](uint32_t, uint32_t) { return true; }, stop)) {
+		if (!analyzeWalkability(w, h, walkable, labeler, out, options.smallComponentCells, stop)) {
 			return std::unexpected(TopologyError::Cancelled);
-		}
-		for (uint32_t i = 0; i < static_cast<uint32_t>(floor.traits.size()); ++i) {
-			if (walkable(i) && labeler.parent[i] == i) addComponent(out.walkable, labeler.size[i], options.smallComponentCells);
 		}
 
 		auto present = [&](uint32_t i) { return (floor.traits[i] & bit(Trait::Present)) != 0; };
@@ -143,7 +213,7 @@ std::expected<TopologyReport, TopologyError> analyzeTopology(
 			KeyRegionStats& key = report.keys[floor.ground[i]];
 			++key.regions;
 			key.largest = std::max<uint64_t>(key.largest, labeler.size[i]);
-			if (!labeler.touchesEdge[i]) ++key.enclosed;
+			if (!labeler.state[i].touchesEdge) ++key.enclosed;
 		}
 		try {
 			report.floors.push_back(out);

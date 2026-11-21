@@ -1621,6 +1621,74 @@ bool commitFailedAs(const std::expected<TerrainCommitReceipt,TerrainCommitError>
 	return !result && std::get_if<TerrainCommitFailure>(&result.error()) && std::get<TerrainCommitFailure>(result.error())==error;
 }
 
+void terrainSurfaceHistoryFailures(std::ostream& report) {
+	CommitSettings settings;
+	check(g_gui.NewMap(), "Surface fault editor creation failed");
+	auto& editor = *g_gui.GetCurrentEditor();
+	auto& queue = *editor.actionQueue;
+	GenerationConfig config {{100, 100, 7, 256, 256}, 1729};
+	config.algorithm = GenerationAlgorithm::Surface;
+	config.surface.buildingDensity = 10;
+	config.surface.caveEntrances = 20;
+	config.surface.caveFarExits = false;
+	config.surface.caveEntranceStyle = CaveEntranceStyle::FloorHole;
+	config.surface.rockPermille = 200;
+	GroundProfile requestProfile {{"grass", "dirt", "rocky ground", "sand", "sea", "sea", "cobblestone", "stone floor"},
+		GroundProfile::surfaceWithFloorCount};
+	requestProfile.caveEntrance = "cave hole";
+	requestProfile.caveExit = "ramp";
+	requestProfile.caveGround = "cave";
+	requestProfile.caveWall = "mountain";
+	const auto prepared = prepareTerrain(editor.map, config, requestProfile, preparationBudget);
+	check(prepared && prepared->cave && !prepared->cave->preview.getChanges().empty(), "Surface fault case needs two affected floors");
+	const auto sourceMatches = [&] {
+		return commitSnapshotEqual(editor.map, prepared->snapshot) && commitSnapshotEqual(editor.map, prepared->cave->snapshot);
+	};
+	const auto committedMatches = [&] {
+		checkCommitted(editor, *prepared);
+		checkCommitted(editor, *prepared->cave);
+	};
+	const auto armFault = [](size_t allocation) {
+		ordinal = 0;
+		failAt = allocation;
+		observed = false;
+		recording = true;
+	};
+	const auto prior = queue.getCurrentIndex();
+	const auto sourceRevision = editor.map.getChangeTracker().getGeneration();
+	const auto sourceCells = editor.map.getGrid().cellCount();
+	const auto count = prepared->preview.getChanges().size();
+	// Each surface change requires at least one allocation before any lower-floor clone is published.
+	for (const size_t allocation : {size_t(1), count, count * 2}) {
+		armFault(allocation);
+		const auto failed = DrawOperations::commitTerrainPreview(*prepared, config, requestProfile, commitBudget);
+		recording = false;
+		check(observed && commitFailedAs(failed, TerrainCommitFailure::AllocationFailed) && sourceMatches() &&
+			queue.getCurrentIndex() == prior && queue.getSize() == prior &&
+			editor.map.getChangeTracker().getGeneration() == sourceRevision && editor.map.getGrid().cellCount() == sourceCells,
+			"Surface Place allocation fault changed map or history");
+	}
+	const auto placed = DrawOperations::commitTerrainPreview(*prepared, config, requestProfile, commitBudget);
+	check(placed && queue.getCurrentIndex() == prior + 1, "Surface retry did not create one history step");
+	(void)g_minimap.TakePendingInvalidation(editor.map);
+	armFault(1);
+	const bool failedUndo = queue.undo();
+	recording = false;
+	check(observed && !failedUndo && queue.getCurrentIndex() == prior + 1, "Surface Undo fault moved the history cursor");
+	committedMatches();
+	check(queue.undo() && queue.getCurrentIndex() == prior && sourceMatches(), "Surface Undo retry changed source");
+	(void)g_minimap.TakePendingInvalidation(editor.map);
+	armFault(1);
+	const bool failedRedo = queue.redo();
+	recording = false;
+	check(observed && !failedRedo && queue.getCurrentIndex() == prior && sourceMatches(), "Surface Redo fault changed source or history");
+	check(queue.redo() && queue.getCurrentIndex() == prior + 1, "Surface Redo retry did not restore the history step");
+	committedMatches();
+	editor.map.clearChanges();
+	check(g_gui.CloseAllEditors(), "Surface fault editor did not close");
+	report << "TERRAIN_SURFACE_HISTORY_FAILURES_PASS\t3\t1\t1\n";
+}
+
 void terrainCommitFailures(std::ostream& report) {
 	CommitSettings settings;
 	check(g_gui.NewMap(),"Commit fault editor creation failed");
@@ -1877,6 +1945,7 @@ void run() {
 		closeObservers();
 		tileReservationFailures(report);
 		terrainCommitFailures(report);
+		terrainSurfaceHistoryFailures(report);
 		terrainSelectedCommit(report);
 		terrainCommitSize(100,report);
 		terrainCommitSize(500,report);

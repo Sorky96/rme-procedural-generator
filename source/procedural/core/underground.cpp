@@ -485,6 +485,7 @@ std::expected<uint32_t, UndergroundError> removeUnenteredCaveComponents(
         if (!exit.distant) entered[exit.cell] = 1;
     }
     std::vector<uint32_t> queue;
+    constexpr uint8_t remove = 2;
     uint32_t removed = 0;
     for (uint32_t start = 0; start < cave.cells.size(); ++start) {
         if (stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
@@ -505,8 +506,12 @@ std::expected<uint32_t, UndergroundError> removeUnenteredCaveComponents(
         }
         if (!hasEntrance) {
             ++removed;
-            for (const auto i : queue) cave.cells[i] = CaveKind::Solid;
+            for (const auto i : queue) seen[i] = remove;
         }
+    }
+    if (stop.stop_requested()) return std::unexpected(UndergroundError::Cancelled);
+    for (size_t i = 0; i < seen.size(); ++i) {
+        if (seen[i] == remove) cave.cells[i] = CaveKind::Solid;
     }
     return removed;
 } catch (const std::bad_alloc&) { return std::unexpected(UndergroundError::AllocationFailed); }

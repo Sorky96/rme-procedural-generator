@@ -294,6 +294,21 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
+	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2], &profile.waterTree}) {
+		if (name->empty()) continue;
+		if (!validName(name->size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name->size());
+	}
+	for (const auto& name : profile.overlay) {
+		if (name.empty()) continue;
+		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name.size());
+	}
+	for (const auto& names : profile.grassMixDecor) for (const auto& name : names) {
+		if (name.empty()) continue;
+		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name.size());
+	}
 	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor, &profile.bridgeBrush, &profile.buildingStairs,
 		&profile.dungeonFloor, &profile.dungeonWall, &profile.dungeonStairs, &profile.dungeonDescent}) {
 		if (!name->empty()) profileBytes += stringCopyBytes(name->size());
@@ -314,7 +329,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
+	const bool overlaid = vegetation && std::ranges::any_of(profile.overlay, [](const std::string& name) { return !name.empty(); });
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (overlaid ? 1 : 0) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
         + (config.surface.caveDoorCorridors || dungeons ? cellCount * 3 : hasCave(profile) && caveWallBrushOf(profile) ? cellCount * 2 : 0)
         + (storeys ? cellCount * 2 : 0);
 
@@ -525,7 +541,10 @@ TerrainPreparationSteps runPreparation(
                         }
                         world = task.take();
                     } else world = work(stop);
-                    if (!world) co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    if (!world) {
+                        if (world.error() == ReachabilityError::AllocationFailed) co_return fail(PreparationInputError::AllocationFailed);
+                        co_return fail(world.error() == ReachabilityError::Cancelled ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                    }
                     passes = world->passes;
                     // Resolve the actual seeded variants on every decorated floor.
                     // Offline measurement deliberately uses conservative class flags instead.
@@ -551,6 +570,8 @@ TerrainPreparationSteps runPreparation(
                             floorInput.config.region = cap.region;
                             floorProfile.brushes[0] = profile.plateauGround;
                             floorProfile.wall.clear(); floorProfile.door.clear(); floorProfile.campfire.clear();
+                            floorProfile.grassMix = {}; floorProfile.grassMixPermille = {};
+                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {}; floorProfile.bushMix = {}; floorProfile.bushMixPermille = {}; floorProfile.overlay = {}; floorProfile.overlayTreePpm = {}; floorProfile.overlayGroundPpm = {}; floorProfile.waterTree.clear();
                         }
                         auto resolved = resolveSurfacePlan(floorInput, floorGrid, floorProfile, semanticBytes, stop,
                             input.config.vegetation ? &world->decor[f] : nullptr, clear);
@@ -613,15 +634,28 @@ TerrainPreparationSteps runPreparation(
                                 occupied.resize(decoration.cells.size());
                                 for (size_t i = 0; i < occupied.size(); ++i) occupied[i] = decoration.cells[i] != DecorKind::None;
                             }
+                            const auto caveFailure = [](UndergroundError error) {
+                                switch (error) {
+                                    case UndergroundError::Cancelled: return PreparationInputError::Cancelled;
+                                    case UndergroundError::AllocationFailed: return PreparationInputError::AllocationFailed;
+                                    case UndergroundError::InvalidGrid: return PreparationInputError::InvalidParameters;
+                                }
+                                return PreparationInputError::InvalidParameters;
+                            };
                             auto exits = placeCaveExits(surface, *generated, shapes, occupied, token);
-                            if (!exits) return fail(exits.error() == UndergroundError::Cancelled ? PreparationInputError::Cancelled :
-                                exits.error() == UndergroundError::AllocationFailed ? PreparationInputError::AllocationFailed : PreparationInputError::InvalidParameters);
-                            if (!caveBlocked.empty() && !removeUnenteredCaveComponents(*generated, *exits, token))
-                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                            if (tuning.caveFarExits && !placeFarCaveExits(surface, *generated, *exits, shapes, seed, occupied, token))
-                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
-                            if (tuning.caveDoorCorridors && !placeCaveDoorCorridors(*generated, *exits, shapes, token))
-                                return fail(token.stop_requested() ? PreparationInputError::Cancelled : PreparationInputError::InvalidParameters);
+                            if (!exits) return fail(caveFailure(exits.error()));
+                            if (!caveBlocked.empty()) {
+                                const auto removed = removeUnenteredCaveComponents(*generated, *exits, token);
+                                if (!removed) return fail(caveFailure(removed.error()));
+                            }
+                            if (tuning.caveFarExits) {
+                                const auto placed = placeFarCaveExits(surface, *generated, *exits, shapes, seed, occupied, token);
+                                if (!placed) return fail(caveFailure(placed.error()));
+                            }
+                            if (tuning.caveDoorCorridors) {
+                                const auto placed = placeCaveDoorCorridors(*generated, *exits, shapes, token);
+                                if (!placed) return fail(caveFailure(placed.error()));
+                            }
                             return CaveStage{std::move(surface), std::move(*generated), std::move(*exits)};
                         };
                         // Keep resolved vegetation unchanged: the cave worker needs only its occupied mask.
@@ -700,11 +734,11 @@ TerrainPreparationSteps runPreparation(
                             } else if (input.config.surface.rockBlocks && entranceGround && grid->cells[e] == SurfaceKind::Rock) {
                                 // Impassable rock: the rock-face entrance stands on the profile's dirt ground (iteration 44).
                                 plan.items[e] = entranceGround;
-                                if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0;
+                                if (!plan.decor.empty()) plan.decor[e + grid->region.width] = 0; if (!plan.overlays.empty()) plan.overlays[e + grid->region.width] = 0;
                             }
-                            if (!plan.decor.empty()) plan.decor[e] = 0;
+                            if (!plan.decor.empty()) plan.decor[e] = 0; if (!plan.overlays.empty()) plan.overlays[e] = 0;
                         }
-                        if (exit.distant && !plan.decor.empty()) plan.decor[arrival] = 0;
+                        if (exit.distant && !plan.decor.empty()) plan.decor[arrival] = 0; if (exit.distant && !plan.overlays.empty()) plan.overlays[arrival] = 0;
                         if (hole && brushes->landing && lowerPlan.caveFloor[p] == 1) {
                             // Under a hole the cave has walkable ground, not a ramp (iteration 48c).
                             lowerPlan.items[p] = brushes->landing;
@@ -763,7 +797,7 @@ TerrainPreparationSteps runPreparation(
                             if (shape.hasTail) lowerPlan.exits[tail] = ids.tail;
                             // Visible stairs down replace the building floor (iteration 45b).
                             plan.entrances[d.descent] = plan.items[d.descent] = dungeonBrushes->descent;
-                            if (!plan.decor.empty()) plan.decor[d.descent] = 0;
+                            if (!plan.decor.empty()) plan.decor[d.descent] = 0; if (!plan.overlays.empty()) plan.overlays[d.descent] = 0;
                         }
                     }
 					auto lowerSteps = DrawOperations::prepareTerrainPreviewSteps(map, *lowerSnapshot, lowerPlan,
@@ -807,7 +841,7 @@ TerrainPreparationSteps runPreparation(
                     }
                     std::vector<uint8_t> occupied(cellCount);
                     for (size_t i = 0; i < cellCount; ++i) {
-                        occupied[i] = (!plan.decor.empty() && plan.decor[i]) || (!plan.entrances.empty() && plan.entrances[i])
+                        occupied[i] = (!plan.decor.empty() && plan.decor[i]) || (!plan.overlays.empty() && plan.overlays[i]) || (!plan.entrances.empty() && plan.entrances[i])
                             || (!plan.exits.empty() && plan.exits[i]);
                     }
                     if (cave) {
@@ -917,6 +951,9 @@ TerrainPreparationSteps runPreparation(
                         if (!withStoreys) upperProfile.wall.clear();
                         upperProfile.door.clear();
                         upperProfile.campfire.clear();
+                        // Caps and storeys use their own ground; the learned mixes belong to the surface below.
+                        upperProfile.grassMix = {}; upperProfile.grassMixPermille = {};
+                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {}; upperProfile.bushMix = {}; upperProfile.bushMixPermille = {}; upperProfile.overlay = {}; upperProfile.overlayTreePpm = {}; upperProfile.overlayGroundPpm = {}; upperProfile.waterTree.clear();
                         auto upperPlan = resolveSurfacePlan(
                             upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
                         );
@@ -951,7 +988,7 @@ TerrainPreparationSteps runPreparation(
                             auto cliffInput = upperSnapshot->input;
                             cliffInput.config.region = lowerPlan.config.region;
                             cliffInput.config.vegetation = false;
-                            cliffProfile.decorCount = 0;
+                            cliffProfile.decorCount = 0; cliffProfile.overlay = {}; cliffProfile.overlayTreePpm = {}; cliffProfile.overlayGroundPpm = {}; cliffProfile.waterTree.clear();
                             auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, cliffClear);
                             if (!cliffs) co_return fail(cliffs.error());
                             for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {

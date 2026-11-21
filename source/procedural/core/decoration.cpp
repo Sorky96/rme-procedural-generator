@@ -12,6 +12,15 @@ constexpr uint64_t forestStream = 0x666f726573745f31ULL; // "forest_1"
 constexpr uint64_t treeStream = 0x747265655f726f6cULL;   // "tree_rol"
 constexpr uint64_t detailStream = 0x64657461696c5f31ULL; // "detail_1"
 constexpr uint32_t forestStep = 20;
+constexpr uint64_t clumpStream = 0x636c756d705f3120ULL;  // "clump_1 "
+constexpr uint32_t clumpStep = 12;
+// Chance multiplier in permille from clump noise: 0 below 30% of the range, rising to 2000 above 70%.
+// Symmetric around the middle, so it keeps the average chance for noise centred on the middle.
+uint32_t clumpMultiplier(uint32_t noise) {
+	constexpr uint32_t low = 65536 * 3 / 10, span = 65536 * 4 / 10;
+	const uint32_t t = noise <= low ? 0 : std::min<uint32_t>(1000, (noise - low) * 1000 / span);
+	return 2 * t;
+}
 constexpr uint32_t forestThreshold = 36000;  // of 65536; higher values are dense forest
 constexpr uint32_t forestTreePermille = 110;
 constexpr uint32_t clearingTreePermille = 6;
@@ -65,16 +74,29 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(
 		for (size_t i = 0; i < cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
 			const auto kind = grid.cells[i];
-			if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) continue;
 			const uint32_t ax = uint32_t(grid.region.x) + uint32_t(i % width);
 			const uint32_t ay = uint32_t(grid.region.y) + uint32_t(i / width);
+			if (tuning.shoreTreePermille && (kind == SurfaceKind::Lake || kind == SurfaceKind::River)) {
+				// A water cell with a 4-neighbour of land may hold a tree standing in the water.
+				const uint32_t x = uint32_t(i % width), y = uint32_t(i / width), height = grid.region.height;
+				const auto land = [&](size_t j) { const auto k = grid.cells[j]; return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore; };
+				const bool bank = (x && land(i - 1)) || (x + 1 < width && land(i + 1)) || (y && land(i - width)) || (y + 1 < height && land(i + width));
+				if (bank && permille(surfaceLattice(seed, treeStream, ax, ay)) < tuning.shoreTreePermille) cells[i] = DecorKind::Tree;
+				continue;
+			}
+			if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) continue;
 			const uint32_t treeRoll = permille(surfaceLattice(seed, treeStream, ax, ay));
 			const uint32_t detailRoll = permille(surfaceLattice(seed, detailStream, ax, ay));
 			if (kind == SurfaceKind::Grass) {
 				const bool forest = surfaceValueNoise(seed, forestStream, ax, ay, forestStep) >= forestThreshold;
-				const uint32_t treeChance = nearWater[i] ? tuning.waterTreePermille
-					: std::min<uint32_t>(1000, (forest ? forestTreePermille : clearingTreePermille) * tuning.treeScalePermille / 1000);
-				const uint32_t bushChance = nearWater[i] ? waterBushPermille : bushPermille;
+				const uint32_t clump = tuning.clumpPermille ? clumpMultiplier(surfaceValueNoise(seed, clumpStream, ax, ay, clumpStep)) : 1000;
+				const auto clumped = [&](uint64_t chance) {
+					const uint64_t scale = uint64_t(1000 - tuning.clumpPermille) * 1000 + uint64_t(tuning.clumpPermille) * clump;
+					return uint32_t(std::min<uint64_t>(1000, chance * scale / 1000000));
+				};
+				const uint32_t treeChance = clumped(nearWater[i] ? tuning.waterTreePermille
+					: std::min<uint32_t>(1000, (forest ? forestTreePermille : clearingTreePermille) * tuning.treeScalePermille / 1000));
+				const uint32_t bushChance = clumped(nearWater[i] ? waterBushPermille : bushPermille);
 				if (treeRoll < treeChance) cells[i] = DecorKind::Tree;
 				else if (detailRoll < bushChance) cells[i] = DecorKind::Bush;
 				else if (nearRock[i] && detailRoll < bushChance + rockStonePermille) cells[i] = DecorKind::Stone;

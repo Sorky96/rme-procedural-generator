@@ -85,7 +85,7 @@ capacity_stderr_ok = bool(args.capacity or args.series or args.learn) and all("'
 passed = code == 0 and unchanged and (stderr_empty or capacity_stderr_ok) and ('LEARNING_DIALOG_PASS\n' if args.learn else 'CANDIDATE_DIALOG_PASS\n' if args.series else 'CAPACITY_PASS\n' if args.capacity else 'PREVIEW_PASS\n' if args.preview else 'RESOLVER_PASS\n') in report and 'FAILED\t' not in report
 if args.commit:
     passed = passed and all(marker in report for marker in (
-        'TERRAIN_RESERVATION_FAILURES_PASS\t', 'TERRAIN_COMMIT_FAILURES_PASS\t',
+        'TERRAIN_RESERVATION_FAILURES_PASS\t', 'TERRAIN_COMMIT_FAILURES_PASS\t', 'TERRAIN_SURFACE_HISTORY_FAILURES_PASS\t',
         'TERRAIN_COMMIT_SIZE_PASS\t100\t', 'TERRAIN_COMMIT_SIZE_PASS\t500\t', 'TERRAIN_SELECTED_COMMIT_PASS\t'))
 verification = {'passed': passed, 'exit_code': code, 'input_assets_unchanged': unchanged,
                 'scope': ('real loaded-client open-map learning, local save, normal offer, I54 feedback and Place/Undo/Redo; synthetic maps, automated controls, no manual visual/keyboard claim' if args.learn else
@@ -93,7 +93,7 @@ verification = {'passed': passed, 'exit_code': code, 'input_assets_unchanged': u
                           'real loaded-client capacity preparation and Place/Undo/Redo with production dialog budgets; synthetic empty map, no native dialog interaction' if args.capacity else
                           'real loaded-client owned preview and atomic Commit/Undo/Redo core; no GUI preview/Commit wiring or G1 E2E' if args.commit else
                           'real loaded-client owned DrawOperations sandbox/diff; no commit/GUI-preview or G1 E2E' if args.preview else
-                          'real loaded-client surface v2 placements and existing border calculator on a synthetic map; no DrawOperations/commit/GUI' if args.surface else
+                          'real loaded-client Surface v2 preparation, validation, Place/Undo/Redo and automated generator dialog cases on synthetic maps' if args.surface else
                           'real loaded-client placements at 100x100/500x500; no drawing/commit or G1 E2E'),
                 'report': report, 'source_assets': original,
                 'stderr_empty': stderr_empty}

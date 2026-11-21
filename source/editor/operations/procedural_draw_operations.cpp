@@ -11,6 +11,7 @@
 #include "game/complexitem.h"
 #include "brushes/wall/wall_brush.h"
 #include "procedural/adapter/door_types.h"
+#include "procedural/adapter/decor_source.h"
 #include "item_definitions/core/item_definition_store.h"
 #include "map/map.h"
 #include "map/tile_operations.h"
@@ -79,6 +80,9 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 				c.surface.dirtPermille, c.surface.transitionWidth}) hashField(hash, value, 4);
 			// Appended only when set, so plans with the original river routes keep their fingerprint.
 			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
+			if (c.surface.islandPermille) hashField(hash, c.surface.islandPermille, 4);
+			if (c.surface.dirtSize) hashField(hash, c.surface.dirtSize, 4);
+			if (c.surface.cleanEdges) hashField(hash, c.surface.cleanEdges, 4);
 			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
 			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
 			if (c.surface.fordLength) hashField(hash, c.surface.fordLength, 4);
@@ -92,6 +96,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			if (c.vegetation && !(c.decor == DecorTuning {})) {
 				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,
 					c.decor.waterBushPermille, c.decor.dirtStonePermille, c.decor.rockStonePermille}) hashField(hash, value, 4);
+				if (c.decor.clumpPermille) hashField(hash, c.decor.clumpPermille, 4);
+				if (c.decor.shoreTreePermille) hashField(hash, c.decor.shoreTreePermille, 4);
 			}
 		}
 	};
@@ -125,6 +131,22 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	string(plan.client);
 	for (const auto& name : plan.profile.active()) string(name);
 	for (const auto& name : plan.profile.activeDecor()) string(name);
+	for (size_t i = 0; i < GroundProfile::grassMixCount; ++i) {
+		string(plan.profile.grassMix[i]);
+		hashField(hash, plan.profile.grassMixPermille[i], 2);
+		for (size_t k = 0; k < GroundProfile::decorationCount; ++k) {
+			hashField(hash, plan.profile.grassMixDecorKeep[i][k], 2);
+			string(plan.profile.grassMixDecor[i][k]);
+		}
+	}
+	for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
+		string(plan.profile.treeMix[i]);
+		hashField(hash, plan.profile.treeMixPermille[i], 2);
+		string(plan.profile.bushMix[i]);
+		hashField(hash, plan.profile.bushMixPermille[i], 2);
+	}
+	if (!plan.profile.waterTree.empty()) string(plan.profile.waterTree); // only when set, so other plans keep their hash
+	if (plan.profile.grassPatchStep != 10) hashField(hash, plan.profile.grassPatchStep, 2); // likewise only when learned
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	hashField(hash, plan.decor.size());
@@ -136,6 +158,17 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 	if (!plan.fires.empty()) {
 		hashField(hash, plan.fires.size());
 		for (const auto id : plan.fires) hashField(hash, id, 2);
+	}
+	// Only with overlays, so plans without them keep their hash.
+	if (!plan.overlays.empty()) {
+		hashField(hash, 0x76, 1);
+		for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
+			string(plan.profile.overlay[i]);
+			hashField(hash, plan.profile.overlayTreePpm[i], 4);
+			hashField(hash, plan.profile.overlayGroundPpm[i], 4);
+		}
+		hashField(hash, plan.overlays.size());
+		for (const auto id : plan.overlays) hashField(hash, id, 2);
 	}
 	for (const auto layer : {std::span(plan.entrances), std::span(plan.exits)}) {
 		if (layer.empty()) continue;
@@ -391,21 +424,41 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
                    : groundBrush(plan.profile.brushes[i]);
 		if (!brushes[i]) co_return std::unexpected(PreviewError::InvalidPlan);
 	}
+	// The learned grass mix is placed on Grass cells of the surface only.
+	std::array<const GroundBrush*, GroundProfile::grassMixCount> grassMixBrushes {};
+	for (size_t m = 0; m < GroundProfile::grassMixCount && !cave && !upper; ++m) {
+		const auto& name = plan.profile.grassMix[m];
+		if (name.empty()) continue;
+		grassMixBrushes[m] = name.size() <= 256 ? groundBrush(name) : nullptr;
+		if (!grassMixBrushes[m]) co_return std::unexpected(PreviewError::InvalidPlan);
+	}
 	const bool vegetation = plan.config.vegetation && !cave;
 	if (vegetation != !plan.decor.empty() || (!cave && plan.profile.decorCount != (vegetation ? GroundProfile::decorationCount : 0)) ||
 		(vegetation && (plan.decor.size() != plan.items.size() || plan.config.algorithm != GenerationAlgorithm::Surface))) {
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	}
 	std::vector<uint16_t> decorIds;
-	for (size_t i = 0; vegetation && i < GroundProfile::decorationCount; ++i) {
-		const auto* brush = g_brushes.getBrush(plan.profile.decor[i]);
-		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-		if (plan.profile.decor[i].empty() || plan.profile.decor[i].size() > 256 || !doodad || !doodad->hasSingleObjects(0) ||
-			doodad->getSingleChance(0) <= 0 || doodad->getSingleChance(0) > 100000) co_return std::unexpected(PreviewError::InvalidPlan);
-		for (int roll = 1; roll <= doodad->getSingleChance(0); ++roll) {
-			const auto* item = doodad->getRandomSingleItem(0, roll);
-			if (!item || !item->getID()) co_return std::unexpected(PreviewError::InvalidItem);
-			decorIds.push_back(item->getID());
+	// Required decor brushes first, then the optional ones: tree mix and the brushes of the grass mix patches.
+	std::vector<const std::string*> decorNames;
+	for (const auto& name : plan.profile.decor) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.treeMix) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.bushMix) decorNames.push_back(&name);
+	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.overlay) decorNames.push_back(&name);
+	decorNames.push_back(&plan.profile.waterTree);
+	// Overlays come only with vegetation; a plan of a floor or stage without it carries none, whatever its profile says.
+	const bool overlaid = std::ranges::any_of(plan.profile.overlay, [](const std::string& name) { return !name.empty(); });
+	if (!plan.overlays.empty() && (!overlaid || !vegetation || plan.overlays.size() != plan.items.size()))
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
+		const std::string& name = *decorNames[i];
+		if (i >= GroundProfile::decorationCount && name.empty()) continue; // optional slots
+		const DecorSource source = name.size() > 256 ? DecorSource{} : findDecorSource(name, 100000);
+		if (!source) co_return std::unexpected(PreviewError::InvalidPlan);
+		for (uint64_t roll = 1; roll <= (source.raw ? 1 : source.total); ++roll) {
+			const uint16_t item = source.item(roll);
+			if (!item) co_return std::unexpected(PreviewError::InvalidItem);
+			decorIds.push_back(item);
 		}
 	}
 	// Camp fire items (iteration 26): every single item of every variation of the campfire brush may be placed.
@@ -614,6 +667,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!fireDefinition || !fireDefinition.clientId() || fireDefinition.isMetaItem() || fireDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 			++decorPlacements;
 		}
+		if (!plan.overlays.empty() && plan.overlays[i]) {
+			if (!plan.items[i] || !std::ranges::binary_search(decorIds, plan.overlays[i])) co_return std::unexpected(PreviewError::InvalidItem);
+			const auto overlayDefinition = g_item_definitions.get(plan.overlays[i]);
+			if (!overlayDefinition || !overlayDefinition.clientId() || overlayDefinition.isMetaItem() || overlayDefinition.isGroundTile() ||
+				overlayDefinition.hasFlag(ItemFlag::Unpassable)) co_return std::unexpected(PreviewError::InvalidItem);
+			++decorPlacements;
+		}
 		if (!plan.items[i]) continue;
 		++placements;
 		if (!plan.decor.empty() && plan.decor[i]) {
@@ -638,6 +698,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		for (const auto* brush : std::span(brushes).first(plan.profile.count)) {
 			if (ground.editorData().brush != brush) continue;
 			for (const auto& variant : brush->getBorderItems()) if (variant.id == plan.items[i]) found = true;
+		}
+		for (const auto* mixBrush : grassMixBrushes) {
+			if (!mixBrush || ground.editorData().brush != mixBrush) continue;
+			for (const auto& variant : mixBrush->getBorderItems()) found |= variant.id == plan.items[i];
 		}
 		const bool groundHole = !cave && (plan.config.surface.caveEntranceStyle == CaveEntranceStyle::FloorHole ||
 			(fallbackHole && plan.items[i] == fallbackHole) || std::ranges::find(dungeonOpenings, plan.items[i]) != dungeonOpenings.end()) &&
@@ -764,6 +828,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.decor[i]));
+		}
+		// Overlays go over the vegetation of their cell.
+		for (size_t i = 0; i < plan.overlays.size(); ++i) {
+			if (!plan.overlays[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->addItem(Item::Create(plan.overlays[i]));
 		}
 		for (size_t i = 0; i < plan.fires.size(); ++i) {
 			if (!plan.fires[i]) continue;

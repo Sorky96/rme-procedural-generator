@@ -8,7 +8,10 @@
 #include "brushes/ground/ground_brush.h"
 #include "brushes/wall/wall_brush.h"
 #include "procedural/adapter/door_types.h"
+#include "procedural/adapter/decor_source.h"
+#include "procedural/core/grass_patches.h"
 #include "item_definitions/core/item_definition_store.h"
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <new>
@@ -31,6 +34,18 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
 };
 constexpr uint64_t maxDecorChance = 100000;
+constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
+constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
+constexpr uint64_t variantStream = 0x73325f7661726e74ULL; // "s2_varnt"
+constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
+
+uint64_t mixHash(uint64_t value) {
+	value += 0x9e3779b97f4a7c15ULL;
+	value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+	value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+	return value ^ (value >> 31);
+}
+
 constexpr std::string_view fallbackHoleBrush = "cave hole";
 constexpr std::string_view holeLandingBrush = "cave ropespot";
 
@@ -373,19 +388,71 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		return std::unexpected(ResolveError::InvalidProfile);
 	}
 	if (vegetation && (decor->region != grid.region || !decor->valid())) return std::unexpected(ResolveError::InvalidInput);
+	uint32_t grassMixShare = 0;
+	for (size_t i = 0; i < GroundProfile::grassMixCount; ++i) {
+		if (profile.grassMix[i].empty() != (profile.grassMixPermille[i] == 0) || profile.grassMix[i].size() > 256)
+			return std::unexpected(ResolveError::InvalidProfile);
+		grassMixShare += profile.grassMixPermille[i];
+	}
+	if (grassMixShare > 1000 || profile.grassPatchStep < 1 || profile.grassPatchStep > 64) return std::unexpected(ResolveError::InvalidProfile);
+	// Tree and bush mixes, in that order (DecorKind Tree, Bush).
+	const std::array<const std::array<std::string, GroundProfile::treeMixCount>*, 2> kindMixNames {&profile.treeMix, &profile.bushMix};
+	const std::array<const std::array<uint16_t, GroundProfile::treeMixCount>*, 2> kindMixPermille {&profile.treeMixPermille, &profile.bushMixPermille};
+	std::array<uint32_t, 2> kindMixShare {};
+	for (size_t kind = 0; kind < 2; ++kind) {
+		for (size_t i = 0; i < GroundProfile::treeMixCount; ++i) {
+			const auto& name = (*kindMixNames[kind])[i];
+			if (name.empty() != ((*kindMixPermille[kind])[i] == 0) || name.size() > 256 || (!vegetation && !name.empty()))
+				return std::unexpected(ResolveError::InvalidProfile);
+			kindMixShare[kind] += (*kindMixPermille[kind])[i];
+		}
+		if (kindMixShare[kind] > 1000) return std::unexpected(ResolveError::InvalidProfile);
+	}
+	bool overlaid = false;
+	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
+		const auto& name = profile.overlay[i];
+		const bool off = profile.overlayTreePpm[i] == 0 && profile.overlayGroundPpm[i] == 0;
+		if (name.empty() != off || name.size() > 256 ||
+			profile.overlayTreePpm[i] > 1000000 || profile.overlayGroundPpm[i] > 1000000) return std::unexpected(ResolveError::InvalidProfile);
+		overlaid = overlaid || (vegetation && !name.empty()); // overlays come only with vegetation
+	}
+	for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
+		const bool defaults = profile.grassMixDecorKeep[m] == GroundProfile::keepAllDecor &&
+			std::ranges::all_of(profile.grassMixDecor[m], &std::string::empty);
+		if ((!defaults && (profile.grassMix[m].empty() || !vegetation)) ||
+			std::ranges::any_of(profile.grassMixDecorKeep[m], [](uint16_t keep) { return keep > 1000; }) ||
+			std::ranges::any_of(profile.grassMixDecor[m], [](const std::string& name) { return name.size() > 256; }))
+			return std::unexpected(ResolveError::InvalidProfile);
+	}
 	if (grid.cells.size() > (std::numeric_limits<size_t>::max() - sizeof(GroundPlan)) / sizeof(uint16_t) ||
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
-	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0)) + (doored ? 1 : 0));
+	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0) + (overlaid ? 1 : 0)) + (doored ? 1 : 0));
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
 	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.active(), profile.activeDecor()})) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
 	}
-	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor}) {
+	for (const auto* name : {&profile.caveEntrance, &profile.caveExit, &profile.caveGround, &profile.caveWall, &profile.caveDoor,
+		&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2]}) {
 		if (name->empty()) continue;
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;
+	}
+	for (const auto& names : profile.grassMixDecor) for (const auto& name : names) {
+		if (name.empty()) continue;
+		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
+		payloadBytes += name.size() + 1;
+	}
+	for (const auto* name : {&profile.waterTree}) {
+		if (name->empty()) continue;
+		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
+		payloadBytes += name->size() + 1;
+	}
+	for (const auto& name : profile.overlay) {
+		if (name.empty()) continue;
+		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
+		payloadBytes += name.size() + 1;
 	}
 	try {
 		const auto bridge = resolveBridgeBrush(profile.bridgeBrush);
@@ -394,18 +461,17 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (client.size() > maxPlanBytes - payloadBytes || maxPlanBytes - payloadBytes - client.size() < 1) {
 			return std::unexpected(ResolveError::PlanLimit);
 		}
-		std::array<const GroundBrush*, kindCount> brushes {};
-		std::array<uint64_t, kindCount> totals {};
-		for (size_t index = 0; index < kinds; ++index) {
-			const auto* brush = g_brushes.getBrush(profile.brushes[index]);
-			brushes[index] = brush ? brush->as<GroundBrush>() : nullptr;
-			if (!brushes[index] || brushes[index]->getTotalChance() <= 0 || brushes[index]->getBorderItems().empty()) {
+		// A ground brush and the sum of its placement chances, after checking every item it can place.
+		const auto checkGround = [&](const std::string& name) -> std::expected<std::pair<const GroundBrush*, uint64_t>, ResolveError> {
+			const auto* brush = g_brushes.getBrush(name);
+			const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+			if (!ground || ground->getTotalChance() <= 0 || ground->getBorderItems().empty()) {
 				return std::unexpected(ResolveError::InvalidProfile);
 			}
 			int previous = 0;
-			for (const auto& variant : brushes[index]->getBorderItems()) {
+			for (const auto& variant : ground->getBorderItems()) {
 				if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-				if (variant.chance < previous || variant.chance > brushes[index]->getTotalChance()) {
+				if (variant.chance < previous || variant.chance > ground->getTotalChance()) {
 					return std::unexpected(ResolveError::InvalidProfile);
 				}
 				previous = variant.chance;
@@ -414,13 +480,28 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					return std::unexpected(ResolveError::InvalidItem);
 				}
 				const auto baseId = definition.attribute(ItemAttributeKey::BorderBaseGroundId);
-				const auto ground = definition.isGroundTile() ? definition :
+				const auto base = definition.isGroundTile() ? definition :
 					(baseId > 0 && baseId <= UINT16_MAX ? g_item_definitions.get(uint16_t(baseId)) : ItemDefinitionView{});
-				if (!ground || !ground.isGroundTile() || !ground.clientId() || ground.isMetaItem() ||
-					ground.editorData().brush != brushes[index]) return std::unexpected(ResolveError::InvalidItem);
+				if (!base || !base.isGroundTile() || !base.clientId() || base.isMetaItem() ||
+					base.editorData().brush != ground) return std::unexpected(ResolveError::InvalidItem);
 			}
-			if (previous != brushes[index]->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
-			totals[index] = uint64_t(previous);
+			if (previous != ground->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
+			return std::pair{ground, uint64_t(previous)};
+		};
+		std::array<const GroundBrush*, kindCount> brushes {};
+		std::array<uint64_t, kindCount> totals {};
+		for (size_t index = 0; index < kinds; ++index) {
+			const auto checked = checkGround(profile.brushes[index]);
+			if (!checked) return std::unexpected(checked.error());
+			std::tie(brushes[index], totals[index]) = *checked;
+		}
+		std::array<const GroundBrush*, GroundProfile::grassMixCount> grassMix {};
+		std::array<uint64_t, GroundProfile::grassMixCount> grassMixTotals {};
+		for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
+			if (profile.grassMix[m].empty()) continue;
+			const auto checked = checkGround(profile.grassMix[m]);
+			if (!checked) return std::unexpected(checked.error());
+			std::tie(grassMix[m], grassMixTotals[m]) = *checked;
 		}
 		uint16_t wallItem = 0;
 		if (walled) {
@@ -431,21 +512,90 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			const auto definition = wallItem ? g_item_definitions.get(wallItem) : ItemDefinitionView{};
 			if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
 		}
-		std::array<const DoodadBrush*, decorKindCount> doodads {};
-		std::array<uint64_t, decorKindCount> decorTotals {};
-		for (size_t index = 0; vegetation && index < decorKindCount; ++index) {
-			const auto* brush = g_brushes.getBrush(profile.decor[index]);
-			doodads[index] = brush ? brush->as<DoodadBrush>() : nullptr;
-			if (!doodads[index] || !doodads[index]->hasSingleObjects(0) || doodads[index]->getSingleChance(0) <= 0 ||
-				uint64_t(doodads[index]->getSingleChance(0)) > maxDecorChance) return std::unexpected(ResolveError::InvalidProfile);
-			decorTotals[index] = uint64_t(doodads[index]->getSingleChance(0));
-			// Every reachable single item must be a real, plain, non-ground, non-border item.
-			for (uint64_t roll = 1; roll <= decorTotals[index]; ++roll) {
+		// A doodad brush with single-tile items and the sum of their chances, or one RAW item; every reachable
+		// item must be a real, plain, non-ground, non-border item.
+		const auto checkDoodad = [&](const std::string& name) -> std::expected<DecorSource, ResolveError> {
+			const DecorSource source = findDecorSource(name, maxDecorChance);
+			if (!source) return std::unexpected(ResolveError::InvalidProfile);
+			for (uint64_t roll = 1; roll <= (source.raw ? 1 : source.total); ++roll) {
 				if (roll % 1024 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-				const auto* item = doodads[index]->getRandomSingleItem(0, int(roll));
-				const auto definition = item && item->getID() ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
-				if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile() ||
-					definition.attribute(ItemAttributeKey::BorderBaseGroundId) > 0) return std::unexpected(ResolveError::InvalidItem);
+				if (!decorItemPlaceable(source.item(roll))) return std::unexpected(ResolveError::InvalidItem);
+			}
+			return source;
+		};
+		std::array<DecorSource, decorKindCount> doodads {};
+		for (size_t index = 0; vegetation && index < decorKindCount; ++index) {
+			const auto checked = checkDoodad(profile.decor[index]);
+			if (!checked) return std::unexpected(checked.error());
+			doodads[index] = *checked;
+		}
+		std::array<std::array<DecorSource, GroundProfile::treeMixCount>, 2> kindMix {};
+		for (size_t kind = 0; kind < 2; ++kind) {
+			for (size_t index = 0; index < GroundProfile::treeMixCount; ++index) {
+				if ((*kindMixNames[kind])[index].empty()) continue;
+				const auto checked = checkDoodad((*kindMixNames[kind])[index]);
+				if (!checked) return std::unexpected(checked.error());
+				kindMix[kind][index] = *checked;
+			}
+		}
+		std::array<std::array<DecorSource, decorKindCount>, GroundProfile::grassMixCount> mixDoodads {};
+		for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
+			for (size_t k = 0; k < decorKindCount; ++k) {
+				if (profile.grassMixDecor[m][k].empty()) continue;
+				const auto checked = checkDoodad(profile.grassMixDecor[m][k]);
+				if (!checked) return std::unexpected(checked.error());
+				mixDoodads[m][k] = *checked;
+			}
+		}
+		// Overlays must not block the way: paths and reachability were planned without them.
+		std::array<DecorSource, GroundProfile::overlayCount> overlays {};
+		for (size_t index = 0; index < GroundProfile::overlayCount; ++index) {
+			if (!overlaid || profile.overlay[index].empty()) continue;
+			const auto checked = checkDoodad(profile.overlay[index]);
+			if (!checked) return std::unexpected(checked.error());
+			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
+				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
+			overlays[index] = *checked;
+		}
+		DecorSource waterTree;
+		if (vegetation && !profile.waterTree.empty()) {
+			const auto checked = checkDoodad(profile.waterTree);
+			if (!checked) return std::unexpected(checked.error());
+			waterTree = *checked;
+		}
+		// Grass mix per cell (0 = the Grass brush, m + 1 = grassMix[m]), see assignGrassPatches.
+		std::vector<uint8_t> grassSlot;
+		if (grassMixShare) {
+			std::array<uint16_t, grassPatchKinds> shares {};
+			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) shares[m] = grassMix[m] ? profile.grassMixPermille[m] : 0;
+			grassSlot = assignGrassPatches(grid, input.config.seed, shares, profile.grassPatchStep, stop);
+			if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+		}
+		// Tree and bush brush per decor cell (0 = the main brush, m + 1 = the kind's mix m), chosen by smooth
+		// noise so a species grows in groves rather than one tile here, one there. The cells of a kind are
+		// ranked by their noise and split by the shares, which keeps the learned shares in any region.
+		std::vector<uint8_t> kindSlot;
+		if (vegetation && (kindMixShare[0] || kindMixShare[1])) {
+			kindSlot.assign(grid.cells.size(), 0);
+			std::vector<std::pair<uint32_t, uint32_t>> ranked; // grove value, cell
+			for (size_t kind = 0; kind < 2; ++kind) {
+				if (!kindMixShare[kind]) continue;
+				const auto placed = kind == 0 ? DecorKind::Tree : DecorKind::Bush;
+				ranked.clear();
+				for (size_t i = 0; i < grid.cells.size(); ++i) {
+					if (decor->cells[i] != placed) continue;
+					const size_t patch = grassSlot.empty() ? 0 : grassSlot[i];
+					if (patch && !profile.grassMixDecor[patch - 1][size_t(placed) - 1].empty()) continue; // the patch brush
+					ranked.emplace_back(grassPatchValue(input.config.seed ^ (kind == 0 ? treeMixStream : bushMixStream),
+						grid.region.x + int64_t(i % grid.region.width), grid.region.y + int64_t(i / grid.region.width)), uint32_t(i));
+				}
+				std::ranges::sort(ranked);
+				size_t from = ranked.size() * (1000 - kindMixShare[kind]) / 1000; // the main brush takes the lowest values
+				for (size_t m = 0; m < GroundProfile::treeMixCount; ++m) {
+					const size_t count = ranked.size() * (*kindMixPermille[kind])[m] / 1000;
+					for (size_t k = from; k < std::min(ranked.size(), from + count); ++k) kindSlot[ranked[k].second] = uint8_t(m + 1);
+					from += count;
+				}
 			}
 		}
 		GroundPlan result {input.config, profile, client, input.mapGeneration, input.mapRevision,
@@ -487,14 +637,26 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		std::vector<StableRandom> decorRng;
 		decorRng.reserve(decorKindCount);
 		if (vegetation) for (const auto stream : decorStreams) decorRng.emplace_back(input.config.seed, stream);
+		// Own streams, advanced at every cell like the others, so a mix never shifts the plain variants.
+		std::vector<StableRandom> grassMixRng;
+		for (const auto stream : grassPatchStreams) grassMixRng.emplace_back(input.config.seed, stream);
+		StableRandom mixDecorRng(input.config.seed, mixDecorStream);
+		StableRandom overlayRng(input.config.seed, overlayStream);
+		if (overlaid) result.overlays.assign(grid.cells.size(), 0);
 		for (size_t i = 0; i < grid.cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 			std::array<int, kindCount> rolls {};
 			for (size_t kind = 0; kind < kinds; ++kind) rolls[kind] = int(streams[kind].bounded(totals[kind])) + 1;
 			std::array<int, decorKindCount> decorRolls {};
 			if (vegetation) for (size_t kind = 0; kind < decorKindCount; ++kind) {
-				decorRolls[kind] = int(decorRng[kind].bounded(decorTotals[kind])) + 1;
+				decorRolls[kind] = int(decorRng[kind].bounded(doodads[kind].total)) + 1;
 			}
+			std::array<int, GroundProfile::grassMixCount> grassMixRolls {};
+			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m)
+				if (grassMix[m]) grassMixRolls[m] = int(grassMixRng[m].bounded(grassMixTotals[m])) + 1;
+			const uint64_t mixDecorRoll = grassMixShare && vegetation ? mixDecorRng.bounded(1000) : 0;
+			const uint64_t overlayRoll = overlaid ? overlayRng.bounded(1000000) : 0;
+			const uint64_t overlayPick = overlaid ? overlayRng.bounded(DecorSource::rawTotal * 100) : 0;
 			const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
@@ -503,7 +665,9 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
                 input.config.surface.passes && grid.cells[i] == SurfaceKind::Path && kinds == GroundProfile::surfaceCount
                     ? size_t(SurfaceKind::Dirt) - 1 : size_t(grid.cells[i]) - 1;
 			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush
-			const auto id = brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
+			const size_t mixSlot = grassSlot.empty() ? 0 : grassSlot[i];
+			const auto id = mixSlot ? grassMix[mixSlot - 1]->getPlacementItemIdForRoll(grassMixRolls[mixSlot - 1])
+				: brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);
 			result.items[i] = *id;
             if (isBridge && bridge->horizontal) {
@@ -528,11 +692,59 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			}
 			if (vegetation) {
 				const auto placed = decor->cells[i];
-				if (placed != DecorKind::None) {
+				// On a grass mix patch the decoration thins to the patch's own rate and takes its own brush.
+				const size_t patch = grassSlot.empty() ? 0 : grassSlot[i];
+				const bool kept = placed != DecorKind::None &&
+					(!patch || mixDecorRoll < profile.grassMixDecorKeep[patch - 1][size_t(placed) - 1]);
+				const bool inWater = grid.cells[i] == SurfaceKind::Lake || grid.cells[i] == SurfaceKind::River;
+				// A brush other than the main one draws its variant from its own full chance range, by a hash of the
+				// map position so the other streams are not shifted.
+				const auto variantRoll = [&](uint64_t total) {
+					const uint64_t ax = uint64_t(grid.region.x + int64_t(i % grid.region.width)), ay = uint64_t(grid.region.y + int64_t(i / grid.region.width));
+					return mixHash(input.config.seed ^ variantStream ^ mixHash(ax * 0x100000001b3ULL ^ ay)) % total + 1;
+				};
+				if (kept && inWater) {
+					// A tree standing in the water: its own brush, or none without one.
+					if (placed == DecorKind::Tree && waterTree) {
+						const uint64_t roll = variantRoll(waterTree.total);
+						if (!(result.decor[i] = waterTree.item(roll))) return std::unexpected(ResolveError::InvalidItem);
+					}
+				} else if (kept) {
 					const size_t slot = size_t(placed) - 1;
-					const auto* item = doodads[slot]->getRandomSingleItem(0, decorRolls[slot]);
-					if (!item || !item->getID()) return std::unexpected(ResolveError::InvalidItem);
-					result.decor[i] = item->getID();
+					const DecorSource* doodad = &doodads[slot];
+					uint64_t roll = uint64_t(decorRolls[slot]);
+					if (patch && mixDoodads[patch - 1][slot]) {
+						doodad = &mixDoodads[patch - 1][slot];
+						roll = variantRoll(doodad->total);
+					} else if (const size_t mix = kindSlot.empty() ? 0 : kindSlot[i]; mix) {
+						// A grove of a mix brush.
+						const size_t kind = placed == DecorKind::Tree ? 0 : 1;
+						doodad = &kindMix[kind][mix - 1];
+						roll = variantRoll(doodad->total);
+					}
+					const uint16_t item = doodad->item(roll);
+					if (!item) return std::unexpected(ResolveError::InvalidItem);
+					result.decor[i] = item;
+				}
+				// One overlay per cell: on a tree by the tree rates, on other Grass or Dirt by the ground rates. The rates
+				// stack up in order, so overlay k hits on its own share of the cells.
+				const SurfaceKind cell = grid.cells[i];
+				const bool tree = result.decor[i] && placed == DecorKind::Tree && !inWater;
+				if (overlaid && (tree || cell == SurfaceKind::Grass || cell == SurfaceKind::Dirt)) {
+					uint64_t upTo = 0;
+					for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
+						if (!overlays[k]) continue;
+						// Each overlay grows in its own patches (cobwebs, shells and debris lie in heaps): only on about a
+						// third of the land, the cells with the highest patch noise, at three times its rate (about the same overall).
+						const uint64_t rate = tree ? profile.overlayTreePpm[k] : profile.overlayGroundPpm[k];
+						const uint64_t patchSeed = input.config.seed ^ mixHash(overlayStream + k);
+						const bool patch = grassPatchValue(patchSeed, grid.region.x + int64_t(i % grid.region.width),
+							grid.region.y + int64_t(i / grid.region.width)) >= overlayPatchCut;
+						upTo += patch ? std::min<uint64_t>(1000000, rate * 3) : 0;
+						if (overlayRoll >= upTo) continue;
+						result.overlays[i] = overlays[k].item(overlayPick % overlays[k].total + 1);
+						break;
+					}
 				}
 			}
 		}

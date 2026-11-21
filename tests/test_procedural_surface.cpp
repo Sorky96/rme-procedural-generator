@@ -3,6 +3,7 @@
 #include "procedural/core/scale_stats.h"
 #include "procedural/core/surface.h"
 #include "procedural/core/reachability.h"
+#include "procedural/core/underground.h"
 
 #include <algorithm>
 #include <array>
@@ -275,6 +276,21 @@ Tally structure(const SurfaceConfig& config, const SurfaceGrid& grid) {
 
 // Rivers with a sideways swing keep every structural rule (they end at a lake or the border, start at rock, are
 // never one cell wide, tributaries stay joined) and stay deterministic; meander 0 is the original output.
+void emptyRiverRoutes() {
+	auto config = makeConfig(32, 1);
+	config.region.height = 1; // Every cell is an outlet in the priority flood.
+	config.tuning.lakePermille = 0;
+	config.tuning.rockPermille = 500;
+	config.tuning.minRockCells = 1;
+	config.tuning.minRiverLength = 0;
+	config.tuning.riverCount = 0;
+	const auto withoutRivers = generateSurface(config, extent, budget);
+	require(withoutRivers && countOf(*withoutRivers, SurfaceKind::Rock) > 0, "empty-route fixture has rock sources");
+	config.tuning.riverCount = 1;
+	const auto withRivers = generateSurface(config, extent, budget);
+	require(withRivers && withRivers->cells == withoutRivers->cells, "empty river routes leave terrain intact");
+}
+
 void meanderingRivers(uint32_t side, uint32_t seeds) {
 	size_t seedsWithRiver = 0, changed = 0;
 	for (const uint32_t meander : {2u, 5u, 8u}) {
@@ -369,23 +385,97 @@ void transitionBand() {
 	require(mixed(*b) > mixed(*a), "Soft transition did not add grass/dirt interleaving");
 }
 
-void allocationFailures() {
-	const auto config = makeConfig(24, 3);
+void allocationFailures(const SurfaceConfig& config, bool expectStructures) {
 	allocationRecording = true; allocationCount = 0; failedAllocation = 0;
 	const auto baseline = generateSurface(config, extent, budget);
 	allocationRecording = false;
 	require(bool(baseline), "Baseline failed");
+	if (expectStructures) {
+		require(!baseline->doors.empty() && !baseline->entrances.empty(),
+			"Allocation fixture did not generate buildings and cave entrances");
+	}
 	const size_t total = allocationCount;
 	size_t failures = 0;
 	for (size_t fail = 1; fail <= total; ++fail) {
 		allocationRecording = true; allocationCount = 0; failedAllocation = fail;
 		const auto result = generateSurface(config, extent, budget);
 		allocationRecording = false;
+		require(allocationCount >= fail, "Allocation fault was not reached");
 		if (!result) { require(result.error() == SurfaceError::AllocationFailed, "Unexpected error on bad_alloc"); ++failures; }
-		else require(result->cells == baseline->cells, "Result changed after skipped failure");
+		else require(result->valid() && result->region == baseline->region && result->cells == baseline->cells &&
+			result->doors == baseline->doors && result->gaps == baseline->gaps && result->sites == baseline->sites &&
+			result->fires == baseline->fires && result->entrances == baseline->entrances &&
+			result->bridgeAxes == baseline->bridgeAxes, "Result changed after skipped failure");
 	}
 	std::cout << "allocation_points=" << total << " injected_failures_reported=" << failures << '\n';
 	require(failures > 0, "No allocation failure was reported");
+}
+
+void caveAllocationFailures() {
+	SurfaceGrid surface;
+	surface.region = {100, 100, 7, 40, 20};
+	surface.cells.assign(800, SurfaceKind::Rock);
+	surface.entrances = {410, 430};
+	std::vector<uint8_t> blocked(surface.cells.size());
+	blocked[420] = 1;
+	const auto generate = [&] { return generateCave(surface, 7, {}, nullptr, blocked); };
+
+	allocationCount = 0;
+	failedAllocation = 0;
+	allocationRecording = true;
+	const auto baseline = generate();
+	allocationRecording = false;
+	const auto total = allocationCount;
+	require(baseline && baseline->valid() && baseline->blocked == blocked &&
+		baseline->cells[410] == CaveKind::Floor && baseline->cells[430] == CaveKind::Floor &&
+		baseline->cells[420] == CaveKind::Solid && total > 0, "Cave allocation fixture failed");
+
+	for (size_t fault = 1; fault <= total; ++fault) {
+		allocationCount = 0;
+		failedAllocation = fault;
+		allocationRecording = true;
+		const auto result = generate();
+		allocationRecording = false;
+		require(allocationCount >= fault && !result && result.error() == SurfaceError::AllocationFailed,
+			"Cave allocation fault returned partial output or the wrong error");
+	}
+	const auto retry = generate();
+	require(retry && retry->region == baseline->region && retry->cells == baseline->cells &&
+		retry->rooms == baseline->rooms && retry->corridors == baseline->corridors &&
+		retry->blocked == baseline->blocked, "Cave allocation fault changed retry output");
+	std::cout << "cave_allocation_failure_cases=" << total << '\n';
+}
+
+void cavePruningAllocationFailures() {
+	CaveGrid cave;
+	cave.region = {100, 100, 8, 8, 8};
+	cave.cells.assign(64, CaveKind::Solid);
+	cave.cells[9] = CaveKind::Floor;
+	for (size_t i = 33; i <= 38; ++i) cave.cells[i] = CaveKind::Floor;
+	CaveExitPlan exits;
+	exits.exits.push_back({0, 33, 0});
+
+	auto pruned = cave;
+	allocationCount = 0;
+	failedAllocation = 0;
+	allocationRecording = true;
+	const auto baseline = removeUnenteredCaveComponents(pruned, exits);
+	allocationRecording = false;
+	const auto total = allocationCount;
+	require(baseline == 1 && pruned.cells[9] == CaveKind::Solid && pruned.cells[33] == CaveKind::Floor &&
+		total > 3, "Cave pruning fixture did not grow the queue after finding an isolated component");
+
+	for (size_t fault = 1; fault <= total; ++fault) {
+		auto candidate = cave;
+		allocationCount = 0;
+		failedAllocation = fault;
+		allocationRecording = true;
+		const auto result = removeUnenteredCaveComponents(candidate, exits);
+		allocationRecording = false;
+		require(allocationCount >= fault && !result && result.error() == UndergroundError::AllocationFailed &&
+			candidate.cells == cave.cells, "Failed cave pruning changed the source grid");
+	}
+	std::cout << "cave_pruning_allocation_failure_cases=" << total << '\n';
 }
 
 void measure(uint32_t side) {
@@ -808,8 +898,16 @@ void sandIslands() {
 
 int main() {
 	try {
-		sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
-		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3); allocationFailures();
+		emptyRiverRoutes(); sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
+		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3);
+		allocationFailures(makeConfig(24, 3), false);
+		auto structures = makeConfig(100, 1);
+		structures.tuning.buildingDensity = 40;
+		structures.tuning.pathLength = 40;
+		structures.tuning.caveEntrances = 20;
+		allocationFailures(structures, true);
+		caveAllocationFailures();
+		cavePruningAllocationFailures();
 		measure(100); measure(500);
 		decoration(100, 24); decoration(250, 6); decorationFailures(); paths(100, 8); paths(250, 3); grassRimRule(100, 24); buildings(100, 6); buildings(250, 3); settlements(100, 6); settlements(250, 3); rockPasses(); reachableSurface(); ruinsAndCamps();
 		std::cout << "PROCEDURAL SURFACE PASS (no editor, resolver, commit or GUI)\n";

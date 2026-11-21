@@ -578,6 +578,7 @@ int main(int argc, char** argv) {
 				nearRock += near;
 			}
 			std::cout << std::format("paths seed {}: count {} L {} W {} B {} cells {} rockadj {} rocknear {}\n", seed, p.count, p.lengthPer64k, p.widthMilli, p.branchesPer100Milli, paths->maskCells, paths->maskCells ? nextToRock * 1000 / paths->maskCells : 0, paths->maskCells ? nearRock * 1000 / paths->maskCells : 0);
+			std::cout << std::format("path junctions seed {}: count {} per_100_milli {}\n", seed, paths->pathJunctions, p.junctionsPer100Milli);
 		}
 		{
 			const BuildingShapes foundations = floorBuildingsOf(*grid);

@@ -102,7 +102,8 @@ std::string renderJson(const ReportInput& in) {
 	for (size_t i = 0; i < in.unknownIds.size(); ++i) {
 		out += std::format("{}{{\"id\": {}, \"count\": {}}}", i ? ", " : "", in.unknownIds[i].id, in.unknownIds[i].count);
 	}
-	out += "]},\n";
+	out += std::format("], \"nested_items\": {}, \"unknown_nested_items\": {}}},\n",
+		in.nestedItems, in.unknownNestedItems);
 	out += std::format("  \"options\": {{\"impassable_percent\": {}, \"small_component_cells\": {}}},\n",
 		in.topologyOptions.impassablePercent, in.topologyOptions.smallComponentCells);
 
@@ -127,7 +128,7 @@ std::string renderJson(const ReportInput& in) {
 			f.bounds.z, f.bounds.width, f.bounds.height, f.tiles, f.walkableCells, f.unknownCells, f.floorChangeCells,
 			f.teleportCells, w.count, w.largest, w.smallCount, w.smallCells, jsonArray(w.top));
 		for (size_t b = 0; b < w.buckets.size(); ++b) out += std::format("{}{}", b ? ", " : "", w.buckets[b]);
-		out += "], \"trait_tiles\": {";
+		out += std::format("], \"bottleneck_cells\": {}, \"trait_tiles\": {{", f.bottleneckCells);
 		for (size_t t = 0; t < traitCount; ++t) out += std::format("{}\"{}\": {}", t ? ", " : "", traitName(t), feature.traitTiles[t]);
 		out += std::format("}}}}{}\n", i + 1 < in.topology->floors.size() ? "," : "");
 	}
@@ -172,14 +173,14 @@ std::string renderCsv(const ReportInput& in, CsvTable table) {
 		case CsvTable::Floors:
 			out = "z,width,height,tiles,walkable_cells,unknown_cells,floor_change_cells,teleport_cells,walkable_components,largest_component,small_components,small_cells";
 			for (size_t t = 0; t < traitCount; ++t) out += std::format(",trait_{}", traitName(t));
-			out += "\n";
+			out += ",bottleneck_cells\n";
 			for (size_t i = 0; i < in.topology->floors.size(); ++i) {
 				const auto& f = in.topology->floors[i];
 				out += std::format("{},{},{},{},{},{},{},{},{},{},{},{}", f.bounds.z, f.bounds.width, f.bounds.height, f.tiles,
 					f.walkableCells, f.unknownCells, f.floorChangeCells, f.teleportCells, f.walkable.count, f.walkable.largest,
 					f.walkable.smallCount, f.walkable.smallCells);
 				for (size_t t = 0; t < traitCount; ++t) out += std::format(",{}", in.features->floors[i].traitTiles[t]);
-				out += "\n";
+				out += std::format(",{}\n", f.bottleneckCells);
 			}
 			break;
 		case CsvTable::Adjacency: {
@@ -230,6 +231,7 @@ std::string renderMarkdown(const ReportInput& in) {
 		in.header.itemsMinor, in.header.fileBytes, in.header.compressed ? ", compressed" : "");
 	out += std::format("- Tiles {}, items {}, loader warnings {}\n", in.tiles, in.items, in.loaderWarnings);
 	out += std::format("- Unknown content: {} ground, {} stacked, {} distinct ids\n", in.unknownGround, in.unknownItems, in.unknownIds.size());
+	out += std::format("- Items inside containers: {} decoded, {} unresolved\n", in.nestedItems, in.unknownNestedItems);
 	const uint64_t coveredTiles = in.tiles;
 	const uint64_t unknownTiles = in.semantic->tilesPerTrait[15];
 	out += std::format("- Analysis coverage: {} of {} tiles have no unknown content ({})\n", coveredTiles - unknownTiles, coveredTiles,
@@ -237,10 +239,12 @@ std::string renderMarkdown(const ReportInput& in) {
 	out += std::format("- Options: impassable ground at >= {}% blocking tiles, small pocket < {} cells\n\n",
 		in.topologyOptions.impassablePercent, in.topologyOptions.smallComponentCells);
 
-	out += "## Floors\n\n| z | tiles | walkable | components | largest | small pockets | floor changes | teleports |\n|---|---|---|---|---|---|---|---|\n";
+	out += "## Floors\n\nBottleneck tiles split a same-floor walkable component if removed.\n\n"
+		"| z | tiles | walkable | components | largest | small pockets | floor changes | teleports | bottleneck tiles |\n"
+		"|---|---|---|---|---|---|---|---|---|\n";
 	for (const auto& f : in.topology->floors) {
-		out += std::format("| {} | {} | {} | {} | {} | {} | {} | {} |\n", f.bounds.z, f.tiles, f.walkableCells, f.walkable.count,
-			f.walkable.largest, f.walkable.smallCount, f.floorChangeCells, f.teleportCells);
+		out += std::format("| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n", f.bounds.z, f.tiles, f.walkableCells, f.walkable.count,
+			f.walkable.largest, f.walkable.smallCount, f.floorChangeCells, f.teleportCells, f.bottleneckCells);
 	}
 
 	out += "\n## Ground keys (top 20 by tiles)\n\n| key | tiles | blocking | impassable | regions | largest | enclosed |\n|---|---|---|---|---|---|---|\n";

@@ -3,8 +3,8 @@
 // commands itself (queued wxEVT_MENU / wxEVT_BUTTON), so it exercises the production handlers but NOT
 // native operator input. Purpose: process memory and GDI/USER/handle counts after repeated
 // open / in-flight Cancel / Preview / Validate / Cancel cycles. The sampler is the tick itself.
-// Marker ".g1-dialog-leak": "<cycles> <side>" or "<cycles> <side> heap"; the heap mode adds Win32 heap and
-// VirtualQuery samples per cycle and one sample after HeapCompact at the end.
+// Marker ".g1-dialog-leak": "<cycles> <side> [heap] [candidates <count>]".
+// The heap option adds Win32 heap and VirtualQuery samples, and candidates selects a Natural surface fixture.
 #include "app/main.h"
 #include "app/managers/version_manager.h"
 #include "editor/action_queue.h"
@@ -15,11 +15,17 @@
 #include "ui/gui_ids.h"
 #include "ui/main_frame.h"
 #include "ui/main_menubar.h"
+#include "util/common.h"
 
 #include <wx/button.h>
+#include <wx/checkbox.h>
+#include <wx/choice.h>
+#include <wx/combobox.h>
 #include <wx/dialog.h>
+#include <wx/listctrl.h>
 #include <wx/module.h>
 #include <wx/spinctrl.h>
+#include <wx/textctrl.h>
 #include <wx/timer.h>
 #include <windows.h>
 #include <psapi.h>
@@ -163,8 +169,14 @@ public:
 		std::ifstream marker(".g1-dialog-leak");
 		require(static_cast<bool>(marker >> cycles >> side) && cycles >= 3 && (side == 100 || side == 500),
 			"Marker must contain cycle count (>=3) and side (100 or 500)");
-		std::string mode;
-		heap = static_cast<bool>(marker >> mode) && mode == "heap";
+		for (std::string option; marker >> option;) {
+			if (option == "heap" && !heap) {
+				heap = true;
+			} else {
+				require(option == "candidates" && naturalCandidates == 0 && (marker >> naturalCandidates) &&
+					naturalCandidates >= 1 && naturalCandidates <= 16, "Invalid leak probe option or candidate count");
+			}
+		}
 		if (heap) {
 			heapCsv.open("heap-trend.csv");
 			bucketCsv.open("heap-buckets.csv");
@@ -173,7 +185,7 @@ public:
 					   "walk_busy,walk_busy_blocks,walk_free,walk_region_committed,walk_uncommitted,faults,walk_ms\n";
 			bucketCsv << "cycle,stage,log2_size,blocks,bytes\n";
 		}
-		limit = std::max<Clock::duration>(std::chrono::minutes(20), std::chrono::seconds(10) * cycles);
+		limit = std::max<Clock::duration>(std::chrono::minutes(20), std::chrono::seconds(10) * cycles * candidateCount());
 		wxString error;
 		std::vector<std::string> warnings;
 		require(g_version.LoadVersion("1098-BlackTek", error, warnings), "Private client load failed");
@@ -187,6 +199,8 @@ public:
 		started = phaseStarted = Clock::now();
 		require(timer.Start(20), "Cannot start probe timer");
 		report << std::format("LEAK_READY\tcycles={}\tside={}\n", cycles, side);
+		report << std::format("LEAK_FIXTURE\t{}\tcandidates={}\n",
+			naturalCandidates ? "natural-single-floor" : "classic", candidateCount());
 	}
 
 private:
@@ -259,6 +273,40 @@ private:
 		return label->GetLabel();
 	}
 
+	int candidateCount() const { return std::max(1, naturalCandidates); }
+
+	template<class Control>
+	static Control& field(wxWindow* dialog, const char* name) {
+		auto* control = dynamic_cast<Control*>(wxWindow::FindWindowByName(name, dialog));
+		require(control != nullptr, name);
+		return *control;
+	}
+
+	void configureNaturalFixture(wxWindow* dialog) const {
+		auto& style = field<wxChoice>(dialog, "terrain-style");
+		require(style.SetStringSelection("Natural surface (lakes, rivers, rock)"), "Natural surface option missing");
+		wxCommandEvent changed(wxEVT_CHOICE, style.GetId());
+		changed.SetEventObject(&style);
+		style.GetEventHandler()->ProcessEvent(changed);
+		require(field<wxChoice>(dialog, "terrain-profile").GetStringSelection() == "Built-in (manual settings)",
+			"Natural fixture requires the built-in profile");
+		field<wxTextCtrl>(dialog, "terrain-seed").ChangeValue("1729");
+		auto& count = field<wxSpinCtrl>(dialog, "terrain-candidate-count");
+		require(count.IsEnabled(), "Candidate control disabled in Natural surface");
+		count.SetValue(naturalCandidates);
+		require(count.GetValue() == naturalCandidates, "Requested candidate count unavailable");
+		field<wxSpinCtrl>(dialog, "terrain-plateau-percent").SetValue(0);
+		field<wxCheckBox>(dialog, "terrain-repair").SetValue(false);
+		// Use the same walkable ground on all cells to isolate candidate count on one floor.
+		for (const auto* name : { "terrain-grass-brush", "terrain-dirt-brush", "terrain-rock-brush",
+			 "terrain-shore-brush", "terrain-water-brush" }) {
+			auto& brush = field<wxComboBox>(dialog, name);
+			require(brush.GetToolTipText().Contains("one-tile gap"), "Surface ground brush lacks the boundary-gap hint");
+			if (brush.FindString("grass") == wxNOT_FOUND) brush.Append("grass");
+			require(brush.SetStringSelection("grass"), "Fixture grass brush unavailable");
+		}
+	}
+
 	void tick(wxTimerEvent&) {
 		try {
 			require(Clock::now() - started < limit, "Leak probe timed out");
@@ -286,11 +334,10 @@ private:
 				}
 				case Phase::Opening: {
 					if (!dialog) return;
-					for (const auto* field : { "terrain-width", "terrain-height" }) {
-						auto* spin = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(field, dialog));
-						require(spin != nullptr, "Missing size control");
-						spin->SetValue(side);
+					for (const auto* name : { "terrain-width", "terrain-height" }) {
+						field<wxSpinCtrl>(dialog, name).SetValue(side);
 					}
+					if (naturalCandidates) configureNaturalFixture(dialog);
 					if (cycle == 0) {
 						auto* count = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("terrain-candidate-count", dialog));
 						report << std::format("LEAK_CANDIDATE_COUNT\t{}\tenabled={}\n", count ? count->GetValue() : -1,
@@ -303,9 +350,13 @@ private:
 				case Phase::InFlight: {
 					require(dialog != nullptr, "Dialog closed during in-flight Preview");
 					// G1 dialog: "Preparing preview"; G6 candidate series: "Generating candidate".
-					if (const auto label = status(dialog); !label.StartsWith("Preparing preview") && !label.StartsWith("Generating candidate")) {
+					const auto label = status(dialog);
+					if (!label.StartsWith("Preparing preview") && !label.StartsWith("Generating candidate")) {
 						require(Clock::now() - phaseStarted < std::chrono::seconds(5), "Preview did not start");
 						return;
+					}
+					if (naturalCandidates) {
+						require(label.Contains(wxstr(std::format("/{};", naturalCandidates))), "Wrong in-flight candidate count");
 					}
 					click(dialog, "terrain-cancel");
 					enter(Phase::Cancelling);
@@ -317,6 +368,9 @@ private:
 						require(Clock::now() - phaseStarted < std::chrono::seconds(5), "In-flight Cancel not observed");
 						return;
 					}
+					if (naturalCandidates) {
+						require(field<wxListCtrl>(dialog, "terrain-candidates").GetItemCount() == 0, "Cancelled series left candidates");
+					}
 					click(dialog, "terrain-preview");
 					enter(Phase::Preview);
 					return;
@@ -326,11 +380,19 @@ private:
 					const auto label = status(dialog);
 					// G6 reports the finished series as "Selected #<n>"; the tile count follows on Validate.
 					if (!label.StartsWith("Preview ready:") && !label.StartsWith("Selected #")) {
-						require(Clock::now() - phaseStarted < std::chrono::seconds(30), "Preview did not finish");
+						require(Clock::now() - phaseStarted < std::chrono::seconds(30) * candidateCount(), "Preview did not finish");
 						return;
 					}
 					require(label.StartsWith("Selected #") || label.Contains(side == 100 ? "10000 tiles" : "250000 tiles"),
 						"Wrong preview size");
+					if (label.StartsWith("Selected #")) {
+						auto& gallery = field<wxListCtrl>(dialog, "terrain-candidates");
+						require(gallery.GetItemCount() == candidateCount(), "Wrong completed candidate count");
+						require(gallery.GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED) >= 0, "No selected candidate");
+					} else {
+						require(!naturalCandidates, "Natural fixture did not produce a candidate gallery");
+					}
+					report << std::format("LEAK_SERIES_PASS\t{}\t{}\n", cycle + 1, candidateCount());
 					click(dialog, "terrain-validate");
 					enter(Phase::Validate);
 					return;
@@ -375,7 +437,7 @@ private:
 	Clock::duration limit {};
 	Editor* editor = nullptr;
 	uint64_t revision = 0;
-	int cycles = 0, side = 0, cycle = 0;
+	int cycles = 0, side = 0, cycle = 0, naturalCandidates = 0;
 	Phase phase = Phase::Idle;
 	Clock::time_point started, phaseStarted;
 };

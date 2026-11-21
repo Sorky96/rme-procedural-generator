@@ -33,6 +33,34 @@ struct GroundProfile {
 	// Doodad brush for the fire in the middle of every camp (G5 iteration 26); empty = no fires. Needs a profile of eight brushes.
 	std::string campfire;
 	[[nodiscard]] std::span<const std::string> activeDecor() const noexcept { return std::span(decor).first(decorCount); }
+	// Learned style mixes; an empty name is off and its permille 0. grassMix[i]: ground brush placed in
+	// noise patches over about grassMixPermille[i] of the Grass cells (surface profiles only; the shares sum to at most 1000).
+	// treeMix[i]: doodad brush that takes the place of the tree brush on treeMixPermille[i] of the
+	// tree cells (vegetation only; the shares sum to at most 1000). bushMix: the same for the bush brush.
+	static constexpr size_t treeMixCount = 3;
+	static constexpr size_t grassMixCount = 3;
+	std::array<std::string, grassMixCount> grassMix;
+	uint16_t grassPatchStep = 10; // lattice step of the grassMix patch noise, 1..64 (defaultGrassPatchStep)
+	std::array<uint16_t, grassMixCount> grassMixPermille {};
+	// Vegetation on grassMix[m] cells (vegetation only): grassMixDecorKeep[m][k] is the share (permille) of
+	// the generated decoration of DecorKind k (Tree, Bush, Stone) such a cell keeps; grassMixDecor[m][k] is
+	// the doodad brush used there instead of decor[k], empty = decor[k]. Unused entries keep the defaults.
+	static constexpr std::array<uint16_t, decorationCount> keepAllDecor {1000, 1000, 1000};
+	std::array<std::array<uint16_t, decorationCount>, grassMixCount> grassMixDecorKeep {keepAllDecor, keepAllDecor, keepAllDecor};
+	std::array<std::array<std::string, decorationCount>, grassMixCount> grassMixDecor;
+	std::array<std::string, treeMixCount> treeMix;
+	std::array<uint16_t, treeMixCount> treeMixPermille {};
+	std::array<std::string, treeMixCount> bushMix;
+	std::array<uint16_t, treeMixCount> bushMixPermille {};
+	// Overlay items laid over the vegetation (vegetation only; empty name = off): overlay[i] is a doodad brush or
+	// "raw:item:<id>" placed on overlayTreePpm[i] of the tree cells and on overlayGroundPpm[i] of the other
+	// Grass and Dirt cells; one overlay per cell, the first that hits.
+	static constexpr size_t overlayCount = 16;
+	std::array<std::string, overlayCount> overlay;
+	std::array<uint32_t, overlayCount> overlayTreePpm {}, overlayGroundPpm {}; // parts per million, 0..1000000
+	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
+	// empty = such trees are left out.
+	std::string waterTree;
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;
@@ -67,6 +95,9 @@ struct GroundPlan {
 	std::vector<uint8_t> doors;
 	// Camp fire item per cell (0 = none); empty when the profile has no campfire brush, otherwise one entry per cell.
 	std::vector<uint16_t> fires;
+	// Overlay item per cell, placed after the vegetation (0 = none); empty when the profile has no overlay, otherwise one
+	// entry per cell.
+	std::vector<uint16_t> overlays;
 	[[nodiscard]] uint64_t fingerprint() const;
 	std::vector<uint16_t> entrances;
 	std::vector<uint16_t> exits;

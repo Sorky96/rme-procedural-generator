@@ -147,6 +147,32 @@ using StyleDecorPalette = std::array<std::string, 3>;
 
 inline constexpr std::string_view profileSchema = "g4-profile/6";
 
+struct StyleMix {
+	std::string brush;
+	uint32_t permille = 0; // 1..1000 when brush is set, else 0
+	bool operator==(const StyleMix&) const = default;
+};
+inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 16;
+
+// An item laid over other vegetation or bare land (cobwebs, leaves, debris): any learned item that is not a tree,
+// bush or stone. `name` is a doodad brush or "raw:item:<id>"; it goes on onTreePpm of the generated trees and
+// on onGroundPpm of the other land cells without vegetation.
+struct StyleOverlay {
+	std::string name;
+	uint32_t onTreePpm = 0, onGroundPpm = 0; // parts per million, 0..1000000, not both 0 when name is set
+	bool operator==(const StyleOverlay&) const = default;
+};
+
+// Vegetation on the cells of one grass mix brush (swamp: no trees, swamp plants as bushes). keepPermille
+// per DecorKind Tree, Bush, Stone: share of the generated decoration such a cell keeps (the patch rate
+// over the rate on the main grass, at most 1000: a patch only thins, never adds). brushes: the doodad
+// brush used there instead of the main one; empty = the main one.
+struct StyleMixDecor {
+	std::array<uint32_t, 3> keepPermille {1000, 1000, 1000};
+	std::array<std::string, 3> brushes;
+	bool operator==(const StyleMixDecor&) const = default;
+};
+
 struct StyleProfile {
 	std::string client;
 	std::string otbSha256, datSha256;   // lowercase hex of the client's items.otb and Tibia.dat
@@ -161,6 +187,15 @@ struct StyleProfile {
 	std::optional<DecorTuning> decorTuning;    // vegetation chances fitted to decorTarget
 	StylePalette palette;                      // brushes the style used (see StylePalette)
 	StyleDecorPalette decorPalette;            // doodad brushes the style used (see StyleDecorPalette)
+	// Learned mixes (empty brush = none): further grass brushes in patches, each covering `permille` of the grass,
+	// and further tree (bush) brushes, each standing in for the tree (bush) brush on `permille` of the trees (bushes).
+	std::array<StyleMix, maxGrassMix> grassMix;
+	uint32_t grassPatchStep = 0; // lattice step of the grassMix patch noise, 1..64; 0 = the built-in one
+	std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // per grassMix entry; the default for an unused one
+	std::array<StyleMix, maxTreeMix> treeMix;
+	std::array<StyleMix, maxTreeMix> bushMix;
+	std::array<StyleOverlay, maxOverlays> overlays;
+	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };
 

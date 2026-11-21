@@ -44,6 +44,9 @@ struct SurfaceTuning {
 	uint32_t dirtPermille = 300;      // share of driest cells that are dirt, 0..1000
 	uint32_t transitionWidth = 6000;  // half width of the grass/dirt dithered band, 0..32768
 	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
+	uint32_t islandPermille = 0;      // share of the region that is open sea around the land, 0..900; 0 = no sea
+	uint32_t cleanEdges = 0;          // 1 = no one-cell spurs, strips or channels of lake and dirt (learned styles); 0 = as built
+	uint32_t dirtSize = 0;            // lattice step of the grass/dirt moisture noise, 1..4096; 0 = twice featureSize
 	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)
 	uint32_t fordLength = 0;          // longest water crossing (cells) a ford may span, 0..256; 0 = no fords (not part of a style profile)
@@ -82,6 +85,11 @@ struct DecorTuning {
 	uint32_t waterBushPermille = 60;    // bush chance on grass within reach of water
 	uint32_t dirtStonePermille = 30;    // stone chance on dirt away from rock
 	uint32_t rockStonePermille = 80;    // stone chance on dirt (and stone window on grass) within reach of rock
+	// 0..1000: how much the tree and bush chances on grass follow smooth noise, from 0 (even, as built in)
+	// to 1000 (none in clearings, twice the chance in thickets; about the same on average).
+	uint32_t clumpPermille = 0;
+	// 0..1000: tree chance on lake and river cells beside land (mangroves standing in the water); 0 = none, as built in.
+	uint32_t shoreTreePermille = 0;
 	bool operator==(const DecorTuning&) const = default;
 };
 inline constexpr uint32_t maxTreeScalePermille = 9000;
@@ -89,7 +97,7 @@ inline constexpr uint32_t maxTreeScalePermille = 9000;
 // Chances above 1000 (treeScalePermille above maxTreeScalePermille) are refused by the generator.
 [[nodiscard]] constexpr bool valid(const DecorTuning& t) noexcept {
 	return t.treeScalePermille <= maxTreeScalePermille && t.waterTreePermille <= 1000 && t.bushPermille <= 1000 &&
-		t.waterBushPermille <= 1000 && t.dirtStonePermille <= 1000 && t.rockStonePermille <= 1000;
+		t.waterBushPermille <= 1000 && t.dirtStonePermille <= 1000 && t.rockStonePermille <= 1000 && t.clumpPermille <= 1000 && t.shoreTreePermille <= 1000;
 }
 
 struct GenerationConfig {

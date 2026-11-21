@@ -7,6 +7,7 @@
 #include "app/managers/version_manager.h"
 #include "brushes/brush.h"
 #include "brushes/ground/ground_brush.h"
+#include "game/complexitem.h"
 #include "game/item.h"
 #include "io/iomap_otbm.h"
 #include "map/map.h"
@@ -196,12 +197,36 @@ std::expected<ReferenceImportSummary, ReferenceImportError> loadReference(
 	return summary;
 }
 
-void countTile(const Tile& tile, ReferenceImportSummary& summary) {
+// OTBM deserialization caps nesting at MAX_CONTAINER_DEPTH. Count only the
+// decoded item tree; preserved opaque nodes have no resolved item semantics.
+template <class CancelCheck>
+bool countContainerContents(const Item& item, ReferenceImportSummary& summary, const CancelCheck& cancelled) {
+	if (const Container* container = item.asContainer()) {
+		for (const auto& child : container->getVector()) {
+			if (cancelled()) return false;
+			if (!child) continue;
+			++summary.nestedItems;
+			summary.unknownNestedItems += child->isInvalidOTBMItem() || !child->typeExists();
+			if (!countContainerContents(*child, summary, cancelled)) return false;
+		}
+	}
+	return true;
+}
+
+template <class CancelCheck>
+bool countTile(const Tile& tile, ReferenceImportSummary& summary, const CancelCheck& cancelled) {
 	++summary.tileCount;
 	const int floor = tile.getPosition().z;
 	if (floor >= 0 && floor < static_cast<int>(summary.tilesPerFloor.size())) ++summary.tilesPerFloor[static_cast<size_t>(floor)];
-	if (tile.ground) countItem(*tile.ground, true, summary);
-	for (const auto& item : tile.items) countItem(*item, false, summary);
+	if (tile.ground) {
+		countItem(*tile.ground, true, summary);
+		if (!countContainerContents(*tile.ground, summary, cancelled)) return false;
+	}
+	for (const auto& item : tile.items) {
+		countItem(*item, false, summary);
+		if (!countContainerContents(*item, summary, cancelled)) return false;
+	}
+	return true;
 }
 
 uint32_t itemTraits(const Item& item, bool ground) {
@@ -238,13 +263,17 @@ std::expected<ReferenceImportSummary, ReferenceImportError> importReference(
 	auto summary = loadReference(map, file, limits, measurements);
 	if (!summary) return summary;
 	uint32_t sincePoll = 0;
+	const auto cancelled = [&] {
+		if (++sincePoll < cancelPollTiles) return false;
+		sincePoll = 0;
+		return limits.stop.stop_requested();
+	};
 	for (auto& location : map.tiles()) {
-		if (++sincePoll == cancelPollTiles) {
-			sincePoll = 0;
-			if (limits.stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
-		}
+		if (cancelled()) return std::unexpected(ReferenceImportError::Cancelled);
 		const Tile* tile = location.get();
-		if (tile != nullptr && !tile->empty()) countTile(*tile, *summary);
+		if (tile != nullptr && !tile->empty() && !countTile(*tile, *summary, cancelled)) {
+			return std::unexpected(ReferenceImportError::Cancelled);
+		}
 	}
 	return summary;
 }
@@ -274,7 +303,7 @@ std::expected<NormalizedReference, ReferenceImportError> normalizeReference(
 		if (cancelled()) return std::unexpected(ReferenceImportError::Cancelled);
 		const Tile* tile = location.get();
 		if (tile == nullptr || tile->empty()) continue;
-		countTile(*tile, result.summary);
+		if (!countTile(*tile, result.summary, cancelled)) return std::unexpected(ReferenceImportError::Cancelled);
 		const Position position = tile->getPosition();
 		if (position.z < 0 || position.z > 15) return std::unexpected(ReferenceImportError::NormalizeFailed);
 		Box& box = boxes[static_cast<size_t>(position.z)];
@@ -383,6 +412,8 @@ ReportInput makeReportInput(const NormalizedReference& normalized, const Topolog
 	input.items = summary.itemCount;
 	input.unknownGround = summary.unknownGround;
 	input.unknownItems = summary.unknownItems;
+	input.nestedItems = summary.nestedItems;
+	input.unknownNestedItems = summary.unknownNestedItems;
 	input.loaderWarnings = summary.loaderWarnings;
 	for (const auto& [id, count] : summary.unknownIds) input.unknownIds.push_back({id, count});
 	input.topologyOptions = options;

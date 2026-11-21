@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Offline tool: proposes the ground-key -> StyleKind map from the G3 reports of a reference set.
-// Reads the manifest and each map's analysis/ground_keys.csv; writes keymap.tsv (g4-keymap/1) and a
-// Markdown review table. Only names and tile counts are read; nothing from the maps themselves.
+// Reads ground-key summaries and writes keymap.tsv (g4-keymap/1) and a Markdown review table.
 //
-// Usage: style_keymap --manifest FILE --reports DIR --out-dir DIR
-// DIR holds <alias>/run/analysis/ground_keys.csv for every manifest entry.
+// Usage: style_keymap --manifest FILE --reports DIR --out-dir DIR [--surface-only]
+// DIR holds <alias>/run/analysis/ground_keys.csv for every manifest entry (ground-keys-surface.csv with --surface-only).
 
 #include "procedural/core/doodad_class.h"
 #include "procedural/core/reference_split.h"
 #include "procedural/core/style_profile.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -59,47 +59,80 @@ struct KeyUse {
 
 int main(int argc, char** argv) {
 	fs::path manifestPath, reportsDir, outDir;
-	for (int i = 1; i + 1 < argc; i += 2) {
-		const std::string key = argv[i];
-		if (key == "--manifest") manifestPath = argv[i + 1];
-		else if (key == "--reports") reportsDir = argv[i + 1];
-		else if (key == "--out-dir") outDir = argv[i + 1];
+	bool surfaceOnly = false;
+	const auto usage = [] {
+		std::cerr << "usage: style_keymap --manifest FILE --reports DIR --out-dir DIR [--surface-only]\n";
+		return 2;
+	};
+	for (int i = 1; i < argc; ++i) {
+		const std::string_view key = argv[i];
+		if (key == "--surface-only") {
+			surfaceOnly = true;
+			continue;
+		}
+		if (i + 1 == argc || std::string_view(argv[i + 1]).starts_with("--")) return usage();
+		if (key == "--manifest") manifestPath = argv[++i];
+		else if (key == "--reports") reportsDir = argv[++i];
+		else if (key == "--out-dir") outDir = argv[++i];
 		else { std::cerr << "unknown option " << key << '\n'; return 2; }
 	}
-	if (manifestPath.empty() || reportsDir.empty() || outDir.empty()) {
-		std::cerr << "usage: style_keymap --manifest FILE --reports DIR --out-dir DIR\n";
-		return 2;
-	}
+	if (manifestPath.empty() || reportsDir.empty() || outDir.empty()) return usage();
 	std::string text;
 	if (!readFile(manifestPath, text)) { std::cerr << "cannot read manifest\n"; return 2; }
 	const auto manifest = parseManifest(text);
 	if (!manifest) { std::cerr << "invalid manifest\n"; return 3; }
 
-	std::map<std::string, KeyUse> use;           // all maps, to propose a complete key map
+	std::map<std::string, KeyUse> use;           // all maps within the selected floor scope
 	std::map<std::string, KeyUse> useStyle;      // style maps only, for the review
+	const char* groundReport = surfaceOnly ? "ground-keys-surface.csv" : "ground_keys.csv";
+	const size_t keyColumn = surfaceOnly ? 0 : 1;
+	const size_t countColumn = keyColumn + 1;
 	for (const auto& entry : manifest->entries) {
 		std::string csv;
-		if (!readFile(reportsDir / entry.alias / "run" / "analysis" / "ground_keys.csv", csv)) {
-			std::cerr << "missing ground_keys.csv for " << entry.alias << '\n';
+		if (!readFile(reportsDir / entry.alias / "run" / "analysis" / groundReport, csv)) {
+			std::cerr << "missing " << groundReport << " for " << entry.alias << '\n';
 			return 3;
 		}
 		std::string_view rest = csv;
+		if (surfaceOnly && rest.empty()) {
+			std::cerr << "empty " << groundReport << " for " << entry.alias << '\n';
+			return 3;
+		}
 		bool first = true;
 		while (!rest.empty()) {
 			const size_t end = rest.find('\n');
 			std::string_view line = rest.substr(0, end);
 			rest = end == std::string_view::npos ? std::string_view {} : rest.substr(end + 1);
 			if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
-			if (first) { first = false; continue; }
+			if (first) {
+				if (surfaceOnly && line != "key,tiles") {
+					std::cerr << "bad " << groundReport << " header for " << entry.alias << '\n';
+					return 3;
+				}
+				first = false;
+				continue;
+			}
 			if (line.empty()) continue;
 			const auto f = csvFields(line);
-			if (f.size() < 3) { std::cerr << "bad csv line in " << entry.alias << '\n'; return 3; }
-			const uint64_t tiles = std::strtoull(f[2].c_str(), nullptr, 10);
-			use[f[1]].tiles += tiles;
-			use[f[1]].maps.insert(entry.alias);
+			if (f.size() <= countColumn) { std::cerr << "bad csv line in " << entry.alias << '\n'; return 3; }
+			uint64_t tiles = 0;
+			if (surfaceOnly) {
+				const auto& count = f[countColumn];
+				const auto countEnd = count.data() + count.size();
+				const auto parsed = std::from_chars(count.data(), countEnd, tiles);
+				if (f.size() != 2 || parsed.ec != std::errc {} || parsed.ptr != countEnd) {
+					std::cerr << "bad csv line in " << entry.alias << '\n';
+					return 3;
+				}
+			} else {
+				tiles = std::strtoull(f[countColumn].c_str(), nullptr, 10);
+			}
+			const auto& key = f[keyColumn];
+			use[key].tiles += tiles;
+			use[key].maps.insert(entry.alias);
 			if (entry.role == ReferenceRole::Style) {
-				useStyle[f[1]].tiles += tiles;
-				useStyle[f[1]].maps.insert(entry.alias);
+				useStyle[key].tiles += tiles;
+				useStyle[key].maps.insert(entry.alias);
 			}
 		}
 	}
@@ -122,7 +155,8 @@ int main(int argc, char** argv) {
 		++keysPerKind[static_cast<size_t>(e.kind)];
 		styleTotal += t;
 	}
-	std::string md = "# G4-B key map proposal (review)\n\nTiles are counted over the style maps only, all floors. Share = permille of those tiles.\n\n| Kind | Keys | Tiles | Share |\n| --- | ---: | ---: | ---: |\n";
+	const char* floorScope = surfaceOnly ? "surface floors (z <= 7)" : "all floors";
+	std::string md = std::format("# G4-B key map proposal (review)\n\nTiles are counted over the style maps only, {}. Share = permille of those tiles.\n\n| Kind | Keys | Tiles | Share |\n| --- | ---: | ---: | ---: |\n", floorScope);
 	for (size_t k = 0; k < styleKindCount; ++k) {
 		md += std::format("| {} | {} | {} | {} |\n", styleKindName(static_cast<StyleKind>(k)), keysPerKind[k], tilesPerKind[k], styleTotal ? tilesPerKind[k] * 1000 / styleTotal : 0);
 	}
