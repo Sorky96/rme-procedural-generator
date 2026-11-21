@@ -56,8 +56,16 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/utils.h>
+#include "procedural/adapter/decor_source.h"
+#include "procedural/core/doodad_class.h"
 
 namespace {
+
+// A vegetation source of a profile (doodad brush or "raw:<id>") whose first item the loaded client can place.
+bool usableDecor(const std::string& name) {
+	const auto source = rme::procedural::findDecorSource(name, 100000);
+	return source && rme::procedural::decorItemPlaceable(source.item(1));
+}
 
 using namespace rme::procedural;
 
@@ -1113,9 +1121,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		const std::string& name = entry.profile.decorPalette[kind];
 		if (name.empty()) continue;
 		const wxString wanted = wxstr(name);
-		const Brush* brush = doodad_names_.Index(wanted) == wxNOT_FOUND ? nullptr : g_brushes.getBrush(name);
-		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-		const bool usable = doodad && doodad->hasSingleObjects(0);
+		// A RAW item ("raw:<id>") is not in the brush list; it is usable when the loaded client can place it.
+		const bool usable = (rme::procedural::rawDecorId(name) || doodad_names_.Index(wanted) != wxNOT_FOUND) && usableDecor(name);
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
@@ -1501,18 +1508,14 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 				const auto& decor = profile.grassMixDecor[i];
 				for (size_t k = 0; k < GroundProfile::decorationCount; ++k) {
 					request.profile.grassMixDecorKeep[used][k] = uint16_t(decor.keepPermille[k]);
-					const auto* patchBrush = decor.brushes[k].empty() ? nullptr : g_brushes.getBrush(decor.brushes[k]);
-					const auto* doodad = patchBrush ? patchBrush->as<DoodadBrush>() : nullptr;
-					if (doodad && doodad->hasSingleObjects(0)) request.profile.grassMixDecor[used][k] = decor.brushes[k];
+					if (!decor.brushes[k].empty() && usableDecor(decor.brushes[k])) request.profile.grassMixDecor[used][k] = decor.brushes[k];
 				}
 			}
 			++used;
 		}
 		const auto copyMix = [&](const auto& from, auto& names, auto& permille) {
 			for (size_t i = 0, used = 0; config.vegetation && i < from.size() && used < GroundProfile::treeMixCount; ++i) {
-				const auto* brush = from[i].brush.empty() ? nullptr : g_brushes.getBrush(from[i].brush);
-				const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-				if (!doodad || !doodad->hasSingleObjects(0)) continue;
+				if (from[i].brush.empty() || !usableDecor(from[i].brush)) continue;
 				names[used] = from[i].brush;
 				permille[used++] = uint16_t(from[i].permille);
 			}

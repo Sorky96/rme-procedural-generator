@@ -11,6 +11,7 @@
 #include "game/complexitem.h"
 #include "brushes/wall/wall_brush.h"
 #include "procedural/adapter/door_types.h"
+#include "procedural/adapter/decor_source.h"
 #include "item_definitions/core/item_definition_store.h"
 #include "map/map.h"
 #include "map/tile_operations.h"
@@ -430,14 +431,12 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
 		const std::string& name = *decorNames[i];
 		if (i >= GroundProfile::decorationCount && name.empty()) continue; // optional slots
-		const auto* brush = g_brushes.getBrush(name);
-		const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-		if (name.empty() || name.size() > 256 || !doodad || !doodad->hasSingleObjects(0) ||
-			doodad->getSingleChance(0) <= 0 || doodad->getSingleChance(0) > 100000) co_return std::unexpected(PreviewError::InvalidPlan);
-		for (int roll = 1; roll <= doodad->getSingleChance(0); ++roll) {
-			const auto* item = doodad->getRandomSingleItem(0, roll);
-			if (!item || !item->getID()) co_return std::unexpected(PreviewError::InvalidItem);
-			decorIds.push_back(item->getID());
+		const DecorSource source = name.size() > 256 ? DecorSource{} : findDecorSource(name, 100000);
+		if (!source) co_return std::unexpected(PreviewError::InvalidPlan);
+		for (uint64_t roll = 1; roll <= (source.raw ? 1 : source.total); ++roll) {
+			const uint16_t item = source.item(roll);
+			if (!item) co_return std::unexpected(PreviewError::InvalidItem);
+			decorIds.push_back(item);
 		}
 	}
 	// Camp fire items (iteration 26): every single item of every variation of the campfire brush may be placed.

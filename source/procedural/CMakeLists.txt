@@ -4,7 +4,7 @@ target_sources(rme_procedural_core PRIVATE core/candidate_score.cpp core/candida
 find_package(nlohmann_json CONFIG REQUIRED)
 target_sources(rme_procedural_core PRIVATE core/style_history.cpp)
 target_sources(rme_procedural_core PRIVATE core/style_learning.cpp)
-target_sources(rme PRIVATE adapter/open_map_learning.cpp
+target_sources(rme PRIVATE adapter/open_map_learning.cpp adapter/decor_source.cpp
     ${PROJECT_SOURCE_DIR}/source/ui/dialogs/style_learning_dialog.cpp)
 add_executable(test_procedural_style_learning ${PROJECT_SOURCE_DIR}/tests/test_procedural_style_learning.cpp)
 target_link_libraries(test_procedural_style_learning PRIVATE rme_procedural_core)

@@ -8,6 +8,7 @@
 #include "brushes/ground/ground_brush.h"
 #include "brushes/wall/wall_brush.h"
 #include "procedural/adapter/door_types.h"
+#include "procedural/adapter/decor_source.h"
 #include "item_definitions/core/item_definition_store.h"
 #include <algorithm>
 #include <array>
@@ -504,48 +505,39 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			const auto definition = wallItem ? g_item_definitions.get(wallItem) : ItemDefinitionView{};
 			if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
 		}
-		// A doodad brush with single-tile items and the sum of their chances; every reachable item must be
-		// a real, plain, non-ground, non-border item.
-		const auto checkDoodad = [&](const std::string& name) -> std::expected<std::pair<const DoodadBrush*, uint64_t>, ResolveError> {
-			const auto* brush = g_brushes.getBrush(name);
-			const auto* doodad = brush ? brush->as<DoodadBrush>() : nullptr;
-			if (!doodad || !doodad->hasSingleObjects(0) || doodad->getSingleChance(0) <= 0 ||
-				uint64_t(doodad->getSingleChance(0)) > maxDecorChance) return std::unexpected(ResolveError::InvalidProfile);
-			const uint64_t total = uint64_t(doodad->getSingleChance(0));
-			for (uint64_t roll = 1; roll <= total; ++roll) {
+		// A doodad brush with single-tile items and the sum of their chances, or one RAW item; every reachable
+		// item must be a real, plain, non-ground, non-border item.
+		const auto checkDoodad = [&](const std::string& name) -> std::expected<DecorSource, ResolveError> {
+			const DecorSource source = findDecorSource(name, maxDecorChance);
+			if (!source) return std::unexpected(ResolveError::InvalidProfile);
+			for (uint64_t roll = 1; roll <= (source.raw ? 1 : source.total); ++roll) {
 				if (roll % 1024 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-				const auto* item = doodad->getRandomSingleItem(0, int(roll));
-				const auto definition = item && item->getID() ? g_item_definitions.get(item->getID()) : ItemDefinitionView{};
-				if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile() ||
-					definition.attribute(ItemAttributeKey::BorderBaseGroundId) > 0) return std::unexpected(ResolveError::InvalidItem);
+				if (!decorItemPlaceable(source.item(roll))) return std::unexpected(ResolveError::InvalidItem);
 			}
-			return std::pair{doodad, total};
+			return source;
 		};
-		std::array<const DoodadBrush*, decorKindCount> doodads {};
-		std::array<uint64_t, decorKindCount> decorTotals {};
+		std::array<DecorSource, decorKindCount> doodads {};
 		for (size_t index = 0; vegetation && index < decorKindCount; ++index) {
 			const auto checked = checkDoodad(profile.decor[index]);
 			if (!checked) return std::unexpected(checked.error());
-			std::tie(doodads[index], decorTotals[index]) = *checked;
+			doodads[index] = *checked;
 		}
-		std::array<std::array<const DoodadBrush*, GroundProfile::treeMixCount>, 2> kindMix {};
-		std::array<std::array<uint64_t, GroundProfile::treeMixCount>, 2> kindMixTotals {};
+		std::array<std::array<DecorSource, GroundProfile::treeMixCount>, 2> kindMix {};
 		for (size_t kind = 0; kind < 2; ++kind) {
 			for (size_t index = 0; index < GroundProfile::treeMixCount; ++index) {
 				if ((*kindMixNames[kind])[index].empty()) continue;
 				const auto checked = checkDoodad((*kindMixNames[kind])[index]);
 				if (!checked) return std::unexpected(checked.error());
-				std::tie(kindMix[kind][index], kindMixTotals[kind][index]) = *checked;
+				kindMix[kind][index] = *checked;
 			}
 		}
-		std::array<std::array<const DoodadBrush*, decorKindCount>, GroundProfile::grassMixCount> mixDoodads {};
-		std::array<std::array<uint64_t, decorKindCount>, GroundProfile::grassMixCount> mixDoodadTotals {};
+		std::array<std::array<DecorSource, decorKindCount>, GroundProfile::grassMixCount> mixDoodads {};
 		for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
 			for (size_t k = 0; k < decorKindCount; ++k) {
 				if (profile.grassMixDecor[m][k].empty()) continue;
 				const auto checked = checkDoodad(profile.grassMixDecor[m][k]);
 				if (!checked) return std::unexpected(checked.error());
-				std::tie(mixDoodads[m][k], mixDoodadTotals[m][k]) = *checked;
+				mixDoodads[m][k] = *checked;
 			}
 		}
 		// Grass mix per cell (0 = the Grass brush, m + 1 = grassMix[m]). Each mix brush in turn takes the
@@ -666,7 +658,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			for (size_t kind = 0; kind < kinds; ++kind) rolls[kind] = int(streams[kind].bounded(totals[kind])) + 1;
 			std::array<int, decorKindCount> decorRolls {};
 			if (vegetation) for (size_t kind = 0; kind < decorKindCount; ++kind) {
-				decorRolls[kind] = int(decorRng[kind].bounded(decorTotals[kind])) + 1;
+				decorRolls[kind] = int(decorRng[kind].bounded(doodads[kind].total)) + 1;
 			}
 			std::array<int, GroundProfile::grassMixCount> grassMixRolls {};
 			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m)
@@ -713,20 +705,20 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					(!patch || mixDecorRoll < profile.grassMixDecorKeep[patch - 1][size_t(placed) - 1]);
 				if (kept) {
 					const size_t slot = size_t(placed) - 1;
-					const DoodadBrush* doodad = doodads[slot];
-					int roll = decorRolls[slot];
+					const DecorSource* doodad = &doodads[slot];
+					uint64_t roll = uint64_t(decorRolls[slot]);
 					if (patch && mixDoodads[patch - 1][slot]) {
-						doodad = mixDoodads[patch - 1][slot];
-						roll = int((uint64_t(roll) - 1) * mixDoodadTotals[patch - 1][slot] / decorTotals[slot]) + 1;
+						doodad = &mixDoodads[patch - 1][slot];
+						roll = (roll - 1) * doodad->total / doodads[slot].total + 1;
 					} else if (const size_t mix = kindSlot.empty() ? 0 : kindSlot[i]; mix) {
 						// A grove of a mix brush; the roll inside it is scaled from the decor roll.
 						const size_t kind = placed == DecorKind::Tree ? 0 : 1;
-						doodad = kindMix[kind][mix - 1];
-						roll = int((uint64_t(roll) - 1) * kindMixTotals[kind][mix - 1] / decorTotals[slot]) + 1;
+						doodad = &kindMix[kind][mix - 1];
+						roll = (roll - 1) * doodad->total / doodads[slot].total + 1;
 					}
-					const auto* item = doodad->getRandomSingleItem(0, roll);
-					if (!item || !item->getID()) return std::unexpected(ResolveError::InvalidItem);
-					result.decor[i] = item->getID();
+					const uint16_t item = doodad->item(roll);
+					if (!item) return std::unexpected(ResolveError::InvalidItem);
+					result.decor[i] = item;
 				}
 			}
 		}

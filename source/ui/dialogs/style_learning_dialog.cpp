@@ -290,7 +290,7 @@ void StyleLearningDialog::ShowItems() {
         std::string learned;
         if (item->brush.empty()) {
             const auto guess = kindName(classifyDoodadBrush(item->name));
-            learned = guess.empty() ? "ignored" : std::format("ignored (name suggests {})", guess);
+            learned = guess.empty() ? "ignored (name kind unknown)" : std::format("{} (by item name)", guess);
         } else {
             const auto kind = kindName(classifyDoodadBrush(item->brush));
             learned = kind.empty() ? "ignored (brush kind unknown)" : std::string(kind);

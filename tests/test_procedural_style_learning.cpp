@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/style_learning.h"
+#include "procedural/core/doodad_class.h"
 #include "procedural/core/style_profile_set.h"
 #include "procedural/core/style_history.h"
 #include "procedural/core/candidate_series.h"
@@ -126,6 +127,8 @@ int main(int argc, char** argv) {
         check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16, "sea and lakes learned apart");
         check(island && parseProfile(*serializeProfile(*island)) == *island, "island round-trips");
     }
+    check(rawDecorId(rawDecorName(2700)) == 2700 && !rawDecorId("raw:0") && !rawDecorId("raw:070") && !rawDecorId("raw:65536")
+        && !rawDecorId("raw:12a") && !rawDecorId("palm"), "RAW vegetation names");
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
     check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");
     check(checkProfile(*a,"wrong","otb","dat",7) == ProfileCompatibility::WrongClient, "client bound");

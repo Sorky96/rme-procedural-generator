@@ -34,9 +34,12 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }
-            if (!doodad) continue;
-            auto name = doodad->getName();
-            traits |= decorTraitBit(classifyDoodadBrush(name));
+            // An item without a doodad brush (placed from the RAW palette) is vegetation by its own name and is
+            // learned as a source of that one item.
+            const DecorKind kind = classifyDoodadBrush(doodad ? std::string_view(doodad->getName()) : seen.name);
+            if (!doodad && kind == DecorKind::None) continue;
+            auto name = doodad ? std::string(doodad->getName()) : rawDecorName(item->getID());
+            traits |= decorTraitBit(kind);
             ++doodads[{key, std::move(name)}];
         }
         if (!destination.set(x, b.y0 + row, b.z, key, traits)) return std::unexpected("Invalid sample cell.");
