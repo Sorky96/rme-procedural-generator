@@ -1134,6 +1134,15 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		if (entry.profile.tuning && entry.profile.tuning->rockPermille) rock_passes_check_->SetValue(true);
 		note(applied, "reachability repair", wxString("on"));
 	}
+	// The top of a mountain level is the style's own land (sand in a desert), not the built-in grass.
+	if (const std::string& land = entry.profile.palette[size_t(rme::procedural::StyleKind::Grass)]; !land.empty()) {
+		const Brush* brush = g_brushes.getBrush(land);
+		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+		if (ground && ground->getTotalChance() > 0) {
+			setBrush(plateau_ground_choice_, wxstr(land));
+			note(applied, "mountain top", wxstr(land));
+		}
+	}
 	// Buildings and ruins the profile learned: density, ruin share, floor and walls (a brush this client lacks is skipped).
 	if (const auto& buildings = entry.profile.buildings; buildings.density) {
 		building_density_spin_->SetValue(int(buildings.density));
