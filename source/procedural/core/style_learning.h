@@ -33,6 +33,7 @@ struct LearningSample {
     std::string shoreTree;            // the tree brush or RAW item most used on them; set with shoreTreePermille
     uint64_t seaTiles = 0;            // water tiles connected to the edge of the sample or to tiles without ground
     std::array<StyleOverlay, maxOverlays> overlays; // the most used overlay items on land with their rates
+    uint64_t medianPond = 0;          // tiles of the median pond, 0 without ponds
     uint64_t pondTiles = 0, pondEdges = 0; // the other water tiles and their land neighbours (4-connected pairs)
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.

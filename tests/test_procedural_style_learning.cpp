@@ -131,7 +131,8 @@ int main(int argc, char** argv) {
             "sea told from the pond");
         const auto island = islandSample ? fitLearningSample(*islandSample, islandMapping, "10.98", "otb", "dat")
                                          : std::expected<StyleProfile, std::string>(std::unexpected("no sample"));
-        check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16, "sea and lakes learned apart");
+        check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16 && island->tuning->minLakeCells == 8,
+            "sea and lakes learned apart, ponds as small as half the median one kept");
         check(island && parseProfile(*serializeProfile(*island)) == *island, "island round-trips");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone

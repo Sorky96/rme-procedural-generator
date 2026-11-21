@@ -96,7 +96,7 @@ uint32_t vegetationClump(const SemanticMap& map, std::span<const KeyMapEntry> ma
 // Water 4-connected to the edge of the area or to a tile without ground is the sea around an island; the rest
 // are ponds. pondEdges counts the (pond tile, land neighbour) pairs: per pond tile it is small for big round
 // ponds and large for small ones, so it measures the scale of the ponds.
-struct WaterShape { uint64_t sea = 0, pondTiles = 0, pondEdges = 0; };
+struct WaterShape { uint64_t sea = 0, pondTiles = 0, pondEdges = 0; uint64_t medianPond = 0; };
 template <class Present, class Water>
 WaterShape waterShape(int w, int h, Present present, Water water) {
     std::vector<uint8_t> sea(size_t(w) * h, 0);
@@ -121,9 +121,28 @@ WaterShape waterShape(int w, int h, Present present, Water water) {
             if (!sea[j] && water(j)) { sea[j] = 1; stack.push_back(j); }
         }
     }
+    // Pond sizes (4-connected), marked 2 in `sea` while they are counted.
+    std::vector<uint64_t> sizes;
+    for (size_t start = 0; start < sea.size(); ++start) {
+        if (sea[start] || !water(start)) continue;
+        uint64_t size = 0;
+        sea[start] = 2; stack.push_back(start);
+        while (!stack.empty()) {
+            const size_t i = stack.back(); stack.pop_back(); ++size;
+            const int x = int(i % w), y = int(i / w);
+            for (const auto [dx, dy] : steps) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const size_t j = size_t(ny) * w + nx;
+                if (!sea[j] && water(j)) { sea[j] = 2; stack.push_back(j); }
+            }
+        }
+        sizes.push_back(size);
+    }
+    if (!sizes.empty()) { std::ranges::nth_element(sizes, sizes.begin() + sizes.size() / 2); shape.medianPond = sizes[sizes.size() / 2]; }
     for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
         const size_t i = size_t(y) * w + x;
-        if (sea[i] || !water(i)) continue;
+        if (sea[i] == 1 || !water(i)) continue;
         ++shape.pondTiles;
         for (const auto [dx, dy] : steps) {
             const int nx = x + dx, ny = y + dy;
@@ -313,6 +332,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     }
     const auto shape = sampleWaterShape(map, mapping);
     sample.seaTiles = shape.sea; sample.pondTiles = shape.pondTiles; sample.pondEdges = shape.pondEdges;
+    sample.medianPond = shape.medianPond;
     sample.overlays = chooseOverlays(map, mapping, overlayItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
@@ -348,6 +368,9 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     const uint64_t sea = natural && sample.seaTiles * 20 >= natural ? std::min(sample.seaTiles, water) : 0;
     profile.tuning->islandPermille = natural ? uint32_t(std::min<uint64_t>(900, (sea * 1000 + natural / 2) / natural)) : 0;
     const uint64_t land = natural - sea;
+    // Small ponds are part of the style: the generator drops lakes under minLakeCells, so it may not exceed half
+    // the typical pond of the sample (2 at least, the built-in 12 at most).
+    if (sample.medianPond) profile.tuning->minLakeCells = uint32_t(std::clamp<uint64_t>(sample.medianPond / 2, 2, 12));
     profile.tuning->lakePermille = land ? uint32_t(std::min<uint64_t>(500, ((water - sea) * 1000 + land / 2) / land)) : 0;
     // The feature size was chosen for the fit's own lake share and scored on all water, the sea included, which
     // favours big smooth shapes. With ponds in the sample it is picked again so that the generated ponds have

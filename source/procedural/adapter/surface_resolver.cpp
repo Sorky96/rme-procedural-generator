@@ -36,6 +36,7 @@ constexpr uint64_t maxDecorChance = 100000;
 constexpr std::array<uint64_t, GroundProfile::grassMixCount> grassMixStreams {0x73325f6d69786772ULL, 0x73325f6d69786773ULL, 0x73325f6d69786774ULL};
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
+constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
 constexpr uint32_t grassPatchStep = 10; // lattice step of the grass variant patches, in cells
 
 uint64_t mixHash(uint64_t value) {
@@ -764,7 +765,13 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					uint64_t upTo = 0;
 					for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
 						if (!overlays[k]) continue;
-						upTo += tree ? profile.overlayTreePpm[k] : profile.overlayGroundPpm[k];
+						// Each overlay grows in its own patches (cobwebs, shells and debris lie in heaps): only on about a
+						// third of the land, the cells with the highest patch noise, at three times its rate (about the same overall).
+						const uint64_t rate = tree ? profile.overlayTreePpm[k] : profile.overlayGroundPpm[k];
+						const uint64_t patchSeed = input.config.seed ^ mixHash(overlayStream + k);
+						const bool patch = grassPatchValue(patchSeed, grid.region.x + int64_t(i % grid.region.width),
+							grid.region.y + int64_t(i / grid.region.width)) >= overlayPatchCut;
+						upTo += patch ? std::min<uint64_t>(1000000, rate * 3) : 0;
 						if (overlayRoll >= upTo) continue;
 						result.overlays[i] = overlays[k].item(overlayPick % overlays[k].total + 1);
 						break;

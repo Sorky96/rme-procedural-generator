@@ -1067,9 +1067,10 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				coast[i] = uint16_t((inland * 3 + elevation[i]) / 4);
 			}
 			const uint32_t seaLevel = lowCut(coast, config.tuning.islandPermille);
-			for (size_t i = 0; i < count; ++i) if (coast[i] < seaLevel) lake[i] = 1;
+			std::vector<uint8_t> sea(count);
+			for (size_t i = 0; i < count; ++i) sea[i] = coast[i] < seaLevel;
 			// The fine noise of a small feature size leaves one-tile channels and spurs along the coast;
-			// a 3 x 3 majority vote rounds them off.
+			// a 3 x 3 majority vote rounds them off. Only the sea: the narrow channels and ponds of the lakes stay.
 			std::vector<uint8_t> next(count);
 			for (int pass = 0; pass < 2; ++pass) {
 				if (stop.stop_requested()) return cancelled();
@@ -1079,12 +1080,13 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 					for (uint32_t ny = y ? y - 1 : 0; ny <= std::min(y + 1, height - 1); ++ny)
 						for (uint32_t nx = x ? x - 1 : 0; nx <= std::min(x + 1, width - 1); ++nx) {
 							++cells;
-							water += lake[size_t(ny) * width + nx];
+							water += sea[size_t(ny) * width + nx];
 						}
 					next[i] = water * 2 > cells;
 				}
-				lake.swap(next);
+				sea.swap(next);
 			}
+			for (size_t i = 0; i < count; ++i) lake[i] = lake[i] || sea[i];
 		}
 		if (!fillEnclosed(lake, width, height, islandCells, stop)) return cancelled();
 		for (size_t i = 0; i < count; ++i) rock[i] = !lake[i] && elevation[i] >= rockLevel;
