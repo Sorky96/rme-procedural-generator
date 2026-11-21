@@ -18,6 +18,6 @@ struct DecorSource {
 // GUI thread. The source a doodad brush name or "raw:<id>" names in the loaded client, or an empty one when it
 // does not exist, has no single-tile items or a chance sum above maxChance. Items are not checked; see decorItemPlaceable.
 [[nodiscard]] DecorSource findDecorSource(std::string_view name, uint64_t maxChance);
-// A real, plain, non-ground, non-border item of the loaded client.
+// A real, plain (created as a plain Item without attributes), non-ground, non-border item of the loaded client.
 [[nodiscard]] bool decorItemPlaceable(uint16_t id);
 }

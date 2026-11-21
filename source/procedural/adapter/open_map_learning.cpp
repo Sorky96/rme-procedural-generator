@@ -6,6 +6,7 @@
 #include "procedural/core/doodad_class.h"
 #include "map/map.h"
 #include "map/tile.h"
+#include <typeinfo>
 #include <vector>
 #include <wx/thread.h>
 namespace rme::procedural {
@@ -40,7 +41,11 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             // learned as a source of that one item.
             const DecorKind kind = classifyDoodadBrush(doodad ? std::string_view(doodad->getName()) : seen.name);
             auto name = doodad ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
-            if (kind == DecorKind::None) { tileOverlays.push_back(std::move(name)); continue; }
+            // Only plain items can be generated (see decorItemPlaceable); containers, teleports and the like stay out.
+            if (kind == DecorKind::None) {
+                if (typeid(*item) == typeid(Item)) tileOverlays.push_back(std::move(name));
+                continue;
+            }
             traits |= decorTraitBit(kind);
             ++doodads[{key, std::move(name)}];
         }

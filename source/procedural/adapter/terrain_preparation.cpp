@@ -982,7 +982,7 @@ TerrainPreparationSteps runPreparation(
                             auto cliffInput = upperSnapshot->input;
                             cliffInput.config.region = lowerPlan.config.region;
                             cliffInput.config.vegetation = false;
-                            cliffProfile.decorCount = 0;
+                            cliffProfile.decorCount = 0; cliffProfile.overlay = {}; cliffProfile.overlayTreePermille = {}; cliffProfile.overlayGroundPermille = {};
                             auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, cliffClear);
                             if (!cliffs) co_return fail(cliffs.error());
                             for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {

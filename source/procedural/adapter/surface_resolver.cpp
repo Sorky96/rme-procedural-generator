@@ -424,9 +424,9 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
 		const auto& name = profile.overlay[i];
 		const bool off = profile.overlayTreePermille[i] == 0 && profile.overlayGroundPermille[i] == 0;
-		if (name.empty() != off || name.size() > 256 || (!vegetation && !name.empty()) ||
+		if (name.empty() != off || name.size() > 256 ||
 			profile.overlayTreePermille[i] > 1000 || profile.overlayGroundPermille[i] > 1000) return std::unexpected(ResolveError::InvalidProfile);
-		overlaid = overlaid || !name.empty();
+		overlaid = overlaid || (vegetation && !name.empty()); // overlays come only with vegetation
 	}
 	for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
 		const bool defaults = profile.grassMixDecorKeep[m] == GroundProfile::keepAllDecor &&
@@ -552,7 +552,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		// Overlays must not block the way: paths and reachability were planned without them.
 		std::array<DecorSource, GroundProfile::overlayCount> overlays {};
 		for (size_t index = 0; index < GroundProfile::overlayCount; ++index) {
-			if (profile.overlay[index].empty()) continue;
+			if (!overlaid || profile.overlay[index].empty()) continue;
 			const auto checked = checkDoodad(profile.overlay[index]);
 			if (!checked) return std::unexpected(checked.error());
 			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
