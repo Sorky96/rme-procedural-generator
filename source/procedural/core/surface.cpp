@@ -10,6 +10,7 @@
 #include <new>
 #include <optional>
 #include <queue>
+#include <ranges>
 #include <span>
 #include <utility>
 
@@ -816,6 +817,31 @@ void forNeighbours(size_t cell, uint32_t width, uint32_t height, Visit&& visit) 
 }
 
 // Clears 4-connected components of flag smaller than minCells. False when cancelled.
+// Every cell must lie in a 2 x 2 block of its own value (outside the rectangle counts as either): flagged cells that
+// do not are cleared, then unflagged ones that do not are set. One-cell spurs, strips and channels go, which the
+// border brushes cannot draw cleanly. Two passes.
+bool keepBlocks(std::vector<uint8_t>& flag, uint32_t width, uint32_t height, const std::stop_token& stop) {
+	const auto inBlock = [&](size_t i, uint8_t value) {
+		const int64_t x = int64_t(i % width), y = int64_t(i / width);
+		const auto same = [&](int64_t cx, int64_t cy) {
+			return cx < 0 || cy < 0 || cx >= int64_t(width) || cy >= int64_t(height) || flag[size_t(cy) * width + size_t(cx)] == value;
+		};
+		for (const auto [dx, dy] : {std::pair{-1, -1}, {0, -1}, {-1, 0}, {0, 0}})
+			if (same(x + dx, y + dy) && same(x + dx + 1, y + dy) && same(x + dx, y + dy + 1) && same(x + dx + 1, y + dy + 1)) return true;
+		return false;
+	};
+	std::vector<size_t> change;
+	for (int pass = 0; pass < 2; ++pass) {
+		for (const uint8_t value : {uint8_t(1), uint8_t(0)}) {
+			if (stop.stop_requested()) return false;
+			change.clear();
+			for (size_t i = 0; i < flag.size(); ++i) if (flag[i] == value && !inBlock(i, value)) change.push_back(i);
+			for (const size_t i : change) flag[i] = uint8_t(1 - value);
+		}
+	}
+	return true;
+}
+
 bool dropSmall(std::vector<uint8_t>& flag, uint32_t width, uint32_t height, uint32_t minCells,
 	const std::stop_token& stop) {
 	if (minCells <= 1) return true;
@@ -1012,7 +1038,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
         || (config.tuning.plateauMinTop && (config.tuning.plateauMinTop < 16 || config.tuning.plateauMinTop > 4096))
         || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole || config.tuning.dirtPermille > 1000
         || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8
-        || config.tuning.islandPermille > 900 || config.tuning.dirtSize > 4096) {
+        || config.tuning.islandPermille > 900 || config.tuning.dirtSize > 4096 || config.tuning.cleanEdges > 1) {
         return std::unexpected(SurfaceError::InvalidParameters);
     }
     // Region, mask and budget rules are shared with v1 through a unit-weight config.
@@ -1052,11 +1078,22 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		}
 
 		// Lakes (lowest cells) and rock (highest cells), then drop patches that are too small.
-		const uint32_t lakeLevel = config.tuning.lakePermille ? lowCut(elevation, config.tuning.lakePermille) : 0;
 		const uint32_t rockLevel = config.tuning.rockPermille ? lowCut(elevation, 1000 - config.tuning.rockPermille) : noiseBins;
 		std::vector<uint8_t> lake(count), rock(count);
-		for (size_t i = 0; i < count; ++i) lake[i] = elevation[i] < lakeLevel;
-		if (!dropSmall(lake, width, height, config.tuning.minLakeCells, stop)) return cancelled();
+		const auto makePonds = [&](uint32_t permille) {
+			const uint32_t lakeLevel = permille ? lowCut(elevation, permille) : 0;
+			for (size_t i = 0; i < count; ++i) lake[i] = elevation[i] < lakeLevel;
+			return dropSmall(lake, width, height, config.tuning.minLakeCells, stop) &&
+				(!config.tuning.cleanEdges || keepBlocks(lake, width, height, stop));
+		};
+		if (!makePonds(config.tuning.lakePermille)) return cancelled();
+		if (config.tuning.cleanEdges && config.tuning.lakePermille) {
+			// Cleaning drops the smallest ponds; one second cut at a raised share brings the water back to the target.
+			const uint64_t wanted = uint64_t(count) * config.tuning.lakePermille / 1000;
+			const uint64_t made = uint64_t(std::ranges::count(lake, uint8_t(1)));
+			if (made && made < wanted && !makePonds(uint32_t(std::min<uint64_t>(500, config.tuning.lakePermille * wanted / made))))
+				return cancelled();
+		}
 		if (config.tuning.islandPermille) {
 			// Open sea: the cells nearest the rectangle edge, the coastline wobbled by its own noise at a sixth of the
 			// island, so bays and capes keep their size whatever the feature size of the ponds.
@@ -1092,6 +1129,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 			}
 			for (size_t i = 0; i < count; ++i) lake[i] = lake[i] || sea[i];
 		}
+		if (config.tuning.cleanEdges && !keepBlocks(lake, width, height, stop)) return cancelled();
 		if (!fillEnclosed(lake, width, height, islandCells, stop)) return cancelled();
 		for (size_t i = 0; i < count; ++i) rock[i] = !lake[i] && elevation[i] >= rockLevel;
 		if (!dropSmall(rock, width, height, config.tuning.minRockCells, stop)) return cancelled();
@@ -1292,21 +1330,39 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		// Dry land splits into grass and dirt by moisture. The transition band is a smooth
 		// offset (not per-cell noise), so edges wander instead of speckling, and patches
 		// smaller than minPatchCells are absorbed by the surrounding kind.
-		const uint32_t dirtLevel = lowCut(moisture, config.tuning.dirtPermille);
 		std::vector<uint8_t> dirt(count, 0), grass(count, 0);
-		for (size_t i = 0; i < count; ++i) {
-			if (i % 4096 == 0 && stop.stop_requested()) return cancelled();
-			if (lake[i] || rock[i]) continue;
-			const uint32_t ax = uint32_t(config.region.x) + uint32_t(i % width);
-			const uint32_t ay = uint32_t(config.region.y) + uint32_t(i / width);
-			const int64_t offset = (int64_t(valueNoise(config.seed, ditherStream, ax, ay, transitionStep)) - noiseBins / 2) *
-				int64_t(config.tuning.transitionWidth) / (noiseBins / 2);
-			dirt[i] = int64_t(moisture[i]) + offset < int64_t(dirtLevel);
-		}
 		// A learned dirt scale keeps patches down to about a quarter of its noise cell; the built-in one keeps 24.
 		const uint32_t smallestPatch = config.tuning.dirtSize
 			? std::min<uint32_t>(minPatchCells, config.tuning.dirtSize * config.tuning.dirtSize / 4 + 1) : minPatchCells;
-		if (!dropSmall(dirt, width, height, smallestPatch, stop)) return cancelled();
+		const auto makeDirt = [&](uint32_t permille) {
+			const uint32_t dirtLevel = lowCut(moisture, permille);
+			for (size_t i = 0; i < count; ++i) {
+				if (i % 4096 == 0 && stop.stop_requested()) return false;
+				dirt[i] = 0;
+				if (lake[i] || rock[i]) continue;
+				const uint32_t ax = uint32_t(config.region.x) + uint32_t(i % width);
+				const uint32_t ay = uint32_t(config.region.y) + uint32_t(i / width);
+				const int64_t offset = (int64_t(valueNoise(config.seed, ditherStream, ax, ay, transitionStep)) - noiseBins / 2) *
+					int64_t(config.tuning.transitionWidth) / (noiseBins / 2);
+				dirt[i] = int64_t(moisture[i]) + offset < int64_t(dirtLevel);
+			}
+			if (!dropSmall(dirt, width, height, smallestPatch, stop)) return false;
+			if (config.tuning.cleanEdges) {
+				// Lake and rock cells stay out of the dirt; the blocks are judged on the land only.
+				if (!keepBlocks(dirt, width, height, stop)) return false;
+				for (size_t i = 0; i < count; ++i) if (lake[i] || rock[i]) dirt[i] = 0;
+			}
+			return true;
+		};
+		if (!makeDirt(config.tuning.dirtPermille)) return cancelled();
+		if (config.tuning.cleanEdges && config.tuning.dirtPermille) {
+			// As for the ponds: one second cut at a raised share when cleaning took dirt below its share of the land.
+			const uint64_t land = uint64_t(std::ranges::count_if(std::views::iota(size_t(0), size_t(count)), [&](size_t i) { return !lake[i] && !rock[i]; }));
+			const uint64_t wanted = land * config.tuning.dirtPermille / 1000;
+			const uint64_t made = uint64_t(std::ranges::count(dirt, uint8_t(1)));
+			if (made && made < wanted && !makeDirt(uint32_t(std::min<uint64_t>(1000, config.tuning.dirtPermille * wanted / made))))
+				return cancelled();
+		}
 		for (size_t i = 0; i < count; ++i) grass[i] = !lake[i] && !rock[i] && !dirt[i];
 		if (!dropSmall(grass, width, height, smallestPatch, stop)) return cancelled();
 		std::vector<SurfaceKind> kinds(count, SurfaceKind::Grass);

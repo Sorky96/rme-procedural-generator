@@ -45,6 +45,7 @@ struct SurfaceTuning {
 	uint32_t transitionWidth = 6000;  // half width of the grass/dirt dithered band, 0..32768
 	uint32_t meander = 0;             // river sideways swing in cells, 0..8; 0 keeps the original straight-ish routes
 	uint32_t islandPermille = 0;      // share of the region that is open sea around the land, 0..900; 0 = no sea
+	uint32_t cleanEdges = 0;          // 1 = no one-cell spurs, strips or channels of lake and dirt (learned styles); 0 = as built
 	uint32_t dirtSize = 0;            // lattice step of the grass/dirt moisture noise, 1..4096; 0 = twice featureSize
 	uint32_t pathLength = 0;          // target skeleton cells of paths per 65536 cells, 0..400; 0 = no paths (not part of a style profile)
 	uint32_t buildingDensity = 0;     // target number of building foundations per 65536 cells, 0..100; 0 = none (not part of a style profile)

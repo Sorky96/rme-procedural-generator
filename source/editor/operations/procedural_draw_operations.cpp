@@ -82,6 +82,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
 			if (c.surface.islandPermille) hashField(hash, c.surface.islandPermille, 4);
 			if (c.surface.dirtSize) hashField(hash, c.surface.dirtSize, 4);
+			if (c.surface.cleanEdges) hashField(hash, c.surface.cleanEdges, 4);
 			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
 			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
 			if (c.surface.fordLength) hashField(hash, c.surface.fordLength, 4);

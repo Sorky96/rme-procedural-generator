@@ -398,6 +398,8 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.tuning->islandPermille = natural ? uint32_t(std::min<uint64_t>(900, (sea * 1000 + natural / 2) / natural)) : 0;
     const uint64_t land = natural - sea;
     profile.tuning->lakePermille = land ? uint32_t(std::min<uint64_t>(500, ((water - sea) * 1000 + land / 2) / land)) : 0;
+    // Learned styles draw with border brushes: no one-cell spurs, strips or channels (set before the scale fits).
+    profile.tuning->cleanEdges = 1;
     // Dirt is the driest share of the land; the fit can trade it away for neighbour pairs, so it is set directly too.
     const uint64_t dry = sample.stats.kindTiles[size_t(StyleKind::Dirt)], ground = natural - water;
     profile.tuning->dirtPermille = ground ? uint32_t(std::min<uint64_t>(1000, (dry * 1000 + ground / 2) / ground)) : 0;
@@ -482,7 +484,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
                 const uint64_t land = uint64_t(std::ranges::count_if(c, [](SurfaceKind k) { return k == SurfaceKind::Grass || k == SurfaceKind::Dirt; }));
                 const uint64_t share = land ? uint64_t(std::ranges::count(c, SurfaceKind::Dirt)) * 1000 / land : 0;
                 score += (edge > sample.dirtEdgePermille ? edge - sample.dirtEdgePermille : sample.dirtEdgePermille - edge)
-                    + 4 * (share > wantShare ? share - wantShare : wantShare - share);
+                    + 20 * (share > wantShare ? share - wantShare : wantShare - share);
             }
             if (score < best) { best = score; chosen = tuning; }
         }
