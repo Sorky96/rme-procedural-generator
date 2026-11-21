@@ -2,6 +2,7 @@
 #include "app/main.h"
 #include "ui/dialogs/style_learning_dialog.h"
 #include "procedural/adapter/open_map_learning.h"
+#include "procedural/core/doodad_class.h"
 #include "procedural/adapter/generation_assets.h"
 #include "procedural/adapter/generation_selection.h"
 #include "app/managers/version_manager.h"
@@ -17,8 +18,10 @@
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <algorithm>
 #include <chrono>
 #include <format>
+#include <ranges>
 
 using namespace rme::procedural;
 StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
@@ -60,6 +63,9 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     mapping_->SetName("learn-mapping"); root->Add(mapping_, 1, wxEXPAND | wxALL, margin);
     mapping_->SetToolTip("G4 classes (case sensitive): Grass, Dirt, Rock, Shore, Water, Other, Unmapped, NoGround. Keep unknown grounds Unmapped. Edit the class column; keep the exact brush name.");
     mapping_->Bind(wxEVT_TEXT, [this](wxCommandEvent&) { Invalidate(false); });
+    root->Add(new wxStaticText(this, wxID_ANY, "Items in the &sample (most used first; what the learning does with each):"), 0, wxLEFT | wxRIGHT, margin);
+    items_text_ = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(Theme::Grid(100), Theme::Grid(20)), wxTE_MULTILINE | wxTE_READONLY | wxHSCROLL);
+    items_text_->SetName("learn-items"); root->Add(items_text_, 1, wxEXPAND | wxALL, margin);
     auto* nameRow = new wxBoxSizer(wxHORIZONTAL);
     nameRow->Add(new wxStaticText(this, wxID_ANY, "Profile &name:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
     name_ = new wxTextCtrl(this, wxID_ANY); name_->SetName("learn-name");
@@ -131,8 +137,9 @@ void StyleLearningDialog::Invalidate(bool discardSample) {
         captured_ = false;
         source_valid_ = false;
         sample_.reset();
-        doodads_.clear();
+        doodads_.clear(); items_.clear();
         if (mapping_) mapping_->ChangeValue(wxEmptyString);
+        if (items_text_) items_text_->ChangeValue(wxEmptyString);
     }
     if (cancel_) cancel_->Disable();
     if (progress_) progress_->SetValue(0);
@@ -177,7 +184,7 @@ void StyleLearningDialog::Read() {
     if (bounds.x0 + bounds.width > map_width_ || bounds.y0 + bounds.height > map_height_) { Status("Rectangle lies outside map dimensions."); return; }
     auto sample = SemanticMap::create(std::span(&bounds, 1), {512 * 512});
     if (!sample) { Status("Cannot allocate sample."); return; }
-    sample_ = std::move(*sample); doodads_.clear(); source_valid_ = true; row_ = 0; reading_ = true;
+    sample_ = std::move(*sample); doodads_.clear(); items_.clear(); source_valid_ = true; row_ = 0; reading_ = true;
     read_->Disable(); analyze_->Disable(); cancel_->Enable(); Status("Reading the rectangle...");
 }
 void StyleLearningDialog::Analyze() {
@@ -212,7 +219,7 @@ void StyleLearningDialog::Tick() {
     if (reading_) {
         const auto* e = g_gui.GetCurrentEditor();
         if (!e || !CurrentSource()) return;
-        const auto read = readLearningRow(e->map, *sample_, doodads_, row_++);
+        const auto read = readLearningRow(e->map, *sample_, doodads_, items_, row_++);
         if (!read) { Invalidate(); Status(read.error()); return; }
         const int rows = sample_->floors().front().bounds.height;
         progress_->SetValue(row_ * 100 / rows);
@@ -225,6 +232,7 @@ void StyleLearningDialog::Tick() {
             const auto mapping = serializeKeyMap(proposeKeyMap(sample_->groundKeys(), rules));
             if (!mapping) { Invalidate(); Status("Cannot display ground mapping."); return; }
             mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable(); cancel_->Disable();
+            ShowItems();
             const auto counts = summarize(*sample_);
             const uint64_t present = counts.tilesPerFloor[size_t(z_->GetValue())];
             // Patch sizes and vegetation brushes need room to show; a few thousand tiles give extreme fits.
@@ -262,4 +270,34 @@ void StyleLearningDialog::Save() {
     const auto saved = saveLearnedProfile(styleProfileDirectory(), name_->GetValue().ToStdString(wxConvUTF8), *result_);
     if (!saved) { Status(saved.error()); return; }
     if (IsModal()) EndModal(wxID_OK); else { save_->Disable(); Status("Profile saved locally. Reopen the generator to choose it."); }
+}
+void StyleLearningDialog::ShowItems() {
+    std::vector<std::pair<uint16_t, const SampleItem*>> sorted;
+    for (const auto& [id, item] : items_) sorted.emplace_back(id, &item);
+    std::ranges::sort(sorted, [](const auto& a, const auto& b) { return a.second->count != b.second->count ? a.second->count > b.second->count : a.first < b.first; });
+    const auto kindName = [](DecorKind kind) -> std::string_view {
+        switch (kind) {
+            case DecorKind::Tree: return "tree";
+            case DecorKind::Bush: return "bush";
+            case DecorKind::Stone: return "stone";
+            case DecorKind::None: break;
+        }
+        return "";
+    };
+    std::string text = "count\tid\tname\tsource\tlearned as\n";
+    constexpr size_t shown = 80;
+    for (const auto& [id, item] : sorted | std::views::take(shown)) {
+        std::string learned;
+        if (item->brush.empty()) {
+            const auto guess = kindName(classifyDoodadBrush(item->name));
+            learned = guess.empty() ? "ignored" : std::format("ignored (name suggests {})", guess);
+        } else {
+            const auto kind = kindName(classifyDoodadBrush(item->brush));
+            learned = kind.empty() ? "ignored (brush kind unknown)" : std::string(kind);
+        }
+        text += std::format("{}\t{}\t{}\t{}\t{}\n", item->count, id, item->name,
+            item->brush.empty() ? std::string("RAW, no brush") : std::format("brush \"{}\"", item->brush), learned);
+    }
+    if (sorted.size() > shown) text += std::format("... and {} more item types\n", sorted.size() - shown);
+    items_text_->ChangeValue(wxstr(text));
 }

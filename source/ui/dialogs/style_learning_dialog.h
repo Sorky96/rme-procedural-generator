@@ -26,9 +26,10 @@ private:
     void Save();
     void Tick();
     void Status(const std::string& text);
+    void ShowItems();
     wxTimer timer_{this};
     wxSpinCtrl *x_ = nullptr, *y_ = nullptr, *z_ = nullptr, *width_ = nullptr, *height_ = nullptr;
-    wxTextCtrl *mapping_ = nullptr, *name_ = nullptr;
+    wxTextCtrl *mapping_ = nullptr, *name_ = nullptr, *items_text_ = nullptr;
     wxCheckBox* permission_ = nullptr;
     wxButton *read_ = nullptr, *analyze_ = nullptr, *save_ = nullptr;
     wxButton* cancel_ = nullptr;
@@ -41,6 +42,7 @@ private:
     bool captured_ = false, reading_ = false, source_valid_ = false;
     std::optional<rme::procedural::SemanticMap> sample_;
     rme::procedural::DoodadItemCounts doodads_;
+    rme::procedural::SampleItemCounts items_;
     std::optional<rme::procedural::StyleProfile> result_;
     std::optional<rme::procedural::ClientAssetIds> ids_;
     std::string analyzed_mapping_;

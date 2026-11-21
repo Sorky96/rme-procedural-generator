@@ -9,7 +9,12 @@ class Map;
 namespace rme::procedural {
 // Stacked items per (ground key of the sample, doodad brush name), summed over the rows read so far.
 using DoodadItemCounts = std::map<std::pair<uint16_t, std::string>, uint64_t>;
+// Every stacked item of the sample (walls, doors, tables, carpets and borders aside) by server ID: how many,
+// its client name and the doodad brush it belongs to (empty when it has none, e.g. placed from the RAW palette).
+struct SampleItem { uint64_t count = 0; std::string name, brush; };
+using SampleItemCounts = std::map<uint16_t, SampleItem>;
 // GUI-thread read only. One row (at most 512 cells) per call; never holds tile/brush pointers.
 // A tile holding a tree, bush or stone doodad gets the matching decor trait (classifyDoodadBrush).
-std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads, int row);
+std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads,
+    SampleItemCounts& items, int row);
 }
