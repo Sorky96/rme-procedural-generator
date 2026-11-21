@@ -329,7 +329,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 	if (cellCount > (std::numeric_limits<uint64_t>::max() - fixedPlanBytes) / sizeof(uint16_t)) {
 		return fail(PreparationInputError::MemoryLimit);
 	}
-	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
+	const bool overlaid = vegetation && std::ranges::any_of(profile.overlay, [](const std::string& name) { return !name.empty(); });
+	const uint64_t planBytes = fixedPlanBytes + cellCount * sizeof(uint16_t) * ((vegetation ? 2 : 1) + (overlaid ? 1 : 0) + (profile.wall.empty() ? 0 : 1) + (profile.campfire.empty() ? 0 : 1) + (hasCave(profile) ? 2 : 0)) + (profile.door.empty() ? 0 : cellCount)
         + (config.surface.caveDoorCorridors || dungeons ? cellCount * 3 : hasCave(profile) && caveWallBrushOf(profile) ? cellCount * 2 : 0)
         + (storeys ? cellCount * 2 : 0);
 

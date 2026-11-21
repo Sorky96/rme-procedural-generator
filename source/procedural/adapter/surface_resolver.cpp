@@ -36,6 +36,7 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 constexpr uint64_t maxDecorChance = 100000;
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
+constexpr uint64_t variantStream = 0x73325f7661726e74ULL; // "s2_varnt"
 constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
 
 uint64_t mixHash(uint64_t value) {
@@ -425,7 +426,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	}
 	if (grid.cells.size() > (std::numeric_limits<size_t>::max() - sizeof(GroundPlan)) / sizeof(uint16_t) ||
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
-	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0)) + (doored ? 1 : 0));
+	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0) + (overlaid ? 1 : 0)) + (doored ? 1 : 0));
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
 	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.active(), profile.activeDecor()})) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
@@ -439,6 +440,16 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		payloadBytes += name->size() + 1;
 	}
 	for (const auto& names : profile.grassMixDecor) for (const auto& name : names) {
+		if (name.empty()) continue;
+		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
+		payloadBytes += name.size() + 1;
+	}
+	for (const auto* name : {&profile.waterTree}) {
+		if (name->empty()) continue;
+		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
+		payloadBytes += name->size() + 1;
+	}
+	for (const auto& name : profile.overlay) {
 		if (name.empty()) continue;
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
@@ -686,10 +697,16 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				const bool kept = placed != DecorKind::None &&
 					(!patch || mixDecorRoll < profile.grassMixDecorKeep[patch - 1][size_t(placed) - 1]);
 				const bool inWater = grid.cells[i] == SurfaceKind::Lake || grid.cells[i] == SurfaceKind::River;
+				// A brush other than the main one draws its variant from its own full chance range, by a hash of the
+				// map position so the other streams are not shifted.
+				const auto variantRoll = [&](uint64_t total) {
+					const uint64_t ax = uint64_t(grid.region.x + int64_t(i % grid.region.width)), ay = uint64_t(grid.region.y + int64_t(i / grid.region.width));
+					return mixHash(input.config.seed ^ variantStream ^ mixHash(ax * 0x100000001b3ULL ^ ay)) % total + 1;
+				};
 				if (kept && inWater) {
 					// A tree standing in the water: its own brush, or none without one.
 					if (placed == DecorKind::Tree && waterTree) {
-						const uint64_t roll = (uint64_t(decorRolls[0]) - 1) * waterTree.total / doodads[0].total + 1;
+						const uint64_t roll = variantRoll(waterTree.total);
 						if (!(result.decor[i] = waterTree.item(roll))) return std::unexpected(ResolveError::InvalidItem);
 					}
 				} else if (kept) {
@@ -698,12 +715,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					uint64_t roll = uint64_t(decorRolls[slot]);
 					if (patch && mixDoodads[patch - 1][slot]) {
 						doodad = &mixDoodads[patch - 1][slot];
-						roll = (roll - 1) * doodad->total / doodads[slot].total + 1;
+						roll = variantRoll(doodad->total);
 					} else if (const size_t mix = kindSlot.empty() ? 0 : kindSlot[i]; mix) {
-						// A grove of a mix brush; the roll inside it is scaled from the decor roll.
+						// A grove of a mix brush.
 						const size_t kind = placed == DecorKind::Tree ? 0 : 1;
 						doodad = &kindMix[kind][mix - 1];
-						roll = (roll - 1) * doodad->total / doodads[slot].total + 1;
+						roll = variantRoll(doodad->total);
 					}
 					const uint16_t item = doodad->item(roll);
 					if (!item) return std::unexpected(ResolveError::InvalidItem);
