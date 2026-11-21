@@ -208,6 +208,7 @@ std::expected<uint32_t, ReachabilityError> keepStartLandPois(SurfaceGrid& grid, 
 	removed += uint32_t(std::erase_if(grid.doors, [&](uint32_t i) { return erase[i] != 0; }));
 	removed += uint32_t(std::erase_if(grid.sites, [&](uint32_t i) { return erase[i] != 0; }));
 	std::erase_if(grid.gaps, [&](uint32_t i) { return erase[i] != 0; });
+	std::erase_if(grid.bare, [&](uint32_t i) { return erase[i] != 0; });
 	removed += uint32_t(std::erase_if(grid.entrances, [&](uint32_t e) {
 		const auto approach = caveEntranceApproach(grid, e);
 		return approach >= n || !(*land)[approach];

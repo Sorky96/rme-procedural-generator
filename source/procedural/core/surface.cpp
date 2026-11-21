@@ -996,7 +996,8 @@ bool SurfaceGrid::valid() const noexcept {
 	if (!std::ranges::all_of(doors, [&](uint32_t door) { return door < cells.size() && cells[door] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(gaps, [&](uint32_t gap) { return gap < cells.size() && cells[gap] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(sites, [&](uint32_t site) { return site < cells.size() && cells[site] == SurfaceKind::Floor; })) return false;
-	if (!std::ranges::all_of(bare, [&](uint32_t cell) { return cell < cells.size() && cells[cell] == SurfaceKind::Floor; })) return false;
+	// Bare cells may outlive their floor (a repair can clear a building); only Floor cells among them count.
+	if (!std::ranges::all_of(bare, [&](uint32_t cell) { return cell < cells.size(); })) return false;
 	if (!std::ranges::all_of(fires, [&](uint32_t fire) { return fire < cells.size() && cells[fire] == SurfaceKind::Path; })) return false;
 	if (!std::ranges::all_of(entrances, [&](uint32_t entrance) { return entrance < cells.size() && (cells[entrance] == SurfaceKind::Rock || cells[entrance] == SurfaceKind::Grass || cells[entrance] == SurfaceKind::Dirt); })) return false;
     if (!bridgeAxes.empty()) {

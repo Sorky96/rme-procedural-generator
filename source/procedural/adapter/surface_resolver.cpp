@@ -668,7 +668,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
 			const bool isBridge = grid.cells[i] == SurfaceKind::Bridge;
-			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 : !bareCell.empty() && bareCell[i] ? size_t(SurfaceKind::Grass) - 1 :
+			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 : !bareCell.empty() && bareCell[i] && grid.cells[i] == SurfaceKind::Floor ? size_t(SurfaceKind::Grass) - 1 :
                 input.config.surface.passes && grid.cells[i] == SurfaceKind::Path && kinds == GroundProfile::surfaceCount
                     ? size_t(SurfaceKind::Dirt) - 1 : size_t(grid.cells[i]) - 1;
 			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush
