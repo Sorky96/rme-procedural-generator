@@ -137,7 +137,7 @@ void StyleLearningDialog::Invalidate(bool discardSample) {
         captured_ = false;
         source_valid_ = false;
         sample_.reset();
-        doodads_.clear(); items_.clear();
+        doodads_.clear(); items_.clear(); overlays_.clear();
         if (mapping_) mapping_->ChangeValue(wxEmptyString);
         if (items_text_) items_text_->ChangeValue(wxEmptyString);
     }
@@ -184,7 +184,7 @@ void StyleLearningDialog::Read() {
     if (bounds.x0 + bounds.width > map_width_ || bounds.y0 + bounds.height > map_height_) { Status("Rectangle lies outside map dimensions."); return; }
     auto sample = SemanticMap::create(std::span(&bounds, 1), {512 * 512});
     if (!sample) { Status("Cannot allocate sample."); return; }
-    sample_ = std::move(*sample); doodads_.clear(); items_.clear(); source_valid_ = true; row_ = 0; reading_ = true;
+    sample_ = std::move(*sample); doodads_.clear(); items_.clear(); overlays_.clear(); source_valid_ = true; row_ = 0; reading_ = true;
     read_->Disable(); analyze_->Disable(); cancel_->Enable(); Status("Reading the rectangle...");
 }
 void StyleLearningDialog::Analyze() {
@@ -196,7 +196,9 @@ void StyleLearningDialog::Analyze() {
     if (!mapping) { Status("Invalid G4 mapping. Keep the schema, tab separators and exact brush names."); return; }
     std::vector<GroundDoodadItems> doodadItems;
     for (const auto& [where, items] : doodads_) doodadItems.push_back({where.first, where.second, items});
-    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue());
+    std::vector<GroundOverlayItems> overlayItems;
+    for (const auto& [where, counts] : overlays_) overlayItems.push_back({where.first, where.second, counts.first, counts.second});
+    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems);
     if (!sample) { Status(sample.error()); return; }
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));
     result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); stop_ = std::stop_source{};
@@ -219,7 +221,7 @@ void StyleLearningDialog::Tick() {
     if (reading_) {
         const auto* e = g_gui.GetCurrentEditor();
         if (!e || !CurrentSource()) return;
-        const auto read = readLearningRow(e->map, *sample_, doodads_, items_, row_++);
+        const auto read = readLearningRow(e->map, *sample_, doodads_, items_, overlays_, row_++);
         if (!read) { Invalidate(); Status(read.error()); return; }
         const int rows = sample_->floors().front().bounds.height;
         progress_->SetValue(row_ * 100 / rows);
@@ -290,10 +292,10 @@ void StyleLearningDialog::ShowItems() {
         std::string learned;
         if (item->brush.empty()) {
             const auto guess = kindName(classifyDoodadBrush(item->name));
-            learned = guess.empty() ? "ignored (name kind unknown)" : std::format("{} (by item name)", guess);
+            learned = guess.empty() ? "overlay" : std::format("{} (by item name)", guess);
         } else {
             const auto kind = kindName(classifyDoodadBrush(item->brush));
-            learned = kind.empty() ? "ignored (brush kind unknown)" : std::string(kind);
+            learned = kind.empty() ? "overlay" : std::string(kind);
         }
         text += std::format("{}\t{}\t{}\t{}\t{}\n", item->count, id, item->name,
             item->brush.empty() ? std::string("RAW, no brush") : std::format("brush \"{}\"", item->brush), learned);

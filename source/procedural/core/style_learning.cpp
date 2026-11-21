@@ -134,6 +134,43 @@ WaterShape waterShape(int w, int h, Present present, Water water) {
     }
     return shape;
 }
+// Overlay items on land by use; each kept with at least 20 items and its rates on the land tiles with and
+// without a tree. Items on water or on tiles without mapped ground are left out, as for vegetation.
+std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
+    std::span<const GroundOverlayItems> items) {
+    std::vector<uint8_t> landKey(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < landKey.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        landKey[k] = entry != mapping.end() && size_t(entry->kind) < naturalKindCount && entry->kind != StyleKind::Water;
+    }
+    const auto& floor = map.floors().front();
+    uint64_t treeTiles = 0, groundTiles = 0;
+    for (size_t i = 0; i < floor.ground.size(); ++i) {
+        if (!(floor.traits[i] & bit(Trait::Present)) || floor.ground[i] >= landKey.size() || !landKey[floor.ground[i]]) continue;
+        ++((floor.traits[i] & bit(Trait::TreeDoodad)) ? treeTiles : groundTiles);
+    }
+    std::map<std::string, std::pair<uint64_t, uint64_t>, std::less<>> byName;
+    for (const auto& item : items) {
+        if (item.ground >= landKey.size() || !landKey[item.ground]) continue;
+        auto& counts = byName[item.name];
+        counts.first += item.onTree; counts.second += item.onGround;
+    }
+    std::vector<std::pair<uint64_t, std::string_view>> ranked;
+    for (const auto& [name, counts] : byName)
+        if (counts.first + counts.second >= 20) ranked.emplace_back(counts.first + counts.second, name);
+    std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
+    std::array<StyleOverlay, maxOverlays> out;
+    size_t used = 0;
+    for (const auto& [total, name] : ranked) {
+        if (used == maxOverlays) break;
+        const auto& [onTree, onGround] = byName.find(name)->second;
+        const auto rate = [](uint64_t n, uint64_t of) { return of ? uint32_t(std::min<uint64_t>(1000, (n * 1000 + of / 2) / of)) : 0u; };
+        StyleOverlay overlay {std::string(name), rate(onTree, treeTiles), rate(onGround, groundTiles)};
+        if (overlay.onTreePermille + overlay.onGroundPermille == 0) continue;
+        out[used++] = std::move(overlay);
+    }
+    return out;
+}
 WaterShape sampleWaterShape(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
     const auto& floor = map.floors().front();
     std::vector<uint8_t> waterKey(map.groundKeys().size(), 0);
@@ -148,7 +185,8 @@ WaterShape sampleWaterShape(const SemanticMap& map, std::span<const KeyMapEntry>
 } // namespace
 
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
-    std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop) try {
+    std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop,
+    std::span<const GroundOverlayItems> overlayItems) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
     if (stop.stop_requested()) return std::unexpected("Analysis cancelled.");
     if (map.floors().size() != 1) return std::unexpected("Choose one surface rectangle.");
@@ -243,6 +281,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     sample.clumpPermille = vegetationClump(map, mapping);
     const auto shape = sampleWaterShape(map, mapping);
     sample.seaTiles = shape.sea; sample.pondTiles = shape.pondTiles; sample.pondEdges = shape.pondEdges;
+    sample.overlays = chooseOverlays(map, mapping, overlayItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -331,6 +370,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.grassMixDecor = sample.grassMixDecor;
     profile.treeMix = sample.treeMix;
     profile.bushMix = sample.bushMix;
+    profile.overlays = sample.overlays;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

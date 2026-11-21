@@ -185,6 +185,11 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 		}
 		if (share > 1000) return std::unexpected(ProfileError::InvalidRange);
 	}
+	for (const StyleOverlay& o : p.overlays) {
+		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
+		if (o.onTreePermille > 1000 || o.onGroundPermille > 1000 || o.name.empty() != (o.onTreePermille + o.onGroundPermille == 0))
+			return std::unexpected(ProfileError::InvalidRange);
+	}
 	for (size_t m = 0; m < maxGrassMix; ++m) {
 		const auto& d = p.grassMixDecor[m];
 		if (p.grassMix[m].brush.empty() && d != StyleMixDecor {}) return std::unexpected(ProfileError::InvalidRange);
@@ -230,6 +235,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	}
 	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
 	for (const auto& mix : p.bushMix) if (!mix.brush.empty()) out += std::format("mix\tBush\t{}\t{}\n", mix.permille, mix.brush);
+	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePermille, o.onGroundPermille, o.name);
 	if (p.target) {
 		out += "target\tshares";
 		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
@@ -359,6 +365,14 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             const auto slot = std::ranges::find_if(slots, [](const StyleMix& m) { return m.brush.empty(); });
             if (slot == slots.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(mix);
+        } else if (type == "overlay" && f.size() == 4) {
+            StyleOverlay overlay;
+            if (!parseU32(f[1], overlay.onTreePermille) || !parseU32(f[2], overlay.onGroundPermille) || f[3].empty())
+                return std::unexpected(ProfileError::BadFormat);
+            overlay.name = f[3];
+            const auto slot = std::ranges::find_if(p.overlays, [](const StyleOverlay& o) { return o.name.empty(); });
+            if (slot == p.overlays.end()) return std::unexpected(ProfileError::BadFormat);
+            *slot = std::move(overlay);
         } else if (type == "mixdecor" && f.size() == 8) {
             uint32_t slot = 0;
             if (!parseU32(f[1], slot) || slot >= maxGrassMix || haveMixDecor[slot]) return std::unexpected(ProfileError::BadFormat);

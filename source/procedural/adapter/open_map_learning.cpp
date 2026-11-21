@@ -6,9 +6,10 @@
 #include "procedural/core/doodad_class.h"
 #include "map/map.h"
 #include "map/tile.h"
+#include <vector>
 #include <wx/thread.h>
 namespace rme::procedural {
-std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads, SampleItemCounts& items, int row) try {
+std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads, SampleItemCounts& items, OverlayItemCounts& overlays, int row) try {
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
     const auto b = destination.floors().front().bounds;
     if (b.z < 0 || b.z > 7 || b.width > 512 || b.height > 512 || row < 0 || row >= b.height
@@ -28,6 +29,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
                 key = *interned;
             }
         }
+        std::vector<std::string> tileOverlays;
         for (const auto& item : tile->items) {
             if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
             if (item->isWall() || item->isDoor() || item->isTable() || item->isCarpet() || item->isBorder()) continue;
@@ -37,10 +39,14 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             // An item without a doodad brush (placed from the RAW palette) is vegetation by its own name and is
             // learned as a source of that one item.
             const DecorKind kind = classifyDoodadBrush(doodad ? std::string_view(doodad->getName()) : seen.name);
-            if (!doodad && kind == DecorKind::None) continue;
             auto name = doodad ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
+            if (kind == DecorKind::None) { tileOverlays.push_back(std::move(name)); continue; }
             traits |= decorTraitBit(kind);
             ++doodads[{key, std::move(name)}];
+        }
+        for (auto& name : tileOverlays) {
+            auto& counts = overlays[{key, std::move(name)}];
+            ++((traits & bit(Trait::TreeDoodad)) ? counts.first : counts.second);
         }
         if (!destination.set(x, b.y0 + row, b.z, key, traits)) return std::unexpected("Invalid sample cell.");
     }

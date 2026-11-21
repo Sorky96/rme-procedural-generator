@@ -50,14 +50,14 @@ DecorKind classifyDoodadBrush(std::string_view name, std::span<const DoodadRule>
 DecorKind classifyDoodadBrush(std::string_view name) noexcept { return classifyDoodadBrush(name, defaultRules); }
 
 std::string rawDecorName(uint16_t id, DecorKind kind) {
-	const std::string_view word = kind == DecorKind::Tree ? "tree" : kind == DecorKind::Bush ? "bush" : "rock";
+	const std::string_view word = kind == DecorKind::Tree ? "tree" : kind == DecorKind::Bush ? "bush" : kind == DecorKind::Stone ? "rock" : "item";
 	return std::format("raw:{}:{}", word, id);
 }
 
 std::optional<uint16_t> rawDecorId(std::string_view name) noexcept {
 	if (!name.starts_with("raw:")) return std::nullopt;
 	const std::string_view word = name.substr(4, 5);
-	if (!word.starts_with("tree:") && !word.starts_with("bush:") && !word.starts_with("rock:")) return std::nullopt;
+	if (!word.starts_with("tree:") && !word.starts_with("bush:") && !word.starts_with("rock:") && !word.starts_with("item:")) return std::nullopt;
 	const std::string_view digits = name.substr(9);
 	if (digits.empty() || digits.size() > 5 || digits[0] == '0') return std::nullopt;
 	uint32_t id = 0;

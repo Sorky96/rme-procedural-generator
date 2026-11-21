@@ -11,6 +11,13 @@ struct GroundDoodadItems {
     std::string doodad;
     uint64_t items = 0;
 };
+// Stacked items that are not trees, bushes or stones (or walls, doors, tables, carpets, borders) of one name
+// (doodad brush or "raw:item:<id>") on tiles of one ground key: onTree on tiles that also hold a tree, onGround on the others.
+struct GroundOverlayItems {
+    uint16_t ground = noGroundKey;
+    std::string name;
+    uint64_t onTree = 0, onGround = 0;
+};
 struct LearningSample {
     StyleStats stats;
     uint64_t present = 0, recognized = 0;
@@ -23,12 +30,14 @@ struct LearningSample {
     std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // vegetation on each grassMix ground
     uint32_t clumpPermille = 0;       // DecorTuning::clumpPermille measured on the grass of the sample
     uint64_t seaTiles = 0;            // water tiles connected to the edge of the sample or to tiles without ground
+    std::array<StyleOverlay, maxOverlays> overlays; // the most used overlay items on land with their rates
     uint64_t pondTiles = 0, pondEdges = 0; // the other water tiles and their land neighbours (4-connected pairs)
 };
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.
 // `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
-    std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop = {});
+    std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop = {},
+    std::span<const GroundOverlayItems> overlayItems = {});
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,
     std::stop_token stop = {});

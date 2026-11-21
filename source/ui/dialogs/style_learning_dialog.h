@@ -43,6 +43,7 @@ private:
     std::optional<rme::procedural::SemanticMap> sample_;
     rme::procedural::DoodadItemCounts doodads_;
     rme::procedural::SampleItemCounts items_;
+    rme::procedural::OverlayItemCounts overlays_;
     std::optional<rme::procedural::StyleProfile> result_;
     std::optional<rme::procedural::ClientAssetIds> ids_;
     std::string analyzed_mapping_;

@@ -152,7 +152,16 @@ struct StyleMix {
 	uint32_t permille = 0; // 1..1000 when brush is set, else 0
 	bool operator==(const StyleMix&) const = default;
 };
-inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3;
+inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 3;
+
+// An item laid over other vegetation or bare land (cobwebs, leaves, debris): any learned item that is not a tree,
+// bush or stone. `name` is a doodad brush or "raw:item:<id>"; it goes on onTreePermille of the generated trees and
+// on onGroundPermille of the other land cells without vegetation.
+struct StyleOverlay {
+	std::string name;
+	uint32_t onTreePermille = 0, onGroundPermille = 0; // 0..1000, not both 0 when name is set
+	bool operator==(const StyleOverlay&) const = default;
+};
 
 // Vegetation on the cells of one grass mix brush (swamp: no trees, swamp plants as bushes). keepPermille
 // per DecorKind Tree, Bush, Stone: share of the generated decoration such a cell keeps (the patch rate
@@ -184,6 +193,7 @@ struct StyleProfile {
 	std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // per grassMix entry; the default for an unused one
 	std::array<StyleMix, maxTreeMix> treeMix;
 	std::array<StyleMix, maxTreeMix> bushMix;
+	std::array<StyleOverlay, maxOverlays> overlays;
 	bool operator==(const StyleProfile&) const = default;
 };
 
