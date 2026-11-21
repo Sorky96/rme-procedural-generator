@@ -44,9 +44,9 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             const DecorKind kind = classifyDoodadBrush(!seen.name.empty() || !doodad ? std::string_view(seen.name) : std::string_view(doodad->getName()));
             const bool brushSource = doodad && kind != DecorKind::None && classifyDoodadBrush(doodad->getName()) == kind;
             auto name = brushSource ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
-            // Only plain items can be generated (see decorItemPlaceable); containers, teleports and the like stay out.
+            // Only plain items one can walk through make overlays (see decorItemPlaceable, decorItemPassable).
             if (kind == DecorKind::None) {
-                if (typeid(*item) == typeid(Item)) tileOverlays.push_back(std::move(name));
+                if (typeid(*item) == typeid(Item) && !item->isBlocking()) tileOverlays.push_back(std::move(name));
                 continue;
             }
             traits |= decorTraitBit(kind);

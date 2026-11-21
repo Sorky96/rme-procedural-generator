@@ -30,4 +30,8 @@ bool decorItemPlaceable(uint16_t id) {
 	const auto probe = Item::Create(id);
 	return probe && typeid(*probe) == typeid(Item) && (!probe->getAttributesView() || probe->getAttributesView()->empty());
 }
+bool decorItemPassable(uint16_t id) {
+	const auto definition = id ? g_item_definitions.get(id) : ItemDefinitionView{};
+	return definition && !definition.hasFlag(ItemFlag::Unpassable);
+}
 }

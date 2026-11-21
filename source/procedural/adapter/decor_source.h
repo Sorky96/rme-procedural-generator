@@ -20,4 +20,6 @@ struct DecorSource {
 [[nodiscard]] DecorSource findDecorSource(std::string_view name, uint64_t maxChance);
 // A real, plain (created as a plain Item without attributes), non-ground, non-border item of the loaded client.
 [[nodiscard]] bool decorItemPlaceable(uint16_t id);
+// One can walk through it: overlays must be, as paths and reachability are planned without them.
+[[nodiscard]] bool decorItemPassable(uint16_t id);
 }
