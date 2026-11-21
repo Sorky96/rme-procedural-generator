@@ -416,6 +416,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			profile.overlayTreePpm[i] > 1000000 || profile.overlayGroundPpm[i] > 1000000) return std::unexpected(ResolveError::InvalidProfile);
 		overlaid = overlaid || (vegetation && !name.empty()); // overlays come only with vegetation
 	}
+	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
+		const auto& name = profile.interior[i];
+		if (name.empty() != (profile.interiorPpm[i] == 0) || name.size() > 256 || profile.interiorPpm[i] > 1000000)
+			return std::unexpected(ResolveError::InvalidProfile);
+		overlaid = overlaid || (vegetation && !name.empty());
+	}
 	for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
 		const bool defaults = profile.grassMixDecorKeep[m] == GroundProfile::keepAllDecor &&
 			std::ranges::all_of(profile.grassMixDecor[m], &std::string::empty);
@@ -449,7 +455,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;
 	}
-	for (const auto& name : profile.overlay) {
+	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.overlay, profile.interior})) {
 		if (name.empty()) continue;
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
@@ -556,6 +562,15 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
 				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			overlays[index] = *checked;
+		}
+		std::array<DecorSource, GroundProfile::overlayCount> interiors {};
+		for (size_t index = 0; index < GroundProfile::overlayCount; ++index) {
+			if (!overlaid || profile.interior[index].empty()) continue;
+			const auto checked = checkDoodad(profile.interior[index]);
+			if (!checked) return std::unexpected(checked.error());
+			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
+				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
+			interiors[index] = *checked;
 		}
 		DecorSource waterTree;
 		if (vegetation && !profile.waterTree.empty()) {
@@ -750,6 +765,17 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 						upTo += patch ? std::min<uint64_t>(1000000, rate * 3) : 0;
 						if (overlayRoll >= upTo) continue;
 						result.overlays[i] = overlays[k].item(overlayPick % overlays[k].total + 1);
+						break;
+					}
+				}
+				// Inside a building: a Floor cell without a wall piece (its open floor, a gap, or a ruin's bare patch).
+				if (overlaid && cell == SurfaceKind::Floor && (result.walls.empty() || !result.walls[i])) {
+					uint64_t upTo = 0;
+					for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
+						if (!interiors[k]) continue;
+						upTo += profile.interiorPpm[k];
+						if (overlayRoll >= upTo) continue;
+						result.overlays[i] = interiors[k].item(overlayPick % interiors[k].total + 1);
 						break;
 					}
 				}

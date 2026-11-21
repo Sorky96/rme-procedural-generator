@@ -34,6 +34,7 @@ struct LearningSample {
     uint64_t seaTiles = 0;            // water tiles connected to the edge of the sample or to tiles without ground
     std::array<StyleOverlay, maxOverlays> overlays; // the most used overlay items on land with their rates
     StyleBuildings buildings;         // buildings and ruins of the sample
+    std::array<StyleOverlay, maxOverlays> interiors; // overlay items on building floors with their rates
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
     std::array<uint32_t, 4> shoreDistance {};
     uint32_t width = 0, height = 0;   // of the sample rectangle

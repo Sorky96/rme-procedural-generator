@@ -207,6 +207,9 @@ struct StyleProfile {
 	std::array<StyleMix, maxTreeMix> bushMix;
 	std::array<StyleOverlay, maxOverlays> overlays;
 	StyleBuildings buildings;
+	// Overlay items inside buildings (rubble, bones, drifted sand): onGroundPpm is the share of building floor tiles that
+	// hold it; onTreePpm stays 0.
+	std::array<StyleOverlay, maxOverlays> interiors;
 	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };

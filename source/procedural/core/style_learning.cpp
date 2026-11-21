@@ -203,6 +203,30 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
     }
     return out;
 }
+// Overlay items inside buildings by use: items on tiles of a built floor (an Other ground that is not a cave or hole),
+// each kept with at least 3 items and its share of those floor tiles.
+std::array<StyleOverlay, maxOverlays> chooseInteriors(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
+    std::span<const GroundOverlayItems> items) {
+    std::vector<uint8_t> floorKey(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < floorKey.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        floorKey[k] = entry != mapping.end() && entry->kind == StyleKind::Other && entry->rule != "cave" && entry->rule != "hole";
+    }
+    const auto& floor = map.floors().front();
+    uint64_t floorTiles = 0;
+    for (size_t i = 0; i < floor.ground.size(); ++i)
+        floorTiles += (floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < floorKey.size() && floorKey[floor.ground[i]];
+    std::map<std::string, uint64_t, std::less<>> byName;
+    for (const auto& item : items)
+        if (item.ground < floorKey.size() && floorKey[item.ground]) byName[item.name] += item.onTree + item.onGround;
+    std::vector<std::pair<uint64_t, std::string_view>> ranked;
+    for (const auto& [name, count] : byName) if (count >= 3) ranked.emplace_back(count, name);
+    std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
+    std::array<StyleOverlay, maxOverlays> out;
+    for (size_t k = 0; k < std::min(ranked.size(), out.size()) && floorTiles; ++k)
+        out[k] = {std::string(ranked[k].second), 0, uint32_t(std::min<uint64_t>(1000000, (ranked[k].first * 1000000 + floorTiles / 2) / floorTiles))};
+    return out;
+}
 // Buildings: groups (pieces at most two tiles apart) of at least 9 tiles of a built ground (Other, but not a cave or hole), a blocking wall
 // or a door. Cave floors and walls standing on rock or in caves are the mountains', not buildings.
 StyleBuildings findBuildings(const SemanticMap& map, std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> wallBrushes) {
@@ -463,6 +487,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     measureWater(map, mapping, sample);
     sample.buildings = findBuildings(map, mapping, wallBrushes);
     sample.overlays = chooseOverlays(map, mapping, overlayItems);
+    sample.interiors = chooseInteriors(map, mapping, overlayItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -620,6 +645,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.bushMix = sample.bushMix;
     profile.overlays = sample.overlays;
     profile.buildings = sample.buildings;
+    profile.interiors = sample.interiors;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

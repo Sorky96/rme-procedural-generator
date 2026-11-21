@@ -162,7 +162,10 @@ int main(int argc, char** argv) {
         promoteMainLand(desert, map);
         check(std::ranges::find(desert, std::string("sand"), &KeyMapEntry::key)->kind == StyleKind::Grass, "sand is the main land of a desert");
         const std::vector<GroundDoodadItems> walls{{floorKey, "limestone wall", 20}, {caveKey, "rock wall", 30}};
-        const auto learned = inspectLearningSample(map, desert, {}, true, {}, {}, walls);
+        // Rubble on 10 of the 50 building floor tiles; the rubble on sand outside is no interior.
+        const std::vector<GroundOverlayItems> rubble{{floorKey, "raw:item:42", 0, 10}, {sand, "raw:item:43", 0, 30}};
+        const auto learned = inspectLearningSample(map, desert, {}, true, {}, rubble, walls);
+        check(learned && learned->interiors[0] == StyleOverlay{"raw:item:42", 0, 200000} && learned->interiors[1].name.empty(), "rubble inside buildings");
         check(learned && learned->buildings.density == 32 && learned->buildings.ruinPercent == 50 &&
             learned->buildings.floor == "sandstone floor" && learned->buildings.wall == "limestone wall", "buildings and ruins, not caves");
     }

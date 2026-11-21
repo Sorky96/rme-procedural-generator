@@ -58,6 +58,10 @@ struct GroundProfile {
 	static constexpr size_t overlayCount = 16;
 	std::array<std::string, overlayCount> overlay;
 	std::array<uint32_t, overlayCount> overlayTreePpm {}, overlayGroundPpm {}; // parts per million, 0..1000000
+	// Overlay items inside buildings (vegetation only; empty = off): interior[i] goes on interiorPpm[i] of the Floor cells
+	// that carry no wall piece, in the same overlay layer (one item per cell).
+	std::array<std::string, overlayCount> interior;
+	std::array<uint32_t, overlayCount> interiorPpm {};
 	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
 	// empty = such trees are left out.
 	std::string waterTree;
