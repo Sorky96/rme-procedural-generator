@@ -106,6 +106,25 @@ int main(int argc, char** argv) {
         check(clumpOf([](int x, int y) { return (x / 8 + y / 8) % 2 == 0; }) > 250u, "thickets are clumped");
         check(clumpOf([](int x, int) { return x % 2 == 0; }) == 0u, "an even spread is not clumped");
     }
+    {
+        // A 32 x 32 island with a 4 x 4 pond in a 64 x 64 sea: the sea is learned as sea, the pond as lakes.
+        FloorBounds fb{7, 0, 0, 64, 64};
+        auto map = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+        const auto grass = map.internGroundKey("grass").value();
+        const auto sea = map.internGroundKey("sea").value();
+        for (int i = 0; i < 4096; ++i) {
+            const int x = i % 64, y = i / 64;
+            const bool land = x >= 16 && x < 48 && y >= 16 && y < 48 && !(x >= 30 && x < 34 && y >= 30 && y < 34);
+            check(bool(map.set(x, y, 7, land ? grass : sea, bit(Trait::HasGround))), "island cell");
+        }
+        const auto islandMapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
+        const auto islandSample = inspectLearningSample(map, islandMapping, {}, true);
+        check(islandSample && islandSample->seaTiles == 4096 - 1024, "sea told from the pond");
+        const auto island = islandSample ? fitLearningSample(*islandSample, islandMapping, "10.98", "otb", "dat")
+                                         : std::expected<StyleProfile, std::string>(std::unexpected("no sample"));
+        check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16, "sea and lakes learned apart");
+        check(island && parseProfile(*serializeProfile(*island)) == *island, "island round-trips");
+    }
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
     check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");
     check(checkProfile(*a,"wrong","otb","dat",7) == ProfileCompatibility::WrongClient, "client bound");

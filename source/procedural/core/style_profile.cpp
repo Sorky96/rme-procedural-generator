@@ -263,6 +263,8 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		for (const uint32_t v : {t.featureSize, t.lakePermille, t.minLakeCells, t.riverCount, t.minRiverLength, t.shoreWidth,
 			t.rockPermille, t.minRockCells, t.dirtPermille, t.transitionWidth, t.meander}) out += '\t' + std::to_string(v);
 		out += '\n';
+		// Its own line, only when set, so profiles without a sea keep their bytes.
+		if (t.islandPermille) out += std::format("tuning\tisland\t{}\n", t.islandPermille);
 	}
 	return out;
 }
@@ -395,6 +397,9 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
 			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
         } else if (type == "decor" && f.size() == 3 && f[1] == "clump" && p.decorTuning && !p.decorTuning->clumpPermille) {
             if (!parseU32(f[2], p.decorTuning->clumpPermille) || !p.decorTuning->clumpPermille || p.decorTuning->clumpPermille > 1000)
+                return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "tuning" && f.size() == 3 && f[1] == "island" && p.tuning && !p.tuning->islandPermille) {
+            if (!parseU32(f[2], p.tuning->islandPermille) || !p.tuning->islandPermille || p.tuning->islandPermille > 900)
                 return std::unexpected(ProfileError::BadFormat);
         } else if (type == "tuning" && f.size() == 12 && !p.tuning) {
             uint32_t v[11];

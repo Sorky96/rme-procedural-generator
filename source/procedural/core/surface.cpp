@@ -1010,7 +1010,8 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
         || config.tuning.dungeonPercent > 100
         || (config.tuning.plateauMinTop && (config.tuning.plateauMinTop < 16 || config.tuning.plateauMinTop > 4096))
         || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole || config.tuning.dirtPermille > 1000
-        || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8) {
+        || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8
+        || config.tuning.islandPermille > 900) {
         return std::unexpected(SurfaceError::InvalidParameters);
     }
     // Region, mask and budget rules are shared with v1 through a unit-weight config.
@@ -1055,6 +1056,19 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::vector<uint8_t> lake(count), rock(count);
 		for (size_t i = 0; i < count; ++i) lake[i] = elevation[i] < lakeLevel;
 		if (!dropSmall(lake, width, height, config.tuning.minLakeCells, stop)) return cancelled();
+		if (config.tuning.islandPermille) {
+			// Open sea: the cells nearest the rectangle edge, the coastline wobbled by the elevation noise.
+			const uint32_t half = std::max<uint32_t>(1, std::min(width, height) / 2);
+			std::vector<uint16_t> coast(count);
+			for (size_t i = 0; i < count; ++i) {
+				const uint32_t x = uint32_t(i % width), y = uint32_t(i / width);
+				const uint32_t edge = std::min({x, width - 1 - x, y, height - 1 - y});
+				const uint32_t inland = uint32_t(std::min<uint64_t>(65535, uint64_t(edge) * 65535 / half));
+				coast[i] = uint16_t((inland * 3 + elevation[i]) / 4);
+			}
+			const uint32_t seaLevel = lowCut(coast, config.tuning.islandPermille);
+			for (size_t i = 0; i < count; ++i) if (coast[i] < seaLevel) lake[i] = 1;
+		}
 		if (!fillEnclosed(lake, width, height, islandCells, stop)) return cancelled();
 		for (size_t i = 0; i < count; ++i) rock[i] = !lake[i] && elevation[i] >= rockLevel;
 		if (!dropSmall(rock, width, height, config.tuning.minRockCells, stop)) return cancelled();

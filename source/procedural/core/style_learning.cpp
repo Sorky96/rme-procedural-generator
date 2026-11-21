@@ -93,6 +93,41 @@ uint32_t vegetationClump(const SemanticMap& map, std::span<const KeyMapEntry> ma
     const double r = (double(plantedPairs) / double(pairs)) / (double(planted) / double(cells));
     return uint32_t(std::clamp((r - 1.0) * 500.0, 0.0, 1000.0));
 }
+// Water tiles 4-connected to the edge of the sample or to a tile without mapped ground: the sea around an
+// island, as opposed to its ponds.
+uint64_t seaTiles(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
+    const auto& floor = map.floors().front();
+    std::vector<uint8_t> waterKey(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < waterKey.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        waterKey[k] = entry != mapping.end() && entry->kind == StyleKind::Water;
+    }
+    const auto present = [&](size_t i) { return (floor.traits[i] & bit(Trait::Present)) != 0; };
+    const auto water = [&](size_t i) { return present(i) && floor.ground[i] < waterKey.size() && waterKey[floor.ground[i]]; };
+    const int w = floor.bounds.width, h = floor.bounds.height;
+    std::vector<uint8_t> sea(size_t(w) * h, 0);
+    std::vector<size_t> stack;
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        const size_t i = size_t(y) * w + x;
+        if (!water(i)) continue;
+        bool open = x == 0 || y == 0 || x + 1 == w || y + 1 == h;
+        for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}})
+            if (!open && !present(size_t(y + dy) * w + (x + dx))) open = true;
+        if (open && !sea[i]) { sea[i] = 1; stack.push_back(i); }
+    }
+    uint64_t count = 0;
+    while (!stack.empty()) {
+        const size_t i = stack.back(); stack.pop_back(); ++count;
+        const int x = int(i % w), y = int(i / w);
+        for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+            const int nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const size_t j = size_t(ny) * w + nx;
+            if (!sea[j] && water(j)) { sea[j] = 1; stack.push_back(j); }
+        }
+    }
+    return count;
+}
 } // namespace
 
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
@@ -182,6 +217,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         for (size_t k = 0; k < 3; ++k) if (palette[k] != sample.decorPalette[k]) d.brushes[k] = palette[k];
     }
     sample.clumpPermille = vegetationClump(map, mapping);
+    sample.seaTiles = seaTiles(map, mapping);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -208,7 +244,32 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     if (target->sharesPpm[size_t(StyleKind::Dirt)] == 0) profile.tuning->dirtPermille = 0;
     // Lakes start as the lowest cells: their share is the sample's water share. The fit scores shares and
     // neighbour pairs together and can trade all water away on a small sample, so this one is set directly.
-    profile.tuning->lakePermille = std::min<uint32_t>(500, (target->sharesPpm[size_t(StyleKind::Water)] + 500) / 1000);
+    // Water open to the sample's edge is the sea around an island: it becomes the generator's sea, and only the
+    // ponds inside the land count as lakes. A sea under 5% of the sample is treated as ponds cut by the edge.
+    uint64_t natural = 0;
+    for (size_t k = 0; k < naturalKindCount; ++k) natural += sample.stats.kindTiles[k];
+    const uint64_t water = sample.stats.kindTiles[size_t(StyleKind::Water)];
+    const uint64_t sea = natural && sample.seaTiles * 20 >= natural ? std::min(sample.seaTiles, water) : 0;
+    profile.tuning->islandPermille = natural ? uint32_t(std::min<uint64_t>(900, (sea * 1000 + natural / 2) / natural)) : 0;
+    const uint64_t land = natural - sea;
+    profile.tuning->lakePermille = land ? uint32_t(std::min<uint64_t>(500, ((water - sea) * 1000 + land / 2) / land)) : 0;
+    // The feature size was chosen for the fit's own lake share; with the real one the ponds and patches can come
+    // out far larger than in the sample. Pick it again for the final shares by the neighbour pairs.
+    {
+        uint64_t best = UINT64_MAX;
+        uint32_t chosen = profile.tuning->featureSize;
+        for (const uint32_t size : {6u, 8u, 12u, 16u, 24u, 32u, 48u}) {
+            auto tuning = *profile.tuning;
+            tuning.featureSize = size;
+            const auto stats = evaluateTuning(tuning, options.eval, stop);
+            if (!stats) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
+            const auto generated = targetFromStats(*stats);
+            if (!generated) continue;
+            const auto d = distance(*generated, *target);
+            if (d.adjacency < best) { best = d.adjacency; chosen = size; }
+        }
+        profile.tuning->featureSize = chosen;
+    }
     // The generator always rings water with Shore; a sample without any shore meets water with grass,
     // so the ring takes the grass brush instead of the built-in sand.
     auto& shore = profile.palette[size_t(StyleKind::Shore)];

@@ -79,6 +79,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 				c.surface.dirtPermille, c.surface.transitionWidth}) hashField(hash, value, 4);
 			// Appended only when set, so plans with the original river routes keep their fingerprint.
 			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
+			if (c.surface.islandPermille) hashField(hash, c.surface.islandPermille, 4);
 			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
 			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
 			if (c.surface.fordLength) hashField(hash, c.surface.fordLength, 4);
