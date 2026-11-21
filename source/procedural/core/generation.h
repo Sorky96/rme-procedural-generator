@@ -86,6 +86,8 @@ struct DecorTuning {
 	// 0..1000: how much the tree and bush chances on grass follow smooth noise, from 0 (even, as built in)
 	// to 1000 (none in clearings, twice the chance in thickets; about the same on average).
 	uint32_t clumpPermille = 0;
+	// 0..1000: tree chance on lake and river cells beside land (mangroves standing in the water); 0 = none, as built in.
+	uint32_t shoreTreePermille = 0;
 	bool operator==(const DecorTuning&) const = default;
 };
 inline constexpr uint32_t maxTreeScalePermille = 9000;
@@ -93,7 +95,7 @@ inline constexpr uint32_t maxTreeScalePermille = 9000;
 // Chances above 1000 (treeScalePermille above maxTreeScalePermille) are refused by the generator.
 [[nodiscard]] constexpr bool valid(const DecorTuning& t) noexcept {
 	return t.treeScalePermille <= maxTreeScalePermille && t.waterTreePermille <= 1000 && t.bushPermille <= 1000 &&
-		t.waterBushPermille <= 1000 && t.dirtStonePermille <= 1000 && t.rockStonePermille <= 1000 && t.clumpPermille <= 1000;
+		t.waterBushPermille <= 1000 && t.dirtStonePermille <= 1000 && t.rockStonePermille <= 1000 && t.clumpPermille <= 1000 && t.shoreTreePermille <= 1000;
 }
 
 struct GenerationConfig {

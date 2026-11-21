@@ -194,6 +194,7 @@ struct StyleProfile {
 	std::array<StyleMix, maxTreeMix> treeMix;
 	std::array<StyleMix, maxTreeMix> bushMix;
 	std::array<StyleOverlay, maxOverlays> overlays;
+	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };
 

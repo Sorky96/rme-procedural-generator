@@ -74,9 +74,17 @@ std::expected<DecorGrid, SurfaceError> generateDecoration(
 		for (size_t i = 0; i < cells.size(); ++i) {
 			if (i % 4096 == 0 && stop.stop_requested()) return std::unexpected(SurfaceError::Cancelled);
 			const auto kind = grid.cells[i];
-			if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) continue;
 			const uint32_t ax = uint32_t(grid.region.x) + uint32_t(i % width);
 			const uint32_t ay = uint32_t(grid.region.y) + uint32_t(i / width);
+			if (tuning.shoreTreePermille && (kind == SurfaceKind::Lake || kind == SurfaceKind::River)) {
+				// A water cell with a 4-neighbour of land may hold a tree standing in the water.
+				const uint32_t x = uint32_t(i % width), y = uint32_t(i / width), height = grid.region.height;
+				const auto land = [&](size_t j) { const auto k = grid.cells[j]; return k == SurfaceKind::Grass || k == SurfaceKind::Dirt || k == SurfaceKind::Shore; };
+				const bool bank = (x && land(i - 1)) || (x + 1 < width && land(i + 1)) || (y && land(i - width)) || (y + 1 < height && land(i + width));
+				if (bank && permille(surfaceLattice(seed, treeStream, ax, ay)) < tuning.shoreTreePermille) cells[i] = DecorKind::Tree;
+				continue;
+			}
+			if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) continue;
 			const uint32_t treeRoll = permille(surfaceLattice(seed, treeStream, ax, ay));
 			const uint32_t detailRoll = permille(surfaceLattice(seed, detailStream, ax, ay));
 			if (kind == SurfaceKind::Grass) {

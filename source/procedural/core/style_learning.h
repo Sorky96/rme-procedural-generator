@@ -29,6 +29,8 @@ struct LearningSample {
     std::array<StyleMix, maxTreeMix> bushMix; // further bush brushes with at least 5% of the bush items each
     std::array<StyleMixDecor, maxGrassMix> grassMixDecor; // vegetation on each grassMix ground
     uint32_t clumpPermille = 0;       // DecorTuning::clumpPermille measured on the grass of the sample
+    uint32_t shoreTreePermille = 0;   // share of the water tiles beside land holding a tree (DecorTuning::shoreTreePermille)
+    std::string shoreTree;            // the tree brush or RAW item most used on them; set with shoreTreePermille
     uint64_t seaTiles = 0;            // water tiles connected to the edge of the sample or to tiles without ground
     std::array<StyleOverlay, maxOverlays> overlays; // the most used overlay items on land with their rates
     uint64_t pondTiles = 0, pondEdges = 0; // the other water tiles and their land neighbours (4-connected pairs)

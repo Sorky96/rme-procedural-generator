@@ -185,6 +185,8 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 		}
 		if (share > 1000) return std::unexpected(ProfileError::InvalidRange);
 	}
+	// The brush of the trees standing in the water is set exactly when they are on.
+	if (bad(p.shoreTree) || p.shoreTree.empty() != (!p.decorTuning || !p.decorTuning->shoreTreePermille)) return std::unexpected(ProfileError::InvalidRange);
 	for (const StyleOverlay& o : p.overlays) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
 		if (o.onTreePermille > 1000 || o.onGroundPermille > 1000 || o.name.empty() != (o.onTreePermille + o.onGroundPermille == 0))
@@ -262,6 +264,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		out += '\n';
 		// Its own line, after the tuning and only when set, so profiles without clumps keep their bytes.
 		if (d.clumpPermille) out += std::format("decor\tclump\t{}\n", d.clumpPermille);
+		if (d.shoreTreePermille) out += std::format("decor\tshoretree\t{}\t{}\n", d.shoreTreePermille, p.shoreTree);
 	}
 	if (p.tuning) {
 		const SurfaceTuning& t = *p.tuning;
@@ -409,6 +412,10 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             uint32_t v[6];
             for (size_t i = 0; i < 6; ++i) if (!parseU32(f[2 + i], v[i])) return std::unexpected(ProfileError::BadFormat);
 			p.decorTuning = DecorTuning {v[0], v[1], v[2], v[3], v[4], v[5]};
+        } else if (type == "decor" && f.size() == 4 && f[1] == "shoretree" && p.decorTuning && !p.decorTuning->shoreTreePermille) {
+            if (!parseU32(f[2], p.decorTuning->shoreTreePermille) || !p.decorTuning->shoreTreePermille || p.decorTuning->shoreTreePermille > 1000 || f[3].empty())
+                return std::unexpected(ProfileError::BadFormat);
+            p.shoreTree = f[3];
         } else if (type == "decor" && f.size() == 3 && f[1] == "clump" && p.decorTuning && !p.decorTuning->clumpPermille) {
             if (!parseU32(f[2], p.decorTuning->clumpPermille) || !p.decorTuning->clumpPermille || p.decorTuning->clumpPermille > 1000)
                 return std::unexpected(ProfileError::BadFormat);

@@ -559,6 +559,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			overlays[index] = *checked;
 		}
+		DecorSource waterTree;
+		if (vegetation && !profile.waterTree.empty()) {
+			const auto checked = checkDoodad(profile.waterTree);
+			if (!checked) return std::unexpected(checked.error());
+			waterTree = *checked;
+		}
 		// Grass mix per cell (0 = the Grass brush, m + 1 = grassMix[m]). Each mix brush in turn takes the
 		// unclaimed Grass cells whose own patch noise lies lowest, as many as its share of all Grass cells
 		// of this grid, so the shares hold for any region.
@@ -726,7 +732,14 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				const size_t patch = grassSlot.empty() ? 0 : grassSlot[i];
 				const bool kept = placed != DecorKind::None &&
 					(!patch || mixDecorRoll < profile.grassMixDecorKeep[patch - 1][size_t(placed) - 1]);
-				if (kept) {
+				const bool inWater = grid.cells[i] == SurfaceKind::Lake || grid.cells[i] == SurfaceKind::River;
+				if (kept && inWater) {
+					// A tree standing in the water: its own brush, or none without one.
+					if (placed == DecorKind::Tree && waterTree) {
+						const uint64_t roll = (uint64_t(decorRolls[0]) - 1) * waterTree.total / doodads[0].total + 1;
+						if (!(result.decor[i] = waterTree.item(roll))) return std::unexpected(ResolveError::InvalidItem);
+					}
+				} else if (kept) {
 					const size_t slot = size_t(placed) - 1;
 					const DecorSource* doodad = &doodads[slot];
 					uint64_t roll = uint64_t(decorRolls[slot]);
@@ -746,7 +759,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				// One overlay per cell: on a tree by the tree rates, on other Grass or Dirt by the ground rates. The rates
 				// stack up in order, so overlay k hits on its own share of the cells.
 				const SurfaceKind cell = grid.cells[i];
-				const bool tree = result.decor[i] && placed == DecorKind::Tree;
+				const bool tree = result.decor[i] && placed == DecorKind::Tree && !inWater;
 				if (overlaid && (tree || cell == SurfaceKind::Grass || cell == SurfaceKind::Dirt)) {
 					uint64_t upTo = 0;
 					for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {

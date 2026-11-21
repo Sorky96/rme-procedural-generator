@@ -95,6 +95,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 				for (const auto value : {c.decor.treeScalePermille, c.decor.waterTreePermille, c.decor.bushPermille,
 					c.decor.waterBushPermille, c.decor.dirtStonePermille, c.decor.rockStonePermille}) hashField(hash, value, 4);
 				if (c.decor.clumpPermille) hashField(hash, c.decor.clumpPermille, 4);
+				if (c.decor.shoreTreePermille) hashField(hash, c.decor.shoreTreePermille, 4);
 			}
 		}
 	};
@@ -142,6 +143,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		string(plan.profile.bushMix[i]);
 		hashField(hash, plan.profile.bushMixPermille[i], 2);
 	}
+	if (!plan.profile.waterTree.empty()) string(plan.profile.waterTree); // only when set, so other plans keep their hash
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	hashField(hash, plan.decor.size());
@@ -440,6 +442,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (const auto& name : plan.profile.bushMix) decorNames.push_back(&name);
 	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.overlay) decorNames.push_back(&name);
+	decorNames.push_back(&plan.profile.waterTree);
 	// Overlays come only with vegetation; a plan of a floor or stage without it carries none, whatever its profile says.
 	const bool overlaid = std::ranges::any_of(plan.profile.overlay, [](const std::string& name) { return !name.empty(); });
 	if (!plan.overlays.empty() && (!overlaid || !vegetation || plan.overlays.size() != plan.items.size()))

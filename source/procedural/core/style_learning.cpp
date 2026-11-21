@@ -279,6 +279,38 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
         for (size_t k = 0; k < 3; ++k) if (palette[k] != sample.decorPalette[k]) d.brushes[k] = palette[k];
     }
     sample.clumpPermille = vegetationClump(map, mapping);
+    // Trees standing in the water beside land: their share of such water tiles and their most used brush or item.
+    {
+        std::vector<uint8_t> water(map.groundKeys().size(), 0), land(map.groundKeys().size(), 0);
+        for (size_t k = 0; k < water.size(); ++k) {
+            const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+            if (entry == mapping.end() || size_t(entry->kind) >= naturalKindCount) continue;
+            (entry->kind == StyleKind::Water ? water : land)[k] = 1;
+        }
+        const auto& floor = map.floors().front();
+        const int w = floor.bounds.width, h = floor.bounds.height;
+        const auto is = [&](const std::vector<uint8_t>& keys, size_t i) {
+            return (floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < keys.size() && keys[floor.ground[i]];
+        };
+        uint64_t banks = 0, treed = 0;
+        for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+            const size_t i = size_t(y) * w + x;
+            if (!is(water, i)) continue;
+            const bool bank = (x && is(land, i - 1)) || (x + 1 < w && is(land, i + 1)) || (y && is(land, i - w)) || (y + 1 < h && is(land, i + w));
+            if (!bank) continue;
+            ++banks;
+            treed += (floor.traits[i] & bit(Trait::TreeDoodad)) != 0;
+        }
+        std::map<std::string, uint64_t, std::less<>> waterTrees;
+        for (const auto& item : doodadItems)
+            if (item.ground < water.size() && water[item.ground] && classifyDoodadBrush(item.doodad) == DecorKind::Tree) waterTrees[item.doodad] += item.items;
+        const auto top = std::ranges::max_element(waterTrees, {}, [](const auto& entry) { return entry.second; });
+        // At least 20 trees and 1% of the bank, as for the other learned vegetation, before the sample says "mangroves".
+        if (banks && treed >= 20 && treed * 100 >= banks && top != waterTrees.end()) {
+            sample.shoreTreePermille = uint32_t(std::min<uint64_t>(1000, (treed * 1000 + banks / 2) / banks));
+            sample.shoreTree = top->first;
+        }
+    }
     const auto shape = sampleWaterShape(map, mapping);
     sample.seaTiles = shape.sea; sample.pondTiles = shape.pondTiles; sample.pondEdges = shape.pondEdges;
     sample.overlays = chooseOverlays(map, mapping, overlayItems);
@@ -365,6 +397,8 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     if (!decorTuning) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Vegetation fit failed.");
     profile.decorTuning = *decorTuning;
     profile.decorTuning->clumpPermille = sample.clumpPermille;
+    profile.decorTuning->shoreTreePermille = sample.shoreTreePermille;
+    profile.shoreTree = sample.shoreTree;
     profile.decorPalette = sample.decorPalette;
     profile.grassMix = sample.grassMix;
     profile.grassMixDecor = sample.grassMixDecor;

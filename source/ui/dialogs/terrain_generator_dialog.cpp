@@ -1522,6 +1522,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		};
 		copyMix(profile.treeMix, request.profile.treeMix, request.profile.treeMixPermille);
 		copyMix(profile.bushMix, request.profile.bushMix, request.profile.bushMixPermille);
+		if (config.vegetation && !profile.shoreTree.empty() && usableDecor(profile.shoreTree)) request.profile.waterTree = profile.shoreTree;
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
 			const auto& overlay = profile.overlays[i];
 			// An overlay one cannot walk through would block the planned paths; it is left out.

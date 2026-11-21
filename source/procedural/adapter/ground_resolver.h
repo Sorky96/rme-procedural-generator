@@ -57,6 +57,9 @@ struct GroundProfile {
 	static constexpr size_t overlayCount = 3;
 	std::array<std::string, overlayCount> overlay;
 	std::array<uint16_t, overlayCount> overlayTreePermille {}, overlayGroundPermille {};
+	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
+	// empty = such trees are left out.
+	std::string waterTree;
 	bool operator==(const GroundProfile&) const = default;
 	std::string caveEntrance, caveExit, caveGround;
 	std::string caveWall;

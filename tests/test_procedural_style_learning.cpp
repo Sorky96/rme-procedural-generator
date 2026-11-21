@@ -120,10 +120,13 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 4096; ++i) {
             const int x = i % 64, y = i / 64;
             const bool land = x >= 16 && x < 48 && y >= 16 && y < 48 && !(x >= 30 && x < 34 && y >= 30 && y < 34);
-            check(bool(map.set(x, y, 7, land ? grass : sea, bit(Trait::HasGround))), "island cell");
+            check(bool(map.set(x, y, 7, land ? grass : sea, bit(Trait::HasGround) | (land ? 0 : bit(Trait::TreeDoodad)))), "island cell");
         }
         const auto islandMapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
-        const auto islandSample = inspectLearningSample(map, islandMapping, {}, true);
+        // Every water tile holds a mangrove: all of the bank does.
+        const std::vector<GroundDoodadItems> mangroves{{sea, "mangrove tree (on water)", 3088}};
+        const auto islandSample = inspectLearningSample(map, islandMapping, mangroves, true);
+        check(islandSample && islandSample->shoreTreePermille == 1000 && islandSample->shoreTree == "mangrove tree (on water)", "trees in the water by the bank");
         check(islandSample && islandSample->seaTiles == 4096 - 1024 && islandSample->pondTiles == 16 && islandSample->pondEdges == 16,
             "sea told from the pond");
         const auto island = islandSample ? fitLearningSample(*islandSample, islandMapping, "10.98", "otb", "dat")
