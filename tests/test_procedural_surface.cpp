@@ -609,6 +609,28 @@ void grassRimRule(uint32_t side, uint64_t seeds) {
 	require(dirtBesideRock > 0, "the rim removed every contact between dirt and rock");
 }
 
+// Learned building layout: ruins keep only part of their floor (the rest is listed as bare Floor cells, so the walls stay),
+// and compound rooms join their neighbour into a hall that is no longer a single rectangle.
+void buildingLayout(uint32_t side, uint64_t seeds) {
+	size_t bare = 0, halls = 0, plainHalls = 0;
+	for (uint64_t seed = 1; seed <= seeds; ++seed) {
+		auto config = makeConfig(side, seed);
+		config.tuning.buildingDensity = 60; config.tuning.ruinPercent = 100; config.tuning.ruinFloorPercent = 40;
+		const auto ruins = generateSurface(config, extent, budget);
+		require(ruins.has_value() && ruins->valid(), "grid with bare ruin floor is not valid");
+		bare += ruins->bare.size();
+		config.tuning.ruinPercent = 0; config.tuning.ruinFloorPercent = 0;
+		const auto plain = generateSurface(config, extent, budget);
+		config.tuning.compoundPercent = 100;
+		const auto joined = generateSurface(config, extent, budget);
+		require(plain.has_value() && joined.has_value() && joined->valid(), "grid with compounds is not valid");
+		for (const auto& b : floorBuildingsOf(*joined).buildings) halls += b.cells != b.longSide * b.shortSide;
+		for (const auto& b : floorBuildingsOf(*plain).buildings) plainHalls += b.cells != b.longSide * b.shortSide;
+	}
+	require(bare > 0, "ruins kept their whole floor");
+	require(halls > 0 && plainHalls == 0, "compound rooms did not join into halls, or plain buildings did");
+}
+
 // Optional building foundations (G4 iterations 11-12): off by default; when on, only Grass and Dirt become Floor (door trails
 // may also turn Grass, Dirt and Shore into Path), every foundation is a solid rectangle of 7-11 by 5-9 cells, and no two
 // foundations or a foundation and another kind touch.
@@ -898,7 +920,7 @@ void sandIslands() {
 
 int main() {
 	try {
-		emptyRiverRoutes(); sandIslands(); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
+		emptyRiverRoutes(); sandIslands(); buildingLayout(200, 4); parametersAndLimits(); deterministicAndMaskIndependent(); transitionBand();
 		meanderingRivers(100, 24); meanderingRivers(250, 4); distributions(100, 24); distributions(250, 6); distributions(500, 3);
 		allocationFailures(makeConfig(24, 3), false);
 		auto structures = makeConfig(100, 1);

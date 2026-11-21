@@ -52,6 +52,9 @@ struct SurfaceGrid {
 	// Z entrances: RockFace on Rock or FloorHole on Grass/Dirt; same x/y one floor below.
 	std::vector<uint32_t> entrances;
     std::vector<BridgeAxis> bridgeAxes; // empty without repair bridges; one axis per cell otherwise
+	// Floor cells of ruins drawn with the land ground instead of the floor (SurfaceTuning::ruinFloorPercent); they keep the
+	// building's walls. Empty unless set.
+	std::vector<uint32_t> bare;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };

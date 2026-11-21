@@ -625,6 +625,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			gapCell.assign(grid.cells.size(), 0);
 			for (const uint32_t gap : grid.gaps) gapCell[gap] = 1;  // valid() already checked the range
 		}
+		// Ruin tiles without their floor take the land (Grass) brush; they stay Floor for the walls.
+		std::vector<uint8_t> bareCell;
+		if (!grid.bare.empty()) {
+			bareCell.assign(grid.cells.size(), 0);
+			for (const uint32_t cell : grid.bare) bareCell[cell] = 1;  // valid() already checked the range
+		}
 		// The entrance of every building: a door with doors, an open gap in the wall without them.
 		std::vector<uint8_t> doorCell;
 		if (walled) {
@@ -662,7 +668,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
 			const bool isBridge = grid.cells[i] == SurfaceKind::Bridge;
-			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 :
+			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 : !bareCell.empty() && bareCell[i] ? size_t(SurfaceKind::Grass) - 1 :
                 input.config.surface.passes && grid.cells[i] == SurfaceKind::Path && kinds == GroundProfile::surfaceCount
                     ? size_t(SurfaceKind::Dirt) - 1 : size_t(grid.cells[i]) - 1;
 			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush

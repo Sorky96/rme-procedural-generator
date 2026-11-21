@@ -203,7 +203,7 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
     }
     return out;
 }
-// Buildings: 4-connected groups of at least 9 tiles of a built ground (Other, but not a cave or hole), a blocking wall
+// Buildings: groups (pieces at most two tiles apart) of at least 9 tiles of a built ground (Other, but not a cave or hole), a blocking wall
 // or a door. Cave floors and walls standing on rock or in caves are the mountains', not buildings.
 StyleBuildings findBuildings(const SemanticMap& map, std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> wallBrushes) {
     constexpr size_t smallest = 9;
@@ -226,7 +226,8 @@ StyleBuildings findBuildings(const SemanticMap& map, std::span<const KeyMapEntry
     std::vector<uint8_t> seen(size_t(w) * h, 0);
     std::vector<size_t> group, stack;
     std::map<uint16_t, uint64_t> floors;
-    uint64_t buildings = 0, ruins = 0, present = 0;
+    uint64_t buildings = 0, ruins = 0, present = 0, halls = 0, ruinArea = 0, ruinFloor = 0;
+    constexpr uint64_t roomArea = 99; // the largest single room the generator builds (11 x 9)
     constexpr std::pair<int, int> steps[] {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
     for (size_t start = 0; start < seen.size(); ++start) {
         present += (floor.traits[start] & bit(Trait::Present)) != 0;
@@ -236,7 +237,9 @@ StyleBuildings findBuildings(const SemanticMap& map, std::span<const KeyMapEntry
         while (!stack.empty()) {
             const size_t i = stack.back(); stack.pop_back(); group.push_back(i);
             const int x = int(i % w), y = int(i / w);
-            for (const auto [dx, dy] : steps) {
+            // Pieces up to two tiles apart belong together: a ruin's broken walls and floor patches are one building,
+            // and rooms built wall to wall one hall.
+            for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx) {
                 const int nx = x + dx, ny = y + dy;
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                 const size_t j = size_t(ny) * w + nx;
@@ -256,13 +259,26 @@ StyleBuildings findBuildings(const SemanticMap& map, std::span<const KeyMapEntry
             if (edge) { ++outline; closed += (floor.traits[i] & walled) != 0; }
             if (floor.ground[i] < other.size() && other[floor.ground[i]]) ++floors[floor.ground[i]];
         }
-        ruins += closed * 100 < outline * walledPercent;
+        const bool ruin = closed * 100 < outline * walledPercent;
+        ruins += ruin;
+        uint32_t x0 = UINT32_MAX, y0 = UINT32_MAX, x1 = 0, y1 = 0;
+        uint64_t floorTiles = 0;
+        for (const size_t i : group) {
+            const uint32_t x = uint32_t(i % w), y = uint32_t(i / w);
+            x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
+            floorTiles += floor.ground[i] < other.size() && other[floor.ground[i]];
+        }
+        const uint64_t area = uint64_t(x1 - x0 + 1) * (y1 - y0 + 1);
+        halls += area > roomArea;
+        if (ruin) { ruinArea += area; ruinFloor += floorTiles; }
     }
     StyleBuildings out;
     const auto top = std::ranges::max_element(floors, {}, [](const auto& entry) { return entry.second; });
     if (!buildings || !present || top == floors.end()) return out;
     out.density = uint32_t(std::clamp<uint64_t>((buildings * 65536 + present / 2) / present, 1, 100));
     out.ruinPercent = uint32_t(ruins * 100 / buildings);
+    out.compoundPercent = uint32_t(halls * 100 / buildings);
+    out.floorPercent = ruinArea ? uint32_t(std::clamp<uint64_t>((ruinFloor * 100 + ruinArea / 2) / ruinArea, 1, 100)) : 100;
     out.floor = map.groundKeys()[top->first];
     std::map<std::string, uint64_t> walls;
     for (const auto& piece : wallBrushes)

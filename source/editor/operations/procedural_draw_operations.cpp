@@ -91,6 +91,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			if (c.surface.shoreRadius) hashField(hash, c.surface.shoreRadius, 4);
 			if (c.surface.repairReach) hashField(hash, c.surface.repairReach, 4);
 			if (c.surface.ruinPercent) hashField(hash, c.surface.ruinPercent, 4);
+			if (c.surface.ruinFloorPercent) hashField(hash, c.surface.ruinFloorPercent, 4);
+			if (c.surface.compoundPercent) hashField(hash, c.surface.compoundPercent, 4);
 			if (c.surface.campCount) hashField(hash, c.surface.campCount, 4);
 			// Appended only when it differs from the built-in rules, so other plans keep their original fingerprint.
 			if (c.vegetation && !(c.decor == DecorTuning {})) {

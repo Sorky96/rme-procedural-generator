@@ -173,11 +173,13 @@ struct StyleMixDecor {
 	bool operator==(const StyleMixDecor&) const = default;
 };
 
-// Buildings of the sample (floor tiles of a non-natural ground, walls and doors, in 4-connected groups of at least 9
+// Buildings of the sample (floor tiles of a non-natural ground, walls and doors, in groups of pieces at most two tiles apart, at least 9
 // tiles with a wall piece or door): how many per 65536 tiles (SurfaceTuning::buildingDensity, 1..100), the share that are ruins (outline less
 // than 80% walled, SurfaceTuning::ruinPercent) and the floor ground and wall brush most used; density 0 = none.
+// floorPercent: share of a ruin's area that has floor (1..100; the rest is open ground); compoundPercent: share of the
+// buildings whose group is bigger than one room, i.e. rooms built wall to wall (0..100).
 struct StyleBuildings {
-	uint32_t density = 0, ruinPercent = 0;
+	uint32_t density = 0, ruinPercent = 0, floorPercent = 100, compoundPercent = 0;
 	std::string floor, wall; // wall empty = no walls
 	bool operator==(const StyleBuildings&) const = default;
 };

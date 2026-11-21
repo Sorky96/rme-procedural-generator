@@ -632,6 +632,18 @@ void cutRuinGaps(const Foundation& f, uint32_t width, StableRandom& random, std:
 	sites.push_back(((f.y0 + f.y1) / 2) * width + (f.x0 + f.x1) / 2);
 }
 
+// Ruin floor: only ruinFloorPercent of the ruin's tiles keep the floor, in patches (the tiles with the highest value
+// noise of a 3-cell lattice); the rest is drawn with the land ground, under the walls as well.
+void bareRuinFloor(const Foundation& f, uint32_t width, const SurfaceConfig& config, std::vector<uint32_t>& bare) {
+	std::vector<std::pair<uint32_t, uint32_t>> cells; // noise, cell
+	for (uint32_t y = f.y0; y <= f.y1; ++y)
+		for (uint32_t x = f.x0; x <= f.x1; ++x)
+			cells.emplace_back(valueNoise(config.seed, ruinStream, uint32_t(config.region.x) + x, uint32_t(config.region.y) + y, 3), y * width + x);
+	std::ranges::sort(cells);
+	const size_t keep = cells.size() * config.tuning.ruinFloorPercent / 100;
+	for (size_t k = 0; k + keep < cells.size(); ++k) bare.push_back(cells[k].second);
+}
+
 // Camps (iterations 25 and 26): a clearing (Path disc, dx^2 + dy^2 <= 18) with a fire in the middle (a Path cell, SurfaceGrid::fires) and an open tent
 // floor (Floor 3 x 3, centre 3 cells east of the middle, whose whole outline is a gap) on ground that is Grass or Dirt within 7 cells and has
 // no Floor within 12 cells; centres are at least 12 apart.
@@ -684,12 +696,15 @@ std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t
 		if (random.bounded(2)) std::swap(longSide, shortSide);
 		if (longSide + 4 > width || shortSide + 4 > height) continue;
 		int64_t x0, y0;
-		if (placed.empty() || random.bounded(100) < clusterAnchorPercent) {
+		// A compound room is set wall to wall beside an existing building (gap 1), and the two Floor areas join into one hall.
+		// Its roll is drawn only when compounds are on, so other styles place exactly as before.
+		const bool compound = config.tuning.compoundPercent && !placed.empty() && random.bounded(100) < config.tuning.compoundPercent;
+		if (!compound && (placed.empty() || random.bounded(100) < clusterAnchorPercent)) {
 			x0 = int64_t(random.bounded(width - (longSide + 4) + 1)) + 2;
 			y0 = int64_t(random.bounded(height - (shortSide + 4) + 1)) + 2;
 		} else {
 			const Foundation& other = placed[size_t(random.bounded(placed.size()))];
-			const int64_t side = int64_t(random.bounded(4)), gap = clusterGapMin + int64_t(random.bounded(clusterGapSpread));
+			const int64_t side = int64_t(random.bounded(4)), gap = compound ? 1 : clusterGapMin + int64_t(random.bounded(clusterGapSpread));
 			const int64_t otherW = int64_t(other.x1) - other.x0 + 1, otherH = int64_t(other.y1) - other.y0 + 1;
 			const int64_t alongX = int64_t(other.x0) - (int64_t(longSide) - 1) + int64_t(random.bounded(uint64_t(otherW + longSide - 1)));
 			const int64_t alongY = int64_t(other.y0) - (int64_t(shortSide) - 1) + int64_t(random.bounded(uint64_t(otherH + shortSide - 1)));
@@ -705,7 +720,9 @@ std::vector<Foundation> placeBuildings(std::vector<SurfaceKind>& kinds, uint32_t
 		for (int64_t y = y0 - 2; y < y0 + shortSide + 2 && free; ++y) {
 			for (int64_t x = x0 - 2; x < x0 + longSide + 2; ++x) {
 				const SurfaceKind kind = kinds[size_t(y) * width + size_t(x)];
-				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt) { free = false; break; }
+				// A compound room may border Floor in its margin, never cover it.
+				const bool inside = x >= x0 && y >= y0 && x < x0 + longSide && y < y0 + shortSide;
+				if (kind != SurfaceKind::Grass && kind != SurfaceKind::Dirt && !(compound && !inside && kind == SurfaceKind::Floor)) { free = false; break; }
 			}
 		}
 		if (!free) continue;
@@ -756,6 +773,12 @@ bool placeDoorsAndTrails(std::vector<SurfaceKind>& kinds, uint32_t width, uint32
 			else side = int(random.bounded(4));
 		}
 		const uint32_t midX = f.x0 + (f.x1 - f.x0) / 2, midY = f.y0 + (f.y1 - f.y0) / 2;
+		// In a compound hall a side may face another room: the door takes the next side round whose front is not Floor.
+		const auto front = [&](int s) {
+			const size_t x = s == 1 ? f.x1 + 1 : s == 3 ? f.x0 - 1 : midX, y = s == 0 ? f.y0 - 1 : s == 2 ? f.y1 + 1 : midY;
+			return kinds[y * width + x];
+		};
+		for (int turn = 0; turn < 4 && front(side) == SurfaceKind::Floor; ++turn) side = (side + 1) % 4;
 		uint32_t doorX = midX, doorY = f.y0, stoopX = midX, stoopY = f.y0 - 1;
 		if (side == 1) { doorX = f.x1; doorY = midY; stoopX = f.x1 + 1; stoopY = midY; }
 		else if (side == 2) { doorY = f.y1; stoopY = f.y1 + 1; }
@@ -973,6 +996,7 @@ bool SurfaceGrid::valid() const noexcept {
 	if (!std::ranges::all_of(doors, [&](uint32_t door) { return door < cells.size() && cells[door] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(gaps, [&](uint32_t gap) { return gap < cells.size() && cells[gap] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(sites, [&](uint32_t site) { return site < cells.size() && cells[site] == SurfaceKind::Floor; })) return false;
+	if (!std::ranges::all_of(bare, [&](uint32_t cell) { return cell < cells.size() && cells[cell] == SurfaceKind::Floor; })) return false;
 	if (!std::ranges::all_of(fires, [&](uint32_t fire) { return fire < cells.size() && cells[fire] == SurfaceKind::Path; })) return false;
 	if (!std::ranges::all_of(entrances, [&](uint32_t entrance) { return entrance < cells.size() && (cells[entrance] == SurfaceKind::Rock || cells[entrance] == SurfaceKind::Grass || cells[entrance] == SurfaceKind::Dirt); })) return false;
     if (!bridgeAxes.empty()) {
@@ -1000,6 +1024,11 @@ uint64_t SurfaceGrid::fingerprint() const {
 		byte('D');
 		word(static_cast<uint32_t>(doors.size()));
 		for (const uint32_t door : doors) word(door);
+	}
+	if (!bare.empty()) {
+		byte('R');
+		word(static_cast<uint32_t>(bare.size()));
+		for (const uint32_t cell : bare) word(cell);
 	}
 	if (!gaps.empty()) {
 		byte('G');
@@ -1038,6 +1067,7 @@ std::expected<SurfaceLayout, SurfaceError> validateSurface(
         || (config.tuning.plateauMinTop && (config.tuning.plateauMinTop < 16 || config.tuning.plateauMinTop > 4096))
         || config.tuning.caveEntranceStyle > CaveEntranceStyle::FloorHole || config.tuning.dirtPermille > 1000
         || config.tuning.transitionWidth > 32768 || config.tuning.meander > 8
+        || config.tuning.ruinFloorPercent > 100 || config.tuning.compoundPercent > 100
         || config.tuning.islandPermille > 900 || config.tuning.dirtSize > 4096 || config.tuning.cleanEdges > 1) {
         return std::unexpected(SurfaceError::InvalidParameters);
     }
@@ -1412,7 +1442,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);
 		std::vector<uint8_t>* crossings = config.tuning.fordLength ? &crossingMask : nullptr;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop, crossings)) return cancelled();
-		std::vector<uint32_t> doors, gaps, sites, fires, entrances;
+		std::vector<uint32_t> doors, gaps, sites, fires, entrances, bare;
 		if (config.tuning.buildingDensity) {
 			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
@@ -1421,8 +1451,10 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				// Ruins get gaps instead of a door and a trail; the others are handled as before.
 				StableRandom ruinRandom(config.seed, ruinStream);
 				for (const Foundation& foundation : foundations) {
-					if (ruinRandom.bounded(100) < config.tuning.ruinPercent) cutRuinGaps(foundation, width, ruinRandom, gaps, sites);
-					else withDoors.push_back(foundation);
+					if (ruinRandom.bounded(100) < config.tuning.ruinPercent) {
+						cutRuinGaps(foundation, width, ruinRandom, gaps, sites);
+						if (config.tuning.ruinFloorPercent) bareRuinFloor(foundation, width, config, bare);
+					} else withDoors.push_back(foundation);
 				}
 			}
 			if (!placeDoorsAndTrails(kinds, width, height, config, config.tuning.ruinPercent ? std::span<const Foundation>(withDoors) : std::span<const Foundation>(foundations), doors, stop, crossings)) return cancelled();
@@ -1439,6 +1471,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		// Classify the complete semantic surface before applying the write mask,
 		// preserving the rule that masking never changes another cell's kind.
 		SurfaceGrid grid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires), std::move(entrances) };
+		grid.bare = std::move(bare);
 		const auto islands = normalizeSandIslands(grid, stop);
 		if (!islands) return std::unexpected(islands.error());
 
@@ -1450,6 +1483,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		if (stop.stop_requested()) return cancelled();
 		std::erase_if(grid.doors, [&](uint32_t door) { return grid.cells[door] != SurfaceKind::Floor; });
 		std::erase_if(grid.gaps, [&](uint32_t gap) { return grid.cells[gap] != SurfaceKind::Floor; });
+		std::erase_if(grid.bare, [&](uint32_t cell) { return grid.cells[cell] != SurfaceKind::Floor; });
 		std::erase_if(grid.sites, [&](uint32_t site) { return grid.cells[site] != SurfaceKind::Floor; });
 		std::erase_if(grid.fires, [&](uint32_t fire) { return grid.cells[fire] != SurfaceKind::Path; });
 		std::erase_if(grid.entrances, [&](uint32_t entrance) { return !caveEntranceFits(grid.cells, width, height, entrance, config.tuning.caveEntranceStyle, config.tuning.repairReach != 0); });

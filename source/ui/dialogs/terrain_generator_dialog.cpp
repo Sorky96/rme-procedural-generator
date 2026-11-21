@@ -1073,6 +1073,7 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	};
 	for (size_t i = 0; i < std::size(groundFields); ++i) if (!default_brushes_[i].empty()) setBrush(groundFields[i], default_brushes_[i]);
 	for (size_t i = 0; i < std::size(decorFields); ++i) if (!default_decor_brushes_[i].empty()) setBrush(decorFields[i], default_decor_brushes_[i]);
+	learned_ruin_floor_ = learned_compound_ = 0;
 	const int picked = profile_choice_->GetSelection();
 	if (style_history_ && picked > 0 && size_t(picked) <= profiles_.size()) {
         const auto& version = profiles_[size_t(picked)-1].versionId;
@@ -1147,6 +1148,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	if (const auto& buildings = entry.profile.buildings; buildings.density) {
 		building_density_spin_->SetValue(int(buildings.density));
 		ruin_percent_spin_->SetValue(int(buildings.ruinPercent));
+		learned_ruin_floor_ = buildings.floorPercent < 100 ? buildings.floorPercent : 0;
+		learned_compound_ = buildings.compoundPercent;
 		const Brush* floorBrush = g_brushes.getBrush(buildings.floor);
 		const auto* floorGround = floorBrush ? floorBrush->as<GroundBrush>() : nullptr;
 		if (floorGround && floorGround->getTotalChance() > 0) setBrush(floor_brush_choice_, wxstr(buildings.floor));
@@ -1156,7 +1159,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		walls_check_->SetValue(walls);
 		if (walls) setBrush(wall_brush_choice_, wxstr(buildings.wall));
 		if (!buildings.wall.empty()) note(walls ? applied : skipped, "building walls", wxstr(buildings.wall));
-		note(applied, "buildings", wxstr(std::format("{} per 65536 tiles, {}% ruins", buildings.density, buildings.ruinPercent)));
+		note(applied, "buildings", wxstr(std::format("{} per 65536 tiles, {}% ruins with {}% floor, {}% in halls",
+			buildings.density, buildings.ruinPercent, buildings.floorPercent, buildings.compoundPercent)));
 	}
 	for (const auto& mix : entry.profile.grassMix)
 		if (!mix.brush.empty()) note(applied, "grass patches", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
@@ -1426,6 +1430,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
 		config.surface.ruinPercent = config.surface.buildingDensity ? uint32_t(ruin_percent_spin_->GetValue()) : 0;
+		config.surface.ruinFloorPercent = config.surface.ruinPercent ? learned_ruin_floor_ : 0;
+		config.surface.compoundPercent = config.surface.buildingDensity ? learned_compound_ : 0;
 		config.surface.campCount = uint32_t(camp_count_spin_->GetValue());
 		config.surface.fordLength = uint32_t(ford_length_spin_->GetValue());
 		config.surface.rockPasses = rock_passes_check_->GetValue() && config.surface.pathLength > 0 ? 1 : 0;
