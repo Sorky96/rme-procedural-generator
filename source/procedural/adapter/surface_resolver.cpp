@@ -625,12 +625,13 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			gapCell.assign(grid.cells.size(), 0);
 			for (const uint32_t gap : grid.gaps) gapCell[gap] = 1;  // valid() already checked the range
 		}
+		// The entrance of every building: a door with doors, an open gap in the wall without them.
 		std::vector<uint8_t> doorCell;
-		if (doored) {
-			result.doors.assign(grid.cells.size(), 0);
+		if (walled) {
 			doorCell.assign(grid.cells.size(), 0);
 			for (const uint32_t door : grid.doors) doorCell[door] = 1;  // valid() already checked the range
 		}
+		if (doored) result.doors.assign(grid.cells.size(), 0);
 		std::vector<StableRandom> streams;
 		streams.reserve(kinds);
 		for (size_t index = 0; index < kinds; ++index) streams.emplace_back(input.config.seed, variantStreams[index]);
@@ -687,7 +688,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				const size_t width = grid.region.width, height = grid.region.height, x = i % width, y = i / width;
 				const bool outline = x == 0 || y == 0 || x + 1 == width || y + 1 == height || grid.cells[i - 1] != SurfaceKind::Floor ||
 					grid.cells[i + 1] != SurfaceKind::Floor || grid.cells[i - width] != SurfaceKind::Floor || grid.cells[i + width] != SurfaceKind::Floor;
-				if (outline && (gapCell.empty() || !gapCell[i])) result.walls[i] = wallItem;
+				if (outline && (gapCell.empty() || !gapCell[i]) && (doored || !doorCell[i])) result.walls[i] = wallItem;
 				if (outline && doored && doorCell[i]) result.doors[i] = 1;
 			}
 			if (vegetation) {
