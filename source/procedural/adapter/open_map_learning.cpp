@@ -38,7 +38,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             // learned as a source of that one item.
             const DecorKind kind = classifyDoodadBrush(doodad ? std::string_view(doodad->getName()) : seen.name);
             if (!doodad && kind == DecorKind::None) continue;
-            auto name = doodad ? std::string(doodad->getName()) : rawDecorName(item->getID());
+            auto name = doodad ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
             traits |= decorTraitBit(kind);
             ++doodads[{key, std::move(name)}];
         }

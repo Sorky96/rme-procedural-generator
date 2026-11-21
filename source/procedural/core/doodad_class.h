@@ -26,8 +26,9 @@ struct DoodadRule {
 [[nodiscard]] DecorKind classifyDoodadBrush(std::string_view name) noexcept;
 
 // A vegetation source that is one item placed as is (from the RAW palette, without a doodad brush) is named
-// "raw:<server id>" wherever a doodad brush name is expected. Its id is checked against the loaded client before use.
-[[nodiscard]] std::string rawDecorName(uint16_t id);
+// "raw:<tree|bush|rock>:<server id>" wherever a doodad brush name is expected; the word makes classifyDoodadBrush
+// give it its kind (Stone is "rock"). Its id is checked against the loaded client before use.
+[[nodiscard]] std::string rawDecorName(uint16_t id, DecorKind kind);
 [[nodiscard]] std::optional<uint16_t> rawDecorId(std::string_view name) noexcept;
 
 // The semantic-map trait that marks a tile holding such a doodad; 0 for DecorKind::None.

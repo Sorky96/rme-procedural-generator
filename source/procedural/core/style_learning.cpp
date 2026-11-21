@@ -190,8 +190,15 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     // forests rarely give one brush a quarter of the trees; the most used one still beats the built-in.
     std::map<std::string, uint64_t, std::less<>> mainItems;
     std::array<std::map<std::string, uint64_t, std::less<>>, maxGrassMix> mixItems;
+    // An item on a Water tile or without ground counts as standing on water too, whatever it is called
+    // (RAW items are named by their id).
+    const auto onLand = [&](uint16_t ground) {
+        if (ground >= map.groundKeys().size()) return false;
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[ground], &KeyMapEntry::key);
+        return entry == mapping.end() || entry->kind != StyleKind::Water;
+    };
     for (const auto& item : doodadItems) {
-        if (item.doodad.find("water") != std::string::npos) continue;
+        if (item.doodad.find("water") != std::string::npos || !onLand(item.ground)) continue;
         const auto slot = slotOf(item.ground);
         (slot ? mixItems[*slot] : mainItems)[item.doodad] += item.items;
     }
