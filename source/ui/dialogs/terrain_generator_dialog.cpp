@@ -1126,6 +1126,14 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
 	}
+	// A learned style comes with rivers, rock and sea cut from a real map: they may leave land that cannot be walked to,
+	// which blocks Place. Repairing reachability (fords, passes) keeps such a series usable.
+	if (std::ranges::any_of(entry.profile.sources, [](const auto& source) { return source.alias == "user-local-surface"; })) {
+		repair_check_->SetValue(true);
+		if (entry.profile.tuning && entry.profile.tuning->riverCount && ford_length_spin_->GetValue() == 0) ford_length_spin_->SetValue(8);
+		if (entry.profile.tuning && entry.profile.tuning->rockPermille) rock_passes_check_->SetValue(true);
+		note(applied, "reachability repair", wxString("on"));
+	}
 	// Buildings and ruins the profile learned: density, ruin share, floor and walls (a brush this client lacks is skipped).
 	if (const auto& buildings = entry.profile.buildings; buildings.density) {
 		building_density_spin_->SetValue(int(buildings.density));
