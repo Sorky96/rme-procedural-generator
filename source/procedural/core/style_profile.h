@@ -152,14 +152,14 @@ struct StyleMix {
 	uint32_t permille = 0; // 1..1000 when brush is set, else 0
 	bool operator==(const StyleMix&) const = default;
 };
-inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 3;
+inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 16;
 
 // An item laid over other vegetation or bare land (cobwebs, leaves, debris): any learned item that is not a tree,
-// bush or stone. `name` is a doodad brush or "raw:item:<id>"; it goes on onTreePermille of the generated trees and
-// on onGroundPermille of the other land cells without vegetation.
+// bush or stone. `name` is a doodad brush or "raw:item:<id>"; it goes on onTreePpm of the generated trees and
+// on onGroundPpm of the other land cells without vegetation.
 struct StyleOverlay {
 	std::string name;
-	uint32_t onTreePermille = 0, onGroundPermille = 0; // 0..1000, not both 0 when name is set
+	uint32_t onTreePpm = 0, onGroundPpm = 0; // parts per million, 0..1000000, not both 0 when name is set
 	bool operator==(const StyleOverlay&) const = default;
 };
 

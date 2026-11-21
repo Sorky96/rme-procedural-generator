@@ -161,8 +161,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, 0x76, 1);
 		for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
 			string(plan.profile.overlay[i]);
-			hashField(hash, plan.profile.overlayTreePermille[i], 2);
-			hashField(hash, plan.profile.overlayGroundPermille[i], 2);
+			hashField(hash, plan.profile.overlayTreePpm[i], 4);
+			hashField(hash, plan.profile.overlayGroundPpm[i], 4);
 		}
 		hashField(hash, plan.overlays.size());
 		for (const auto id : plan.overlays) hashField(hash, id, 2);

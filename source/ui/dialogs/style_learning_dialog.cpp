@@ -289,8 +289,9 @@ void StyleLearningDialog::ShowItems() {
     std::string text = "count\tid\tname\tsource\tlearned as\n";
     constexpr size_t shown = 80;
     for (const auto& [id, item] : sorted | std::views::take(shown)) {
-        // As readLearningRow: the item name decides, the brush name only for an item without a name.
-        const auto kind = kindName(classifyDoodadBrush(item->name.empty() ? item->brush : item->name));
+        // As readLearningRow: the item name decides when it says a kind, otherwise the brush name.
+        const auto byName = classifyDoodadBrush(item->name);
+        const auto kind = kindName(byName != DecorKind::None ? byName : classifyDoodadBrush(item->brush));
         const std::string learned = kind.empty() ? "overlay" : std::string(kind);
         text += std::format("{}\t{}\t{}\t{}\t{}\n", item->count, id, item->name,
             item->brush.empty() ? std::string("RAW, no brush") : std::format("brush \"{}\"", item->brush), learned);

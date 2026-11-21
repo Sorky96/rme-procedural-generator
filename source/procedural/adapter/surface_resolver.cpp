@@ -423,9 +423,9 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	bool overlaid = false;
 	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
 		const auto& name = profile.overlay[i];
-		const bool off = profile.overlayTreePermille[i] == 0 && profile.overlayGroundPermille[i] == 0;
+		const bool off = profile.overlayTreePpm[i] == 0 && profile.overlayGroundPpm[i] == 0;
 		if (name.empty() != off || name.size() > 256 ||
-			profile.overlayTreePermille[i] > 1000 || profile.overlayGroundPermille[i] > 1000) return std::unexpected(ResolveError::InvalidProfile);
+			profile.overlayTreePpm[i] > 1000000 || profile.overlayGroundPpm[i] > 1000000) return std::unexpected(ResolveError::InvalidProfile);
 		overlaid = overlaid || (vegetation && !name.empty()); // overlays come only with vegetation
 	}
 	for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
@@ -691,7 +691,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m)
 				if (grassMix[m]) grassMixRolls[m] = int(grassMixRng[m].bounded(grassMixTotals[m])) + 1;
 			const uint64_t mixDecorRoll = grassMixShare && vegetation ? mixDecorRng.bounded(1000) : 0;
-			const uint64_t overlayRoll = overlaid ? overlayRng.bounded(1000) : 0;
+			const uint64_t overlayRoll = overlaid ? overlayRng.bounded(1000000) : 0;
 			const uint64_t overlayPick = overlaid ? overlayRng.bounded(DecorSource::rawTotal * 100) : 0;
 			const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
@@ -764,7 +764,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					uint64_t upTo = 0;
 					for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
 						if (!overlays[k]) continue;
-						upTo += tree ? profile.overlayTreePermille[k] : profile.overlayGroundPermille[k];
+						upTo += tree ? profile.overlayTreePpm[k] : profile.overlayGroundPpm[k];
 						if (overlayRoll >= upTo) continue;
 						result.overlays[i] = overlays[k].item(overlayPick % overlays[k].total + 1);
 						break;

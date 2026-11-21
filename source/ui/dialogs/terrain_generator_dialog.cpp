@@ -1528,8 +1528,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			// An overlay one cannot walk through would block the planned paths; it is left out.
 			if (overlay.name.empty() || !usableDecor(overlay.name) || !rme::procedural::decorItemPassable(rme::procedural::findDecorSource(overlay.name, 100000).item(1))) continue;
 			request.profile.overlay[used] = overlay.name;
-			request.profile.overlayTreePermille[used] = uint16_t(overlay.onTreePermille);
-			request.profile.overlayGroundPermille[used++] = uint16_t(overlay.onGroundPermille);
+			request.profile.overlayTreePpm[used] = overlay.onTreePpm;
+			request.profile.overlayGroundPpm[used++] = overlay.onGroundPpm;
 		}
 	}
 

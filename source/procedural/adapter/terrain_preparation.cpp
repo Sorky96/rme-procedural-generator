@@ -294,10 +294,15 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 		if (!validName(profile.campfire.size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(profile.campfire.size());
 	}
-	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2], &profile.overlay[0], &profile.overlay[1], &profile.overlay[2], &profile.waterTree}) {
+	for (const auto* name : {&profile.grassMix[0], &profile.grassMix[1], &profile.grassMix[2], &profile.treeMix[0], &profile.treeMix[1], &profile.treeMix[2], &profile.bushMix[0], &profile.bushMix[1], &profile.bushMix[2], &profile.waterTree}) {
 		if (name->empty()) continue;
 		if (!validName(name->size())) return fail(PreparationInputError::InvalidProfile);
 		profileBytes += stringCopyBytes(name->size());
+	}
+	for (const auto& name : profile.overlay) {
+		if (name.empty()) continue;
+		if (!validName(name.size())) return fail(PreparationInputError::InvalidProfile);
+		profileBytes += stringCopyBytes(name.size());
 	}
 	for (const auto& names : profile.grassMixDecor) for (const auto& name : names) {
 		if (name.empty()) continue;
@@ -565,7 +570,7 @@ TerrainPreparationSteps runPreparation(
                             floorProfile.brushes[0] = profile.plateauGround;
                             floorProfile.wall.clear(); floorProfile.door.clear(); floorProfile.campfire.clear();
                             floorProfile.grassMix = {}; floorProfile.grassMixPermille = {};
-                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {}; floorProfile.bushMix = {}; floorProfile.bushMixPermille = {}; floorProfile.overlay = {}; floorProfile.overlayTreePermille = {}; floorProfile.overlayGroundPermille = {}; floorProfile.waterTree.clear();
+                            floorProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; floorProfile.grassMixDecor = {}; floorProfile.treeMix = {}; floorProfile.treeMixPermille = {}; floorProfile.bushMix = {}; floorProfile.bushMixPermille = {}; floorProfile.overlay = {}; floorProfile.overlayTreePpm = {}; floorProfile.overlayGroundPpm = {}; floorProfile.waterTree.clear();
                         }
                         auto resolved = resolveSurfacePlan(floorInput, floorGrid, floorProfile, semanticBytes, stop,
                             input.config.vegetation ? &world->decor[f] : nullptr, clear);
@@ -947,7 +952,7 @@ TerrainPreparationSteps runPreparation(
                         upperProfile.campfire.clear();
                         // Caps and storeys use their own ground; the learned mixes belong to the surface below.
                         upperProfile.grassMix = {}; upperProfile.grassMixPermille = {};
-                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {}; upperProfile.bushMix = {}; upperProfile.bushMixPermille = {}; upperProfile.overlay = {}; upperProfile.overlayTreePermille = {}; upperProfile.overlayGroundPermille = {}; upperProfile.waterTree.clear();
+                        upperProfile.grassMixDecorKeep = GroundProfile {}.grassMixDecorKeep; upperProfile.grassMixDecor = {}; upperProfile.treeMix = {}; upperProfile.treeMixPermille = {}; upperProfile.bushMix = {}; upperProfile.bushMixPermille = {}; upperProfile.overlay = {}; upperProfile.overlayTreePpm = {}; upperProfile.overlayGroundPpm = {}; upperProfile.waterTree.clear();
                         auto upperPlan = resolveSurfacePlan(
                             upperSnapshot->input, upperGrid, upperProfile, remaining, stop, upperDecor ? &*upperDecor : nullptr, clear
                         );
@@ -982,7 +987,7 @@ TerrainPreparationSteps runPreparation(
                             auto cliffInput = upperSnapshot->input;
                             cliffInput.config.region = lowerPlan.config.region;
                             cliffInput.config.vegetation = false;
-                            cliffProfile.decorCount = 0; cliffProfile.overlay = {}; cliffProfile.overlayTreePermille = {}; cliffProfile.overlayGroundPermille = {}; cliffProfile.waterTree.clear();
+                            cliffProfile.decorCount = 0; cliffProfile.overlay = {}; cliffProfile.overlayTreePpm = {}; cliffProfile.overlayGroundPpm = {}; cliffProfile.waterTree.clear();
                             auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, cliffClear);
                             if (!cliffs) co_return fail(cliffs.error());
                             for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {

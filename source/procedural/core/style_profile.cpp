@@ -189,7 +189,7 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	if (bad(p.shoreTree) || p.shoreTree.empty() != (!p.decorTuning || !p.decorTuning->shoreTreePermille)) return std::unexpected(ProfileError::InvalidRange);
 	for (const StyleOverlay& o : p.overlays) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
-		if (o.onTreePermille > 1000 || o.onGroundPermille > 1000 || o.name.empty() != (o.onTreePermille + o.onGroundPermille == 0))
+		if (o.onTreePpm > 1000000 || o.onGroundPpm > 1000000 || o.name.empty() != (o.onTreePpm + o.onGroundPpm == 0))
 			return std::unexpected(ProfileError::InvalidRange);
 	}
 	for (size_t m = 0; m < maxGrassMix; ++m) {
@@ -237,7 +237,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	}
 	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
 	for (const auto& mix : p.bushMix) if (!mix.brush.empty()) out += std::format("mix\tBush\t{}\t{}\n", mix.permille, mix.brush);
-	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePermille, o.onGroundPermille, o.name);
+	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
 	if (p.target) {
 		out += "target\tshares";
 		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
@@ -370,7 +370,7 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             *slot = std::move(mix);
         } else if (type == "overlay" && f.size() == 4) {
             StyleOverlay overlay;
-            if (!parseU32(f[1], overlay.onTreePermille) || !parseU32(f[2], overlay.onGroundPermille) || f[3].empty())
+            if (!parseU32(f[1], overlay.onTreePpm) || !parseU32(f[2], overlay.onGroundPpm) || f[3].empty())
                 return std::unexpected(ProfileError::BadFormat);
             overlay.name = f[3];
             const auto slot = std::ranges::find_if(p.overlays, [](const StyleOverlay& o) { return o.name.empty(); });

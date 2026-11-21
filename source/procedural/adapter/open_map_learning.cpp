@@ -38,10 +38,11 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }
-            // The item's own client name decides its kind, whatever brush placed it (a cobweb inside a plant brush is
-            // no bush); the brush name only stands in for an item without a name. Vegetation keeps the brush as its
-            // source when the brush is of the same kind, for its variants; anything else is learned as that one item.
-            const DecorKind kind = classifyDoodadBrush(!seen.name.empty() || !doodad ? std::string_view(seen.name) : std::string_view(doodad->getName()));
+            // The item's own client name decides its kind when it says one; otherwise the brush that placed it does
+            // ("frog leaf" of "swamp plants" is a bush). Vegetation keeps the brush as its source when the brush is of
+            // the same kind, for its variants; anything else is learned as that one item.
+            DecorKind kind = classifyDoodadBrush(seen.name);
+            if (kind == DecorKind::None && doodad) kind = classifyDoodadBrush(doodad->getName());
             const bool brushSource = doodad && kind != DecorKind::None && classifyDoodadBrush(doodad->getName()) == kind;
             auto name = brushSource ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
             // Only plain items one can walk through make overlays (see decorItemPlaceable, decorItemPassable).

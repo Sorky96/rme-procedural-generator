@@ -134,7 +134,7 @@ WaterShape waterShape(int w, int h, Present present, Water water) {
     }
     return shape;
 }
-// Overlay items on land by use; each kept with at least 20 items and its rates on the land tiles with and
+// Overlay items on land by use (rare ones such as spider eggs included); each kept with at least 3 items and its rates on the land tiles with and
 // without a tree. Items on water or on tiles without mapped ground are left out, as for vegetation.
 std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
     std::span<const GroundOverlayItems> items) {
@@ -157,16 +157,16 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
     }
     std::vector<std::pair<uint64_t, std::string_view>> ranked;
     for (const auto& [name, counts] : byName)
-        if (counts.first + counts.second >= 20) ranked.emplace_back(counts.first + counts.second, name);
+        if (counts.first + counts.second >= 3) ranked.emplace_back(counts.first + counts.second, name);
     std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
     std::array<StyleOverlay, maxOverlays> out;
     size_t used = 0;
     for (const auto& [total, name] : ranked) {
         if (used == maxOverlays) break;
         const auto& [onTree, onGround] = byName.find(name)->second;
-        const auto rate = [](uint64_t n, uint64_t of) { return of ? uint32_t(std::min<uint64_t>(1000, (n * 1000 + of / 2) / of)) : 0u; };
+        const auto rate = [](uint64_t n, uint64_t of) { return of ? uint32_t(std::min<uint64_t>(1000000, (n * 1000000 + of / 2) / of)) : 0u; };
         StyleOverlay overlay {std::string(name), rate(onTree, treeTiles), rate(onGround, groundTiles)};
-        if (overlay.onTreePermille + overlay.onGroundPermille == 0) continue;
+        if (overlay.onTreePpm + overlay.onGroundPpm == 0) continue;
         out[used++] = std::move(overlay);
     }
     return out;

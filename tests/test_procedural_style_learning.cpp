@@ -69,10 +69,10 @@ int main(int argc, char** argv) {
         const std::vector<GroundDoodadItems> palms{{grass, "mangrove tree (on water)", 9000}, {grass, "jungle palm", 1300},
             {grass, "oak tree", 1200}, {grass, "pine tree", 1100}, {grass, "birch tree", 1000}, {grass, "fir tree", 900},
             {swamp, "swamp plants", 512}, {grass, "grass tufts", 600}, {grass, "tall jungle grass", 300}, {grass, "bushes", 100}, {sea, "raw:tree:4000", 50000}};
-        // Cobwebs on 400 of the 3584 trees, none on the 512 swamp tiles; 19 of anything else is too few, and on water never.
-        const std::vector<GroundOverlayItems> webs{{grass, "raw:item:999", 400, 0}, {grass, "raw:item:998", 10, 9}, {sea, "raw:item:997", 900, 900}};
+        // Cobwebs on 400 of the 3584 trees (in parts per million), none on the 512 swamp tiles; 2 of anything is too few, and on water never.
+        const std::vector<GroundOverlayItems> webs{{grass, "raw:item:999", 400, 0}, {grass, "raw:item:998", 1, 1}, {sea, "raw:item:997", 900, 900}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true, {}, webs);
-        check(learned && learned->overlays[0] == StyleOverlay{"raw:item:999", 112, 0} && learned->overlays[1].name.empty(), "overlays by use on land");
+        check(learned && learned->overlays[0] == StyleOverlay{"raw:item:999", 111607, 0} && learned->overlays[1].name.empty(), "overlays by use on land");
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned, the RAW tree on water left out");
         check(learned && learned->decorPalette[1] == "grass tufts", "plants of the swamp patches are not the main bush");
         check(learned && learned->bushMix[0] == StyleMix{"tall jungle grass", 300} && learned->bushMix[1] == StyleMix{"bushes", 100},

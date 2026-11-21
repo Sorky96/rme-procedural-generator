@@ -52,11 +52,11 @@ struct GroundProfile {
 	std::array<std::string, treeMixCount> bushMix;
 	std::array<uint16_t, treeMixCount> bushMixPermille {};
 	// Overlay items laid over the vegetation (vegetation only; empty name = off): overlay[i] is a doodad brush or
-	// "raw:item:<id>" placed on overlayTreePermille[i] of the tree cells and on overlayGroundPermille[i] of the other
+	// "raw:item:<id>" placed on overlayTreePpm[i] of the tree cells and on overlayGroundPpm[i] of the other
 	// Grass and Dirt cells; one overlay per cell, the first that hits.
-	static constexpr size_t overlayCount = 3;
+	static constexpr size_t overlayCount = 16;
 	std::array<std::string, overlayCount> overlay;
-	std::array<uint16_t, overlayCount> overlayTreePermille {}, overlayGroundPermille {};
+	std::array<uint32_t, overlayCount> overlayTreePpm {}, overlayGroundPpm {}; // parts per million, 0..1000000
 	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
 	// empty = such trees are left out.
 	std::string waterTree;
