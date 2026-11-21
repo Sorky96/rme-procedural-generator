@@ -1513,6 +1513,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			}
 			++used;
 		}
+		if (profile.grassPatchStep) request.profile.grassPatchStep = uint16_t(profile.grassPatchStep);
 		const auto copyMix = [&](const auto& from, auto& names, auto& permille) {
 			for (size_t i = 0, used = 0; config.vegetation && i < from.size() && used < GroundProfile::treeMixCount; ++i) {
 				if (from[i].brush.empty() || !usableDecor(from[i].brush)) continue;

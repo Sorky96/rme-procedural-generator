@@ -9,6 +9,7 @@
 #include "brushes/wall/wall_brush.h"
 #include "procedural/adapter/door_types.h"
 #include "procedural/adapter/decor_source.h"
+#include "procedural/core/grass_patches.h"
 #include "item_definitions/core/item_definition_store.h"
 #include <algorithm>
 #include <array>
@@ -33,11 +34,9 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 	0x73325f7472656573ULL, 0x73325f6275736865ULL, 0x73325f73746f6e65ULL
 };
 constexpr uint64_t maxDecorChance = 100000;
-constexpr std::array<uint64_t, GroundProfile::grassMixCount> grassMixStreams {0x73325f6d69786772ULL, 0x73325f6d69786773ULL, 0x73325f6d69786774ULL};
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
 constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
-constexpr uint32_t grassPatchStep = 10; // lattice step of the grass variant patches, in cells
 
 uint64_t mixHash(uint64_t value) {
 	value += 0x9e3779b97f4a7c15ULL;
@@ -46,19 +45,6 @@ uint64_t mixHash(uint64_t value) {
 	return value ^ (value >> 31);
 }
 
-// Smooth value noise in 0..65535 on a grassPatchStep lattice, anchored to map coordinates so a
-// region and its neighbour agree at their edge.
-uint32_t grassPatchValue(uint64_t seed, int64_t x, int64_t y) {
-	const auto corner = [&](int64_t cx, int64_t cy) {
-		return uint32_t(mixHash(seed ^ mixHash(uint64_t(cx) * 0x100000001b3ULL ^ uint64_t(cy))) & 0xffff);
-	};
-	const int64_t step = grassPatchStep;
-	const int64_t cx = x >= 0 ? x / step : (x - step + 1) / step, cy = y >= 0 ? y / step : (y - step + 1) / step;
-	const uint64_t fx = uint64_t(x - cx * step), fy = uint64_t(y - cy * step);
-	const uint64_t top = corner(cx, cy) * (step - fx) + corner(cx + 1, cy) * fx;
-	const uint64_t bottom = corner(cx, cy + 1) * (step - fx) + corner(cx + 1, cy + 1) * fx;
-	return uint32_t((top * (step - fy) + bottom * fy) / uint64_t(step * step));
-}
 constexpr std::string_view fallbackHoleBrush = "cave hole";
 constexpr std::string_view holeLandingBrush = "cave ropespot";
 
@@ -407,7 +393,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			return std::unexpected(ResolveError::InvalidProfile);
 		grassMixShare += profile.grassMixPermille[i];
 	}
-	if (grassMixShare > 1000) return std::unexpected(ResolveError::InvalidProfile);
+	if (grassMixShare > 1000 || profile.grassPatchStep < 1 || profile.grassPatchStep > 64) return std::unexpected(ResolveError::InvalidProfile);
 	// Tree and bush mixes, in that order (DecorKind Tree, Bush).
 	const std::array<const std::array<std::string, GroundProfile::treeMixCount>*, 2> kindMixNames {&profile.treeMix, &profile.bushMix};
 	const std::array<const std::array<uint16_t, GroundProfile::treeMixCount>*, 2> kindMixPermille {&profile.treeMixPermille, &profile.bushMixPermille};
@@ -566,47 +552,13 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if (!checked) return std::unexpected(checked.error());
 			waterTree = *checked;
 		}
-		// Grass mix per cell (0 = the Grass brush, m + 1 = grassMix[m]). Each mix brush in turn takes the
-		// unclaimed Grass cells whose own patch noise lies lowest, as many as its share of all Grass cells
-		// of this grid, so the shares hold for any region.
+		// Grass mix per cell (0 = the Grass brush, m + 1 = grassMix[m]), see assignGrassPatches.
 		std::vector<uint8_t> grassSlot;
 		if (grassMixShare) {
-			grassSlot.assign(grid.cells.size(), 0);
-			const size_t grassCells = size_t(std::ranges::count(grid.cells, SurfaceKind::Grass));
-			std::vector<std::pair<uint32_t, uint32_t>> values; // patch value, cell
-			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
-				if (!grassMix[m]) continue;
-				if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-				values.clear();
-				for (size_t i = 0; i < grid.cells.size(); ++i) {
-					if (grid.cells[i] != SurfaceKind::Grass || grassSlot[i]) continue;
-					values.emplace_back(grassPatchValue(input.config.seed ^ grassMixStreams[m], grid.region.x + int64_t(i % grid.region.width),
-						grid.region.y + int64_t(i / grid.region.width)), uint32_t(i));
-				}
-				const size_t wanted = std::min(values.size(), grassCells * profile.grassMixPermille[m] / 1000);
-				std::ranges::nth_element(values, values.begin() + std::ptrdiff_t(wanted));
-				for (size_t k = 0; k < wanted; ++k) grassSlot[values[k].second] = uint8_t(m + 1);
-			}
-			// A cell with fewer than two 4-neighbours of its own brush joins the brush most of its Grass
-			// neighbours have: one-cell strips and spurs between two grounds draw broken borders.
-			const size_t width = grid.region.width, height = grid.region.height;
-			std::vector<uint8_t> next;
-			for (int pass = 0; pass < 2; ++pass) {
-				next = grassSlot;
-				for (size_t i = 0; i < grid.cells.size(); ++i) {
-					if (grid.cells[i] != SurfaceKind::Grass) continue;
-					const size_t x = i % width, y = i / width;
-					std::array<uint8_t, GroundProfile::grassMixCount + 1> around {};
-					for (const auto [ok, j] : {std::pair{x > 0, i - 1}, std::pair{x + 1 < width, i + 1},
-							std::pair{y > 0, i - width}, std::pair{y + 1 < height, i + width}}) {
-						if (ok && grid.cells[j] == SurfaceKind::Grass) ++around[grassSlot[j]];
-					}
-					if (around[grassSlot[i]] >= 2) continue;
-					const auto best = std::ranges::max_element(around);
-					if (*best >= 2) next[i] = uint8_t(best - around.begin());
-				}
-				grassSlot.swap(next);
-			}
+			std::array<uint16_t, grassPatchKinds> shares {};
+			for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) shares[m] = grassMix[m] ? profile.grassMixPermille[m] : 0;
+			grassSlot = assignGrassPatches(grid, input.config.seed, shares, profile.grassPatchStep, stop);
+			if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
 		}
 		// Tree and bush brush per decor cell (0 = the main brush, m + 1 = the kind's mix m), chosen by smooth
 		// noise so a species grows in groves rather than one tile here, one there. The cells of a kind are
@@ -676,7 +628,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (vegetation) for (const auto stream : decorStreams) decorRng.emplace_back(input.config.seed, stream);
 		// Own streams, advanced at every cell like the others, so a mix never shifts the plain variants.
 		std::vector<StableRandom> grassMixRng;
-		for (const auto stream : grassMixStreams) grassMixRng.emplace_back(input.config.seed, stream);
+		for (const auto stream : grassPatchStreams) grassMixRng.emplace_back(input.config.seed, stream);
 		StableRandom mixDecorRng(input.config.seed, mixDecorStream);
 		StableRandom overlayRng(input.config.seed, overlayStream);
 		if (overlaid) result.overlays.assign(grid.cells.size(), 0);

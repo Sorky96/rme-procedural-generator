@@ -127,12 +127,14 @@ int main(int argc, char** argv) {
         const std::vector<GroundDoodadItems> mangroves{{sea, "mangrove tree (on water)", 3088}};
         const auto islandSample = inspectLearningSample(map, islandMapping, mangroves, true);
         check(islandSample && islandSample->shoreTreePermille == 1000 && islandSample->shoreTree == "mangrove tree (on water)", "trees in the water by the bank");
-        check(islandSample && islandSample->seaTiles == 4096 - 1024 && islandSample->pondTiles == 16 && islandSample->pondEdges == 16,
+        check(islandSample && islandSample->seaTiles == 4096 - 1024 &&
+            islandSample->shoreDistance[0] >= 1 && islandSample->shoreDistance[0] <= islandSample->shoreDistance[1] &&
+            islandSample->shoreDistance[1] <= islandSample->shoreDistance[3] && islandSample->shoreDistance[3] <= 16,
             "sea told from the pond");
         const auto island = islandSample ? fitLearningSample(*islandSample, islandMapping, "10.98", "otb", "dat")
                                          : std::expected<StyleProfile, std::string>(std::unexpected("no sample"));
-        check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16 && island->tuning->minLakeCells == 8,
-            "sea and lakes learned apart, ponds as small as half the median one kept");
+        check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16,
+            "sea and lakes learned apart");
         check(island && parseProfile(*serializeProfile(*island)) == *island, "island round-trips");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone

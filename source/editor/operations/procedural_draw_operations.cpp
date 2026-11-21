@@ -81,6 +81,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			// Appended only when set, so plans with the original river routes keep their fingerprint.
 			if (c.surface.meander) hashField(hash, c.surface.meander, 4);
 			if (c.surface.islandPermille) hashField(hash, c.surface.islandPermille, 4);
+			if (c.surface.dirtSize) hashField(hash, c.surface.dirtSize, 4);
 			if (c.surface.pathLength) hashField(hash, c.surface.pathLength, 4);
 			if (c.surface.buildingDensity) hashField(hash, c.surface.buildingDensity, 4);
 			if (c.surface.fordLength) hashField(hash, c.surface.fordLength, 4);
@@ -144,6 +145,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.profile.bushMixPermille[i], 2);
 	}
 	if (!plan.profile.waterTree.empty()) string(plan.profile.waterTree); // only when set, so other plans keep their hash
+	if (plan.profile.grassPatchStep != 10) hashField(hash, plan.profile.grassPatchStep, 2); // likewise only when learned
 	hashField(hash, plan.items.size());
 	for (const auto id : plan.items) hashField(hash, id, 2);
 	hashField(hash, plan.decor.size());

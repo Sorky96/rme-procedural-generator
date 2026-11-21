@@ -40,6 +40,7 @@ struct GroundProfile {
 	static constexpr size_t treeMixCount = 3;
 	static constexpr size_t grassMixCount = 3;
 	std::array<std::string, grassMixCount> grassMix;
+	uint16_t grassPatchStep = 10; // lattice step of the grassMix patch noise, 1..64 (defaultGrassPatchStep)
 	std::array<uint16_t, grassMixCount> grassMixPermille {};
 	// Vegetation on grassMix[m] cells (vegetation only): grassMixDecorKeep[m][k] is the share (permille) of
 	// the generated decoration of DecorKind k (Tree, Bush, Stone) such a cell keeps; grassMixDecor[m][k] is

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/style_learning.h"
 #include "procedural/core/doodad_class.h"
+#include "procedural/core/grass_patches.h"
 #include <algorithm>
 #include <fstream>
 #include <format>
@@ -93,12 +94,54 @@ uint32_t vegetationClump(const SemanticMap& map, std::span<const KeyMapEntry> ma
     const double r = (double(plantedPairs) / double(pairs)) / (double(planted) / double(cells));
     return uint32_t(std::clamp((r - 1.0) * 500.0, 0.0, 1000.0));
 }
-// Water 4-connected to the edge of the area or to a tile without ground is the sea around an island; the rest
-// are ponds. pondEdges counts the (pond tile, land neighbour) pairs: per pond tile it is small for big round
-// ponds and large for small ones, so it measures the scale of the ponds.
-struct WaterShape { uint64_t sea = 0, pondTiles = 0, pondEdges = 0; uint64_t medianPond = 0; };
+
+// Distance in 4-steps from each land tile (present, not water) to the nearest water, as the 25th, 50th, 75th and
+// 90th percentile; all 0 without water or land.
+// Land edge per tile of a set of tiles, in permille: (tile in the set, 4-neighbour on land outside it) pairs per
+// tile of the set. Small scattered patches score high, a few big ones low. 0 for an empty set.
+template <class InSet, class Land>
+uint32_t patchEdgePermille(int w, int h, InSet inSet, Land land) {
+    uint64_t tiles = 0, edges = 0;
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        const size_t i = size_t(y) * w + x;
+        if (!inSet(i)) continue;
+        ++tiles;
+        for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+            const int nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const size_t j = size_t(ny) * w + nx;
+            edges += land(j) && !inSet(j);
+        }
+    }
+    return tiles ? uint32_t(edges * 1000 / tiles) : 0;
+}
 template <class Present, class Water>
-WaterShape waterShape(int w, int h, Present present, Water water) {
+std::array<uint32_t, 4> shoreDistances(int w, int h, Present present, Water water) {
+    std::vector<int32_t> dist(size_t(w) * h, -1);
+    std::vector<size_t> queue;
+    for (size_t i = 0; i < dist.size(); ++i) if (water(i)) { dist[i] = 0; queue.push_back(i); }
+    for (size_t head = 0; head < queue.size(); ++head) {
+        const size_t i = queue[head];
+        const int x = int(i % w), y = int(i / w);
+        for (const auto [dx, dy] : {std::pair{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+            const int nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const size_t j = size_t(ny) * w + nx;
+            if (dist[j] < 0 && present(j)) { dist[j] = dist[i] + 1; queue.push_back(j); }
+        }
+    }
+    std::vector<uint32_t> land;
+    for (size_t i = 0; i < dist.size(); ++i) if (dist[i] > 0) land.push_back(uint32_t(dist[i]));
+    std::array<uint32_t, 4> out {};
+    if (land.empty()) return out;
+    std::ranges::sort(land);
+    constexpr uint32_t percent[] {25, 50, 75, 90};
+    for (size_t k = 0; k < out.size(); ++k) out[k] = land[land.size() * percent[k] / 100];
+    return out;
+}
+// Water tiles 4-connected to the edge of the area or to a tile without ground: the sea around an island, not its ponds.
+template <class Present, class Water>
+uint64_t seaTiles(int w, int h, Present present, Water water) {
     std::vector<uint8_t> sea(size_t(w) * h, 0);
     std::vector<size_t> stack;
     constexpr std::pair<int, int> steps[] {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
@@ -110,9 +153,9 @@ WaterShape waterShape(int w, int h, Present present, Water water) {
             if (!open && !present(size_t(y + dy) * w + (x + dx))) open = true;
         if (open && !sea[i]) { sea[i] = 1; stack.push_back(i); }
     }
-    WaterShape shape;
+    uint64_t count = 0;
     while (!stack.empty()) {
-        const size_t i = stack.back(); stack.pop_back(); ++shape.sea;
+        const size_t i = stack.back(); stack.pop_back(); ++count;
         const int x = int(i % w), y = int(i / w);
         for (const auto [dx, dy] : steps) {
             const int nx = x + dx, ny = y + dy;
@@ -121,37 +164,7 @@ WaterShape waterShape(int w, int h, Present present, Water water) {
             if (!sea[j] && water(j)) { sea[j] = 1; stack.push_back(j); }
         }
     }
-    // Pond sizes (4-connected), marked 2 in `sea` while they are counted.
-    std::vector<uint64_t> sizes;
-    for (size_t start = 0; start < sea.size(); ++start) {
-        if (sea[start] || !water(start)) continue;
-        uint64_t size = 0;
-        sea[start] = 2; stack.push_back(start);
-        while (!stack.empty()) {
-            const size_t i = stack.back(); stack.pop_back(); ++size;
-            const int x = int(i % w), y = int(i / w);
-            for (const auto [dx, dy] : steps) {
-                const int nx = x + dx, ny = y + dy;
-                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                const size_t j = size_t(ny) * w + nx;
-                if (!sea[j] && water(j)) { sea[j] = 2; stack.push_back(j); }
-            }
-        }
-        sizes.push_back(size);
-    }
-    if (!sizes.empty()) { std::ranges::nth_element(sizes, sizes.begin() + sizes.size() / 2); shape.medianPond = sizes[sizes.size() / 2]; }
-    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
-        const size_t i = size_t(y) * w + x;
-        if (sea[i] == 1 || !water(i)) continue;
-        ++shape.pondTiles;
-        for (const auto [dx, dy] : steps) {
-            const int nx = x + dx, ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-            const size_t j = size_t(ny) * w + nx;
-            shape.pondEdges += present(j) && !water(j);
-        }
-    }
-    return shape;
+    return count;
 }
 // Overlay items on land by use (rare ones such as spider eggs included); each kept with at least 3 items and its rates on the land tiles with and
 // without a tree. Items on water or on tiles without mapped ground are left out, as for vegetation.
@@ -190,7 +203,8 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
     }
     return out;
 }
-WaterShape sampleWaterShape(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
+// The sea and the land-to-water distances of the sample.
+void measureWater(const SemanticMap& map, std::span<const KeyMapEntry> mapping, LearningSample& sample) {
     const auto& floor = map.floors().front();
     std::vector<uint8_t> waterKey(map.groundKeys().size(), 0);
     for (size_t k = 0; k < waterKey.size(); ++k) {
@@ -199,7 +213,24 @@ WaterShape sampleWaterShape(const SemanticMap& map, std::span<const KeyMapEntry>
     }
     const auto present = [&](size_t i) { return (floor.traits[i] & bit(Trait::Present)) != 0; };
     const auto water = [&](size_t i) { return present(i) && floor.ground[i] < waterKey.size() && waterKey[floor.ground[i]]; };
-    return waterShape(floor.bounds.width, floor.bounds.height, present, water);
+    sample.seaTiles = seaTiles(floor.bounds.width, floor.bounds.height, present, water);
+    sample.shoreDistance = shoreDistances(floor.bounds.width, floor.bounds.height, present, water);
+    sample.width = uint32_t(floor.bounds.width); sample.height = uint32_t(floor.bounds.height);
+    std::vector<uint8_t> kindOf(map.groundKeys().size(), uint8_t(StyleKind::Unmapped));
+    for (size_t k = 0; k < kindOf.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        if (entry != mapping.end()) kindOf[k] = uint8_t(entry->kind);
+    }
+    const auto kind = [&](size_t i) { return present(i) && floor.ground[i] < kindOf.size() ? StyleKind(kindOf[floor.ground[i]]) : StyleKind::NoGround; };
+    // Grass mix grounds together (their own names, as chosen for the profile) against all land.
+    std::vector<uint8_t> mixKey(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < mixKey.size(); ++k)
+        for (const auto& mix : sample.grassMix) mixKey[k] = mixKey[k] || (!mix.brush.empty() && map.groundKeys()[k] == mix.brush);
+    sample.mixEdgePermille = patchEdgePermille(floor.bounds.width, floor.bounds.height,
+        [&](size_t i) { return present(i) && floor.ground[i] < mixKey.size() && mixKey[floor.ground[i]]; },
+        [&](size_t i) { const auto k = kind(i); return k == StyleKind::Grass || k == StyleKind::Dirt; });
+    sample.dirtEdgePermille = patchEdgePermille(floor.bounds.width, floor.bounds.height, [&](size_t i) { return kind(i) == StyleKind::Dirt; },
+        [&](size_t i) { const auto k = kind(i); return k == StyleKind::Grass || k == StyleKind::Dirt; });
 }
 } // namespace
 
@@ -330,9 +361,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
             sample.shoreTree = top->first;
         }
     }
-    const auto shape = sampleWaterShape(map, mapping);
-    sample.seaTiles = shape.sea; sample.pondTiles = shape.pondTiles; sample.pondEdges = shape.pondEdges;
-    sample.medianPond = shape.medianPond;
+    measureWater(map, mapping, sample);
     sample.overlays = chooseOverlays(map, mapping, overlayItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
@@ -368,47 +397,96 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     const uint64_t sea = natural && sample.seaTiles * 20 >= natural ? std::min(sample.seaTiles, water) : 0;
     profile.tuning->islandPermille = natural ? uint32_t(std::min<uint64_t>(900, (sea * 1000 + natural / 2) / natural)) : 0;
     const uint64_t land = natural - sea;
-    // Small ponds are part of the style: the generator drops lakes under minLakeCells, so it may not exceed half
-    // the typical pond of the sample (2 at least, the built-in 12 at most).
-    if (sample.medianPond) profile.tuning->minLakeCells = uint32_t(std::clamp<uint64_t>(sample.medianPond / 2, 2, 12));
     profile.tuning->lakePermille = land ? uint32_t(std::min<uint64_t>(500, ((water - sea) * 1000 + land / 2) / land)) : 0;
-    // The feature size was chosen for the fit's own lake share and scored on all water, the sea included, which
-    // favours big smooth shapes. With ponds in the sample it is picked again so that the generated ponds have
-    // the same land edge per water tile; otherwise by the neighbour pairs of the final shares.
-    {
-        constexpr uint32_t sizes[] {6, 8, 12, 16, 24, 32, 48};
-        const bool ponds = sample.pondTiles >= 8;
-        const uint64_t side = options.eval.side, cells = side * side;
+    // Dirt is the driest share of the land; the fit can trade it away for neighbour pairs, so it is set directly too.
+    const uint64_t dry = sample.stats.kindTiles[size_t(StyleKind::Dirt)], ground = natural - water;
+    profile.tuning->dirtPermille = ground ? uint32_t(std::min<uint64_t>(1000, (dry * 1000 + ground / 2) / ground)) : 0;
+    // How far land lies from water is the scale of the style: narrow strips between ponds and channels, or wide
+    // meadows. The fit scored all water, the sea included, which favours big smooth shapes, and drops lakes smaller
+    // than minLakeCells; both are chosen again so that the land of a sample-sized area has the sample's distances.
+    if (sample.shoreDistance[1]) {
+        constexpr uint32_t sizes[] {3, 4, 5, 6, 8, 12, 16, 24, 32}, smallest[] {2, 3, 4, 6, 8, 12};
+        const uint32_t w = std::clamp<uint32_t>(sample.width, 64, 256), h = std::clamp<uint32_t>(sample.height, 64, 256);
+        const uint64_t cells = uint64_t(w) * h;
         uint64_t best = UINT64_MAX;
-        uint32_t chosen = profile.tuning->featureSize;
-        for (const uint32_t size : sizes) {
+        SurfaceTuning chosen = *profile.tuning;
+        for (const uint32_t size : sizes) for (const uint32_t minLake : smallest) {
             auto tuning = *profile.tuning;
             tuning.featureSize = size;
-            uint64_t score = UINT64_MAX;
-            if (ponds) {
-                uint64_t pondTiles = 0, pondEdges = 0;
-                for (const uint64_t seed : options.eval.seeds) {
-                    const SurfaceConfig config {{100, 100, 7, uint32_t(side), uint32_t(side)}, seed, tuning};
-                    const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, {cells, cells * 8, cells * 64 + (1u << 20)}, {}, {}, stop);
-                    if (!grid) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
-                    const auto& c = grid->cells;
-                    const auto shape = waterShape(int(side), int(side), [&](size_t i) { return c[i] != SurfaceKind::Preserve; },
-                        [&](size_t i) { return c[i] == SurfaceKind::Lake || c[i] == SurfaceKind::River; });
-                    pondTiles += shape.pondTiles; pondEdges += shape.pondEdges;
-                }
-                // Edges per 1000 pond tiles, generated against sampled; no ponds at all scores worst.
-                if (pondTiles) {
-                    const uint64_t made = pondEdges * 1000 / pondTiles, wanted = sample.pondEdges * 1000 / sample.pondTiles;
-                    score = made > wanted ? made - wanted : wanted - made;
-                }
-            } else {
-                const auto stats = evaluateTuning(tuning, options.eval, stop);
-                if (!stats) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
-                if (const auto generated = targetFromStats(*stats)) score = distance(*generated, *target).adjacency;
+            tuning.minLakeCells = minLake;
+            uint64_t score = 0;
+            for (const uint64_t seed : options.eval.seeds) {
+                const SurfaceConfig config {{100, 100, 7, w, h}, seed, tuning};
+                const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, {cells, cells * 8, cells * 64 + (1u << 20)}, {}, {}, stop);
+                if (!grid) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
+                const auto& c = grid->cells;
+                const auto made = shoreDistances(int(w), int(h), [&](size_t i) { return c[i] != SurfaceKind::Preserve; },
+                    [&](size_t i) { return c[i] == SurfaceKind::Lake || c[i] == SurfaceKind::River; });
+                for (size_t k = 0; k < made.size(); ++k)
+                    score += made[k] > sample.shoreDistance[k] ? made[k] - sample.shoreDistance[k] : sample.shoreDistance[k] - made[k];
             }
-            if (score < best) { best = score; chosen = size; }
+            if (score < best) { best = score; chosen = tuning; }
         }
-        profile.tuning->featureSize = chosen;
+        profile.tuning = chosen;
+    }
+    // Grass mix patches likewise: the patch noise step that gives the sample's land edge per mix tile.
+    if (sample.mixEdgePermille) {
+        constexpr uint32_t steps[] {2, 3, 4, 5, 6, 8, 10, 14, 20};
+        std::array<uint16_t, grassPatchKinds> shares {};
+        for (size_t m = 0; m < grassPatchKinds; ++m) shares[m] = uint16_t(sample.grassMix[m].permille);
+        const uint32_t w = std::clamp<uint32_t>(sample.width, 64, 256), h = std::clamp<uint32_t>(sample.height, 64, 256);
+        const uint64_t cells = uint64_t(w) * h;
+        std::vector<SurfaceGrid> grids;
+        for (const uint64_t seed : options.eval.seeds) {
+            auto grid = generateSurface({{100, 100, 7, w, h}, seed, *profile.tuning}, MapExtent {65001, 65001, 16},
+                {cells, cells * 8, cells * 64 + (1u << 20)}, {}, {}, stop);
+            if (!grid) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
+            grids.push_back(std::move(*grid));
+        }
+        uint64_t best = UINT64_MAX;
+        for (const uint32_t step : steps) {
+            uint64_t score = 0;
+            for (size_t g = 0; g < grids.size(); ++g) {
+                const auto& c = grids[g].cells;
+                const auto slot = assignGrassPatches(grids[g], options.eval.seeds[g], shares, step, stop);
+                if (slot.empty()) break;
+                const uint64_t edge = patchEdgePermille(int(w), int(h), [&](size_t i) { return slot[i] != 0; },
+                    [&](size_t i) { return c[i] == SurfaceKind::Grass || c[i] == SurfaceKind::Dirt; });
+                score += edge > sample.mixEdgePermille ? edge - sample.mixEdgePermille : sample.mixEdgePermille - edge;
+            }
+            if (score < best) { best = score; profile.grassPatchStep = step; }
+        }
+    }
+    // Dirt comes in patches of the sample's size: the moisture noise step and the width of the grass/dirt band are
+    // chosen so that generated dirt has the sample's land edge per tile, at the sample's share.
+    if (sample.dirtEdgePermille && profile.tuning->dirtPermille) {
+        constexpr uint32_t sizes[] {2, 3, 4, 5, 6, 8, 12, 16, 24}, bands[] {1000, 3000, 6000, 16000};
+        const uint32_t w = std::clamp<uint32_t>(sample.width, 64, 256), h = std::clamp<uint32_t>(sample.height, 64, 256);
+        const uint64_t cells = uint64_t(w) * h;
+        const uint64_t wantShare = profile.tuning->dirtPermille;
+        uint64_t best = UINT64_MAX;
+        SurfaceTuning chosen = *profile.tuning;
+        for (const uint32_t size : sizes) for (const uint32_t band : bands) {
+            auto tuning = *profile.tuning;
+            tuning.dirtSize = size;
+            tuning.transitionWidth = band;
+            uint64_t score = 0;
+            for (const uint64_t seed : options.eval.seeds) {
+                const SurfaceConfig config {{100, 100, 7, w, h}, seed, tuning};
+                const auto grid = generateSurface(config, MapExtent {65001, 65001, 16}, {cells, cells * 8, cells * 64 + (1u << 20)}, {}, {}, stop);
+                if (!grid) return std::unexpected(stop.stop_requested() ? "Analysis cancelled." : "Surface fit failed.");
+                const auto& c = grid->cells;
+                const auto isLand = [&](size_t i) { return c[i] == SurfaceKind::Grass || c[i] == SurfaceKind::Dirt; };
+                const auto isDirt = [&](size_t i) { return c[i] == SurfaceKind::Dirt; };
+                const uint64_t edge = patchEdgePermille(int(w), int(h), isDirt, isLand);
+                const uint64_t land = uint64_t(std::ranges::count_if(c, [](SurfaceKind k) { return k == SurfaceKind::Grass || k == SurfaceKind::Dirt; }));
+                const uint64_t share = land ? uint64_t(std::ranges::count(c, SurfaceKind::Dirt)) * 1000 / land : 0;
+                score += (edge > sample.dirtEdgePermille ? edge - sample.dirtEdgePermille : sample.dirtEdgePermille - edge)
+                    + 4 * (share > wantShare ? share - wantShare : wantShare - share);
+            }
+            if (score < best) { best = score; chosen = tuning; }
+        }
+        profile.tuning = chosen;
     }
     // The generator always rings water with Shore; a sample without any shore meets water with grass,
     // so the ring takes the grass brush instead of the built-in sand.

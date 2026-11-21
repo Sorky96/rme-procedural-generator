@@ -195,6 +195,7 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	for (size_t m = 0; m < maxGrassMix; ++m) {
 		const auto& d = p.grassMixDecor[m];
 		if (p.grassMix[m].brush.empty() && d != StyleMixDecor {}) return std::unexpected(ProfileError::InvalidRange);
+		if (p.grassPatchStep > 64) return std::unexpected(ProfileError::InvalidRange);
 		for (size_t k = 0; k < 3; ++k) {
 			if (d.keepPermille[k] > 1000) return std::unexpected(ProfileError::InvalidRange);
 			if (bad(d.brushes[k])) return std::unexpected(ProfileError::InvalidKey);
@@ -228,6 +229,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		if (!p.decorPalette[k].empty()) out += std::string("doodad\t") + decorNames[k] + '\t' + p.decorPalette[k] + '\n';
 	}
 	for (const auto& mix : p.grassMix) if (!mix.brush.empty()) out += std::format("mix\tGrass\t{}\t{}\n", mix.permille, mix.brush);
+	if (p.grassPatchStep) out += std::format("mixpatch\t{}\n", p.grassPatchStep);
 	for (size_t m = 0; m < maxGrassMix; ++m) {
 		const auto& d = p.grassMixDecor[m];
 		if (d == StyleMixDecor {}) continue;
@@ -274,6 +276,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		out += '\n';
 		// Its own line, only when set, so profiles without a sea keep their bytes.
 		if (t.islandPermille) out += std::format("tuning\tisland\t{}\n", t.islandPermille);
+		if (t.dirtSize) out += std::format("tuning\tdirtsize\t{}\n", t.dirtSize);
 	}
 	return out;
 }
@@ -376,6 +379,8 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             const auto slot = std::ranges::find_if(p.overlays, [](const StyleOverlay& o) { return o.name.empty(); });
             if (slot == p.overlays.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(overlay);
+        } else if (type == "mixpatch" && f.size() == 2 && !p.grassPatchStep) {
+            if (!parseU32(f[1], p.grassPatchStep) || p.grassPatchStep < 1 || p.grassPatchStep > 64) return std::unexpected(ProfileError::BadFormat);
         } else if (type == "mixdecor" && f.size() == 8) {
             uint32_t slot = 0;
             if (!parseU32(f[1], slot) || slot >= maxGrassMix || haveMixDecor[slot]) return std::unexpected(ProfileError::BadFormat);
@@ -419,6 +424,8 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
         } else if (type == "decor" && f.size() == 3 && f[1] == "clump" && p.decorTuning && !p.decorTuning->clumpPermille) {
             if (!parseU32(f[2], p.decorTuning->clumpPermille) || !p.decorTuning->clumpPermille || p.decorTuning->clumpPermille > 1000)
                 return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "tuning" && f.size() == 3 && f[1] == "dirtsize" && p.tuning && !p.tuning->dirtSize) {
+            if (!parseU32(f[2], p.tuning->dirtSize) || !p.tuning->dirtSize || p.tuning->dirtSize > 4096) return std::unexpected(ProfileError::BadFormat);
         } else if (type == "tuning" && f.size() == 3 && f[1] == "island" && p.tuning && !p.tuning->islandPermille) {
             if (!parseU32(f[2], p.tuning->islandPermille) || !p.tuning->islandPermille || p.tuning->islandPermille > 900)
                 return std::unexpected(ProfileError::BadFormat);
