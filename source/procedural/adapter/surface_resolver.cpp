@@ -664,6 +664,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			bareCell.assign(grid.cells.size(), 0);
 			for (const uint32_t cell : grid.bare) bareCell[cell] = 1;  // valid() already checked the range
 		}
+		// Loose floor tiles around ruins take the floor brush while they are still Grass or Dirt.
+		std::vector<uint8_t> strewnCell;
+		if (!grid.strewn.empty() && kinds > size_t(SurfaceKind::Floor) - 1) {
+			strewnCell.assign(grid.cells.size(), 0);
+			for (const uint32_t cell : grid.strewn) strewnCell[cell] = 1;  // valid() already checked the range
+		}
 		// The entrance of every building: a door with doors, an open gap in the wall without them.
 		std::vector<uint8_t> doorCell;
 		if (walled) {
@@ -701,11 +707,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			if ((grid.cells[i] != SurfaceKind::Preserve) != writable) return std::unexpected(ResolveError::InvalidInput);
 			if (!writable) continue;
 			const bool isBridge = grid.cells[i] == SurfaceKind::Bridge;
-			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 : !bareCell.empty() && bareCell[i] && grid.cells[i] == SurfaceKind::Floor ? size_t(SurfaceKind::Grass) - 1 :
+			const bool strewnFloor = !strewnCell.empty() && strewnCell[i] && (grid.cells[i] == SurfaceKind::Grass || grid.cells[i] == SurfaceKind::Dirt);
+			const auto kind = isBridge ? size_t(SurfaceKind::Shore) - 1 : strewnFloor ? size_t(SurfaceKind::Floor) - 1 : !bareCell.empty() && bareCell[i] && grid.cells[i] == SurfaceKind::Floor ? size_t(SurfaceKind::Grass) - 1 :
                 input.config.surface.passes && grid.cells[i] == SurfaceKind::Path && kinds == GroundProfile::surfaceCount
                     ? size_t(SurfaceKind::Dirt) - 1 : size_t(grid.cells[i]) - 1;
 			if (kind >= kinds) return std::unexpected(ResolveError::InvalidInput); // a path or floor cell needs its brush
-			const size_t mixSlot = grassSlot.empty() ? 0 : grassSlot[i];
+			const size_t mixSlot = grassSlot.empty() || strewnFloor ? 0 : grassSlot[i];
 			const auto id = mixSlot ? grassMix[mixSlot - 1]->getPlacementItemIdForRoll(grassMixRolls[mixSlot - 1])
 				: brushes[kind]->getPlacementItemIdForRoll(rolls[kind]);
 			if (!id || !*id) return std::unexpected(ResolveError::InvalidItem);

@@ -56,6 +56,9 @@ struct SurfaceGrid {
 	// is no longer Floor is ignored); they keep the
 	// building's walls. Empty unless set.
 	std::vector<uint32_t> bare;
+	// Loose floor tiles around ruins: Grass or Dirt cells drawn with the floor ground (a listed cell that is no longer Grass
+	// or Dirt is ignored). Empty unless set.
+	std::vector<uint32_t> strewn;
 	[[nodiscard]] bool valid() const noexcept;
 	uint64_t fingerprint() const;
 };

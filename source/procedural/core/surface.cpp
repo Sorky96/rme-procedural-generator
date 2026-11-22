@@ -632,16 +632,27 @@ void cutRuinGaps(const Foundation& f, uint32_t width, StableRandom& random, std:
 	sites.push_back(((f.y0 + f.y1) / 2) * width + (f.x0 + f.x1) / 2);
 }
 
-// Ruin floor: only ruinFloorPercent of the ruin's tiles keep the floor, in patches (the tiles with the highest value
-// noise of a 3-cell lattice); the rest is drawn with the land ground, under the walls as well.
-void bareRuinFloor(const Foundation& f, uint32_t width, const SurfaceConfig& config, std::vector<uint32_t>& bare) {
+// Ruin floor: only ruinFloorPercent of the ruin's tiles keep the floor, in small patches and single tiles (the tiles with
+// the highest value noise of a 2-cell lattice); the rest is drawn with the land ground, under the walls as well. Loose
+// floor tiles lie scattered on the Grass or Dirt up to two tiles beyond the outline, on a quarter of that share.
+void bareRuinFloor(const Foundation& f, const std::vector<SurfaceKind>& kinds, uint32_t width, uint32_t height, const SurfaceConfig& config,
+	std::vector<uint32_t>& bare, std::vector<uint32_t>& strewn) {
+	constexpr uint32_t apron = 2;
 	std::vector<std::pair<uint32_t, uint32_t>> cells; // noise, cell
 	for (uint32_t y = f.y0; y <= f.y1; ++y)
 		for (uint32_t x = f.x0; x <= f.x1; ++x)
-			cells.emplace_back(valueNoise(config.seed, ruinStream, uint32_t(config.region.x) + x, uint32_t(config.region.y) + y, 3), y * width + x);
+			cells.emplace_back(valueNoise(config.seed, ruinStream, uint32_t(config.region.x) + x, uint32_t(config.region.y) + y, 2), y * width + x);
 	std::ranges::sort(cells);
 	const size_t keep = cells.size() * config.tuning.ruinFloorPercent / 100;
 	for (size_t k = 0; k + keep < cells.size(); ++k) bare.push_back(cells[k].second);
+	const uint32_t loose = config.tuning.ruinFloorPercent * 65536 / 400; // of the 16-bit lattice
+	for (uint32_t y = f.y0 >= apron ? f.y0 - apron : 0; y <= std::min(f.y1 + apron, height - 1); ++y)
+		for (uint32_t x = f.x0 >= apron ? f.x0 - apron : 0; x <= std::min(f.x1 + apron, width - 1); ++x) {
+			const size_t cell = size_t(y) * width + x;
+			if ((x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1) || (kinds[cell] != SurfaceKind::Grass && kinds[cell] != SurfaceKind::Dirt)) continue;
+			if (lattice(config.seed, ruinStream ^ 0x4c, uint32_t(config.region.x) + x, uint32_t(config.region.y) + y) < loose)
+				strewn.push_back(uint32_t(cell));
+		}
 }
 
 // Camps (iterations 25 and 26): a clearing (Path disc, dx^2 + dy^2 <= 18) with a fire in the middle (a Path cell, SurfaceGrid::fires) and an open tent
@@ -998,6 +1009,7 @@ bool SurfaceGrid::valid() const noexcept {
 	if (!std::ranges::all_of(sites, [&](uint32_t site) { return site < cells.size() && cells[site] == SurfaceKind::Floor; })) return false;
 	// Bare cells may outlive their floor (a repair can clear a building); only Floor cells among them count.
 	if (!std::ranges::all_of(bare, [&](uint32_t cell) { return cell < cells.size(); })) return false;
+	if (!std::ranges::all_of(strewn, [&](uint32_t cell) { return cell < cells.size(); })) return false;
 	if (!std::ranges::all_of(fires, [&](uint32_t fire) { return fire < cells.size() && cells[fire] == SurfaceKind::Path; })) return false;
 	if (!std::ranges::all_of(entrances, [&](uint32_t entrance) { return entrance < cells.size() && (cells[entrance] == SurfaceKind::Rock || cells[entrance] == SurfaceKind::Grass || cells[entrance] == SurfaceKind::Dirt); })) return false;
     if (!bridgeAxes.empty()) {
@@ -1030,6 +1042,11 @@ uint64_t SurfaceGrid::fingerprint() const {
 		byte('R');
 		word(static_cast<uint32_t>(bare.size()));
 		for (const uint32_t cell : bare) word(cell);
+	}
+	if (!strewn.empty()) {
+		byte('L');
+		word(static_cast<uint32_t>(strewn.size()));
+		for (const uint32_t cell : strewn) word(cell);
 	}
 	if (!gaps.empty()) {
 		byte('G');
@@ -1443,7 +1460,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		std::vector<uint8_t> crossingMask(config.tuning.fordLength ? count : 0, 0);
 		std::vector<uint8_t>* crossings = config.tuning.fordLength ? &crossingMask : nullptr;
 		if (config.tuning.pathLength && !drawPaths(kinds, width, height, config, stop, crossings)) return cancelled();
-		std::vector<uint32_t> doors, gaps, sites, fires, entrances, bare;
+		std::vector<uint32_t> doors, gaps, sites, fires, entrances, bare, strewn;
 		if (config.tuning.buildingDensity) {
 			const std::vector<Foundation> foundations = placeBuildings(kinds, width, height, config, stop);
 			if (stop.stop_requested()) return cancelled();
@@ -1454,7 +1471,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 				for (const Foundation& foundation : foundations) {
 					if (ruinRandom.bounded(100) < config.tuning.ruinPercent) {
 						cutRuinGaps(foundation, width, ruinRandom, gaps, sites);
-						if (config.tuning.ruinFloorPercent) bareRuinFloor(foundation, width, config, bare);
+						if (config.tuning.ruinFloorPercent) bareRuinFloor(foundation, kinds, width, height, config, bare, strewn);
 					} else withDoors.push_back(foundation);
 				}
 			}
@@ -1473,6 +1490,7 @@ std::expected<SurfaceGrid, SurfaceError> generateSurface(
 		// preserving the rule that masking never changes another cell's kind.
 		SurfaceGrid grid { config.region, std::move(kinds), std::move(doors), std::move(gaps), std::move(sites), std::move(fires), std::move(entrances) };
 		grid.bare = std::move(bare);
+		grid.strewn = std::move(strewn);
 		const auto islands = normalizeSandIslands(grid, stop);
 		if (!islands) return std::unexpected(islands.error());
 

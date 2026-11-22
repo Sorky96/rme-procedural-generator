@@ -610,15 +610,16 @@ void grassRimRule(uint32_t side, uint64_t seeds) {
 }
 
 // Learned building layout: ruins keep only part of their floor (the rest is listed as bare Floor cells, so the walls stay),
-// and compound rooms join their neighbour into a hall that is no longer a single rectangle.
+// loose floor tiles lie on the land around them, and compound rooms join their neighbour into a hall that is no longer a single rectangle.
 void buildingLayout(uint32_t side, uint64_t seeds) {
-	size_t bare = 0, halls = 0, plainHalls = 0;
+	size_t bare = 0, strewn = 0, halls = 0, plainHalls = 0;
 	for (uint64_t seed = 1; seed <= seeds; ++seed) {
 		auto config = makeConfig(side, seed);
 		config.tuning.buildingDensity = 60; config.tuning.ruinPercent = 100; config.tuning.ruinFloorPercent = 40;
 		const auto ruins = generateSurface(config, extent, budget);
 		require(ruins.has_value() && ruins->valid(), "grid with bare ruin floor is not valid");
 		bare += ruins->bare.size();
+		for (const uint32_t cell : ruins->strewn) strewn += ruins->cells[cell] != SurfaceKind::Floor;
 		config.tuning.ruinPercent = 0; config.tuning.ruinFloorPercent = 0;
 		const auto plain = generateSurface(config, extent, budget);
 		config.tuning.compoundPercent = 100;
@@ -628,6 +629,7 @@ void buildingLayout(uint32_t side, uint64_t seeds) {
 		for (const auto& b : floorBuildingsOf(*plain).buildings) plainHalls += b.cells != b.longSide * b.shortSide;
 	}
 	require(bare > 0, "ruins kept their whole floor");
+	require(strewn > 0, "no loose floor tiles on the land around ruins");
 	require(halls > 0 && plainHalls == 0, "compound rooms did not join into halls, or plain buildings did");
 }
 
