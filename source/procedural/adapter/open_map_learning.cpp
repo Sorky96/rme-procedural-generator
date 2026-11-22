@@ -50,9 +50,10 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             }
         }
         std::vector<std::string> tileOverlays;
-        // The whole stack, for the walls and the structures: kept when it holds no door and no vegetation.
+        // The whole stack, for the walls and the structures: kept when it holds no door, no vegetation and only plain items
+        // (a container, teleport, depot or podium carries state the generator does not place).
         PlacedStack stack {cell};
-        bool blocking = false, door = false, natural = false;
+        bool blocking = false, door = false, natural = false, special = false;
         stack.plainWall = true;
         for (const auto& item : tile->items) {
             if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
@@ -72,6 +73,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
                 continue;
             }
             if (item->isTable() || item->isBorder()) continue;
+            special = special || typeid(*item) != typeid(Item);
             stack.items.push_back(item->getID());
             stack.plainWall = false;
             blocking = blocking || item->isBlocking();
@@ -97,7 +99,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             ++doodads[{key, std::move(name)}];
         }
         stack.blocking = blocking;
-        if (!stack.items.empty() && !door && !natural) placed.push_back(std::move(stack));
+        if (!stack.items.empty() && !door && !natural && !special) placed.push_back(std::move(stack));
         // Items under something blocking belong to that structure, not to the open land.
         if (blocking) tileOverlays.clear();
         for (auto& name : tileOverlays) {
