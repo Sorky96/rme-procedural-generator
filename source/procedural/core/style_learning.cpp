@@ -283,12 +283,12 @@ std::array<StyleOverlay, maxOverlays> chooseInteriors(const SemanticMap& map, st
 // to be a building floor: under a twentieth of the Other tiles), 8-connected, such as a ship wreck with its deck and
 // gangway. A group belongs to no building when its blocking tiles keep more than two tiles away from any wall piece,
 // door or building floor (its grounds stop short of them); it takes the stacks one step beside its blocking tiles as
-// well, needs at least 4 blocking tiles and must fit maxStructureSide and maxStructureCells. It keeps which tiles of its
+// well, needs at least 4 blocking tiles and 16 tiles in all (a pile of rocks or bones is decoration, not a structure) and must fit maxStructureSide and maxStructureCells. It keeps which tiles of its
 // box were water. Equal ones are counted together; the 8 with the most blocking tiles are kept, each with its rate per
 // present tile. `structureCell` marks the tiles taken, which no wall learns from.
 std::vector<StyleStructure> chooseStructures(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
     std::span<const PlacedStack> placed, std::span<const uint16_t> groundItems, std::vector<uint8_t>& structureCell) {
-    constexpr size_t smallest = 4;
+    constexpr size_t smallest = 4, smallestStructure = 16;
     const auto& floor = map.floors().front();
     const int w = floor.bounds.width, h = floor.bounds.height;
     const size_t cells = size_t(w) * h;
@@ -370,7 +370,7 @@ std::vector<StyleStructure> chooseStructures(const SemanticMap& map, std::span<c
             const int x = int(i % w), y = int(i / w);
             x0 = std::min(x0, x); y0 = std::min(y0, y); x1 = std::max(x1, x); y1 = std::max(y1, y);
         }
-        if (tooBig || x1 - x0 + 1 > int(maxStructureSide) || y1 - y0 + 1 > int(maxStructureSide)) continue;
+        if (tooBig || members.size() < smallestStructure || x1 - x0 + 1 > int(maxStructureSide) || y1 - y0 + 1 > int(maxStructureSide)) continue;
         std::ranges::sort(members); // row-major, so equal structures read alike
         StyleStructure structure {0, uint32_t(x1 - x0 + 1), uint32_t(y1 - y0 + 1), {}, {}};
         std::vector<uint32_t> key;

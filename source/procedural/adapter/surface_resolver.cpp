@@ -14,6 +14,7 @@
 #include "item_definitions/core/item_definition_store.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <new>
 #include <ranges>
@@ -913,8 +914,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		// Structures, last. A structure's box and a ring of one cell around it lie on writable land (Grass, Dirt, Shore)
 		// or water (Lake, River) clear of walls, fires and strewn floor, so it never touches a path, a building or another
 		// structure. Its tiles without a ground of their own keep the land or water they had in the sample: at most a tenth of
-		// them may differ. Each structure is placed about ppm times per cell of the area (the fraction by a hash), at the
-		// first fitting positions of a scan that starts at a hash of the seed.
+		// them may differ. The area is cut into squares of 1 / ppm cells, the sample's area per copy; each square tries 32
+		// random spots inside it and takes the first that fits, so copies spread out and stay at most as dense as the sample.
 		if (!profile.structures.empty()) {
 			const size_t width = grid.region.width, height = grid.region.height;
 			// 0 = taken, 1 = land, 2 = water
@@ -937,36 +938,38 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				size_t constrained = 0;
 				for (const uint8_t o : own) constrained += !o;
 				const size_t tolerance = constrained / 10;
-				const uint64_t expected = uint64_t(structure.ppm) * grid.cells.size();
 				const uint64_t base = input.config.seed ^ structureStream ^ (uint64_t(k) << 40);
-				uint64_t copies = expected / 1000000 + (mixHash(base) % 1000000 < expected % 1000000 ? 1 : 0);
-				const size_t spanX = width - sw - 1, spanY = height - sh - 1, positions = spanX * spanY;
-				const size_t first = size_t(mixHash(base ^ 0x9e3779b97f4a7c15ULL) % positions);
-				for (size_t step = 0; copies && step < positions; ++step) {
-					if (step % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-					const size_t position = (first + step) % positions;
-					const size_t x0 = 1 + position % spanX, y0 = 1 + position / spanX;
-					size_t misses = 0;
-					bool fits = true;
-					for (size_t y = y0 - 1; fits && y <= y0 + sh; ++y) for (size_t x = x0 - 1; fits && x <= x0 + sw; ++x) {
-						const uint8_t here = ground[y * width + x];
-						if (!here) { fits = false; break; }
-						if (x < x0 || y < y0 || x >= x0 + sw || y >= y0 + sh) continue;
-						const size_t b = (y - y0) * sw + (x - x0);
-						if (own[b]) continue;
-						const bool wet = !structure.water.empty() && structure.water[b];
-						if ((here == 2) != wet && ++misses > tolerance) fits = false;
+				// One copy at most per square of the area the sample had for one (1 / ppm cells), at a random spot of it.
+				const size_t side = std::max<size_t>(std::max(sw, sh) + 2, size_t(std::lround(std::sqrt(1e6 / double(structure.ppm)))));
+				for (size_t gy = 0; gy < height; gy += side) for (size_t gx = 0; gx < width; gx += side) {
+					if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+					const size_t cw = std::min(side, width - gx), ch = std::min(side, height - gy);
+					if (cw < sw + 2 || ch < sh + 2) continue;
+					for (uint64_t attempt = 0; attempt < 32; ++attempt) {
+						const uint64_t roll = mixHash(base ^ (uint64_t(gx) << 20) ^ (uint64_t(gy) << 42) ^ attempt);
+						const size_t x0 = gx + 1 + size_t(roll % (cw - sw - 1)), y0 = gy + 1 + size_t((roll >> 32) % (ch - sh - 1));
+						size_t misses = 0;
+						bool fits = true;
+						for (size_t y = y0 - 1; fits && y <= y0 + sh; ++y) for (size_t x = x0 - 1; fits && x <= x0 + sw; ++x) {
+							const uint8_t here = ground[y * width + x];
+							if (!here) { fits = false; break; }
+							if (x < x0 || y < y0 || x >= x0 + sw || y >= y0 + sh) continue;
+							const size_t b = (y - y0) * sw + (x - x0);
+							if (own[b]) continue;
+							const bool wet = !structure.water.empty() && structure.water[b];
+							if ((here == 2) != wet && ++misses > tolerance) fits = false;
+						}
+						if (!fits) continue;
+						if (result.structure.empty()) result.structure.assign(grid.cells.size(), 0);
+						for (size_t c = 0; c < structure.cells.size(); ++c) {
+							const size_t i = (y0 + structure.cells[c].dy) * width + x0 + structure.cells[c].dx;
+							result.structure[i] = uint16_t(k * 256 + c + 1);
+							if (!result.decor.empty()) result.decor[i] = 0;
+							if (!result.overlays.empty()) result.overlays[i] = 0;
+						}
+						for (size_t y = y0 - 1; y <= y0 + sh; ++y) for (size_t x = x0 - 1; x <= x0 + sw; ++x) ground[y * width + x] = 0;
+						break;
 					}
-					if (!fits) continue;
-					if (result.structure.empty()) result.structure.assign(grid.cells.size(), 0);
-					for (size_t c = 0; c < structure.cells.size(); ++c) {
-						const size_t i = (y0 + structure.cells[c].dy) * width + x0 + structure.cells[c].dx;
-						result.structure[i] = uint16_t(k * 256 + c + 1);
-						if (!result.decor.empty()) result.decor[i] = 0;
-						if (!result.overlays.empty()) result.overlays[i] = 0;
-					}
-					for (size_t y = y0 - 1; y <= y0 + sh; ++y) for (size_t x = x0 - 1; x <= x0 + sw; ++x) ground[y * width + x] = 0;
-					--copies;
 				}
 			}
 		}
