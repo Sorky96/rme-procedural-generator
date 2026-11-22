@@ -1572,6 +1572,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 		// The outline is drawn when the sample outlined most of its mountains (at least a quarter of the land beside them).
 		request.profile.rockOutline = profile.rockOutlinePermille >= 250;
+		request.profile.unreachedCapPermille = profile.unreachedRockPermille;
+		request.profile.unreachedWalkPermille = profile.unreachedWalkPermille;
 		if (config.vegetation && !profile.carpet.name.empty()) {
 			const auto* brush = g_brushes.getBrush(profile.carpet.name);
 			if (brush && brush->as<CarpetBrush>()) {
@@ -1878,7 +1880,8 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
         const bool hardFail = result->copyAssessment.hardFail() ||
-            (result->levels && candidateHardFail(true, result->levels->report, result->levels->repair));
+            (result->levels && candidateHardFail(true, result->levels->report, result->levels->repair,
+                {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}));
         const auto fingerprints = candidateFingerprints(*result);
         if (!collecting_) {
             const auto& row = candidates_[*selected_candidate_];

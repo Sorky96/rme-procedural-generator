@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <numeric>
 #ifdef _WIN32
 #define NOMINMAX
@@ -237,6 +238,69 @@ uint32_t measureRockOutline(const SemanticMap& map, std::span<const KeyMapEntry>
         outlined += (floor.traits[i] & bit(Trait::OptionalBorder)) != 0;
     }
     return beside ? uint32_t((outlined * 1000 + beside / 2) / beside) : 0;
+}
+// What one cannot walk to on the sample's floor (see StyleProfile::unreachedRockPermille): {rock, walk} permille. A walkable
+// tile is present, has ground, holds nothing unpassable and is neither water nor rock; tiles connect 8-way.
+std::pair<uint32_t, uint32_t> measureUnreached(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
+    const auto& floor = map.floors().front();
+    const int w = floor.bounds.width, h = floor.bounds.height;
+    const size_t cells = size_t(w) * h;
+    std::vector<uint8_t> kindOf(map.groundKeys().size(), uint8_t(StyleKind::Unmapped));
+    for (size_t k = 0; k < kindOf.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        if (entry != mapping.end()) kindOf[k] = uint8_t(entry->kind);
+    }
+    const auto kind = [&](size_t i) {
+        return (floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < kindOf.size() ? StyleKind(kindOf[floor.ground[i]]) : StyleKind::Unmapped;
+    };
+    const auto walkable = [&](size_t i) {
+        const StyleKind k = kind(i);
+        return (floor.traits[i] & bit(Trait::HasGround)) && !(floor.traits[i] & bit(Trait::Blocking)) && k != StyleKind::Unmapped &&
+            k != StyleKind::Water && k != StyleKind::Rock;
+    };
+    std::vector<uint8_t> seen(cells, 0);
+    std::vector<size_t> stack;
+    // The component of `start` among the tiles `inside` accepts; `visit` sees each of its tiles.
+    const auto flood = [&](size_t start, auto&& inside, auto&& visit) {
+        seen[start] = 1; stack.push_back(start);
+        while (!stack.empty()) {
+            const size_t i = stack.back(); stack.pop_back(); visit(i);
+            const int x = int(i % w), y = int(i / w);
+            for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const size_t j = size_t(ny) * w + nx;
+                if (!seen[j] && inside(j)) { seen[j] = 1; stack.push_back(j); }
+            }
+        }
+    };
+    uint64_t walk = 0, largest = 0;
+    for (size_t i = 0; i < cells; ++i) {
+        if (seen[i] || !walkable(i)) continue;
+        uint64_t size = 0;
+        flood(i, walkable, [&](size_t) { ++size; });
+        walk += size; largest = std::max(largest, size);
+    }
+    std::ranges::fill(seen, 0);
+    const auto rock = [&](size_t i) { return kind(i) == StyleKind::Rock; };
+    const auto floorChange = [&](size_t i) { return (floor.traits[i] & bit(Trait::FloorChange)) != 0; };
+    uint64_t rocks = 0, closed = 0;
+    for (size_t i = 0; i < cells; ++i) {
+        if (seen[i] || !rock(i)) continue;
+        uint64_t size = 0;
+        bool access = false;
+        flood(i, rock, [&](size_t j) {
+            ++size;
+            const int x = int(j % w), y = int(j / w);
+            for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+                const int nx = x + dx, ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < w && ny < h) access = access || floorChange(size_t(ny) * w + nx);
+            }
+        });
+        rocks += size;
+        if (!access) closed += size;
+    }
+    return {rocks ? uint32_t((closed * 1000 + rocks / 2) / rocks) : 0, walk ? uint32_t(((walk - largest) * 1000 + walk / 2) / walk) : 0};
 }
 // The carpet of the buildings: the carpet brush with the most pieces on built floors (as chooseInteriors), at least 3,
 // with the share of the floor tiles it covers.
@@ -747,6 +811,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     sample.interiors = chooseInteriors(map, mapping, overlayItems);
     sample.carpet = chooseCarpet(map, mapping, carpetItems);
     sample.rockOutlinePermille = measureRockOutline(map, mapping);
+    std::tie(sample.unreachedRockPermille, sample.unreachedWalkPermille) = measureUnreached(map, mapping);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -909,6 +974,8 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.structures = sample.structures;
     profile.carpet = sample.carpet;
     profile.rockOutlinePermille = sample.rockOutlinePermille;
+    profile.unreachedRockPermille = sample.unreachedRockPermille;
+    profile.unreachedWalkPermille = sample.unreachedWalkPermille;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

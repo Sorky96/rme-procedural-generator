@@ -100,6 +100,9 @@ struct GroundProfile {
 	// Land beside a ground with an optional border (mountain) gets the optional-border flag, so the border pass draws the
 	// mountain outline.
 	bool rockOutline = false;
+	// How much of the map may stay out of reach, as in the reference (StyleProfile::unreachedRockPermille); not part of
+	// the plan, only of the candidate's acceptance.
+	uint32_t unreachedCapPermille = 0, unreachedWalkPermille = 0;
 	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
 	// empty = such trees are left out.
 	std::string waterTree;

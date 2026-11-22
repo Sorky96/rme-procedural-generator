@@ -33,6 +33,25 @@ bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& rea
         repair.removedStoreys || repair.removedDungeons;
 }
 
+bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& reach, const LevelRepairReport& repair,
+    ReachTolerance tolerance) noexcept {
+    if (!validationPassed || !reach.start || reach.walkableEdges != reach.edges || repair.removedPois || repair.removedCaps ||
+        repair.removedStoreys || repair.removedDungeons || reach.walkable.size() != reach.reached.size()) return true;
+    const auto& caps = reach.categories[size_t(LevelPoiKind::Cap)];
+    for (size_t k = 0; k < reach.categories.size(); ++k)
+        if (k != size_t(LevelPoiKind::Cap) && reach.categories[k].reached != reach.categories[k].total) return true;
+    const uint64_t capsOut = caps.total - caps.reached;
+    if (capsOut * 1000 > uint64_t(tolerance.capPermille) * caps.total) return true;
+    // Cap places out of reach are walkable cells as well; the walk tolerance covers the rest.
+    uint64_t walkable = 0, out = 0;
+    for (size_t i = 0; i < reach.walkable.size(); ++i) {
+        walkable += reach.walkable[i] != 0;
+        out += reach.walkable[i] && !reach.reached[i];
+    }
+    out = out > capsOut ? out - capsOut : 0;
+    return out * 1000 > uint64_t(tolerance.walkPermille) * walkable;
+}
+
 std::expected<CandidateScore, CandidateScoreError> scoreCandidateMetrics(
     const CandidateMetrics& metrics, std::span<const CandidateBand> bands, bool hardFail, uint32_t index) {
     if (bands.empty() || bands.size() > metrics.size()) return std::unexpected(CandidateScoreError::InvalidBands);

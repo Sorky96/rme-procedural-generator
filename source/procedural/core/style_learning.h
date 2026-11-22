@@ -49,6 +49,7 @@ struct LearningSample {
     std::vector<StyleStructure> structures; // groups of items on the open land (see StyleProfile::structures)
     StyleOverlay carpet; // the carpet most laid on building floors (see StyleProfile::carpet)
     uint32_t rockOutlinePermille = 0; // StyleProfile::rockOutlinePermille
+    uint32_t unreachedRockPermille = 0, unreachedWalkPermille = 0; // StyleProfile::unreachedRockPermille, unreachedWalkPermille
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
     std::array<uint32_t, 4> shoreDistance {};
     uint32_t width = 0, height = 0;   // of the sample rectangle
