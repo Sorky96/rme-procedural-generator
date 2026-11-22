@@ -1912,6 +1912,18 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                     message += std::format("{} {} at {},{},{}", k ? "," : " Unreachable:", poiNames[size_t(place.kind)], place.x, place.y, place.z);
                 }
                 if (!levels.report.firstUnreachable.empty()) message += ".";
+                // Per kind of place, how many are out of reach; and the floor transitions one cannot walk.
+                bool listed = false;
+                for (size_t k = 0; k < levels.report.categories.size(); ++k) {
+                    const auto& category = levels.report.categories[k];
+                    if (category.reached == category.total) continue;
+                    message += std::format("{} {} {}/{}", listed ? "," : " Out of reach:", poiNames[k], category.total - category.reached, category.total);
+                    listed = true;
+                }
+                if (listed) message += ".";
+                if (levels.report.walkableEdges != levels.report.edges)
+                    message += std::format(" Unwalkable floor transitions: {}/{}.", levels.report.edges - levels.report.walkableEdges, levels.report.edges);
+                if (levels.repair.unrepaired) message += " Repair gave up.";
                 if (!levels.report.pockets.empty()) message += std::format(" Closed pockets: {}.", levels.report.pockets.size());
             }
             SetStatus(wxstr(message), hardFail);

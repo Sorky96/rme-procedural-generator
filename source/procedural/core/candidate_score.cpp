@@ -36,9 +36,11 @@ bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& rea
 bool candidateHardFail(bool validationPassed, const LevelPlan& plan, const LevelReachabilityReport& reach,
     const LevelRepairReport& repair, ReachTolerance tolerance) noexcept {
     const size_t cells = size_t(plan.region.width) * plan.region.height;
-    if (!validationPassed || !reach.start || reach.walkableEdges != reach.edges || repair.removedPois || repair.removedCaps ||
+    if (!validationPassed || !reach.start || reach.walkableEdges > reach.edges || repair.removedPois || repair.removedCaps ||
         repair.removedStoreys || repair.removedDungeons || !cells || reach.walkable.size() != cells * plan.floors.size() ||
         reach.reached.size() != reach.walkable.size()) return true;
+    // A floor transition one cannot walk leads to a mountain top (doors, caves, storeys and dungeons are checked below).
+    if ((reach.edges - reach.walkableEdges) * 1000 > uint64_t(tolerance.capPermille) * reach.edges) return true;
     const auto& caps = reach.categories[size_t(LevelPoiKind::Cap)];
     for (size_t k = 0; k < reach.categories.size(); ++k)
         if (k != size_t(LevelPoiKind::Cap) && reach.categories[k].reached != reach.categories[k].total) return true;
