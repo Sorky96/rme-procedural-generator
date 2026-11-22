@@ -172,6 +172,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			hashField(hash, plan.profile.interiorPpm[i], 4);
 			string(plan.profile.wallDecor[i]);
 			hashField(hash, plan.profile.wallDecorPpm[i], 4);
+			hashField(hash, plan.profile.wallDecorVerticalPpm[i], 4);
 		}
 		hashField(hash, plan.overlays.size());
 		for (const auto id : plan.overlays) hashField(hash, id, 2);

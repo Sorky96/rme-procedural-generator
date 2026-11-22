@@ -62,11 +62,10 @@ struct GroundProfile {
 	// that carry no wall piece, in the same overlay layer (one item per cell).
 	std::array<std::string, overlayCount> interior;
 	std::array<uint32_t, overlayCount> interiorPpm {};
-	// Items of the walls (vegetation only; empty = off), in the same overlay layer: a blocking wallDecor[i] takes the place of
-	// the wall piece on wallDecorPpm[i] of the wall cells, a passable one goes on wallDecorPpm[i] of the open cells beside a
-	// wall (Grass or Dirt, 8-neighbour of a wall cell).
+	// Broken walls (vegetation only; empty = off): a blocking item that takes the place of the wall piece, in the decor
+	// layer, on wallDecorPpm[i] of the straight horizontal wall cells and wallDecorVerticalPpm[i] of the vertical ones.
 	std::array<std::string, overlayCount> wallDecor;
-	std::array<uint32_t, overlayCount> wallDecorPpm {};
+	std::array<uint32_t, overlayCount> wallDecorPpm {}, wallDecorVerticalPpm {};
 	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
 	// empty = such trees are left out.
 	std::string waterTree;

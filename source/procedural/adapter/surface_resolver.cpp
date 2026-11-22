@@ -425,7 +425,8 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	}
 	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
 		const auto& name = profile.wallDecor[i];
-		if (name.empty() != (profile.wallDecorPpm[i] == 0) || name.size() > 256 || profile.wallDecorPpm[i] > 1000000)
+		if (name.empty() != (profile.wallDecorPpm[i] + profile.wallDecorVerticalPpm[i] == 0) || name.size() > 256 ||
+			profile.wallDecorPpm[i] > 1000000 || profile.wallDecorVerticalPpm[i] > 1000000)
 			return std::unexpected(ResolveError::InvalidProfile);
 		overlaid = overlaid || (vegetation && !name.empty());
 	}
@@ -579,16 +580,14 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			interiors[index] = *checked;
 		}
-		// Items of the walls: a blocking one replaces a wall piece, a passable one lies beside the wall.
+		// Broken walls: blocking items, each in place of a wall piece.
 		std::array<DecorSource, GroundProfile::overlayCount> wallDecors {};
-		std::array<bool, GroundProfile::overlayCount> wallBreaks {};
 		for (size_t index = 0; index < GroundProfile::overlayCount; ++index) {
 			if (!overlaid || !walled || profile.wallDecor[index].empty()) continue;
 			const auto checked = checkDoodad(profile.wallDecor[index]);
 			if (!checked) return std::unexpected(checked.error());
-			wallBreaks[index] = g_item_definitions.get(checked->item(1)).hasFlag(ItemFlag::Unpassable);
-			for (uint64_t roll = 2; roll <= (checked->raw ? 1 : checked->total); ++roll)
-				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable) != wallBreaks[index]) return std::unexpected(ResolveError::InvalidItem);
+			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
+				if (!g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			wallDecors[index] = *checked;
 		}
 		DecorSource waterTree;
@@ -800,36 +799,30 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				}
 			}
 		}
-		// Items of the walls, once every wall piece is known. Each cell rolls by a hash of its map position, so the
-		// other streams are not shifted: a wall cell may lose its piece to a blocking item (a broken wall), and an open
-		// Grass or Dirt cell beside a wall without anything on it may get a passable one.
+		// Broken walls, once every wall piece is known: a piece in the middle of a straight run (its neighbours along one
+		// axis are pieces, along the other not) may give way to a blocking item learned for that direction; corners, ends
+		// and doors keep their piece. Each cell rolls by a hash of its map position, so the other streams are not shifted.
 		if (std::ranges::any_of(wallDecors, [](const DecorSource& source) { return bool(source); }) && !result.walls.empty()) {
 			const size_t width = grid.region.width, height = grid.region.height;
-			const auto roll = [&](size_t i, uint64_t salt) {
-				const uint64_t ax = uint64_t(grid.region.x + int64_t(i % width)), ay = uint64_t(grid.region.y + int64_t(i / width));
-				return mixHash(input.config.seed ^ wallDecorStream ^ salt ^ mixHash(ax * 0x100000001b3ULL ^ ay));
-			};
-			// Beside the walls first, while every piece still stands; then the pieces themselves.
-			for (const bool pieces : {false, true}) for (size_t i = 0; i < grid.cells.size(); ++i) {
-				const bool piece = result.walls[i] != 0;
-				if (piece != pieces) continue;
-				if (piece && ((!result.doors.empty() && result.doors[i]) || result.decor[i])) continue; // doors keep their wall
+			std::vector<std::pair<size_t, bool>> straight; // cell, vertical
+			for (size_t i = 0; i < grid.cells.size(); ++i) {
+				if (!result.walls[i] || result.decor[i] || (!result.doors.empty() && result.doors[i])) continue;
 				const size_t x = i % width, y = i / width;
-				bool beside = false;
-				for (size_t ny = y ? y - 1 : 0; !piece && ny <= std::min(y + 1, height - 1); ++ny)
-					for (size_t nx = x ? x - 1 : 0; nx <= std::min(x + 1, width - 1); ++nx) beside = beside || result.walls[ny * width + nx];
-				const SurfaceKind cell = grid.cells[i];
-				const bool open = beside && (cell == SurfaceKind::Grass || cell == SurfaceKind::Dirt) && !result.overlays[i] && !result.decor[i];
-				if (!piece && !open) continue;
-				const uint64_t chance = roll(i, 0) % 1000000, pick = roll(i, 1);
+				const bool across = x && x + 1 < width && result.walls[i - 1] && result.walls[i + 1];
+				const bool down = y && y + 1 < height && result.walls[i - width] && result.walls[i + width];
+				if (across != down) straight.emplace_back(i, down);
+			}
+			for (const auto [i, vertical] : straight) {
+				const uint64_t ax = uint64_t(grid.region.x + int64_t(i % width)), ay = uint64_t(grid.region.y + int64_t(i / width));
+				const uint64_t hash = mixHash(input.config.seed ^ wallDecorStream ^ mixHash(ax * 0x100000001b3ULL ^ ay));
+				const uint64_t chance = hash % 1000000, pick = mixHash(hash);
 				uint64_t upTo = 0;
 				for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
-					if (!wallDecors[k] || wallBreaks[k] != piece) continue;
-					upTo += profile.wallDecorPpm[k];
+					if (!wallDecors[k]) continue;
+					upTo += vertical ? profile.wallDecorVerticalPpm[k] : profile.wallDecorPpm[k];
 					if (chance >= upTo) continue;
-					const uint16_t item = wallDecors[k].item(pick % wallDecors[k].total + 1);
-					if (piece) { result.decor[i] = item; result.walls[i] = 0; } // blocking: the decor layer, as trees
-					else result.overlays[i] = item;
+					result.decor[i] = wallDecors[k].item(pick % wallDecors[k].total + 1);
+					result.walls[i] = 0;
 					break;
 				}
 			}

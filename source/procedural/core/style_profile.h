@@ -210,9 +210,8 @@ struct StyleProfile {
 	// Overlay items inside buildings (rubble, bones, drifted sand): onGroundPpm is the share of building floor tiles that
 	// hold it; onTreePpm stays 0.
 	std::array<StyleOverlay, maxOverlays> interiors;
-	// Items of the walls (vegetation only): onTreePpm is the share of the wall tiles whose piece gives way to a blocking
-	// item (broken walls, pillars), onGroundPpm the share of the open tiles beside a wall (outside the floor) holding a
-	// passable one (heaps of sand).
+	// Broken walls (blocking items in the line of a wall, see chooseWallDecor): onTreePpm is the share of the straight
+	// horizontal wall tiles holding the item instead of a wall piece, onGroundPpm that of the vertical ones.
 	std::array<StyleOverlay, maxOverlays> wallDecor;
 	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;

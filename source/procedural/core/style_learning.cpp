@@ -227,59 +227,59 @@ std::array<StyleOverlay, maxOverlays> chooseInteriors(const SemanticMap& map, st
         out[k] = {std::string(ranked[k].second), 0, uint32_t(std::min<uint64_t>(1000000, (ranked[k].first * 1000000 + floorTiles / 2) / floorTiles))};
     return out;
 }
-// Items of the walls by use: blocking items on a wall tile or one step from it (broken walls, pillars), as a share of
-// the wall tiles, and passable ones on the open tiles beside a wall outside the floor (heaps of sand), as a share of
-// those tiles. Walls of caves and mountains are left out; each item is kept with at least 3 of it.
+// Broken walls: blocking items standing in the line of a wall, with a wall piece or another such item on both sides
+// along one axis and not along the other, in a run that reaches a wall piece or door within 8 tiles (corners, ends,
+// items beside the wall and rows of rocks do not count). onTreePpm is the share of the straight horizontal wall tiles
+// holding the item, onGroundPpm that of the vertical ones. Walls of caves and mountains are left out; each item is
+// kept with at least 3 of it.
 std::array<StyleOverlay, maxOverlays> chooseWallDecor(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
     std::span<const PlacedItem> placed) {
     const auto& floor = map.floors().front();
     const int w = floor.bounds.width, h = floor.bounds.height;
-    std::vector<uint8_t> cave(map.groundKeys().size(), 0), built(map.groundKeys().size(), 0);
+    std::vector<uint8_t> cave(map.groundKeys().size(), 0);
     for (size_t k = 0; k < cave.size(); ++k) {
         const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
-        if (entry == mapping.end()) continue;
-        cave[k] = entry->kind == StyleKind::Rock || entry->rule == "cave" || entry->rule == "hole";
-        built[k] = entry->kind == StyleKind::Other && !cave[k];
+        cave[k] = entry != mapping.end() && (entry->kind == StyleKind::Rock || entry->rule == "cave" || entry->rule == "hole");
     }
-    const auto is = [&](const std::vector<uint8_t>& keys, size_t i) { return floor.ground[i] < keys.size() && keys[floor.ground[i]]; };
-    const uint32_t walled = bit(Trait::Wall) | bit(Trait::Door);
     const size_t cells = size_t(w) * h;
-    std::vector<uint8_t> wall(cells, 0), nearWall(cells, 0);
-    uint64_t wallTiles = 0, besideTiles = 0;
-    for (size_t i = 0; i < cells; ++i) {
-        wall[i] = (floor.traits[i] & bit(Trait::Present)) && (floor.traits[i] & walled) && !is(cave, i);
-        wallTiles += wall[i];
-    }
-    for (size_t i = 0; i < cells; ++i) {
-        if (!wall[i]) continue;
-        const int x = int(i % w), y = int(i / w);
-        for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
-            const int nx = x + dx, ny = y + dy;
-            if (nx >= 0 && ny >= 0 && nx < w && ny < h) nearWall[size_t(ny) * w + nx] = 1;
-        }
-    }
-    const auto beside = [&](size_t i) {
-        return nearWall[i] && !wall[i] && (floor.traits[i] & bit(Trait::Present)) && !(floor.traits[i] & walled) && !is(cave, i) && !is(built, i);
+    const uint32_t walled = bit(Trait::Wall) | bit(Trait::Door);
+    std::vector<uint8_t> line(cells, 0); // a wall piece, a door or a blocking item, not in a cave
+    const auto open = [&](size_t i) {
+        return (floor.traits[i] & bit(Trait::Present)) && !(floor.ground[i] < cave.size() && cave[floor.ground[i]]);
     };
-    for (size_t i = 0; i < cells; ++i) besideTiles += beside(i);
-    std::map<std::string, std::pair<uint64_t, uint64_t>, std::less<>> byName; // on the walls, beside them
-    for (const auto& item : placed) {
-        if (item.cell >= cells || !nearWall[item.cell]) continue;
-        if (item.blocking) ++byName[item.name].first;
-        else if (beside(item.cell)) ++byName[item.name].second;
-    }
+    for (size_t i = 0; i < cells; ++i) line[i] = open(i) && (floor.traits[i] & walled);
+    for (const auto& item : placed) if (item.blocking && item.cell < cells && open(item.cell)) line[item.cell] = 1;
+    // 1 = straight horizontal, 2 = straight vertical, 0 = neither (or both), or a run of blocking items that reaches no
+    // wall piece or door within 8 tiles along it (a row of rocks or a wreck is no wall).
+    const auto axis = [&](size_t i) {
+        const int x = int(i % w), y = int(i / w);
+        const bool across = x > 0 && x + 1 < w && line[i - 1] && line[i + 1];
+        const bool down = y > 0 && y + 1 < h && line[i - w] && line[i + w];
+        if (across == down) return 0;
+        const int dx = across ? 1 : 0, dy = across ? 0 : 1;
+        for (const int sign : {-1, 1}) for (int step = 0; step <= 8; ++step) {
+            const int nx = x + sign * step * dx, ny = y + sign * step * dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) break;
+            const size_t j = size_t(ny) * w + nx;
+            if (!line[j]) break;
+            if (floor.traits[j] & walled) return across ? 1 : 2;
+        }
+        return 0;
+    };
+    std::array<uint64_t, 3> straight {};
+    for (size_t i = 0; i < cells; ++i) if (line[i]) ++straight[axis(i)];
+    std::map<std::string, std::array<uint64_t, 3>, std::less<>> byName;
+    for (const auto& item : placed)
+        if (item.blocking && item.cell < cells && line[item.cell]) ++byName[item.name][axis(item.cell)];
     std::vector<std::pair<uint64_t, std::string_view>> ranked;
     for (const auto& [name, counts] : byName)
-        if (counts.first + counts.second >= 3) ranked.emplace_back(counts.first + counts.second, name);
+        if (counts[1] + counts[2] >= 3) ranked.emplace_back(counts[1] + counts[2], name);
     std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
     const auto rate = [](uint64_t n, uint64_t of) { return of ? uint32_t(std::min<uint64_t>(1000000, (n * 1000000 + of / 2) / of)) : 0u; };
     std::array<StyleOverlay, maxOverlays> out;
-    size_t used = 0;
-    for (const auto& [total, name] : ranked) {
-        if (used == out.size()) break;
-        const auto& [onWall, besideWall] = byName.find(name)->second;
-        StyleOverlay decor {std::string(name), rate(onWall, wallTiles), rate(besideWall, besideTiles)};
-        if (decor.onTreePpm + decor.onGroundPpm) out[used++] = std::move(decor);
+    for (size_t k = 0; k < std::min(ranked.size(), out.size()); ++k) {
+        const auto& counts = byName.find(ranked[k].second)->second;
+        out[k] = {std::string(ranked[k].second), rate(counts[1], straight[1]), rate(counts[2], straight[2])};
     }
     return out;
 }
