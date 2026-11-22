@@ -36,6 +36,7 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 constexpr uint64_t maxDecorChance = 100000;
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
+constexpr uint64_t wallDecorStream = 0x73325f77616c6c64ULL; // "s2_walld"
 constexpr uint64_t variantStream = 0x73325f7661726e74ULL; // "s2_varnt"
 constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
 
@@ -422,6 +423,12 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			return std::unexpected(ResolveError::InvalidProfile);
 		overlaid = overlaid || (vegetation && !name.empty());
 	}
+	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
+		const auto& name = profile.wallDecor[i];
+		if (name.empty() != (profile.wallDecorPpm[i] == 0) || name.size() > 256 || profile.wallDecorPpm[i] > 1000000)
+			return std::unexpected(ResolveError::InvalidProfile);
+		overlaid = overlaid || (vegetation && !name.empty());
+	}
 	for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
 		const bool defaults = profile.grassMixDecorKeep[m] == GroundProfile::keepAllDecor &&
 			std::ranges::all_of(profile.grassMixDecor[m], &std::string::empty);
@@ -455,7 +462,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;
 	}
-	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.overlay, profile.interior})) {
+	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 3> {profile.overlay, profile.interior, profile.wallDecor})) {
 		if (name.empty()) continue;
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
@@ -571,6 +578,18 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
 				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			interiors[index] = *checked;
+		}
+		// Items of the walls: a blocking one replaces a wall piece, a passable one lies beside the wall.
+		std::array<DecorSource, GroundProfile::overlayCount> wallDecors {};
+		std::array<bool, GroundProfile::overlayCount> wallBreaks {};
+		for (size_t index = 0; index < GroundProfile::overlayCount; ++index) {
+			if (!overlaid || !walled || profile.wallDecor[index].empty()) continue;
+			const auto checked = checkDoodad(profile.wallDecor[index]);
+			if (!checked) return std::unexpected(checked.error());
+			wallBreaks[index] = g_item_definitions.get(checked->item(1)).hasFlag(ItemFlag::Unpassable);
+			for (uint64_t roll = 2; roll <= (checked->raw ? 1 : checked->total); ++roll)
+				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable) != wallBreaks[index]) return std::unexpected(ResolveError::InvalidItem);
+			wallDecors[index] = *checked;
 		}
 		DecorSource waterTree;
 		if (vegetation && !profile.waterTree.empty()) {
@@ -778,6 +797,40 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 						result.overlays[i] = interiors[k].item(overlayPick % interiors[k].total + 1);
 						break;
 					}
+				}
+			}
+		}
+		// Items of the walls, once every wall piece is known. Each cell rolls by a hash of its map position, so the
+		// other streams are not shifted: a wall cell may lose its piece to a blocking item (a broken wall), and an open
+		// Grass or Dirt cell beside a wall without anything on it may get a passable one.
+		if (std::ranges::any_of(wallDecors, [](const DecorSource& source) { return bool(source); }) && !result.walls.empty()) {
+			const size_t width = grid.region.width, height = grid.region.height;
+			const auto roll = [&](size_t i, uint64_t salt) {
+				const uint64_t ax = uint64_t(grid.region.x + int64_t(i % width)), ay = uint64_t(grid.region.y + int64_t(i / width));
+				return mixHash(input.config.seed ^ wallDecorStream ^ salt ^ mixHash(ax * 0x100000001b3ULL ^ ay));
+			};
+			// Beside the walls first, while every piece still stands; then the pieces themselves.
+			for (const bool pieces : {false, true}) for (size_t i = 0; i < grid.cells.size(); ++i) {
+				const bool piece = result.walls[i] != 0;
+				if (piece != pieces) continue;
+				if (piece && ((!result.doors.empty() && result.doors[i]) || result.decor[i])) continue; // doors keep their wall
+				const size_t x = i % width, y = i / width;
+				bool beside = false;
+				for (size_t ny = y ? y - 1 : 0; !piece && ny <= std::min(y + 1, height - 1); ++ny)
+					for (size_t nx = x ? x - 1 : 0; nx <= std::min(x + 1, width - 1); ++nx) beside = beside || result.walls[ny * width + nx];
+				const SurfaceKind cell = grid.cells[i];
+				const bool open = beside && (cell == SurfaceKind::Grass || cell == SurfaceKind::Dirt) && !result.overlays[i] && !result.decor[i];
+				if (!piece && !open) continue;
+				const uint64_t chance = roll(i, 0) % 1000000, pick = roll(i, 1);
+				uint64_t upTo = 0;
+				for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
+					if (!wallDecors[k] || wallBreaks[k] != piece) continue;
+					upTo += profile.wallDecorPpm[k];
+					if (chance >= upTo) continue;
+					const uint16_t item = wallDecors[k].item(pick % wallDecors[k].total + 1);
+					if (piece) { result.decor[i] = item; result.walls[i] = 0; } // blocking: the decor layer, as trees
+					else result.overlays[i] = item;
+					break;
 				}
 			}
 		}

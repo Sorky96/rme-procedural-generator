@@ -168,6 +168,22 @@ int main(int argc, char** argv) {
         check(learned && learned->interiors[0] == StyleOverlay{"raw:item:42", 0, 200000} && learned->interiors[1].name.empty(), "rubble inside buildings");
         check(learned && learned->buildings.density == 32 && learned->buildings.ruinPercent == 50 &&
             learned->buildings.floor == "sandstone floor" && learned->buildings.wall == "limestone wall", "buildings and ruins, not caves");
+        // 22 wall tiles (the cave's walls are the mountain's) and 38 open tiles beside them: broken walls on 11 wall tiles,
+        // sand heaps on 13 tiles beside the house; a heap inside, one far away and a broken wall in the cave do not count.
+        std::vector<PlacedItem> placed;
+        const auto at = [](int x, int y) { return uint32_t(y * 64 + x); };
+        for (int y = 10; y < 15; ++y) { placed.push_back({at(10, y), "raw:item:50", true}); placed.push_back({at(14, y), "raw:item:50", true}); }
+        placed.push_back({at(30, 10), "raw:item:50", true});
+        for (int y = 9; y < 16; ++y) placed.push_back({at(9, y), "raw:item:51", false});
+        for (int x = 10; x < 16; ++x) placed.push_back({at(x, 9), "raw:item:51", false});
+        placed.push_back({at(12, 12), "raw:item:51", false});
+        placed.push_back({at(0, 40), "raw:item:51", false});
+        placed.push_back({at(51, 51), "raw:item:50", true});
+        const auto decorated = inspectLearningSample(map, desert, {}, true, {}, {}, walls, placed);
+        check(decorated && decorated->wallDecor[0] == StyleOverlay{"raw:item:51", 0, 342105} &&
+            decorated->wallDecor[1] == StyleOverlay{"raw:item:50", 500000, 0} && decorated->wallDecor[2].name.empty(), "broken walls and heaps by the walls");
+        const auto withDecor = decorated ? fitLearningSample(*decorated, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
+        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall decor round-trips");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")

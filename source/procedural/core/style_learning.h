@@ -18,6 +18,13 @@ struct GroundOverlayItems {
     std::string name;
     uint64_t onTree = 0, onGround = 0;
 };
+// A plain item (no tree, bush or stone; no piece of a wall brush) of the sample by tile: row-major cell of the
+// sample rectangle, its learned name (doodad brush or "raw:item:<id>") and whether one cannot walk through it.
+struct PlacedItem {
+    uint32_t cell = 0;
+    std::string name;
+    bool blocking = false;
+};
 struct LearningSample {
     StyleStats stats;
     uint64_t present = 0, recognized = 0;
@@ -35,6 +42,7 @@ struct LearningSample {
     std::array<StyleOverlay, maxOverlays> overlays; // the most used overlay items on land with their rates
     StyleBuildings buildings;         // buildings and ruins of the sample
     std::array<StyleOverlay, maxOverlays> interiors; // overlay items on building floors with their rates
+    std::array<StyleOverlay, maxOverlays> wallDecor; // items on and beside the walls of buildings (see StyleProfile::wallDecor)
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
     std::array<uint32_t, 4> shoreDistance {};
     uint32_t width = 0, height = 0;   // of the sample rectangle
@@ -50,7 +58,7 @@ void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map);
 // `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop = {},
-    std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {});
+    std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {}, std::span<const PlacedItem> placedItems = {});
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,
     std::stop_token stop = {});

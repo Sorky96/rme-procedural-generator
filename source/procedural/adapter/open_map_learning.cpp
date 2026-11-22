@@ -12,7 +12,7 @@
 #include <wx/thread.h>
 namespace rme::procedural {
 std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row) try {
-    auto& [doodads, items, overlays, walls] = counts;
+    auto& [doodads, items, overlays, walls, placed] = counts;
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
     const auto b = destination.floors().front().bounds;
     if (b.z < 0 || b.z > 7 || b.width > 512 || b.height > 512 || row < 0 || row >= b.height
@@ -21,6 +21,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
     for (int x = b.x0; x < b.x0 + b.width; ++x) {
         const auto* tile = source.getTile(x, b.y0 + row, b.z);
         if (!tile || tile->empty()) continue;
+        const uint32_t cell = uint32_t(row) * uint32_t(b.width) + uint32_t(x - b.x0);
         uint16_t key = noGroundKey;
         uint32_t traits = 0;
         if (tile->ground) {
@@ -40,6 +41,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             if (item->isWall() && item->isBlocking()) {
                 traits |= bit(Trait::Wall);
                 if (const auto* wall = item->getWallBrush()) ++walls[{key, wall->getName()}];
+                else placed.push_back({cell, rawDecorName(item->getID(), DecorKind::None), true}); // a broken wall laid by hand
                 continue;
             }
             if (item->isTable() || item->isCarpet() || item->isBorder()) continue;
@@ -55,7 +57,9 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             auto name = brushSource ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
             // Only plain items one can walk through make overlays (see decorItemPlaceable, decorItemPassable).
             if (kind == DecorKind::None) {
-                if (typeid(*item) == typeid(Item) && !item->isBlocking()) tileOverlays.push_back(std::move(name));
+                if (typeid(*item) != typeid(Item)) continue;
+                placed.push_back({cell, name, item->isBlocking()});
+                if (!item->isBlocking()) tileOverlays.push_back(std::move(name));
                 continue;
             }
             traits |= decorTraitBit(kind);

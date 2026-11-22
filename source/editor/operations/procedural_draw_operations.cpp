@@ -170,6 +170,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			hashField(hash, plan.profile.overlayGroundPpm[i], 4);
 			string(plan.profile.interior[i]);
 			hashField(hash, plan.profile.interiorPpm[i], 4);
+			string(plan.profile.wallDecor[i]);
+			hashField(hash, plan.profile.wallDecorPpm[i], 4);
 		}
 		hashField(hash, plan.overlays.size());
 		for (const auto id : plan.overlays) hashField(hash, id, 2);
@@ -450,10 +452,12 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.overlay) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.interior) decorNames.push_back(&name);
+	for (const auto& name : plan.profile.wallDecor) decorNames.push_back(&name);
 	decorNames.push_back(&plan.profile.waterTree);
 	// Overlays come only with vegetation; a plan of a floor or stage without it carries none, whatever its profile says.
 	const bool overlaid = std::ranges::any_of(plan.profile.overlay, [](const std::string& name) { return !name.empty(); }) ||
-		std::ranges::any_of(plan.profile.interior, [](const std::string& name) { return !name.empty(); });
+		std::ranges::any_of(plan.profile.interior, [](const std::string& name) { return !name.empty(); }) ||
+		std::ranges::any_of(plan.profile.wallDecor, [](const std::string& name) { return !name.empty(); });
 	if (!plan.overlays.empty() && (!overlaid || !vegetation || plan.overlays.size() != plan.items.size()))
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {

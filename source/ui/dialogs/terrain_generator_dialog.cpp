@@ -1569,6 +1569,16 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			request.profile.interior[used] = interior.name;
 			request.profile.interiorPpm[used++] = interior.onGroundPpm;
 		}
+		// Items of the walls: a blocking one breaks a wall piece at its wall rate, a passable one lies beside the walls.
+		for (size_t i = 0, used = 0; config.vegetation && i < profile.wallDecor.size() && used < GroundProfile::overlayCount; ++i) {
+			const auto& decor = profile.wallDecor[i];
+			if (decor.name.empty() || !usableDecor(decor.name)) continue;
+			const bool passable = rme::procedural::decorItemPassable(rme::procedural::findDecorSource(decor.name, 100000).item(1));
+			const uint32_t ppm = passable ? decor.onGroundPpm : decor.onTreePpm;
+			if (!ppm) continue;
+			request.profile.wallDecor[used] = decor.name;
+			request.profile.wallDecorPpm[used++] = ppm;
+		}
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
 			const auto& overlay = profile.overlays[i];
 			// An overlay one cannot walk through would block the planned paths; it is left out.
