@@ -1880,7 +1880,7 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
         const bool hardFail = result->copyAssessment.hardFail() ||
-            (result->levels && candidateHardFail(true, result->levels->report, result->levels->repair,
+            (result->levels && candidateHardFail(true, result->levels->plan, result->levels->report, result->levels->repair,
                 {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}));
         const auto fingerprints = candidateFingerprints(*result);
         if (!collecting_) {

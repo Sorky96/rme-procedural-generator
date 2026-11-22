@@ -58,10 +58,11 @@ struct CandidateScore {
 [[nodiscard]] bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& reach,
     const LevelRepairReport& repair) noexcept;
 // How much a map may leave out of reach, permille, as its reference did (StyleProfile::unreachedRockPermille): of the
-// mountain tops (Cap places), and of the other walkable cells.
+// walkable cells above the ground floor (mountain tops), and of the walkable cells of the ground floor and the caves.
 struct ReachTolerance { uint32_t capPermille = 0, walkPermille = 0; };
-// As above, but places out of reach fail only beyond the tolerance; every other kind of place must still be reached.
-[[nodiscard]] bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& reach,
+// As above, but cells and cap places out of reach fail only beyond the tolerance; every other kind of place (doors, cave
+// entrances, storeys, dungeons) must still be reached.
+[[nodiscard]] bool candidateHardFail(bool validationPassed, const LevelPlan& plan, const LevelReachabilityReport& reach,
     const LevelRepairReport& repair, ReachTolerance tolerance) noexcept;
 // Read-only evaluation of an existing result. Validation status comes from the producing pipeline, including adapter checks.
 [[nodiscard]] std::expected<CandidateScore, CandidateScoreError> scoreCandidate(
