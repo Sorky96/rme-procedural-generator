@@ -181,8 +181,14 @@ int main(int argc, char** argv) {
         const auto decorated = inspectLearningSample(map, desert, {}, true, {}, {}, walls, placed);
         check(decorated && decorated->wallDecor[0] == StyleOverlay{"raw:item:50", 0, 750000} &&
             decorated->wallDecor[1] == StyleOverlay{"raw:item:52", 500000, 0} && decorated->wallDecor[2].name.empty(), "broken walls by direction");
-        const auto withDecor = decorated ? fitLearningSample(*decorated, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
-        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall decor round-trips");
+        // Drifted sand laid with a carpet brush on 25 of the 50 floor tiles; the same carpet on sand outside does not count.
+        const std::vector<GroundDoodadItems> carpets{{floorKey, "sand gravel", 25}, {sand, "sand gravel", 40}, {floorKey, "rug", 2}};
+        const auto carpeted = inspectLearningSample(map, desert, {}, true, {}, {}, walls, {}, carpets);
+        check(carpeted && carpeted->carpet == StyleOverlay{"sand gravel", 0, 500000}, "carpet of the buildings");
+        auto both = decorated ? *decorated : LearningSample{};
+        if (carpeted) both.carpet = carpeted->carpet;
+        const auto withDecor = decorated ? fitLearningSample(both, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
+        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall decor and carpet round-trip");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")

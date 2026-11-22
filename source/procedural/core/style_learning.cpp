@@ -205,6 +205,25 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
 }
 // Overlay items inside buildings by use: items on tiles of a built floor (an Other ground that is not a cave or hole),
 // each kept with at least 3 items and its share of those floor tiles.
+// The carpet of the buildings: the carpet brush with the most pieces on built floors (as chooseInteriors), at least 3,
+// with the share of the floor tiles it covers.
+StyleOverlay chooseCarpet(const SemanticMap& map, std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> carpets) {
+    std::vector<uint8_t> floorKey(map.groundKeys().size(), 0);
+    for (size_t k = 0; k < floorKey.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        floorKey[k] = entry != mapping.end() && entry->kind == StyleKind::Other && entry->rule != "cave" && entry->rule != "hole";
+    }
+    const auto& floor = map.floors().front();
+    uint64_t floorTiles = 0;
+    for (size_t i = 0; i < floor.ground.size(); ++i)
+        floorTiles += (floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < floorKey.size() && floorKey[floor.ground[i]];
+    std::map<std::string, uint64_t, std::less<>> byName;
+    for (const auto& piece : carpets)
+        if (piece.ground < floorKey.size() && floorKey[piece.ground]) byName[piece.doodad] += piece.items;
+    const auto top = std::ranges::max_element(byName, {}, [](const auto& entry) { return entry.second; });
+    if (top == byName.end() || top->second < 3 || !floorTiles) return {};
+    return {top->first, 0, uint32_t(std::min<uint64_t>(1000000, (top->second * 1000000 + floorTiles / 2) / floorTiles))};
+}
 std::array<StyleOverlay, maxOverlays> chooseInteriors(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
     std::span<const GroundOverlayItems> items) {
     std::vector<uint8_t> floorKey(map.groundKeys().size(), 0);
@@ -415,7 +434,8 @@ void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map) 
 
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop,
-    std::span<const GroundOverlayItems> overlayItems, std::span<const GroundDoodadItems> wallBrushes, std::span<const PlacedItem> placedItems) try {
+    std::span<const GroundOverlayItems> overlayItems, std::span<const GroundDoodadItems> wallBrushes, std::span<const PlacedItem> placedItems,
+    std::span<const GroundDoodadItems> carpetItems) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
     if (stop.stop_requested()) return std::unexpected("Analysis cancelled.");
     if (map.floors().size() != 1) return std::unexpected("Choose one surface rectangle.");
@@ -545,6 +565,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     sample.overlays = chooseOverlays(map, mapping, overlayItems);
     sample.interiors = chooseInteriors(map, mapping, overlayItems);
     sample.wallDecor = chooseWallDecor(map, mapping, placedItems);
+    sample.carpet = chooseCarpet(map, mapping, carpetItems);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -704,6 +725,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.buildings = sample.buildings;
     profile.interiors = sample.interiors;
     profile.wallDecor = sample.wallDecor;
+    profile.carpet = sample.carpet;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/main.h"
 #include "procedural/adapter/open_map_learning.h"
+#include "brushes/carpet/carpet_brush.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/wall/wall_brush.h"
 #include "game/item.h"
@@ -12,7 +13,7 @@
 #include <wx/thread.h>
 namespace rme::procedural {
 std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row) try {
-    auto& [doodads, items, overlays, walls, placed] = counts;
+    auto& [doodads, items, overlays, walls, placed, carpets] = counts;
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
     const auto b = destination.floors().front().bounds;
     if (b.z < 0 || b.z > 7 || b.width > 512 || b.height > 512 || row < 0 || row >= b.height
@@ -44,7 +45,11 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
                 else placed.push_back({cell, rawDecorName(item->getID(), DecorKind::None), true}); // a broken wall laid by hand
                 continue;
             }
-            if (item->isTable() || item->isCarpet() || item->isBorder()) continue;
+            if (item->isCarpet()) {
+                if (const auto* carpet = item->getCarpetBrush()) ++carpets[{key, carpet->getName()}];
+                continue;
+            }
+            if (item->isTable() || item->isBorder()) continue;
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }

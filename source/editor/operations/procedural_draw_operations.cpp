@@ -3,6 +3,7 @@
 #include "editor/operations/draw_operations.h"
 
 #include "app/managers/version_manager.h"
+#include "brushes/carpet/carpet_brush.h"
 #include "brushes/doodad/doodad_brush.h"
 #include "brushes/ground/ground_border_calculator.h"
 #include "brushes/ground/ground_brush.h"
@@ -174,6 +175,8 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			hashField(hash, plan.profile.wallDecorPpm[i], 4);
 			hashField(hash, plan.profile.wallDecorVerticalPpm[i], 4);
 		}
+		string(plan.profile.carpet);
+		hashField(hash, plan.profile.carpetPpm, 4);
 		hashField(hash, plan.overlays.size());
 		for (const auto id : plan.overlays) hashField(hash, id, 2);
 	}
@@ -458,7 +461,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	// Overlays come only with vegetation; a plan of a floor or stage without it carries none, whatever its profile says.
 	const bool overlaid = std::ranges::any_of(plan.profile.overlay, [](const std::string& name) { return !name.empty(); }) ||
 		std::ranges::any_of(plan.profile.interior, [](const std::string& name) { return !name.empty(); }) ||
-		std::ranges::any_of(plan.profile.wallDecor, [](const std::string& name) { return !name.empty(); });
+		std::ranges::any_of(plan.profile.wallDecor, [](const std::string& name) { return !name.empty(); }) || !plan.profile.carpet.empty();
 	if (!plan.overlays.empty() && (!overlaid || !vegetation || plan.overlays.size() != plan.items.size()))
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
@@ -471,6 +474,14 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!item) co_return std::unexpected(PreviewError::InvalidItem);
 			decorIds.push_back(item);
 		}
+	}
+	// Every piece of the carpet brush may end up on a tile, by the alignment of its neighbours.
+	if (vegetation && !plan.profile.carpet.empty()) {
+		const auto* brush = plan.profile.carpet.size() <= 256 ? g_brushes.getBrush(plan.profile.carpet) : nullptr;
+		const auto* carpet = brush ? brush->as<CarpetBrush>() : nullptr;
+		if (!carpet) co_return std::unexpected(PreviewError::InvalidPlan);
+		for (const auto& group : carpet->getItems().getGroups())
+			for (const auto& piece : group.items) if (piece.chance > 0) decorIds.push_back(piece.id);
 	}
 	// Camp fire items (iteration 26): every single item of every variation of the campfire brush may be placed.
     if ((!cave && !upper && plan.profile.campfire.empty() != plan.fires.empty())

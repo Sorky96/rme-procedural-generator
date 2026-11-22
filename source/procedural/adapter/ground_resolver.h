@@ -66,6 +66,10 @@ struct GroundProfile {
 	// layer, on wallDecorPpm[i] of the straight horizontal wall cells and wallDecorVerticalPpm[i] of the vertical ones.
 	std::array<std::string, overlayCount> wallDecor;
 	std::array<uint32_t, overlayCount> wallDecorPpm {}, wallDecorVerticalPpm {};
+	// Carpet brush laid on carpetPpm of the inner Floor cells, aligned as the brush aligns it, in the overlay layer
+	// (vegetation only; empty = off).
+	std::string carpet;
+	uint32_t carpetPpm = 0;
 	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
 	// empty = such trees are left out.
 	std::string waterTree;

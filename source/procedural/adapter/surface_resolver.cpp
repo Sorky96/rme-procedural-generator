@@ -3,6 +3,7 @@
 #include "procedural/adapter/surface_resolver.h"
 
 #include "app/managers/version_manager.h"
+#include "brushes/carpet/carpet_brush.h"
 #include "brushes/doodad/doodad_brush.h"
 #include "game/item.h"
 #include "brushes/ground/ground_brush.h"
@@ -37,6 +38,7 @@ constexpr uint64_t maxDecorChance = 100000;
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
 constexpr uint64_t wallDecorStream = 0x73325f77616c6c64ULL; // "s2_walld"
+constexpr uint64_t carpetStream = 0x73325f6361727065ULL; // "s2_carpe"
 constexpr uint64_t variantStream = 0x73325f7661726e74ULL; // "s2_varnt"
 constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
 
@@ -430,6 +432,9 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			return std::unexpected(ResolveError::InvalidProfile);
 		overlaid = overlaid || (vegetation && !name.empty());
 	}
+	if (profile.carpet.empty() != (profile.carpetPpm == 0) || profile.carpet.size() > 256 || profile.carpetPpm > 1000000)
+		return std::unexpected(ResolveError::InvalidProfile);
+	overlaid = overlaid || (vegetation && !profile.carpet.empty());
 	for (size_t m = 0; m < GroundProfile::grassMixCount; ++m) {
 		const bool defaults = profile.grassMixDecorKeep[m] == GroundProfile::keepAllDecor &&
 			std::ranges::all_of(profile.grassMixDecor[m], &std::string::empty);
@@ -458,7 +463,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
 	}
-	for (const auto* name : {&profile.waterTree}) {
+	for (const auto* name : {&profile.waterTree, &profile.carpet}) {
 		if (name->empty()) continue;
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;
@@ -589,6 +594,28 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
 				if (!g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			wallDecors[index] = *checked;
+		}
+		// The carpet of the buildings: its brush, and the Floor cells it covers (carpetPpm of the inner Floor cells, those
+		// with Floor on all four sides so no wall stands on them, the ones with the highest patch noise).
+		const CarpetBrush* carpet = nullptr;
+		std::vector<uint8_t> carpetCell;
+		if (overlaid && !profile.carpet.empty()) {
+			const auto* brush = g_brushes.getBrush(profile.carpet);
+			carpet = brush ? brush->as<CarpetBrush>() : nullptr;
+			if (!carpet) return std::unexpected(ResolveError::InvalidProfile);
+			const size_t width = grid.region.width, height = grid.region.height;
+			const auto floorAt = [&](size_t j) { return grid.cells[j] == SurfaceKind::Floor; };
+			std::vector<std::pair<uint32_t, uint32_t>> ranked; // patch value, cell
+			for (size_t i = 0; i < grid.cells.size(); ++i) {
+				const size_t x = i % width, y = i / width;
+				if (!floorAt(i) || !x || !y || x + 1 == width || y + 1 == height ||
+					!floorAt(i - 1) || !floorAt(i + 1) || !floorAt(i - width) || !floorAt(i + width)) continue;
+				ranked.emplace_back(grassPatchValue(input.config.seed ^ carpetStream, grid.region.x + int64_t(x), grid.region.y + int64_t(y)), uint32_t(i));
+			}
+			std::ranges::sort(ranked, std::greater {});
+			carpetCell.assign(grid.cells.size(), 0);
+			const size_t covered = size_t((uint64_t(ranked.size()) * profile.carpetPpm + 500000) / 1000000);
+			for (size_t k = 0; k < covered; ++k) carpetCell[ranked[k].second] = 1;
 		}
 		DecorSource waterTree;
 		if (vegetation && !profile.waterTree.empty()) {
@@ -794,7 +821,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					}
 				}
 				// Inside a building: a Floor cell without a wall piece (its open floor, a gap, or a ruin's bare patch).
-				if (overlaid && cell == SurfaceKind::Floor && (result.walls.empty() || !result.walls[i])) {
+				if (overlaid && cell == SurfaceKind::Floor && (result.walls.empty() || !result.walls[i]) && (carpetCell.empty() || !carpetCell[i])) {
 					uint64_t upTo = 0;
 					for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
 						if (!interiors[k]) continue;
@@ -804,6 +831,32 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 						break;
 					}
 				}
+			}
+		}
+		// Carpet pieces by their eight neighbours, as the carpet brush aligns them in the editor; the piece of an alignment
+		// is drawn by its chance from a hash of the map position.
+		if (carpet) {
+			const size_t width = grid.region.width, height = grid.region.height;
+			constexpr std::array<std::pair<int, int>, 8> around {{{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}}};
+			const auto& groups = carpet->getItems().getGroups();
+			for (size_t i = 0; i < grid.cells.size(); ++i) {
+				if (!carpetCell[i]) continue;
+				const int x = int(i % width), y = int(i / width);
+				uint32_t mask = 0;
+				for (size_t b = 0; b < around.size(); ++b) {
+					const int nx = x + around[b].first, ny = y + around[b].second;
+					if (nx >= 0 && ny >= 0 && nx < int(width) && ny < int(height) && carpetCell[size_t(ny) * width + nx]) mask |= 1u << b;
+				}
+				const size_t alignment = CarpetBrush::alignmentFor(uint8_t(mask));
+				const auto* group = alignment < groups.size() && groups[alignment].total_chance > 0 ? &groups[alignment] : &groups[CARPET_CENTER];
+				if (group->total_chance <= 0) return std::unexpected(ResolveError::InvalidItem);
+				const uint64_t ax = uint64_t(grid.region.x + int64_t(x)), ay = uint64_t(grid.region.y + int64_t(y));
+				int64_t roll = int64_t(mixHash(input.config.seed ^ carpetStream ^ mixHash(ax * 0x100000001b3ULL ^ ay)) % uint64_t(group->total_chance));
+				for (const auto& piece : group->items) {
+					if (roll < piece.chance) { result.overlays[i] = piece.id; break; }
+					roll -= piece.chance;
+				}
+				if (!result.overlays[i]) return std::unexpected(ResolveError::InvalidItem);
 			}
 		}
 		// Broken walls, once every wall piece is known: a piece in the middle of a straight run (its neighbours along one

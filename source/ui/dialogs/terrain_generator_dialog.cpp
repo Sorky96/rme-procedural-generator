@@ -10,6 +10,7 @@
 #include "app/managers/version_manager.h"
 #include "app/settings.h"
 #include "brushes/brush.h"
+#include "brushes/carpet/carpet_brush.h"
 #include "brushes/doodad/doodad_brush.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/wall/wall_brush.h"
@@ -1568,6 +1569,13 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 				!rme::procedural::decorItemPassable(rme::procedural::findDecorSource(interior.name, 100000).item(1))) continue;
 			request.profile.interior[used] = interior.name;
 			request.profile.interiorPpm[used++] = interior.onGroundPpm;
+		}
+		if (config.vegetation && !profile.carpet.name.empty()) {
+			const auto* brush = g_brushes.getBrush(profile.carpet.name);
+			if (brush && brush->as<CarpetBrush>()) {
+				request.profile.carpet = profile.carpet.name;
+				request.profile.carpetPpm = profile.carpet.onGroundPpm;
+			}
 		}
 		// Broken walls: only items one cannot walk through, each in place of a wall piece.
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.wallDecor.size() && used < GroundProfile::overlayCount; ++i) {

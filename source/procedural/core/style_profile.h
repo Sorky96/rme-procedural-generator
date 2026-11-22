@@ -213,6 +213,9 @@ struct StyleProfile {
 	// Broken walls (blocking items in the line of a wall, see chooseWallDecor): onTreePpm is the share of the straight
 	// horizontal wall tiles holding the item instead of a wall piece, onGroundPpm that of the vertical ones.
 	std::array<StyleOverlay, maxOverlays> wallDecor;
+	// The carpet brush most laid on building floors (drifted sand, rugs); onGroundPpm is the share of the building floor
+	// tiles it covers, onTreePpm stays 0; empty name = none.
+	StyleOverlay carpet;
 	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };

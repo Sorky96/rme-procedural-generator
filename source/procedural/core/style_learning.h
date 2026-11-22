@@ -43,6 +43,7 @@ struct LearningSample {
     StyleBuildings buildings;         // buildings and ruins of the sample
     std::array<StyleOverlay, maxOverlays> interiors; // overlay items on building floors with their rates
     std::array<StyleOverlay, maxOverlays> wallDecor; // broken walls of buildings (see StyleProfile::wallDecor)
+    StyleOverlay carpet; // the carpet most laid on building floors (see StyleProfile::carpet)
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
     std::array<uint32_t, 4> shoreDistance {};
     uint32_t width = 0, height = 0;   // of the sample rectangle
@@ -58,7 +59,8 @@ void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map);
 // `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop = {},
-    std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {}, std::span<const PlacedItem> placedItems = {});
+    std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {}, std::span<const PlacedItem> placedItems = {},
+    std::span<const GroundDoodadItems> carpetItems = {});
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,
     std::stop_token stop = {});
