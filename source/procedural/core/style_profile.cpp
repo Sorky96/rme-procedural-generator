@@ -193,6 +193,7 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
 		if (o.onTreePpm || o.onGroundPpm > 1000000 || o.name.empty() != (o.onGroundPpm == 0)) return std::unexpected(ProfileError::InvalidRange);
 	}
+	if (p.rockOutlinePermille > 1000) return std::unexpected(ProfileError::InvalidRange);
 	if (bad(p.carpet.name) || p.carpet.onTreePpm || p.carpet.onGroundPpm > 1000000 || p.carpet.name.empty() != (p.carpet.onGroundPpm == 0) ||
 		(!p.carpet.name.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
 	for (const StyleOverlay& o : p.wallDecor) {
@@ -258,6 +259,7 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	for (const auto& o : p.interiors) if (!o.name.empty()) out += std::format("interior\t{}\t{}\n", o.onGroundPpm, o.name);
 	for (const auto& o : p.wallDecor) if (!o.name.empty()) out += std::format("walldecor\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
 	if (!p.carpet.name.empty()) out += std::format("carpet\t{}\t{}\n", p.carpet.onGroundPpm, p.carpet.name);
+	if (p.rockOutlinePermille) out += std::format("rockoutline\t{}\n", p.rockOutlinePermille);
 	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
 	if (p.target) {
 		out += "target\tshares";
@@ -405,6 +407,8 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             const auto slot = std::ranges::find_if(p.interiors, [](const StyleOverlay& o) { return o.name.empty(); });
             if (slot == p.interiors.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(interior);
+        } else if (type == "rockoutline" && f.size() == 2) {
+            if (p.rockOutlinePermille || !parseU32(f[1], p.rockOutlinePermille) || !p.rockOutlinePermille) return std::unexpected(ProfileError::BadFormat);
         } else if (type == "carpet" && f.size() == 3) {
             if (!p.carpet.name.empty() || !parseU32(f[1], p.carpet.onGroundPpm) || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
             p.carpet.name = f[2];

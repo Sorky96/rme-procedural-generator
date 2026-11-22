@@ -162,6 +162,7 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.fires.size());
 		for (const auto id : plan.fires) hashField(hash, id, 2);
 	}
+	if (plan.profile.rockOutline) hashField(hash, 0x6f, 1); // only when on, so other plans keep their hash
 	// Only with overlays, so plans without them keep their hash.
 	if (!plan.overlays.empty()) {
 		hashField(hash, 0x76, 1);
@@ -814,6 +815,23 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			TerrainPlacement::placeBrushItem(*tile, plan.items[i]);
 			for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
 				if (x+dx >= c.x && y+dy >= c.y && x+dx < right && y+dy < bottom) affected[contextIndex(x+dx,y+dy)] = 1;
+			}
+		}
+		// The mountain outline: land beside a ground with an optional border takes the flag, so the border pass below draws it.
+		if (plan.profile.rockOutline) {
+			const auto outlining = [&](int x, int y) {
+				const auto* tile = result.buffer_->getTile(Position(x, y, r.z));
+				const auto* brush = tile && tile->ground ? tile->ground->getGroundBrush() : nullptr;
+				return brush && brush->hasOptionalBorder();
+			};
+			for (size_t i = 0; i < plan.items.size(); ++i) {
+				if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
+				if (!plan.items[i]) continue;
+				const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
+				if (outlining(x, y)) continue;
+				bool beside = false;
+				for (int dy = -1; dy <= 1 && !beside; ++dy) for (int dx = -1; dx <= 1 && !beside; ++dx) beside = (dx || dy) && outlining(x + dx, y + dy);
+				if (beside) result.buffer_->getTile(Position(x, y, r.z))->setOptionalBorder(true);
 			}
 		}
 		for (uint32_t y = 0; y < c.height; ++y) {

@@ -70,6 +70,9 @@ struct GroundProfile {
 	// (vegetation only; empty = off).
 	std::string carpet;
 	uint32_t carpetPpm = 0;
+	// Land beside a ground with an optional border (mountain) gets the optional-border flag, so the border pass draws the
+	// mountain outline.
+	bool rockOutline = false;
 	// Doodad brush or "raw:tree:<id>" of the trees standing in the water (DecorTuning::shoreTreePermille; vegetation only);
 	// empty = such trees are left out.
 	std::string waterTree;

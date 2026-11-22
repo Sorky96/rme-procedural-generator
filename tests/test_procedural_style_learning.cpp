@@ -187,8 +187,27 @@ int main(int argc, char** argv) {
         check(carpeted && carpeted->carpet == StyleOverlay{"sand gravel", 0, 500000}, "carpet of the buildings");
         auto both = decorated ? *decorated : LearningSample{};
         if (carpeted) both.carpet = carpeted->carpet;
+        both.rockOutlinePermille = 400;
         const auto withDecor = decorated ? fitLearningSample(both, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
-        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall decor and carpet round-trip");
+        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall decor, carpet and rock outline round-trip");
+    }
+    {
+        // A 4 x 4 mountain on grass: 20 grass tiles touch it, 15 of them carry the optional border.
+        FloorBounds fb{7, 0, 0, 32, 32};
+        auto map = SemanticMap::create(std::span(&fb, 1), {1024}).value();
+        const auto grass = map.internGroundKey("grass").value();
+        const auto rock = map.internGroundKey("mountain").value();
+        size_t flagged = 0;
+        for (int i = 0; i < 1024; ++i) {
+            const int x = i % 32, y = i / 32;
+            const bool mountain = x >= 6 && x < 10 && y >= 6 && y < 10, ring = !mountain && x >= 5 && x < 11 && y >= 5 && y < 11;
+            const bool outline = ring && flagged < 15;
+            flagged += outline;
+            check(bool(map.set(x, y, 7, mountain ? rock : grass, bit(Trait::HasGround) | (outline ? bit(Trait::OptionalBorder) : 0))), "outline cell");
+        }
+        const auto mapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
+        const auto learned = inspectLearningSample(map, mapping, {}, true);
+        check(learned && learned->rockOutlinePermille == 750, "mountain outline share");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")

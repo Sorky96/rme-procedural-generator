@@ -216,6 +216,8 @@ struct StyleProfile {
 	// The carpet brush most laid on building floors (drifted sand, rugs); onGroundPpm is the share of the building floor
 	// tiles it covers, onTreePpm stays 0; empty name = none.
 	StyleOverlay carpet;
+	// Share of the land tiles beside rock that carry the optional border of the rock ground (the mountain outline), permille.
+	uint32_t rockOutlinePermille = 0;
 	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };

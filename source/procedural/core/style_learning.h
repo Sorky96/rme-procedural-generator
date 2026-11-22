@@ -44,6 +44,7 @@ struct LearningSample {
     std::array<StyleOverlay, maxOverlays> interiors; // overlay items on building floors with their rates
     std::array<StyleOverlay, maxOverlays> wallDecor; // broken walls of buildings (see StyleProfile::wallDecor)
     StyleOverlay carpet; // the carpet most laid on building floors (see StyleProfile::carpet)
+    uint32_t rockOutlinePermille = 0; // StyleProfile::rockOutlinePermille
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
     std::array<uint32_t, 4> shoreDistance {};
     uint32_t width = 0, height = 0;   // of the sample rectangle

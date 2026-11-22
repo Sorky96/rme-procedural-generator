@@ -25,6 +25,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
         const uint32_t cell = uint32_t(row) * uint32_t(b.width) + uint32_t(x - b.x0);
         uint16_t key = noGroundKey;
         uint32_t traits = 0;
+        if (tile->hasOptionalBorder()) traits |= bit(Trait::OptionalBorder);
         if (tile->ground) {
             traits |= bit(Trait::HasGround);
             if (!tile->ground->typeExists() || tile->ground->isInvalidOTBMItem()) traits |= bit(Trait::Unknown);

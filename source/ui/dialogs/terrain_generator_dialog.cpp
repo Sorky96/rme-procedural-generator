@@ -1570,6 +1570,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			request.profile.interior[used] = interior.name;
 			request.profile.interiorPpm[used++] = interior.onGroundPpm;
 		}
+		// The outline is drawn when the sample outlined most of its mountains (at least a quarter of the land beside them).
+		request.profile.rockOutline = profile.rockOutlinePermille >= 250;
 		if (config.vegetation && !profile.carpet.name.empty()) {
 			const auto* brush = g_brushes.getBrush(profile.carpet.name);
 			if (brush && brush->as<CarpetBrush>()) {

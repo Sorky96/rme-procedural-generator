@@ -205,6 +205,34 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
 }
 // Overlay items inside buildings by use: items on tiles of a built floor (an Other ground that is not a cave or hole),
 // each kept with at least 3 items and its share of those floor tiles.
+// The mountain outline: the share of the land tiles (not Rock, not water) beside a Rock tile that carry an optional border.
+uint32_t measureRockOutline(const SemanticMap& map, std::span<const KeyMapEntry> mapping) {
+    const auto& floor = map.floors().front();
+    const int w = floor.bounds.width, h = floor.bounds.height;
+    std::vector<uint8_t> kindOf(map.groundKeys().size(), uint8_t(StyleKind::Unmapped));
+    for (size_t k = 0; k < kindOf.size(); ++k) {
+        const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+        if (entry != mapping.end()) kindOf[k] = uint8_t(entry->kind);
+    }
+    const auto kind = [&](size_t i) {
+        return (floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < kindOf.size() ? StyleKind(kindOf[floor.ground[i]]) : StyleKind::Unmapped;
+    };
+    uint64_t beside = 0, outlined = 0;
+    for (size_t i = 0; i < size_t(w) * h; ++i) {
+        const StyleKind own = kind(i);
+        if (own == StyleKind::Rock || own == StyleKind::Water || own == StyleKind::Unmapped) continue;
+        const int x = int(i % w), y = int(i / w);
+        bool rock = false;
+        for (int dy = -1; dy <= 1 && !rock; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+            const int nx = x + dx, ny = y + dy;
+            if (nx >= 0 && ny >= 0 && nx < w && ny < h && kind(size_t(ny) * w + nx) == StyleKind::Rock) { rock = true; break; }
+        }
+        if (!rock) continue;
+        ++beside;
+        outlined += (floor.traits[i] & bit(Trait::OptionalBorder)) != 0;
+    }
+    return beside ? uint32_t((outlined * 1000 + beside / 2) / beside) : 0;
+}
 // The carpet of the buildings: the carpet brush with the most pieces on built floors (as chooseInteriors), at least 3,
 // with the share of the floor tiles it covers.
 StyleOverlay chooseCarpet(const SemanticMap& map, std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> carpets) {
@@ -566,6 +594,7 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     sample.interiors = chooseInteriors(map, mapping, overlayItems);
     sample.wallDecor = chooseWallDecor(map, mapping, placedItems);
     sample.carpet = chooseCarpet(map, mapping, carpetItems);
+    sample.rockOutlinePermille = measureRockOutline(map, mapping);
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -726,6 +755,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.interiors = sample.interiors;
     profile.wallDecor = sample.wallDecor;
     profile.carpet = sample.carpet;
+    profile.rockOutlinePermille = sample.rockOutlinePermille;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }
