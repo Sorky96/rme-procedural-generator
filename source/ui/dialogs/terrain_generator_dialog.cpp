@@ -1573,7 +1573,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		// The outline is drawn when the sample outlined most of its mountains (at least a quarter of the land beside them).
 		request.profile.rockOutline = profile.rockOutlinePermille >= 250;
 		request.profile.unreachedCapPermille = profile.unreachedRockPermille;
-		request.profile.unreachedWalkPermille = profile.unreachedWalkPermille;
+		// The sample is small, so its share of cut-off ground is a rough figure: a generated map may have up to twice as much.
+		request.profile.unreachedWalkPermille = std::min<uint32_t>(1000, profile.unreachedWalkPermille * 2);
 		if (config.vegetation && !profile.carpet.name.empty()) {
 			const auto* brush = g_brushes.getBrush(profile.carpet.name);
 			if (brush && brush->as<CarpetBrush>()) {
@@ -1924,6 +1925,21 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 if (levels.report.walkableEdges != levels.report.edges)
                     message += std::format(" Unwalkable floor transitions: {}/{}.", levels.report.edges - levels.report.walkableEdges, levels.report.edges);
                 if (levels.repair.unrepaired) message += " Repair gave up.";
+                // Walkable cells out of reach on the ground floor (with the caves) and above it, against what the
+                // reference allows (candidateHardFail).
+                const size_t cells = size_t(levels.plan.region.width) * levels.plan.region.height;
+                if (cells && levels.report.walkable.size() == cells * levels.plan.floors.size() &&
+                    levels.report.reached.size() == levels.report.walkable.size()) {
+                    std::array<uint64_t, 2> walkable {}, out {};
+                    for (size_t i = 0; i < levels.report.walkable.size(); ++i) {
+                        const size_t upper = levels.plan.floors[i / cells].z < levels.plan.region.z;
+                        walkable[upper] += levels.report.walkable[i] != 0;
+                        out[upper] += levels.report.walkable[i] && !levels.report.reached[i];
+                    }
+                    message += std::format(" Cells out of reach: ground {}/{} (allowed {} per mille), above {}/{} (allowed {} per mille).",
+                        out[0], walkable[0], request->profile.unreachedWalkPermille, out[1], walkable[1],
+                        request->profile.unreachedCapPermille);
+                }
                 if (!levels.report.pockets.empty()) message += std::format(" Closed pockets: {}.", levels.report.pockets.size());
             }
             SetStatus(wxstr(message), hardFail);
