@@ -23,12 +23,13 @@ bool namedAsWall(std::string_view name) {
 }
 } // namespace
 std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row) try {
-    auto& [doodads, items, overlays, walls, placed, carpets] = counts;
+    auto& [doodads, items, overlays, walls, placed, carpets, grounds] = counts;
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
     const auto b = destination.floors().front().bounds;
     if (b.z < 0 || b.z > 7 || b.width > 512 || b.height > 512 || row < 0 || row >= b.height
         || b.x0 < 0 || b.y0 < 0 || b.x0 + b.width > source.getWidth() || b.y0 + b.height > source.getHeight())
         return std::unexpected("Rectangle must be inside the map, up to 512 x 512, floor 0-7.");
+    grounds.resize(size_t(b.width) * size_t(b.height), 0);
     for (int x = b.x0; x < b.x0 + b.width; ++x) {
         const auto* tile = source.getTile(x, b.y0 + row, b.z);
         if (!tile || tile->empty()) continue;
@@ -39,14 +40,17 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
         if (tile->ground) {
             traits |= bit(Trait::HasGround);
             if (!tile->ground->typeExists() || tile->ground->isInvalidOTBMItem()) traits |= bit(Trait::Unknown);
-            else if (const auto* brush = tile->ground->getGroundBrush()) {
-                auto interned = destination.internGroundKey(brush->getName());
-                if (!interned) return std::unexpected("Too many ground names.");
-                key = *interned;
+            else {
+                grounds[cell] = tile->ground->getID();
+                if (const auto* brush = tile->ground->getGroundBrush()) {
+                    auto interned = destination.internGroundKey(brush->getName());
+                    if (!interned) return std::unexpected("Too many ground names.");
+                    key = *interned;
+                }
             }
         }
         std::vector<std::string> tileOverlays;
-        // The whole stack, for the walls: kept when something on it blocks and it holds no door and no vegetation.
+        // The whole stack, for the walls and the structures: kept when it holds no door and no vegetation.
         PlacedStack stack {cell};
         bool blocking = false, door = false, natural = false;
         stack.plainWall = true;
@@ -92,7 +96,8 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             traits |= decorTraitBit(kind);
             ++doodads[{key, std::move(name)}];
         }
-        if (blocking && !door && !natural) placed.push_back(std::move(stack));
+        stack.blocking = blocking;
+        if (!stack.items.empty() && !door && !natural) placed.push_back(std::move(stack));
         // Items under something blocking belong to that structure, not to the open land.
         if (blocking) tileOverlays.clear();
         for (auto& name : tileOverlays) {

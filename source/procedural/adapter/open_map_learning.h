@@ -24,8 +24,9 @@ struct SampleCounts {
     SampleItemCounts items;
     OverlayItemCounts overlays;
     DoodadItemCounts walls;
-    std::vector<PlacedStack> placed; // stacks of the tiles with something blocking (see PlacedStack)
+    std::vector<PlacedStack> placed; // stacks of the tiles with items, no door and no vegetation (see PlacedStack)
     DoodadItemCounts carpets;       // carpet pieces per (ground key, carpet brush name)
+    std::vector<uint16_t> grounds;  // ground item per cell of the sample rectangle, row-major (0 = none)
 };
 // GUI-thread read only. One row (at most 512 cells) per call; never holds tile/brush pointers.
 // A tile holding a tree, bush or stone doodad gets the matching decor trait (classifyDoodadBrush); a tile with a

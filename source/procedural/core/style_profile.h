@@ -194,6 +194,24 @@ struct StyleWallStack {
 	bool operator==(const StyleWallStack&) const = default;
 };
 
+inline constexpr size_t maxStructures = 8, maxStructureSide = 24, maxStructureCells = 255, maxStructureCellItems = 8;
+// One tile of a structure: its offset in the structure's box, its own ground item (0 = the generated ground stays) and the
+// items stacked on it, bottom first (0..maxStructureCellItems); a tile has a ground or items.
+struct StyleStructureCell {
+	uint32_t dx = 0, dy = 0, ground = 0;
+	std::vector<uint16_t> items;
+	bool operator==(const StyleStructureCell&) const = default;
+};
+// A group of items standing apart from any building, with the grounds laid for it (a ship wreck by the shore): its box,
+// its tiles (1..maxStructureCells, each once), which tiles of the box were water (row-major, empty = none) and how
+// often it stood in the sample, ppm of the sample tiles.
+struct StyleStructure {
+	uint32_t ppm = 0, width = 0, height = 0;
+	std::vector<StyleStructureCell> cells;
+	std::vector<uint8_t> water;
+	bool operator==(const StyleStructure&) const = default;
+};
+
 struct StyleProfile {
 	std::string client;
 	std::string otbSha256, datSha256;   // lowercase hex of the client's items.otb and Tibia.dat
@@ -223,6 +241,8 @@ struct StyleProfile {
 	// Wall tiles as the sample built them: whole item stacks (bottom first) standing in the line of a wall, per side mask of
 	// the neighbouring wall tiles, each on ppm of the wall tiles with that mask (see StyleWallStack).
 	std::vector<StyleWallStack> wallStacks;
+	// Structures placed whole on the open land (see StyleStructure), at most maxStructures.
+	std::vector<StyleStructure> structures;
 	// The carpet brush most laid on building floors (drifted sand, rugs); onGroundPpm is the share of the building floor
 	// tiles it covers, onTreePpm stays 0; empty name = none.
 	StyleOverlay carpet;

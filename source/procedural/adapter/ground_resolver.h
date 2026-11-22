@@ -5,6 +5,7 @@
 #include <array>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace rme::procedural {
 
@@ -73,6 +74,25 @@ struct GroundProfile {
 	};
 	static constexpr size_t wallStackCount = 64;
 	std::array<WallStack, wallStackCount> wallStacks {};
+	// Structures standing whole as the sample built them (StyleStructure), on land and water as they stood there (see
+	// resolveSurfacePlan): about ppm copies per cell of the area. Cells are listed once each, inside the box, with their own
+	// ground item (0 = the generated one stays) and items bottom first, 0 after the last; a cell has a ground or items.
+	// water: 1 for the tiles of the box that were water, row-major; empty = none.
+	struct StructureCell {
+		uint8_t dx = 0, dy = 0;
+		uint16_t ground = 0;
+		std::array<uint16_t, 8> items {};
+		bool operator==(const StructureCell&) const = default;
+	};
+	struct Structure {
+		uint32_t ppm = 0;
+		uint8_t width = 0, height = 0;
+		std::vector<StructureCell> cells;
+		std::vector<uint8_t> water;
+		bool operator==(const Structure&) const = default;
+	};
+	static constexpr size_t structureCount = 8, structureSide = 24, structureCells = 255;
+	std::vector<Structure> structures;
 	// Carpet brush laid on carpetPpm of the inner Floor cells, aligned as the brush aligns it, in the overlay layer
 	// (vegetation only; empty = off).
 	std::string carpet;
@@ -123,6 +143,9 @@ struct GroundPlan {
 	// Wall stack per cell in place of its wall piece (k + 1 for profile.wallStacks[k], 0 = none); empty when the profile has
 	// no wall stack, otherwise one entry per cell.
 	std::vector<uint8_t> wallStack;
+	// Structure cell per cell: k * 256 + c + 1 for profile.structures[k].cells[c], 0 = none; empty when no structure was
+	// placed, otherwise one entry per cell. Such a cell carries no vegetation or overlay.
+	std::vector<uint16_t> structure;
 	[[nodiscard]] uint64_t fingerprint() const;
 	std::vector<uint16_t> entrances;
 	std::vector<uint16_t> exits;

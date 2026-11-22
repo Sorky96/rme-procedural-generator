@@ -174,6 +174,25 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		hashField(hash, plan.wallStack.size());
 		for (const auto k : plan.wallStack) hashField(hash, k, 1);
 	}
+	// Only with structures, so plans without them keep their hash.
+	if (!plan.structure.empty()) {
+		hashField(hash, 0x73, 1);
+		for (const auto& structure : plan.profile.structures) {
+			hashField(hash, structure.ppm, 4);
+			hashField(hash, structure.width, 1);
+			hashField(hash, structure.height, 1);
+			hashField(hash, structure.cells.size());
+			for (const uint8_t w : structure.water) hashField(hash, w, 1);
+			for (const auto& cell : structure.cells) {
+				hashField(hash, cell.dx, 1);
+				hashField(hash, cell.dy, 1);
+				hashField(hash, cell.ground, 2);
+				for (const uint16_t id : cell.items) hashField(hash, id, 2);
+			}
+		}
+		hashField(hash, plan.structure.size());
+		for (const auto cell : plan.structure) hashField(hash, cell, 2);
+	}
 	// Only with overlays, so plans without them keep their hash.
 	if (!plan.overlays.empty()) {
 		hashField(hash, 0x76, 1);
@@ -490,6 +509,21 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 		decorIds.push_back(id);
 	}
+	// Structure items, checked by the resolver, as the profile lists them.
+	if (!plan.structure.empty() && (plan.structure.size() != plan.items.size() || plan.profile.structures.size() > GroundProfile::structureCount))
+		co_return std::unexpected(PreviewError::InvalidPlan);
+	for (const auto& structure : plan.profile.structures) for (const auto& cell : structure.cells) {
+		if (cell.ground) {
+			const auto definition = g_item_definitions.get(cell.ground);
+			if (!definition || !definition.clientId() || definition.isMetaItem() || !definition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
+		}
+		for (const uint16_t id : cell.items) {
+			if (!id) break;
+			const auto definition = g_item_definitions.get(id);
+			if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
+			decorIds.push_back(id);
+		}
+	}
 	// Every piece of the carpet brush may end up on a tile, by the alignment of its neighbours.
 	if (vegetation && !plan.profile.carpet.empty()) {
 		const auto* brush = plan.profile.carpet.size() <= 256 ? g_brushes.getBrush(plan.profile.carpet) : nullptr;
@@ -700,6 +734,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		if (!plan.doors.empty() && plan.doors[i] && (plan.walls.empty() || !plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.wallStack.empty() && plan.wallStack[i] && (!plan.items[i] || plan.wallStack[i] > plan.profile.wallStacks.size() ||
 			!plan.profile.wallStacks[plan.wallStack[i] - 1].ppm || (!plan.walls.empty() && plan.walls[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (!plan.structure.empty() && plan.structure[i]) {
+			const size_t k = size_t(plan.structure[i] - 1) / 256, c = size_t(plan.structure[i] - 1) % 256;
+			if (!plan.items[i] || k >= plan.profile.structures.size() || c >= plan.profile.structures[k].cells.size() ||
+				(!plan.decor.empty() && plan.decor[i]) || (!plan.overlays.empty() && plan.overlays[i]) || (!plan.walls.empty() && plan.walls[i]) ||
+				(!plan.wallStack.empty() && plan.wallStack[i]) || (!plan.fires.empty() && plan.fires[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+			decorPlacements += uint64_t(std::ranges::count_if(plan.profile.structures[k].cells[c].items, [](uint16_t id) { return id != 0; }));
+		}
 		if (!plan.fires.empty() && plan.fires[i]) {
 			if (!plan.items[i] || !std::ranges::binary_search(decorIds, plan.fires[i])) co_return std::unexpected(PreviewError::InvalidItem);
 			const auto fireDefinition = g_item_definitions.get(plan.fires[i]);
@@ -833,6 +874,15 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 				if (x+dx >= c.x && y+dy >= c.y && x+dx < right && y+dy < bottom) affected[contextIndex(x+dx,y+dy)] = 1;
 			}
 		}
+		// A structure's own grounds take the place of the generated ones before the border pass, so borders run around them.
+		for (size_t i = 0; i < plan.structure.size(); ++i) {
+			if (!plan.structure[i]) continue;
+			const auto& cell = plan.profile.structures[size_t(plan.structure[i] - 1) / 256].cells[size_t(plan.structure[i] - 1) % 256];
+			if (!cell.ground) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			tile->ground = Item::Create(cell.ground);
+		}
 		// The mountain outline: land beside a ground with an optional border takes the flag, so the border pass below draws it.
 		if (plan.profile.rockOutline) {
 			const auto outlining = [&](int x, int y) {
@@ -931,6 +981,14 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			for (const uint16_t id : plan.profile.wallStacks[plan.wallStack[i] - 1].items) if (id) tile->addItem(Item::Create(id));
+		}
+		// Structures stand whole as the sample built them, item stack by item stack.
+		for (size_t i = 0; i < plan.structure.size(); ++i) {
+			if (!plan.structure[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			const auto& cell = plan.profile.structures[size_t(plan.structure[i] - 1) / 256].cells[size_t(plan.structure[i] - 1) % 256];
+			for (const uint16_t id : cell.items) if (id) tile->addItem(Item::Create(id));
 		}
 		// Doors replace the aligned wall piece with RME's own door logic; a wall brush without this kind of door for the
 		// piece that ended up there refuses the preview instead of leaving a closed wall.

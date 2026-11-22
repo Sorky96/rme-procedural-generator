@@ -202,7 +202,7 @@ void StyleLearningDialog::Analyze() {
     for (const auto& [where, pieces] : counts_.walls) wallBrushes.push_back({where.first, where.second, pieces});
     std::vector<GroundDoodadItems> carpetItems;
     for (const auto& [where, pieces] : counts_.carpets) carpetItems.push_back({where.first, where.second, pieces});
-    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems, wallBrushes, counts_.placed, carpetItems);
+    auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems, wallBrushes, counts_.placed, carpetItems, counts_.grounds);
     if (!sample) { Status(sample.error()); return; }
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));
     result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); stop_ = std::stop_source{};

@@ -1591,6 +1591,28 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			placed.ppm = stack.ppm;
 			std::ranges::copy(stack.items, placed.items.begin());
 		}
+		// Structures whose items this client has.
+		for (const auto& structure : profile.structures) {
+			if (request.profile.structures.size() == GroundProfile::structureCount || structure.width > GroundProfile::structureSide ||
+				structure.height > GroundProfile::structureSide || structure.cells.size() > GroundProfile::structureCells) continue;
+			GroundProfile::Structure placed {structure.ppm, uint8_t(structure.width), uint8_t(structure.height), {}, structure.water};
+			bool usable = true;
+			for (const auto& cell : structure.cells) {
+				if (cell.items.size() > 8) { usable = false; break; }
+				GroundProfile::StructureCell copied {uint8_t(cell.dx), uint8_t(cell.dy), uint16_t(cell.ground), {}};
+				if (cell.ground) {
+					const auto definition = g_item_definitions.get(uint16_t(cell.ground));
+					usable = usable && definition && definition.clientId() && !definition.isMetaItem() && definition.isGroundTile();
+				}
+				for (size_t k = 0; k < cell.items.size(); ++k) {
+					const auto definition = g_item_definitions.get(cell.items[k]);
+					usable = usable && definition && definition.clientId() && !definition.isMetaItem() && !definition.isGroundTile();
+					copied.items[k] = cell.items[k];
+				}
+				placed.cells.push_back(copied);
+			}
+			if (usable) request.profile.structures.push_back(std::move(placed));
+		}
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
 			const auto& overlay = profile.overlays[i];
 			// An overlay one cannot walk through would block the planned paths; it is left out.

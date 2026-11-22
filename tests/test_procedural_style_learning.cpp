@@ -173,10 +173,10 @@ int main(int argc, char** argv) {
         // and one in the cave is the mountain's. The stack's items on the open sand are no longer loose overlays.
         std::vector<PlacedStack> placed;
         const auto at = [](int x, int y) { return uint32_t(y * 64 + x); };
-        for (const auto [x, y] : {std::pair{10, 11}, {10, 12}, {14, 12}}) placed.push_back({at(x, y), {50, 60}, false});
-        placed.push_back({at(14, 11), {70}, false});
-        placed.push_back({at(12, 12), {80}, false});
-        placed.push_back({at(51, 51), {50, 60}, false});
+        for (const auto [x, y] : {std::pair{10, 11}, {10, 12}, {14, 12}}) placed.push_back({at(x, y), {50, 60}, true});
+        placed.push_back({at(14, 11), {70}, true});
+        placed.push_back({at(12, 12), {80}, true});
+        placed.push_back({at(51, 51), {50, 60}, true});
         const std::vector<GroundOverlayItems> loose{{sand, "raw:item:50", 0, 5}, {sand, "raw:item:90", 0, 2}};
         const auto decorated = inspectLearningSample(map, desert, {}, true, {}, loose, walls, placed);
         check(decorated && decorated->wallStacks == std::vector<StyleWallStack>{{5, 375000, {50, 60}}}, "wall stacks by sides");
@@ -190,6 +190,39 @@ int main(int argc, char** argv) {
         both.rockOutlinePermille = 400;
         const auto withDecor = decorated ? fitLearningSample(both, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
         check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall stacks, carpet and rock outline round-trip");
+    }
+    {
+        // A wreck by the shore of a 48 x 48 sample (sea for x < 10): hull stacks on rows 10 and 13 (x 8..11), a deck of a
+        // ground without a brush between them and a loose crate beside the hull. Four blocking stacks next to a building floor
+        // belong to the building, not to a structure.
+        FloorBounds fb{7, 0, 0, 48, 48};
+        auto map = SemanticMap::create(std::span(&fb, 1), {2304}).value();
+        const auto sand = map.internGroundKey("sand").value();
+        const auto sea = map.internGroundKey("sea").value();
+        const auto floorKey = map.internGroundKey("sandstone floor").value();
+        std::vector<uint16_t> grounds(2304, 100);
+        std::vector<PlacedStack> placed;
+        for (int i = 0; i < 2304; ++i) {
+            const int x = i % 48, y = i / 48;
+            const bool deck = x >= 8 && x < 12 && (y == 11 || y == 12), hall = x >= 20 && x < 25 && y >= 15 && y < 20;
+            if (deck) grounds[size_t(i)] = 900;
+            if (x >= 8 && x < 12 && (y == 10 || y == 13)) placed.push_back({uint32_t(i), {500}, true});
+            if (x == 19 && y >= 15 && y < 19) placed.push_back({uint32_t(i), {700}, true});
+            const uint16_t key = deck ? noGroundKey : hall ? floorKey : x < 10 ? sea : sand;
+            check(bool(map.set(x, y, 7, key, bit(Trait::HasGround))), "wreck cell");
+        }
+        placed.push_back({uint32_t(11 * 48 + 12), {600}, false});
+        const auto mapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
+        const auto learned = inspectLearningSample(map, mapping, {}, true, {}, {}, {}, placed, {}, grounds);
+        const auto* wreck = learned && learned->structures.size() == 1 ? &learned->structures[0] : nullptr;
+        check(wreck && wreck->width == 5 && wreck->height == 4 && wreck->ppm == 434 && wreck->cells.size() == 17, "wreck box and rate");
+        check(wreck && wreck->cells[0] == StyleStructureCell{0, 0, 0, {500}} && wreck->cells[4] == StyleStructureCell{0, 1, 900, {}} &&
+            wreck->cells[8] == StyleStructureCell{4, 1, 0, {600}}, "wreck hull, deck and crate");
+        check(wreck && wreck->water.size() == 20 && wreck->water[0] == 1 && wreck->water[2] == 0 && wreck->water[5] == 0, "wreck water");
+        check(learned && learned->wallStacks.empty(), "wreck stacks are no walls");
+        auto profile = *a;
+        if (wreck) profile.structures = learned->structures;
+        check(wreck && parseProfile(*serializeProfile(profile)) == profile, "structures round-trip");
     }
     {
         // A 4 x 4 mountain on grass: 20 grass tiles touch it, 15 of them carry the optional border.

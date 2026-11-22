@@ -38,6 +38,7 @@ constexpr uint64_t maxDecorChance = 100000;
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
 constexpr uint64_t wallStackStream = 0x73325f77616c6c73ULL; // "s2_walls"
+constexpr uint64_t structureStream = 0x73325f7772656b73ULL; // "s2_wreks"
 constexpr uint64_t carpetStream = 0x73325f6361727065ULL; // "s2_carpe"
 constexpr uint64_t variantStream = 0x73325f7661726e74ULL; // "s2_varnt"
 constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
@@ -440,6 +441,30 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		}
 		stacked = stacked || walled;
 	}
+	// Structures: boxes inside the limits, each cell inside its box once, real grounds and items.
+	if (profile.structures.size() > GroundProfile::structureCount) return std::unexpected(ResolveError::InvalidProfile);
+	for (const auto& structure : profile.structures) {
+		if (!structure.ppm || structure.ppm > 1000000 || !structure.width || !structure.height || structure.width > GroundProfile::structureSide ||
+			structure.height > GroundProfile::structureSide || structure.cells.empty() || structure.cells.size() > GroundProfile::structureCells)
+			return std::unexpected(ResolveError::InvalidProfile);
+		if (!structure.water.empty() && (structure.water.size() != size_t(structure.width) * structure.height ||
+			std::ranges::any_of(structure.water, [](uint8_t w) { return w > 1; }))) return std::unexpected(ResolveError::InvalidProfile);
+		std::vector<uint8_t> used(size_t(structure.width) * structure.height, 0);
+		for (const auto& cell : structure.cells) {
+			if (cell.dx >= structure.width || cell.dy >= structure.height || used[size_t(cell.dy) * structure.width + cell.dx]++ ||
+				(!cell.items[0] && !cell.ground)) return std::unexpected(ResolveError::InvalidProfile);
+			if (cell.ground) {
+				const auto definition = g_item_definitions.get(cell.ground);
+				if (!definition || !definition.clientId() || definition.isMetaItem() || !definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
+			}
+			for (size_t k = 1; k < cell.items.size(); ++k) if (cell.items[k] && !cell.items[k - 1]) return std::unexpected(ResolveError::InvalidProfile);
+			for (const uint16_t id : cell.items) {
+				if (!id) break;
+				const auto definition = g_item_definitions.get(id);
+				if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
+			}
+		}
+	}
 	if (profile.carpet.empty() != (profile.carpetPpm == 0) || profile.carpet.size() > 256 || profile.carpetPpm > 1000000)
 		return std::unexpected(ResolveError::InvalidProfile);
 	overlaid = overlaid || (vegetation && !profile.carpet.empty());
@@ -453,7 +478,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	}
 	if (grid.cells.size() > (std::numeric_limits<size_t>::max() - sizeof(GroundPlan)) / sizeof(uint16_t) ||
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
-	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0) + (overlaid ? 1 : 0)) + (doored ? 1 : 0) + (stacked ? 1 : 0));
+	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0) + (overlaid ? 1 : 0)) + (doored ? 1 : 0) + (stacked ? 1 : 0) + (profile.structures.empty() ? 0 : sizeof(uint16_t)));
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
 	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.active(), profile.activeDecor()})) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
@@ -882,6 +907,66 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 					result.wallStack[i] = uint8_t(k + 1);
 					result.walls[i] = 0;
 					break;
+				}
+			}
+		}
+		// Structures, last. A structure's box and a ring of one cell around it lie on writable land (Grass, Dirt, Shore)
+		// or water (Lake, River) clear of walls, fires and strewn floor, so it never touches a path, a building or another
+		// structure. Its tiles without a ground of their own keep the land or water they had in the sample: at most a tenth of
+		// them may differ. Each structure is placed about ppm times per cell of the area (the fraction by a hash), at the
+		// first fitting positions of a scan that starts at a hash of the seed.
+		if (!profile.structures.empty()) {
+			const size_t width = grid.region.width, height = grid.region.height;
+			// 0 = taken, 1 = land, 2 = water
+			std::vector<uint8_t> ground(grid.cells.size(), 0);
+			for (size_t i = 0; i < grid.cells.size(); ++i) {
+				const bool writable = input.mask[i] && !input.protection[i] && (keepClear.empty() || !keepClear[i]);
+				const auto kind = grid.cells[i];
+				if (!writable || !result.items[i] || (!strewnCell.empty() && strewnCell[i]) || (!result.walls.empty() && result.walls[i]) ||
+					(!result.wallStack.empty() && result.wallStack[i]) || (!result.fires.empty() && result.fires[i])) continue;
+				if (kind == SurfaceKind::Grass || kind == SurfaceKind::Dirt || kind == SurfaceKind::Shore) ground[i] = 1;
+				if (kind == SurfaceKind::Lake || kind == SurfaceKind::River) ground[i] = 2;
+			}
+			std::vector<uint8_t> own; // tiles of the box with a ground of the structure
+			for (size_t k = 0; k < profile.structures.size(); ++k) {
+				const auto& structure = profile.structures[k];
+				const size_t sw = structure.width, sh = structure.height;
+				if (width < sw + 2 || height < sh + 2) continue;
+				own.assign(sw * sh, 0);
+				for (const auto& cell : structure.cells) own[size_t(cell.dy) * sw + cell.dx] = cell.ground != 0;
+				size_t constrained = 0;
+				for (const uint8_t o : own) constrained += !o;
+				const size_t tolerance = constrained / 10;
+				const uint64_t expected = uint64_t(structure.ppm) * grid.cells.size();
+				const uint64_t base = input.config.seed ^ structureStream ^ (uint64_t(k) << 40);
+				uint64_t copies = expected / 1000000 + (mixHash(base) % 1000000 < expected % 1000000 ? 1 : 0);
+				const size_t spanX = width - sw - 1, spanY = height - sh - 1, positions = spanX * spanY;
+				const size_t first = size_t(mixHash(base ^ 0x9e3779b97f4a7c15ULL) % positions);
+				for (size_t step = 0; copies && step < positions; ++step) {
+					if (step % 4096 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+					const size_t position = (first + step) % positions;
+					const size_t x0 = 1 + position % spanX, y0 = 1 + position / spanX;
+					size_t misses = 0;
+					bool fits = true;
+					for (size_t y = y0 - 1; fits && y <= y0 + sh; ++y) for (size_t x = x0 - 1; fits && x <= x0 + sw; ++x) {
+						const uint8_t here = ground[y * width + x];
+						if (!here) { fits = false; break; }
+						if (x < x0 || y < y0 || x >= x0 + sw || y >= y0 + sh) continue;
+						const size_t b = (y - y0) * sw + (x - x0);
+						if (own[b]) continue;
+						const bool wet = !structure.water.empty() && structure.water[b];
+						if ((here == 2) != wet && ++misses > tolerance) fits = false;
+					}
+					if (!fits) continue;
+					if (result.structure.empty()) result.structure.assign(grid.cells.size(), 0);
+					for (size_t c = 0; c < structure.cells.size(); ++c) {
+						const size_t i = (y0 + structure.cells[c].dy) * width + x0 + structure.cells[c].dx;
+						result.structure[i] = uint16_t(k * 256 + c + 1);
+						if (!result.decor.empty()) result.decor[i] = 0;
+						if (!result.overlays.empty()) result.overlays[i] = 0;
+					}
+					for (size_t y = y0 - 1; y <= y0 + sh; ++y) for (size_t x = x0 - 1; x <= x0 + sw; ++x) ground[y * width + x] = 0;
+					--copies;
 				}
 			}
 		}

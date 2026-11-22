@@ -18,12 +18,13 @@ struct GroundOverlayItems {
     std::string name;
     uint64_t onTree = 0, onGround = 0;
 };
-// A tile of the sample with a blocking item or a wall piece: its row-major cell of the sample rectangle, the items stacked
-// on it (bottom first, without ground, borders, carpets and doors), whether they are all pieces of a wall brush and
-// whether one of them is named as a piece of a wall.
+// A tile of the sample with stacked items and no door or vegetation: its row-major cell of the sample rectangle, the items
+// stacked on it (bottom first, without ground, borders, carpets and tables), whether one of them blocks, whether they are
+// all pieces of a wall brush and whether one of them is named as a piece of a wall.
 struct PlacedStack {
     uint32_t cell = 0;
     std::vector<uint16_t> items;
+    bool blocking = false;
     bool plainWall = false;
     bool wallLike = false; // an item of it is named as a wall, pillar, column or railing (a wall laid without a brush)
 };
@@ -45,6 +46,7 @@ struct LearningSample {
     StyleBuildings buildings;         // buildings and ruins of the sample
     std::array<StyleOverlay, maxOverlays> interiors; // overlay items on building floors with their rates
     std::vector<StyleWallStack> wallStacks; // wall tiles as the sample built them (see StyleProfile::wallStacks)
+    std::vector<StyleStructure> structures; // groups of items on the open land (see StyleProfile::structures)
     StyleOverlay carpet; // the carpet most laid on building floors (see StyleProfile::carpet)
     uint32_t rockOutlinePermille = 0; // StyleProfile::rockOutlinePermille
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
@@ -59,11 +61,12 @@ struct LearningSample {
 // the main ground (and, without other shore, rings the water too). Other mappings are left as they are.
 void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map);
 // Surface-only, bounded input. Unknown keys remain visible in the denominator.
-// `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.
+// `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle; `groundItems` the
+// ground item of every tile of it, row-major (0 = none), for the structures; without it none are learned.
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop = {},
     std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {}, std::span<const PlacedStack> placedStacks = {},
-    std::span<const GroundDoodadItems> carpetItems = {});
+    std::span<const GroundDoodadItems> carpetItems = {}, std::span<const uint16_t> groundItems = {});
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,
     std::stop_token stop = {});

@@ -203,6 +203,18 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 			return std::unexpected(ProfileError::InvalidRange);
 		if ((stackShare[s.sides] += s.ppm) > 1000000) return std::unexpected(ProfileError::InvalidRange);
 	}
+	if (p.structures.size() > maxStructures) return std::unexpected(ProfileError::InvalidRange);
+	for (const StyleStructure& s : p.structures) {
+		if (!s.ppm || s.ppm > 1000000 || !s.width || !s.height || s.width > maxStructureSide || s.height > maxStructureSide ||
+			s.cells.empty() || s.cells.size() > maxStructureCells || (!s.water.empty() && s.water.size() != size_t(s.width) * s.height) ||
+			std::ranges::any_of(s.water, [](uint8_t w) { return w > 1; })) return std::unexpected(ProfileError::InvalidRange);
+		std::vector<uint8_t> used(size_t(s.width) * s.height, 0);
+		for (const StyleStructureCell& c : s.cells) {
+			if (c.dx >= s.width || c.dy >= s.height || used[size_t(c.dy) * s.width + c.dx]++ || (c.items.empty() && !c.ground) ||
+				c.ground > UINT16_MAX || c.items.size() > maxStructureCellItems || std::ranges::find(c.items, uint16_t(0)) != c.items.end())
+				return std::unexpected(ProfileError::InvalidRange);
+		}
+	}
 	for (const StyleOverlay& o : p.overlays) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
 		if (o.onTreePpm > 1000000 || o.onGroundPpm > 1000000 || o.name.empty() != (o.onTreePpm + o.onGroundPpm == 0))
@@ -262,6 +274,17 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	for (const auto& s : p.wallStacks) {
 		out += std::format("wallstack\t{}\t{}\t", s.sides, s.ppm);
 		for (size_t k = 0; k < s.items.size(); ++k) out += std::format("{}{}", k ? "," : "", s.items[k]);
+		out += '\n';
+	}
+	for (const auto& s : p.structures) {
+		out += std::format("structure\t{}\t{}\t{}\t", s.ppm, s.width, s.height);
+		for (size_t c = 0; c < s.cells.size(); ++c) {
+			out += std::format("{}{},{},{}", c ? ";" : "", s.cells[c].dx, s.cells[c].dy, s.cells[c].ground);
+			for (const uint16_t id : s.cells[c].items) out += std::format(",{}", id);
+		}
+		out += '\t';
+		if (s.water.empty()) out += '-';
+		for (const uint8_t w : s.water) out += char('0' + w);
 		out += '\n';
 	}
 	if (!p.carpet.name.empty()) out += std::format("carpet\t{}\t{}\n", p.carpet.onGroundPpm, p.carpet.name);
@@ -433,6 +456,39 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             }
             if (p.wallStacks.size() == maxWallStacks) return std::unexpected(ProfileError::BadFormat);
             p.wallStacks.push_back(std::move(stack));
+        } else if (type == "structure" && f.size() == 6) {
+            StyleStructure structure;
+            if (!parseU32(f[1], structure.ppm) || !parseU32(f[2], structure.width) || !parseU32(f[3], structure.height))
+                return std::unexpected(ProfileError::BadFormat);
+            // Cells "dx,dy,ground,id,id,...", separated by ';'; then the water of the box as 0/1 per tile, or "-".
+            for (std::string_view rest = f[4]; ;) {
+                const size_t semicolon = rest.find(';');
+                std::string_view cell = rest.substr(0, semicolon);
+                std::vector<uint32_t> numbers;
+                for (;;) {
+                    const size_t comma = cell.find(',');
+                    uint32_t value = 0;
+                    if (!parseU32(cell.substr(0, comma), value) || numbers.size() == 3 + maxStructureCellItems) return std::unexpected(ProfileError::BadFormat);
+                    numbers.push_back(value);
+                    if (comma == std::string_view::npos) break;
+                    cell.remove_prefix(comma + 1);
+                }
+                if (numbers.size() < 3 || structure.cells.size() == maxStructureCells) return std::unexpected(ProfileError::BadFormat);
+                StyleStructureCell parsed {numbers[0], numbers[1], numbers[2], {}};
+                for (size_t k = 3; k < numbers.size(); ++k) {
+                    if (!numbers[k] || numbers[k] > UINT16_MAX) return std::unexpected(ProfileError::BadFormat);
+                    parsed.items.push_back(uint16_t(numbers[k]));
+                }
+                structure.cells.push_back(std::move(parsed));
+                if (semicolon == std::string_view::npos) break;
+                rest.remove_prefix(semicolon + 1);
+            }
+            if (f[5] != "-") for (const char w : f[5]) {
+                if (w != '0' && w != '1') return std::unexpected(ProfileError::BadFormat);
+                structure.water.push_back(uint8_t(w - '0'));
+            }
+            if (p.structures.size() == maxStructures) return std::unexpected(ProfileError::BadFormat);
+            p.structures.push_back(std::move(structure));
         } else if (type == "overlay" && f.size() == 4) {
             StyleOverlay overlay;
             if (!parseU32(f[1], overlay.onTreePpm) || !parseU32(f[2], overlay.onGroundPpm) || f[3].empty())
