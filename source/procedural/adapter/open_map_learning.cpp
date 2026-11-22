@@ -8,10 +8,20 @@
 #include "procedural/core/doodad_class.h"
 #include "map/map.h"
 #include "map/tile.h"
+#include <algorithm>
+#include <array>
+#include <string_view>
 #include <typeinfo>
 #include <vector>
 #include <wx/thread.h>
 namespace rme::procedural {
+namespace {
+// A piece of a wall laid without a wall brush, by its client name.
+bool namedAsWall(std::string_view name) {
+    return std::ranges::any_of(std::array<std::string_view, 4> {"wall", "pillar", "column", "railing"},
+        [&](std::string_view word) { return name.find(word) != std::string_view::npos; });
+}
+} // namespace
 std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row) try {
     auto& [doodads, items, overlays, walls, placed, carpets] = counts;
     if (!wxIsMainThread() || destination.floors().size() != 1) return std::unexpected("Invalid map read context.");
@@ -36,14 +46,21 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
             }
         }
         std::vector<std::string> tileOverlays;
+        // The whole stack, for the walls: kept when something on it blocks and it holds no door and no vegetation.
+        PlacedStack stack {cell};
+        bool blocking = false, door = false, natural = false;
+        stack.plainWall = true;
         for (const auto& item : tile->items) {
             if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
             // A wall piece one can walk through (spider webs are a wall brush) is decoration, learned as an overlay.
-            if (item->isDoor()) { traits |= bit(Trait::Door); continue; }
+            if (item->isDoor()) { traits |= bit(Trait::Door); door = true; continue; }
             if (item->isWall() && item->isBlocking()) {
                 traits |= bit(Trait::Wall);
-                if (const auto* wall = item->getWallBrush()) ++walls[{key, wall->getName()}];
-                else placed.push_back({cell, rawDecorName(item->getID(), DecorKind::None), true}); // a broken wall laid by hand
+                const auto* wall = item->getWallBrush();
+                if (wall) ++walls[{key, wall->getName()}];
+                stack.items.push_back(item->getID());
+                stack.plainWall = stack.plainWall && wall;
+                blocking = true;
                 continue;
             }
             if (item->isCarpet()) {
@@ -51,26 +68,33 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
                 continue;
             }
             if (item->isTable() || item->isBorder()) continue;
+            stack.items.push_back(item->getID());
+            stack.plainWall = false;
+            blocking = blocking || item->isBlocking();
             const auto* doodad = item->getDoodadBrush();
             auto& seen = items[item->getID()];
             if (!seen.count++) { seen.name = item->getName(); if (doodad) seen.brush = doodad->getName(); }
+            stack.wallLike = stack.wallLike || (item->isBlocking() && namedAsWall(seen.name));
             // The item's own client name decides its kind when it says one; otherwise the brush that placed it does
             // ("frog leaf" of "swamp plants" is a bush). Vegetation keeps the brush as its source when the brush is of
             // the same kind, for its variants; anything else is learned as that one item.
             DecorKind kind = classifyDoodadBrush(seen.name);
             if (kind == DecorKind::None && doodad) kind = classifyDoodadBrush(doodad->getName());
+            natural = natural || kind != DecorKind::None;
             const bool brushSource = doodad && kind != DecorKind::None && classifyDoodadBrush(doodad->getName()) == kind;
             auto name = brushSource ? std::string(doodad->getName()) : rawDecorName(item->getID(), kind);
             // Only plain items one can walk through make overlays (see decorItemPlaceable, decorItemPassable).
             if (kind == DecorKind::None) {
                 if (typeid(*item) != typeid(Item)) continue;
-                placed.push_back({cell, name, item->isBlocking()});
                 if (!item->isBlocking()) tileOverlays.push_back(std::move(name));
                 continue;
             }
             traits |= decorTraitBit(kind);
             ++doodads[{key, std::move(name)}];
         }
+        if (blocking && !door && !natural) placed.push_back(std::move(stack));
+        // Items under something blocking belong to that structure, not to the open land.
+        if (blocking) tileOverlays.clear();
         for (auto& name : tileOverlays) {
             auto& counts = overlays[{key, std::move(name)}];
             ++((traits & bit(Trait::TreeDoodad)) ? counts.first : counts.second);

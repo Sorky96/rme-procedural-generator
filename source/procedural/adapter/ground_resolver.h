@@ -62,10 +62,17 @@ struct GroundProfile {
 	// that carry no wall piece, in the same overlay layer (one item per cell).
 	std::array<std::string, overlayCount> interior;
 	std::array<uint32_t, overlayCount> interiorPpm {};
-	// Broken walls (vegetation only; empty = off): a blocking item that takes the place of the wall piece, in the decor
-	// layer, on wallDecorPpm[i] of the straight horizontal wall cells and wallDecorVerticalPpm[i] of the vertical ones.
-	std::array<std::string, overlayCount> wallDecor;
-	std::array<uint32_t, overlayCount> wallDecorPpm {}, wallDecorVerticalPpm {};
+	// Wall tiles built as the sample built them (StyleWallStack): a wall cell whose four neighbours hold wall pieces on
+	// `sides` (bit 0 north, 1 east, 2 south, 3 west) takes stack k instead of its wall piece on ppm of such cells. ppm 0 =
+	// unused; items are bottom first, 0 after the last; the stacks of one mask sum to at most 1000000.
+	struct WallStack {
+		uint8_t sides = 0;
+		uint32_t ppm = 0;
+		std::array<uint16_t, 4> items {};
+		bool operator==(const WallStack&) const = default;
+	};
+	static constexpr size_t wallStackCount = 64;
+	std::array<WallStack, wallStackCount> wallStacks {};
 	// Carpet brush laid on carpetPpm of the inner Floor cells, aligned as the brush aligns it, in the overlay layer
 	// (vegetation only; empty = off).
 	std::string carpet;
@@ -113,6 +120,9 @@ struct GroundPlan {
 	// Overlay item per cell, placed after the vegetation (0 = none); empty when the profile has no overlay, otherwise one
 	// entry per cell.
 	std::vector<uint16_t> overlays;
+	// Wall stack per cell in place of its wall piece (k + 1 for profile.wallStacks[k], 0 = none); empty when the profile has
+	// no wall stack, otherwise one entry per cell.
+	std::vector<uint8_t> wallStack;
 	[[nodiscard]] uint64_t fingerprint() const;
 	std::vector<uint16_t> entrances;
 	std::vector<uint16_t> exits;

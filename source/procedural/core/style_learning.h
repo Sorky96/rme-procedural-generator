@@ -18,12 +18,14 @@ struct GroundOverlayItems {
     std::string name;
     uint64_t onTree = 0, onGround = 0;
 };
-// A plain item (no tree, bush or stone; no piece of a wall brush) of the sample by tile: row-major cell of the
-// sample rectangle, its learned name (doodad brush or "raw:item:<id>") and whether one cannot walk through it.
-struct PlacedItem {
+// A tile of the sample with a blocking item or a wall piece: its row-major cell of the sample rectangle, the items stacked
+// on it (bottom first, without ground, borders, carpets and doors), whether they are all pieces of a wall brush and
+// whether one of them is named as a piece of a wall.
+struct PlacedStack {
     uint32_t cell = 0;
-    std::string name;
-    bool blocking = false;
+    std::vector<uint16_t> items;
+    bool plainWall = false;
+    bool wallLike = false; // an item of it is named as a wall, pillar, column or railing (a wall laid without a brush)
 };
 struct LearningSample {
     StyleStats stats;
@@ -42,7 +44,7 @@ struct LearningSample {
     std::array<StyleOverlay, maxOverlays> overlays; // the most used overlay items on land with their rates
     StyleBuildings buildings;         // buildings and ruins of the sample
     std::array<StyleOverlay, maxOverlays> interiors; // overlay items on building floors with their rates
-    std::array<StyleOverlay, maxOverlays> wallDecor; // broken walls of buildings (see StyleProfile::wallDecor)
+    std::vector<StyleWallStack> wallStacks; // wall tiles as the sample built them (see StyleProfile::wallStacks)
     StyleOverlay carpet; // the carpet most laid on building floors (see StyleProfile::carpet)
     uint32_t rockOutlinePermille = 0; // StyleProfile::rockOutlinePermille
     // Distance in 4-steps from land to the nearest water: 25th, 50th, 75th and 90th percentile (all 0 without water).
@@ -60,7 +62,7 @@ void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map);
 // `doodadItems` are the stacked doodad items per ground key and brush read from the same rectangle.
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop = {},
-    std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {}, std::span<const PlacedItem> placedItems = {},
+    std::span<const GroundOverlayItems> overlayItems = {}, std::span<const GroundDoodadItems> wallBrushes = {}, std::span<const PlacedStack> placedStacks = {},
     std::span<const GroundDoodadItems> carpetItems = {});
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,

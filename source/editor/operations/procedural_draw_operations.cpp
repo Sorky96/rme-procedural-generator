@@ -163,6 +163,17 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 		for (const auto id : plan.fires) hashField(hash, id, 2);
 	}
 	if (plan.profile.rockOutline) hashField(hash, 0x6f, 1); // only when on, so other plans keep their hash
+	// Only with wall stacks, so plans without them keep their hash.
+	if (!plan.wallStack.empty()) {
+		hashField(hash, 0x6b, 1);
+		for (const auto& stack : plan.profile.wallStacks) {
+			hashField(hash, stack.sides, 1);
+			hashField(hash, stack.ppm, 4);
+			for (const uint16_t id : stack.items) hashField(hash, id, 2);
+		}
+		hashField(hash, plan.wallStack.size());
+		for (const auto k : plan.wallStack) hashField(hash, k, 1);
+	}
 	// Only with overlays, so plans without them keep their hash.
 	if (!plan.overlays.empty()) {
 		hashField(hash, 0x76, 1);
@@ -172,9 +183,6 @@ uint64_t hashPreviewSource(const GenerationSnapshot& snapshot, const GroundPlan&
 			hashField(hash, plan.profile.overlayGroundPpm[i], 4);
 			string(plan.profile.interior[i]);
 			hashField(hash, plan.profile.interiorPpm[i], 4);
-			string(plan.profile.wallDecor[i]);
-			hashField(hash, plan.profile.wallDecorPpm[i], 4);
-			hashField(hash, plan.profile.wallDecorVerticalPpm[i], 4);
 		}
 		string(plan.profile.carpet);
 		hashField(hash, plan.profile.carpetPpm, 4);
@@ -457,12 +465,10 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 	for (const auto& names : plan.profile.grassMixDecor) for (const auto& name : names) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.overlay) decorNames.push_back(&name);
 	for (const auto& name : plan.profile.interior) decorNames.push_back(&name);
-	for (const auto& name : plan.profile.wallDecor) decorNames.push_back(&name);
 	decorNames.push_back(&plan.profile.waterTree);
 	// Overlays come only with vegetation; a plan of a floor or stage without it carries none, whatever its profile says.
 	const bool overlaid = std::ranges::any_of(plan.profile.overlay, [](const std::string& name) { return !name.empty(); }) ||
-		std::ranges::any_of(plan.profile.interior, [](const std::string& name) { return !name.empty(); }) ||
-		std::ranges::any_of(plan.profile.wallDecor, [](const std::string& name) { return !name.empty(); }) || !plan.profile.carpet.empty();
+		std::ranges::any_of(plan.profile.interior, [](const std::string& name) { return !name.empty(); }) || !plan.profile.carpet.empty();
 	if (!plan.overlays.empty() && (!overlaid || !vegetation || plan.overlays.size() != plan.items.size()))
 		co_return std::unexpected(PreviewError::InvalidPlan);
 	for (size_t i = 0; vegetation && i < decorNames.size(); ++i) {
@@ -475,6 +481,14 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!item) co_return std::unexpected(PreviewError::InvalidItem);
 			decorIds.push_back(item);
 		}
+	}
+	// Wall stacks: their items, checked by the resolver, as the profile lists them.
+	if (!plan.wallStack.empty() && (plan.wallStack.size() != plan.items.size() || plan.profile.wall.empty())) co_return std::unexpected(PreviewError::InvalidPlan);
+	for (const auto& stack : plan.profile.wallStacks) for (const uint16_t id : stack.items) {
+		if (!id) break;
+		const auto definition = g_item_definitions.get(id);
+		if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
+		decorIds.push_back(id);
 	}
 	// Every piece of the carpet brush may end up on a tile, by the alignment of its neighbours.
 	if (vegetation && !plan.profile.carpet.empty()) {
@@ -684,6 +698,8 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!wallDefinition || !wallDefinition.clientId() || wallDefinition.isMetaItem() || wallDefinition.isGroundTile()) co_return std::unexpected(PreviewError::InvalidItem);
 		}
 		if (!plan.doors.empty() && plan.doors[i] && (plan.walls.empty() || !plan.walls[i])) co_return std::unexpected(PreviewError::InvalidPlan);
+		if (!plan.wallStack.empty() && plan.wallStack[i] && (!plan.items[i] || plan.wallStack[i] > plan.profile.wallStacks.size() ||
+			!plan.profile.wallStacks[plan.wallStack[i] - 1].ppm || (!plan.walls.empty() && plan.walls[i]))) co_return std::unexpected(PreviewError::InvalidPlan);
 		if (!plan.fires.empty() && plan.fires[i]) {
 			if (!plan.items[i] || !std::ranges::binary_search(decorIds, plan.fires[i])) co_return std::unexpected(PreviewError::InvalidItem);
 			const auto fireDefinition = g_item_definitions.get(plan.fires[i]);
@@ -908,6 +924,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!plan.walls[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			WallBrush::doWalls(result.buffer_.get(), tile);
+		}
+		// Wall stacks stand where a wall piece would, as the sample built them, after the pieces around them are aligned.
+		for (size_t i = 0; i < plan.wallStack.size(); ++i) {
+			if (!plan.wallStack[i]) continue;
+			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
+			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
+			for (const uint16_t id : plan.profile.wallStacks[plan.wallStack[i] - 1].items) if (id) tile->addItem(Item::Create(id));
 		}
 		// Doors replace the aligned wall piece with RME's own door logic; a wall brush without this kind of door for the
 		// piece that ended up there refuses the preview instead of leaving a closed wall.

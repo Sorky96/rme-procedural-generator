@@ -1579,14 +1579,17 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 				request.profile.carpetPpm = profile.carpet.onGroundPpm;
 			}
 		}
-		// Broken walls: only items one cannot walk through, each in place of a wall piece.
-		for (size_t i = 0, used = 0; config.vegetation && i < profile.wallDecor.size() && used < GroundProfile::overlayCount; ++i) {
-			const auto& decor = profile.wallDecor[i];
-			if (decor.name.empty() || !usableDecor(decor.name) ||
-				rme::procedural::decorItemPassable(rme::procedural::findDecorSource(decor.name, 100000).item(1))) continue;
-			request.profile.wallDecor[used] = decor.name;
-			request.profile.wallDecorPpm[used] = decor.onTreePpm;
-			request.profile.wallDecorVerticalPpm[used++] = decor.onGroundPpm;
+		// Wall stacks whose items this client has; they come with the walls.
+		for (size_t i = 0, used = 0; i < profile.wallStacks.size() && used < GroundProfile::wallStackCount; ++i) {
+			const auto& stack = profile.wallStacks[i];
+			if (stack.items.size() > 4 || !std::ranges::all_of(stack.items, [](uint16_t id) {
+				const auto definition = g_item_definitions.get(id);
+				return definition && definition.clientId() && !definition.isMetaItem() && !definition.isGroundTile();
+			})) continue;
+			auto& placed = request.profile.wallStacks[used++];
+			placed.sides = uint8_t(stack.sides);
+			placed.ppm = stack.ppm;
+			std::ranges::copy(stack.items, placed.items.begin());
 		}
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
 			const auto& overlay = profile.overlays[i];

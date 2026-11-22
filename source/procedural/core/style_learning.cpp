@@ -7,6 +7,7 @@
 #include <format>
 #include <map>
 #include <optional>
+#include <set>
 #include <numeric>
 #ifdef _WIN32
 #define NOMINMAX
@@ -166,10 +167,14 @@ uint64_t seaTiles(int w, int h, Present present, Water water) {
     }
     return count;
 }
-// Overlay items on land by use (rare ones such as spider eggs included); each kept with at least 3 items and its rates on the land tiles with and
+// Overlay items on land by use (rare ones such as spider eggs included; items of the learned wall stacks left out); each
+// kept with at least 2 items and its rates on the land tiles with and
 // without a tree. Items on water or on tiles without mapped ground are left out, as for vegetation.
 std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
-    std::span<const GroundOverlayItems> items) {
+    std::span<const GroundOverlayItems> items, std::span<const StyleWallStack> wallStacks) {
+    // Items of the learned wall stacks belong to the walls, not to the open land.
+    std::set<std::string, std::less<>> walled;
+    for (const auto& stack : wallStacks) for (const uint16_t id : stack.items) walled.insert(rawDecorName(id, DecorKind::None));
     std::vector<uint8_t> landKey(map.groundKeys().size(), 0);
     for (size_t k = 0; k < landKey.size(); ++k) {
         const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
@@ -183,13 +188,13 @@ std::array<StyleOverlay, maxOverlays> chooseOverlays(const SemanticMap& map, std
     }
     std::map<std::string, std::pair<uint64_t, uint64_t>, std::less<>> byName;
     for (const auto& item : items) {
-        if (item.ground >= landKey.size() || !landKey[item.ground]) continue;
+        if (item.ground >= landKey.size() || !landKey[item.ground] || walled.contains(item.name)) continue;
         auto& counts = byName[item.name];
         counts.first += item.onTree; counts.second += item.onGround;
     }
     std::vector<std::pair<uint64_t, std::string_view>> ranked;
     for (const auto& [name, counts] : byName)
-        if (counts.first + counts.second >= 3) ranked.emplace_back(counts.first + counts.second, name);
+        if (counts.first + counts.second >= 2) ranked.emplace_back(counts.first + counts.second, name);
     std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
     std::array<StyleOverlay, maxOverlays> out;
     size_t used = 0;
@@ -274,13 +279,12 @@ std::array<StyleOverlay, maxOverlays> chooseInteriors(const SemanticMap& map, st
         out[k] = {std::string(ranked[k].second), 0, uint32_t(std::min<uint64_t>(1000000, (ranked[k].first * 1000000 + floorTiles / 2) / floorTiles))};
     return out;
 }
-// Broken walls: blocking items standing in the line of a wall, with a wall piece or another such item on both sides
-// along one axis and not along the other, in a run that reaches a wall piece or door within 8 tiles (corners, ends,
-// items beside the wall and rows of rocks do not count). onTreePpm is the share of the straight horizontal wall tiles
-// holding the item, onGroundPpm that of the vertical ones. Walls of caves and mountains are left out; each item is
-// kept with at least 3 of it.
-std::array<StyleOverlay, maxOverlays> chooseWallDecor(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
-    std::span<const PlacedItem> placed) {
+// Wall tiles as the sample built them. A tile is in a wall when it holds a wall piece, a door or a blocking stack and is
+// one (or a stack named as a piece of a wall), or reaches one within 8 tiles along a straight run of such tiles (a row of rocks or a wreck is no wall); caves and
+// mountains are left out. Per side mask of the neighbouring wall tiles, each stack with a piece that is not of a wall
+// brush and seen at least twice is kept (the 8 most seen per mask, 64 in all) with its share of the wall tiles of that mask.
+std::vector<StyleWallStack> chooseWallStacks(const SemanticMap& map, std::span<const KeyMapEntry> mapping,
+    std::span<const PlacedStack> placed) {
     const auto& floor = map.floors().front();
     const int w = floor.bounds.width, h = floor.bounds.height;
     std::vector<uint8_t> cave(map.groundKeys().size(), 0);
@@ -290,43 +294,52 @@ std::array<StyleOverlay, maxOverlays> chooseWallDecor(const SemanticMap& map, st
     }
     const size_t cells = size_t(w) * h;
     const uint32_t walled = bit(Trait::Wall) | bit(Trait::Door);
-    std::vector<uint8_t> line(cells, 0); // a wall piece, a door or a blocking item, not in a cave
     const auto open = [&](size_t i) {
         return (floor.traits[i] & bit(Trait::Present)) && !(floor.ground[i] < cave.size() && cave[floor.ground[i]]);
     };
-    for (size_t i = 0; i < cells; ++i) line[i] = open(i) && (floor.traits[i] & walled);
-    for (const auto& item : placed) if (item.blocking && item.cell < cells && open(item.cell)) line[item.cell] = 1;
-    // 1 = straight horizontal, 2 = straight vertical, 0 = neither (or both), or a run of blocking items that reaches no
-    // wall piece or door within 8 tiles along it (a row of rocks or a wreck is no wall).
-    const auto axis = [&](size_t i) {
-        const int x = int(i % w), y = int(i / w);
-        const bool across = x > 0 && x + 1 < w && line[i - 1] && line[i + 1];
-        const bool down = y > 0 && y + 1 < h && line[i - w] && line[i + w];
-        if (across == down) return 0;
-        const int dx = across ? 1 : 0, dy = across ? 0 : 1;
-        for (const int sign : {-1, 1}) for (int step = 0; step <= 8; ++step) {
-            const int nx = x + sign * step * dx, ny = y + sign * step * dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h) break;
-            const size_t j = size_t(ny) * w + nx;
-            if (!line[j]) break;
-            if (floor.traits[j] & walled) return across ? 1 : 2;
+    std::vector<uint8_t> line(cells, 0);
+    std::vector<int32_t> stackAt(cells, -1);
+    std::vector<uint8_t> anchor(cells, 0); // a wall piece, a door, or a stack named as a piece of a wall
+    for (size_t i = 0; i < cells; ++i) anchor[i] = line[i] = open(i) && (floor.traits[i] & walled);
+    for (size_t k = 0; k < placed.size(); ++k) {
+        const uint32_t cell = placed[k].cell;
+        if (cell >= cells || !open(cell) || placed[k].items.empty() || placed[k].items.size() > maxStackItems) continue;
+        line[cell] = 1;
+        stackAt[cell] = int32_t(k);
+        anchor[cell] = anchor[cell] || placed[k].wallLike;
+    }
+    constexpr std::array<std::pair<int, int>, 4> sides {{{0, -1}, {1, 0}, {0, 1}, {-1, 0}}}; // north, east, south, west
+    const auto anchored = [&](int x, int y) {
+        if (anchor[size_t(y) * w + x]) return true;
+        for (const auto [dx, dy] : sides) for (int step = 1; step <= 8; ++step) {
+            const int nx = x + dx * step, ny = y + dy * step;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h || !line[size_t(ny) * w + nx]) break;
+            if (anchor[size_t(ny) * w + nx]) return true;
         }
-        return 0;
+        return false;
     };
-    std::array<uint64_t, 3> straight {};
-    for (size_t i = 0; i < cells; ++i) if (line[i]) ++straight[axis(i)];
-    std::map<std::string, std::array<uint64_t, 3>, std::less<>> byName;
-    for (const auto& item : placed)
-        if (item.blocking && item.cell < cells && line[item.cell]) ++byName[item.name][axis(item.cell)];
-    std::vector<std::pair<uint64_t, std::string_view>> ranked;
-    for (const auto& [name, counts] : byName)
-        if (counts[1] + counts[2] >= 3) ranked.emplace_back(counts[1] + counts[2], name);
-    std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
-    const auto rate = [](uint64_t n, uint64_t of) { return of ? uint32_t(std::min<uint64_t>(1000000, (n * 1000000 + of / 2) / of)) : 0u; };
-    std::array<StyleOverlay, maxOverlays> out;
-    for (size_t k = 0; k < std::min(ranked.size(), out.size()); ++k) {
-        const auto& counts = byName.find(ranked[k].second)->second;
-        out[k] = {std::string(ranked[k].second), rate(counts[1], straight[1]), rate(counts[2], straight[2])};
+    std::array<uint64_t, 16> wallTiles {};
+    std::map<std::pair<uint32_t, std::vector<uint16_t>>, uint64_t> seen; // (sides, stack) -> tiles
+    for (size_t i = 0; i < cells; ++i) {
+        const int x = int(i % w), y = int(i / w);
+        if (!line[i] || !anchored(x, y)) continue;
+        uint32_t mask = 0;
+        for (size_t s = 0; s < sides.size(); ++s) {
+            const int nx = x + sides[s].first, ny = y + sides[s].second;
+            if (nx >= 0 && ny >= 0 && nx < w && ny < h && line[size_t(ny) * w + nx]) mask |= 1u << s;
+        }
+        ++wallTiles[mask];
+        if (stackAt[i] >= 0 && !placed[size_t(stackAt[i])].plainWall) ++seen[{mask, placed[size_t(stackAt[i])].items}];
+    }
+    std::vector<std::pair<uint64_t, const std::pair<uint32_t, std::vector<uint16_t>>*>> ranked;
+    for (const auto& entry : seen) if (entry.second >= 2) ranked.emplace_back(entry.second, &entry.first);
+    std::ranges::sort(ranked, [](const auto& a, const auto& b) { return a.first != b.first ? a.first > b.first : *a.second < *b.second; });
+    std::array<size_t, 16> perMask {};
+    std::vector<StyleWallStack> out;
+    for (const auto& [count, key] : ranked) {
+        if (out.size() == maxWallStacks) break;
+        if (perMask[key->first]++ == 8) continue;
+        out.push_back({key->first, uint32_t(count * 1000000 / wallTiles[key->first]), key->second});
     }
     return out;
 }
@@ -462,7 +475,7 @@ void promoteMainLand(std::vector<KeyMapEntry>& mapping, const SemanticMap& map) 
 
 std::expected<LearningSample, std::string> inspectLearningSample(const SemanticMap& map,
     std::span<const KeyMapEntry> mapping, std::span<const GroundDoodadItems> doodadItems, bool permission, std::stop_token stop,
-    std::span<const GroundOverlayItems> overlayItems, std::span<const GroundDoodadItems> wallBrushes, std::span<const PlacedItem> placedItems,
+    std::span<const GroundOverlayItems> overlayItems, std::span<const GroundDoodadItems> wallBrushes, std::span<const PlacedStack> placedStacks,
     std::span<const GroundDoodadItems> carpetItems) try {
     if (!permission) return std::unexpected("Confirm your right to use this map before analysis.");
     if (stop.stop_requested()) return std::unexpected("Analysis cancelled.");
@@ -590,9 +603,9 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     }
     measureWater(map, mapping, sample);
     sample.buildings = findBuildings(map, mapping, wallBrushes);
-    sample.overlays = chooseOverlays(map, mapping, overlayItems);
+    sample.wallStacks = chooseWallStacks(map, mapping, placedStacks);
+    sample.overlays = chooseOverlays(map, mapping, overlayItems, sample.wallStacks);
     sample.interiors = chooseInteriors(map, mapping, overlayItems);
-    sample.wallDecor = chooseWallDecor(map, mapping, placedItems);
     sample.carpet = chooseCarpet(map, mapping, carpetItems);
     sample.rockOutlinePermille = measureRockOutline(map, mapping);
     return sample;
@@ -753,7 +766,7 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.overlays = sample.overlays;
     profile.buildings = sample.buildings;
     profile.interiors = sample.interiors;
-    profile.wallDecor = sample.wallDecor;
+    profile.wallStacks = sample.wallStacks;
     profile.carpet = sample.carpet;
     profile.rockOutlinePermille = sample.rockOutlinePermille;
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");

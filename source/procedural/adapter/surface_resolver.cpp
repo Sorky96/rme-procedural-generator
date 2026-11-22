@@ -37,7 +37,7 @@ constexpr std::array<uint64_t, decorKindCount> decorStreams {
 constexpr uint64_t maxDecorChance = 100000;
 constexpr uint64_t treeMixStream = 0x73325f6d69787472ULL, bushMixStream = 0x73325f6d69786275ULL, mixDecorStream = 0x73325f6d69786465ULL;
 constexpr uint64_t overlayStream = 0x73325f6f7665726cULL; // "s2_overl"
-constexpr uint64_t wallDecorStream = 0x73325f77616c6c64ULL; // "s2_walld"
+constexpr uint64_t wallStackStream = 0x73325f77616c6c73ULL; // "s2_walls"
 constexpr uint64_t carpetStream = 0x73325f6361727065ULL; // "s2_carpe"
 constexpr uint64_t variantStream = 0x73325f7661726e74ULL; // "s2_varnt"
 constexpr uint32_t overlayPatchCut = 39000; // grassPatchValue at or above this: 32% of the cells (measured on 1000 x 1000)
@@ -425,12 +425,20 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			return std::unexpected(ResolveError::InvalidProfile);
 		overlaid = overlaid || (vegetation && !name.empty());
 	}
-	for (size_t i = 0; i < GroundProfile::overlayCount; ++i) {
-		const auto& name = profile.wallDecor[i];
-		if (name.empty() != (profile.wallDecorPpm[i] + profile.wallDecorVerticalPpm[i] == 0) || name.size() > 256 ||
-			profile.wallDecorPpm[i] > 1000000 || profile.wallDecorVerticalPpm[i] > 1000000)
+	// Wall stacks: real items, at most 1000000 ppm per side mask; they come with the walls.
+	std::array<uint64_t, 16> stackShare {};
+	bool stacked = false;
+	for (const auto& stack : profile.wallStacks) {
+		if (!stack.ppm) { if (stack != GroundProfile::WallStack {}) return std::unexpected(ResolveError::InvalidProfile); continue; }
+		if (stack.sides > 15 || stack.ppm > 1000000 || (stackShare[stack.sides] += stack.ppm) > 1000000 || !stack.items[0])
 			return std::unexpected(ResolveError::InvalidProfile);
-		overlaid = overlaid || (vegetation && !name.empty());
+		for (size_t k = 1; k < stack.items.size(); ++k) if (stack.items[k] && !stack.items[k - 1]) return std::unexpected(ResolveError::InvalidProfile);
+		for (const uint16_t id : stack.items) {
+			if (!id) break;
+			const auto definition = g_item_definitions.get(id);
+			if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
+		}
+		stacked = stacked || walled;
 	}
 	if (profile.carpet.empty() != (profile.carpetPpm == 0) || profile.carpet.size() > 256 || profile.carpetPpm > 1000000)
 		return std::unexpected(ResolveError::InvalidProfile);
@@ -445,7 +453,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 	}
 	if (grid.cells.size() > (std::numeric_limits<size_t>::max() - sizeof(GroundPlan)) / sizeof(uint16_t) ||
 		grid.cells.size() > std::vector<uint16_t>().max_size()) return std::unexpected(ResolveError::PlanLimit);
-	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0) + (overlaid ? 1 : 0)) + (doored ? 1 : 0));
+	uint64_t payloadBytes = sizeof(GroundPlan) + uint64_t(grid.cells.size()) * (sizeof(uint16_t) * ((vegetation ? 2 : 1) + (fired ? 1 : 0) + (overlaid ? 1 : 0)) + (doored ? 1 : 0) + (stacked ? 1 : 0));
 	if (payloadBytes > maxPlanBytes) return std::unexpected(ResolveError::PlanLimit);
 	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.active(), profile.activeDecor()})) {
 		if (name.empty() || name.size() > 256) return std::unexpected(ResolveError::InvalidProfile);
@@ -468,7 +476,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (name->size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name->size() + 1;
 	}
-	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 3> {profile.overlay, profile.interior, profile.wallDecor})) {
+	for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {profile.overlay, profile.interior})) {
 		if (name.empty()) continue;
 		if (name.size() + 1 > maxPlanBytes - payloadBytes) return std::unexpected(ResolveError::PlanLimit);
 		payloadBytes += name.size() + 1;
@@ -584,16 +592,6 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
 				if (g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
 			interiors[index] = *checked;
-		}
-		// Broken walls: blocking items, each in place of a wall piece.
-		std::array<DecorSource, GroundProfile::overlayCount> wallDecors {};
-		for (size_t index = 0; index < GroundProfile::overlayCount; ++index) {
-			if (!overlaid || !walled || profile.wallDecor[index].empty()) continue;
-			const auto checked = checkDoodad(profile.wallDecor[index]);
-			if (!checked) return std::unexpected(checked.error());
-			for (uint64_t roll = 1; roll <= (checked->raw ? 1 : checked->total); ++roll)
-				if (!g_item_definitions.get(checked->item(roll)).hasFlag(ItemFlag::Unpassable)) return std::unexpected(ResolveError::InvalidItem);
-			wallDecors[index] = *checked;
 		}
 		// The carpet of the buildings: its brush, and the Floor cells it covers (carpetPpm of the inner Floor cells, those
 		// with Floor on all four sides so no wall stands on them, the ones with the highest patch noise).
@@ -859,29 +857,29 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 				if (!result.overlays[i]) return std::unexpected(ResolveError::InvalidItem);
 			}
 		}
-		// Broken walls, once every wall piece is known: a piece in the middle of a straight run (its neighbours along one
-		// axis are pieces, along the other not) may give way to a blocking item learned for that direction; corners, ends
-		// and doors keep their piece. Each cell rolls by a hash of its map position, so the other streams are not shifted.
-		if (std::ranges::any_of(wallDecors, [](const DecorSource& source) { return bool(source); }) && !result.walls.empty()) {
+		// Wall stacks, once every wall piece is known: a wall cell (doors keep their piece) may take a stack learned for the
+		// sides its neighbouring pieces are on, in place of its piece. The masks are read before any piece gives way; each
+		// cell rolls by a hash of its map position, so the other streams are not shifted.
+		if (stacked && !result.walls.empty()) {
+			result.wallStack.assign(grid.cells.size(), 0);
 			const size_t width = grid.region.width, height = grid.region.height;
-			std::vector<std::pair<size_t, bool>> straight; // cell, vertical
+			std::vector<std::pair<size_t, uint8_t>> pieces; // cell, sides
 			for (size_t i = 0; i < grid.cells.size(); ++i) {
-				if (!result.walls[i] || result.decor[i] || (!result.doors.empty() && result.doors[i])) continue;
+				if (!result.walls[i] || (!result.doors.empty() && result.doors[i])) continue;
 				const size_t x = i % width, y = i / width;
-				const bool across = x && x + 1 < width && result.walls[i - 1] && result.walls[i + 1];
-				const bool down = y && y + 1 < height && result.walls[i - width] && result.walls[i + width];
-				if (across != down) straight.emplace_back(i, down);
+				const uint8_t sides = uint8_t((y && result.walls[i - width] ? 1 : 0) | (x + 1 < width && result.walls[i + 1] ? 2 : 0) |
+					(y + 1 < height && result.walls[i + width] ? 4 : 0) | (x && result.walls[i - 1] ? 8 : 0));
+				pieces.emplace_back(i, sides);
 			}
-			for (const auto [i, vertical] : straight) {
+			for (const auto [i, sides] : pieces) {
 				const uint64_t ax = uint64_t(grid.region.x + int64_t(i % width)), ay = uint64_t(grid.region.y + int64_t(i / width));
-				const uint64_t hash = mixHash(input.config.seed ^ wallDecorStream ^ mixHash(ax * 0x100000001b3ULL ^ ay));
-				const uint64_t chance = hash % 1000000, pick = mixHash(hash);
+				const uint64_t chance = mixHash(input.config.seed ^ wallStackStream ^ mixHash(ax * 0x100000001b3ULL ^ ay)) % 1000000;
 				uint64_t upTo = 0;
-				for (size_t k = 0; k < GroundProfile::overlayCount; ++k) {
-					if (!wallDecors[k]) continue;
-					upTo += vertical ? profile.wallDecorVerticalPpm[k] : profile.wallDecorPpm[k];
+				for (size_t k = 0; k < profile.wallStacks.size(); ++k) {
+					if (profile.wallStacks[k].sides != sides || !profile.wallStacks[k].ppm) continue;
+					upTo += profile.wallStacks[k].ppm;
 					if (chance >= upTo) continue;
-					result.decor[i] = wallDecors[k].item(pick % wallDecors[k].total + 1);
+					result.wallStack[i] = uint8_t(k + 1);
 					result.walls[i] = 0;
 					break;
 				}

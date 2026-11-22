@@ -152,7 +152,7 @@ struct StyleMix {
 	uint32_t permille = 0; // 1..1000 when brush is set, else 0
 	bool operator==(const StyleMix&) const = default;
 };
-inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 16;
+inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 32;
 
 // An item laid over other vegetation or bare land (cobwebs, leaves, debris): any learned item that is not a tree,
 // bush or stone. `name` is a doodad brush or "raw:item:<id>"; it goes on onTreePpm of the generated trees and
@@ -184,6 +184,16 @@ struct StyleBuildings {
 	bool operator==(const StyleBuildings&) const = default;
 };
 
+inline constexpr size_t maxWallStacks = 64, maxStackItems = 4;
+// One wall tile of the sample: the items stacked on it (bottom first, 1..maxStackItems, at least one not a piece of a wall
+// brush), the sides with a neighbouring wall tile (bit 0 north, 1 east, 2 south, 3 west) and the share of the wall
+// tiles with those sides that held it, ppm. The stacks of one mask sum to at most 1000000; the rest keep the wall brush.
+struct StyleWallStack {
+	uint32_t sides = 0, ppm = 0;
+	std::vector<uint16_t> items;
+	bool operator==(const StyleWallStack&) const = default;
+};
+
 struct StyleProfile {
 	std::string client;
 	std::string otbSha256, datSha256;   // lowercase hex of the client's items.otb and Tibia.dat
@@ -210,9 +220,9 @@ struct StyleProfile {
 	// Overlay items inside buildings (rubble, bones, drifted sand): onGroundPpm is the share of building floor tiles that
 	// hold it; onTreePpm stays 0.
 	std::array<StyleOverlay, maxOverlays> interiors;
-	// Broken walls (blocking items in the line of a wall, see chooseWallDecor): onTreePpm is the share of the straight
-	// horizontal wall tiles holding the item instead of a wall piece, onGroundPpm that of the vertical ones.
-	std::array<StyleOverlay, maxOverlays> wallDecor;
+	// Wall tiles as the sample built them: whole item stacks (bottom first) standing in the line of a wall, per side mask of
+	// the neighbouring wall tiles, each on ppm of the wall tiles with that mask (see StyleWallStack).
+	std::vector<StyleWallStack> wallStacks;
 	// The carpet brush most laid on building floors (drifted sand, rugs); onGroundPpm is the share of the building floor
 	// tiles it covers, onTreePpm stays 0; empty name = none.
 	StyleOverlay carpet;

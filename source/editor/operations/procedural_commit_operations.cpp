@@ -86,13 +86,13 @@ DrawOperations::commitValidatedTerrain(Editor& editor, const PreparedTerrain& pr
 			&unit.plan.profile.buildingStairs, &unit.plan.profile.dungeonFloor, &unit.plan.profile.dungeonWall, &unit.plan.profile.dungeonStairs, &unit.plan.profile.dungeonDescent}) {
 			if (!charge(name->capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
-		for (const auto& name : std::views::join(std::array<std::span<const std::string>, 3> {unit.plan.profile.overlay, unit.plan.profile.interior, unit.plan.profile.wallDecor}))
+		for (const auto& name : std::views::join(std::array<std::span<const std::string>, 2> {unit.plan.profile.overlay, unit.plan.profile.interior}))
 			if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		for (const auto layer : {std::span(unit.plan.walls), std::span(unit.plan.fires), std::span(unit.plan.overlays), std::span(unit.plan.entrances),
 			std::span(unit.plan.exits), std::span(unit.plan.stairs)}) {
 			if (!charge(layer.size(), sizeof(uint16_t))) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}
-		if (!charge(unit.plan.caveFloor.capacity()) || !charge(unit.plan.doors.capacity())) return std::unexpected(TerrainCommitFailure::MemoryLimit);
+		if (!charge(unit.plan.caveFloor.capacity()) || !charge(unit.plan.doors.capacity()) || !charge(unit.plan.wallStack.capacity())) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		for (const auto& name : unit.plan.profile.active()) {
 			if (!charge(name.capacity() + 1 + kSnapshotAllocationOverhead)) return std::unexpected(TerrainCommitFailure::MemoryLimit);
 		}

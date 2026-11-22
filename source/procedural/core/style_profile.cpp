@@ -196,10 +196,12 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	if (p.rockOutlinePermille > 1000) return std::unexpected(ProfileError::InvalidRange);
 	if (bad(p.carpet.name) || p.carpet.onTreePpm || p.carpet.onGroundPpm > 1000000 || p.carpet.name.empty() != (p.carpet.onGroundPpm == 0) ||
 		(!p.carpet.name.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
-	for (const StyleOverlay& o : p.wallDecor) {
-		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
-		if (o.onTreePpm > 1000000 || o.onGroundPpm > 1000000 || o.name.empty() != (o.onTreePpm + o.onGroundPpm == 0) || (!o.name.empty() && !p.buildings.density))
+	if (p.wallStacks.size() > maxWallStacks || (!p.wallStacks.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
+	std::array<uint64_t, 16> stackShare {};
+	for (const StyleWallStack& s : p.wallStacks) {
+		if (s.sides > 15 || !s.ppm || s.items.empty() || s.items.size() > maxStackItems || std::ranges::find(s.items, uint16_t(0)) != s.items.end())
 			return std::unexpected(ProfileError::InvalidRange);
+		if ((stackShare[s.sides] += s.ppm) > 1000000) return std::unexpected(ProfileError::InvalidRange);
 	}
 	for (const StyleOverlay& o : p.overlays) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
@@ -257,7 +259,11 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 		out += std::format("buildings\t{}\t{}\t{}\t{}\t{}\t{}\n", b.density, b.ruinPercent, b.floorPercent, b.compoundPercent, b.floor,
 			b.wall.empty() ? std::string("-") : b.wall);
 	for (const auto& o : p.interiors) if (!o.name.empty()) out += std::format("interior\t{}\t{}\n", o.onGroundPpm, o.name);
-	for (const auto& o : p.wallDecor) if (!o.name.empty()) out += std::format("walldecor\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
+	for (const auto& s : p.wallStacks) {
+		out += std::format("wallstack\t{}\t{}\t", s.sides, s.ppm);
+		for (size_t k = 0; k < s.items.size(); ++k) out += std::format("{}{}", k ? "," : "", s.items[k]);
+		out += '\n';
+	}
 	if (!p.carpet.name.empty()) out += std::format("carpet\t{}\t{}\n", p.carpet.onGroundPpm, p.carpet.name);
 	if (p.rockOutlinePermille) out += std::format("rockoutline\t{}\n", p.rockOutlinePermille);
 	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
@@ -413,12 +419,20 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             if (!p.carpet.name.empty() || !parseU32(f[1], p.carpet.onGroundPpm) || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
             p.carpet.name = f[2];
         } else if (type == "walldecor" && f.size() == 4) {
-            StyleOverlay decor;
-            if (!parseU32(f[1], decor.onTreePpm) || !parseU32(f[2], decor.onGroundPpm) || f[3].empty()) return std::unexpected(ProfileError::BadFormat);
-            decor.name = f[3];
-            const auto slot = std::ranges::find_if(p.wallDecor, [](const StyleOverlay& o) { return o.name.empty(); });
-            if (slot == p.wallDecor.end()) return std::unexpected(ProfileError::BadFormat);
-            *slot = std::move(decor);
+            // Single broken-wall items of earlier builds; wall stacks replace them.
+        } else if (type == "wallstack" && f.size() == 4) {
+            StyleWallStack stack;
+            if (!parseU32(f[1], stack.sides) || !parseU32(f[2], stack.ppm)) return std::unexpected(ProfileError::BadFormat);
+            for (std::string_view rest = f[3]; ;) {
+                const size_t comma = rest.find(',');
+                uint32_t id = 0;
+                if (!parseU32(rest.substr(0, comma), id) || !id || id > UINT16_MAX || stack.items.size() == maxStackItems) return std::unexpected(ProfileError::BadFormat);
+                stack.items.push_back(uint16_t(id));
+                if (comma == std::string_view::npos) break;
+                rest.remove_prefix(comma + 1);
+            }
+            if (p.wallStacks.size() == maxWallStacks) return std::unexpected(ProfileError::BadFormat);
+            p.wallStacks.push_back(std::move(stack));
         } else if (type == "overlay" && f.size() == 4) {
             StyleOverlay overlay;
             if (!parseU32(f[1], overlay.onTreePpm) || !parseU32(f[2], overlay.onGroundPpm) || f[3].empty())

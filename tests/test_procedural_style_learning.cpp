@@ -69,8 +69,8 @@ int main(int argc, char** argv) {
         const std::vector<GroundDoodadItems> palms{{grass, "mangrove tree (on water)", 9000}, {grass, "jungle palm", 1300},
             {grass, "oak tree", 1200}, {grass, "pine tree", 1100}, {grass, "birch tree", 1000}, {grass, "fir tree", 900},
             {swamp, "swamp plants", 512}, {grass, "grass tufts", 600}, {grass, "tall jungle grass", 300}, {grass, "bushes", 100}, {sea, "raw:tree:4000", 50000}};
-        // Cobwebs on 400 of the 3584 trees (in parts per million), none on the 512 swamp tiles; 2 of anything is too few, and on water never.
-        const std::vector<GroundOverlayItems> webs{{grass, "raw:item:999", 400, 0}, {grass, "raw:item:998", 1, 1}, {sea, "raw:item:997", 900, 900}};
+        // Cobwebs on 400 of the 3584 trees (in parts per million), none on the 512 swamp tiles; 1 of anything is too few, and on water never.
+        const std::vector<GroundOverlayItems> webs{{grass, "raw:item:999", 400, 0}, {grass, "raw:item:998", 1, 0}, {sea, "raw:item:997", 900, 900}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true, {}, webs);
         check(learned && learned->overlays[0] == StyleOverlay{"raw:item:999", 111607, 0} && learned->overlays[1].name.empty(), "overlays by use on land");
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned, the RAW tree on water left out");
@@ -168,19 +168,19 @@ int main(int argc, char** argv) {
         check(learned && learned->interiors[0] == StyleOverlay{"raw:item:42", 0, 200000} && learned->interiors[1].name.empty(), "rubble inside buildings");
         check(learned && learned->buildings.density == 32 && learned->buildings.ruinPercent == 50 &&
             learned->buildings.floor == "sandstone floor" && learned->buildings.wall == "limestone wall", "buildings and ruins, not caves");
-        // Straight wall runs: 6 horizontal tiles (house top and bottom) and 8 vertical ones (house sides, one in each ruin wall);
-        // the cave's walls are the mountain's. Broken walls stand on the house sides (6 of them on the straight part, the
-        // corners do not count) and on half of the horizontal run; pillars beside the walls and one in the cave do not count.
-        std::vector<PlacedItem> placed;
+        // Vertical wall tiles (wall pieces north and south): 3 on each house side and one in each ruin wall, 8 in all. A stack
+        // of two items stands on 3 of them, another only once (dropped); a blocking stack inside the house reaches no wall
+        // and one in the cave is the mountain's. The stack's items on the open sand are no longer loose overlays.
+        std::vector<PlacedStack> placed;
         const auto at = [](int x, int y) { return uint32_t(y * 64 + x); };
-        for (int y = 10; y < 15; ++y) { placed.push_back({at(10, y), "raw:item:50", true}); placed.push_back({at(14, y), "raw:item:50", true}); }
-        for (int x = 11; x < 14; ++x) placed.push_back({at(x, 10), "raw:item:52", true});
-        for (const auto [x, y] : {std::pair{9, 12}, {15, 12}, {12, 15}}) placed.push_back({at(x, y), "raw:item:53", true});
-        placed.push_back({at(9, 9), "raw:item:51", false});
-        placed.push_back({at(51, 51), "raw:item:50", true});
-        const auto decorated = inspectLearningSample(map, desert, {}, true, {}, {}, walls, placed);
-        check(decorated && decorated->wallDecor[0] == StyleOverlay{"raw:item:50", 0, 750000} &&
-            decorated->wallDecor[1] == StyleOverlay{"raw:item:52", 500000, 0} && decorated->wallDecor[2].name.empty(), "broken walls by direction");
+        for (const auto [x, y] : {std::pair{10, 11}, {10, 12}, {14, 12}}) placed.push_back({at(x, y), {50, 60}, false});
+        placed.push_back({at(14, 11), {70}, false});
+        placed.push_back({at(12, 12), {80}, false});
+        placed.push_back({at(51, 51), {50, 60}, false});
+        const std::vector<GroundOverlayItems> loose{{sand, "raw:item:50", 0, 5}, {sand, "raw:item:90", 0, 2}};
+        const auto decorated = inspectLearningSample(map, desert, {}, true, {}, loose, walls, placed);
+        check(decorated && decorated->wallStacks == std::vector<StyleWallStack>{{5, 375000, {50, 60}}}, "wall stacks by sides");
+        check(decorated && decorated->overlays[0].name == "raw:item:90" && decorated->overlays[1].name.empty(), "wall stack items are no loose overlays");
         // Drifted sand laid with a carpet brush on 25 of the 50 floor tiles; the same carpet on sand outside does not count.
         const std::vector<GroundDoodadItems> carpets{{floorKey, "sand gravel", 25}, {sand, "sand gravel", 40}, {floorKey, "rug", 2}};
         const auto carpeted = inspectLearningSample(map, desert, {}, true, {}, {}, walls, {}, carpets);
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
         if (carpeted) both.carpet = carpeted->carpet;
         both.rockOutlinePermille = 400;
         const auto withDecor = decorated ? fitLearningSample(both, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
-        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall decor, carpet and rock outline round-trip");
+        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall stacks, carpet and rock outline round-trip");
     }
     {
         // A 4 x 4 mountain on grass: 20 grass tiles touch it, 15 of them carry the optional border.
