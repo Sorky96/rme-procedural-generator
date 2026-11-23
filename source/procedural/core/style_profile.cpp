@@ -187,6 +187,34 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	}
 	// The brush of the trees standing in the water is set exactly when they are on.
 	if (bad(p.shoreTree) || p.shoreTree.empty() != (!p.decorTuning || !p.decorTuning->shoreTreePermille)) return std::unexpected(ProfileError::InvalidRange);
+	if (const auto& b = p.buildings; bad(b.floor) || bad(b.wall) || b.density > 100 || b.ruinPercent > 100 || !b.floorPercent || b.floorPercent > 100 || b.compoundPercent > 100 ||
+		b.floor.empty() != (b.density == 0) || (!b.density && (b.ruinPercent || !b.wall.empty()))) return std::unexpected(ProfileError::InvalidRange);
+	for (const StyleOverlay& o : p.interiors) {
+		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
+		if (o.onTreePpm || o.onGroundPpm > 1000000 || o.name.empty() != (o.onGroundPpm == 0)) return std::unexpected(ProfileError::InvalidRange);
+	}
+	if (p.rockOutlinePermille > 1000 || p.unreachedRockPermille > 1000 || p.unreachedWalkPermille > 1000) return std::unexpected(ProfileError::InvalidRange);
+	if (bad(p.carpet.name) || p.carpet.onTreePpm || p.carpet.onGroundPpm > 1000000 || p.carpet.name.empty() != (p.carpet.onGroundPpm == 0) ||
+		(!p.carpet.name.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
+	if (p.wallStacks.size() > maxWallStacks || (!p.wallStacks.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
+	std::array<uint64_t, 16> stackShare {};
+	for (const StyleWallStack& s : p.wallStacks) {
+		if (s.sides > 15 || !s.ppm || s.items.empty() || s.items.size() > maxStackItems || std::ranges::find(s.items, uint16_t(0)) != s.items.end())
+			return std::unexpected(ProfileError::InvalidRange);
+		if ((stackShare[s.sides] += s.ppm) > 1000000) return std::unexpected(ProfileError::InvalidRange);
+	}
+	if (p.structures.size() > maxStructures) return std::unexpected(ProfileError::InvalidRange);
+	for (const StyleStructure& s : p.structures) {
+		if (!s.ppm || s.ppm > 1000000 || !s.width || !s.height || s.width > maxStructureSide || s.height > maxStructureSide ||
+			s.cells.empty() || s.cells.size() > maxStructureCells || (!s.water.empty() && s.water.size() != size_t(s.width) * s.height) ||
+			std::ranges::any_of(s.water, [](uint8_t w) { return w > 1; })) return std::unexpected(ProfileError::InvalidRange);
+		std::vector<uint8_t> used(size_t(s.width) * s.height, 0);
+		for (const StyleStructureCell& c : s.cells) {
+			if (c.dx >= s.width || c.dy >= s.height || used[size_t(c.dy) * s.width + c.dx]++ || (c.items.empty() && !c.ground) ||
+				c.ground > UINT16_MAX || c.items.size() > maxStructureCellItems || std::ranges::find(c.items, uint16_t(0)) != c.items.end())
+				return std::unexpected(ProfileError::InvalidRange);
+		}
+	}
 	for (const StyleOverlay& o : p.overlays) {
 		if (bad(o.name)) return std::unexpected(ProfileError::InvalidKey);
 		if (o.onTreePpm > 1000000 || o.onGroundPpm > 1000000 || o.name.empty() != (o.onTreePpm + o.onGroundPpm == 0))
@@ -239,6 +267,30 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	}
 	for (const auto& mix : p.treeMix) if (!mix.brush.empty()) out += std::format("mix\tTree\t{}\t{}\n", mix.permille, mix.brush);
 	for (const auto& mix : p.bushMix) if (!mix.brush.empty()) out += std::format("mix\tBush\t{}\t{}\n", mix.permille, mix.brush);
+	if (const auto& b = p.buildings; b.density)
+		out += std::format("buildings\t{}\t{}\t{}\t{}\t{}\t{}\n", b.density, b.ruinPercent, b.floorPercent, b.compoundPercent, b.floor,
+			b.wall.empty() ? std::string("-") : b.wall);
+	for (const auto& o : p.interiors) if (!o.name.empty()) out += std::format("interior\t{}\t{}\n", o.onGroundPpm, o.name);
+	for (const auto& s : p.wallStacks) {
+		out += std::format("wallstack\t{}\t{}\t", s.sides, s.ppm);
+		for (size_t k = 0; k < s.items.size(); ++k) out += std::format("{}{}", k ? "," : "", s.items[k]);
+		out += '\n';
+	}
+	for (const auto& s : p.structures) {
+		out += std::format("structure\t{}\t{}\t{}\t", s.ppm, s.width, s.height);
+		for (size_t c = 0; c < s.cells.size(); ++c) {
+			out += std::format("{}{},{},{}", c ? ";" : "", s.cells[c].dx, s.cells[c].dy, s.cells[c].ground);
+			for (const uint16_t id : s.cells[c].items) out += std::format(",{}", id);
+		}
+		out += '\t';
+		if (s.water.empty()) out += '-';
+		for (const uint8_t w : s.water) out += char('0' + w);
+		out += '\n';
+	}
+	if (!p.carpet.name.empty()) out += std::format("carpet\t{}\t{}\n", p.carpet.onGroundPpm, p.carpet.name);
+	if (p.rockOutlinePermille) out += std::format("rockoutline\t{}\n", p.rockOutlinePermille);
+	if (p.unreachedRockPermille || p.unreachedWalkPermille)
+		out += std::format("unreached\t{}\t{}\n", p.unreachedRockPermille, p.unreachedWalkPermille);
 	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
 	if (p.target) {
 		out += "target\tshares";
@@ -372,6 +424,77 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             const auto slot = std::ranges::find_if(slots, [](const StyleMix& m) { return m.brush.empty(); });
             if (slot == slots.end()) return std::unexpected(ProfileError::BadFormat);
             *slot = std::move(mix);
+        } else if (type == "buildings" && f.size() == 7 && !p.buildings.density) {
+            if (!parseU32(f[1], p.buildings.density) || !parseU32(f[2], p.buildings.ruinPercent) || !parseU32(f[3], p.buildings.floorPercent) ||
+                !parseU32(f[4], p.buildings.compoundPercent) || f[5].empty() || f[6].empty())
+                return std::unexpected(ProfileError::BadFormat);
+            p.buildings.floor = f[5];
+            p.buildings.wall = f[6] == "-" ? std::string() : std::string(f[6]);
+            if (!p.buildings.density) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "interior" && f.size() == 3) {
+            StyleOverlay interior;
+            if (!parseU32(f[1], interior.onGroundPpm) || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
+            interior.name = f[2];
+            const auto slot = std::ranges::find_if(p.interiors, [](const StyleOverlay& o) { return o.name.empty(); });
+            if (slot == p.interiors.end()) return std::unexpected(ProfileError::BadFormat);
+            *slot = std::move(interior);
+        } else if (type == "rockoutline" && f.size() == 2) {
+            if (p.rockOutlinePermille || !parseU32(f[1], p.rockOutlinePermille) || !p.rockOutlinePermille) return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "unreached" && f.size() == 3) {
+            if (p.unreachedRockPermille || p.unreachedWalkPermille || !parseU32(f[1], p.unreachedRockPermille) ||
+                !parseU32(f[2], p.unreachedWalkPermille) || (!p.unreachedRockPermille && !p.unreachedWalkPermille))
+                return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "carpet" && f.size() == 3) {
+            if (!p.carpet.name.empty() || !parseU32(f[1], p.carpet.onGroundPpm) || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
+            p.carpet.name = f[2];
+        } else if (type == "walldecor" && f.size() == 4) {
+            // Single broken-wall items of earlier builds; wall stacks replace them.
+        } else if (type == "wallstack" && f.size() == 4) {
+            StyleWallStack stack;
+            if (!parseU32(f[1], stack.sides) || !parseU32(f[2], stack.ppm)) return std::unexpected(ProfileError::BadFormat);
+            for (std::string_view rest = f[3]; ;) {
+                const size_t comma = rest.find(',');
+                uint32_t id = 0;
+                if (!parseU32(rest.substr(0, comma), id) || !id || id > UINT16_MAX || stack.items.size() == maxStackItems) return std::unexpected(ProfileError::BadFormat);
+                stack.items.push_back(uint16_t(id));
+                if (comma == std::string_view::npos) break;
+                rest.remove_prefix(comma + 1);
+            }
+            if (p.wallStacks.size() == maxWallStacks) return std::unexpected(ProfileError::BadFormat);
+            p.wallStacks.push_back(std::move(stack));
+        } else if (type == "structure" && f.size() == 6) {
+            StyleStructure structure;
+            if (!parseU32(f[1], structure.ppm) || !parseU32(f[2], structure.width) || !parseU32(f[3], structure.height))
+                return std::unexpected(ProfileError::BadFormat);
+            // Cells "dx,dy,ground,id,id,...", separated by ';'; then the water of the box as 0/1 per tile, or "-".
+            for (std::string_view rest = f[4]; ;) {
+                const size_t semicolon = rest.find(';');
+                std::string_view cell = rest.substr(0, semicolon);
+                std::vector<uint32_t> numbers;
+                for (;;) {
+                    const size_t comma = cell.find(',');
+                    uint32_t value = 0;
+                    if (!parseU32(cell.substr(0, comma), value) || numbers.size() == 3 + maxStructureCellItems) return std::unexpected(ProfileError::BadFormat);
+                    numbers.push_back(value);
+                    if (comma == std::string_view::npos) break;
+                    cell.remove_prefix(comma + 1);
+                }
+                if (numbers.size() < 3 || structure.cells.size() == maxStructureCells) return std::unexpected(ProfileError::BadFormat);
+                StyleStructureCell parsed {numbers[0], numbers[1], numbers[2], {}};
+                for (size_t k = 3; k < numbers.size(); ++k) {
+                    if (!numbers[k] || numbers[k] > UINT16_MAX) return std::unexpected(ProfileError::BadFormat);
+                    parsed.items.push_back(uint16_t(numbers[k]));
+                }
+                structure.cells.push_back(std::move(parsed));
+                if (semicolon == std::string_view::npos) break;
+                rest.remove_prefix(semicolon + 1);
+            }
+            if (f[5] != "-") for (const char w : f[5]) {
+                if (w != '0' && w != '1') return std::unexpected(ProfileError::BadFormat);
+                structure.water.push_back(uint8_t(w - '0'));
+            }
+            if (p.structures.size() == maxStructures) return std::unexpected(ProfileError::BadFormat);
+            p.structures.push_back(std::move(structure));
         } else if (type == "overlay" && f.size() == 4) {
             StyleOverlay overlay;
             if (!parseU32(f[1], overlay.onTreePpm) || !parseU32(f[2], overlay.onGroundPpm) || f[3].empty())

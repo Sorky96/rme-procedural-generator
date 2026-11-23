@@ -411,6 +411,7 @@ std::expected<LevelRepairReport, ReachabilityError> repairLevelReach(
             result.removedPois += uint32_t(std::erase_if(world.surface.doors, [&](auto i) { return erase[i]; }));
             result.removedPois += uint32_t(std::erase_if(world.surface.sites, [&](auto i) { return erase[i]; }));
             std::erase_if(world.surface.gaps, [&](auto i) { return erase[i]; });
+            std::erase_if(world.surface.bare, [&](auto i) { return erase[i]; });
             result.removedStoreys += uint32_t(std::erase_if(world.storeys, [&](const BuildingStorey& s) {
                 return erase[size_t(s.y0) * w + s.x0] != 0;
             }));

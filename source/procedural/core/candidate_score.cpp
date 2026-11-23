@@ -33,6 +33,28 @@ bool candidateHardFail(bool validationPassed, const LevelReachabilityReport& rea
         repair.removedStoreys || repair.removedDungeons;
 }
 
+bool candidateHardFail(bool validationPassed, const LevelPlan& plan, const LevelReachabilityReport& reach,
+    const LevelRepairReport& repair, ReachTolerance tolerance) noexcept {
+    const size_t cells = size_t(plan.region.width) * plan.region.height;
+    if (!validationPassed || !reach.start || reach.walkableEdges > reach.edges || repair.removedPois || repair.removedCaps ||
+        repair.removedStoreys || repair.removedDungeons || !cells || reach.walkable.size() != cells * plan.floors.size() ||
+        reach.reached.size() != reach.walkable.size()) return true;
+    // A floor transition one cannot walk leads to a mountain top (doors, caves, storeys and dungeons are checked below).
+    if ((reach.edges - reach.walkableEdges) * 1000 > uint64_t(tolerance.capPermille) * reach.edges) return true;
+    const auto& caps = reach.categories[size_t(LevelPoiKind::Cap)];
+    for (size_t k = 0; k < reach.categories.size(); ++k)
+        if (k != size_t(LevelPoiKind::Cap) && reach.categories[k].reached != reach.categories[k].total) return true;
+    if ((caps.total - caps.reached) * 1000 > uint64_t(tolerance.capPermille) * caps.total) return true;
+    // {walkable, out of reach} on the ground floor and the caves below it, and on the floors above it
+    std::array<uint64_t, 2> walkable {}, out {};
+    for (size_t i = 0; i < reach.walkable.size(); ++i) {
+        const size_t upper = plan.floors[i / cells].z < plan.region.z;
+        walkable[upper] += reach.walkable[i] != 0;
+        out[upper] += reach.walkable[i] && !reach.reached[i];
+    }
+    return out[0] * 1000 > uint64_t(tolerance.walkPermille) * walkable[0] || out[1] * 1000 > uint64_t(tolerance.capPermille) * walkable[1];
+}
+
 std::expected<CandidateScore, CandidateScoreError> scoreCandidateMetrics(
     const CandidateMetrics& metrics, std::span<const CandidateBand> bands, bool hardFail, uint32_t index) {
     if (bands.empty() || bands.size() > metrics.size()) return std::unexpected(CandidateScoreError::InvalidBands);

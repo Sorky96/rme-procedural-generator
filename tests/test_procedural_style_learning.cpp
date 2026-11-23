@@ -69,8 +69,8 @@ int main(int argc, char** argv) {
         const std::vector<GroundDoodadItems> palms{{grass, "mangrove tree (on water)", 9000}, {grass, "jungle palm", 1300},
             {grass, "oak tree", 1200}, {grass, "pine tree", 1100}, {grass, "birch tree", 1000}, {grass, "fir tree", 900},
             {swamp, "swamp plants", 512}, {grass, "grass tufts", 600}, {grass, "tall jungle grass", 300}, {grass, "bushes", 100}, {sea, "raw:tree:4000", 50000}};
-        // Cobwebs on 400 of the 3584 trees (in parts per million), none on the 512 swamp tiles; 2 of anything is too few, and on water never.
-        const std::vector<GroundOverlayItems> webs{{grass, "raw:item:999", 400, 0}, {grass, "raw:item:998", 1, 1}, {sea, "raw:item:997", 900, 900}};
+        // Cobwebs on 400 of the 3584 trees (in parts per million), none on the 512 swamp tiles; 1 of anything is too few, and on water never.
+        const std::vector<GroundOverlayItems> webs{{grass, "raw:item:999", 400, 0}, {grass, "raw:item:998", 1, 0}, {sea, "raw:item:997", 900, 900}};
         const auto learned = inspectLearningSample(forest, forestMapping, palms, true, {}, webs);
         check(learned && learned->overlays[0] == StyleOverlay{"raw:item:999", 111607, 0} && learned->overlays[1].name.empty(), "overlays by use on land");
         check(learned && learned->decorPalette[0] == "jungle palm", "tree brush learned, the RAW tree on water left out");
@@ -136,6 +136,117 @@ int main(int argc, char** argv) {
         check(island && island->tuning->islandPermille == 750 && island->tuning->lakePermille == 16,
             "sea and lakes learned apart");
         check(island && parseProfile(*serializeProfile(*island)) == *island, "island round-trips");
+    }
+    {
+        // A desert: sand everywhere, a little swamp, two walled ruins of sandstone floor (one with half its outline walled)
+        // and a patch of cave floor with rock walls, which is the mountain's, not a building.
+        FloorBounds fb{7, 0, 0, 64, 64};
+        auto map = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+        const auto sand = map.internGroundKey("sand").value();
+        const auto swamp = map.internGroundKey("swamp").value();
+        const auto floorKey = map.internGroundKey("sandstone floor").value();
+        const auto caveKey = map.internGroundKey("cave").value();
+        for (int i = 0; i < 4096; ++i) {
+            const int x = i % 64, y = i / 64;
+            const bool house = x >= 10 && x < 15 && y >= 10 && y < 15, ruin = x >= 30 && x < 35 && y >= 10 && y < 15;
+            const bool cavern = x >= 50 && x < 55 && y >= 50 && y < 55;
+            const bool outline = (x == 10 || x == 14 || y == 10 || y == 14) || (ruin && (x == 30 || x == 34) && y >= 10);
+            const bool walledRuin = ruin && (x == 30 || x == 34) && (y == 10 || y == 11 || y == 12);
+            const uint16_t key = house || ruin ? floorKey : cavern ? caveKey : i % 50 == 0 ? swamp : sand;
+            const uint32_t walls = (house && outline) || walledRuin || (cavern && (x == 50 || y == 50)) ? bit(Trait::Wall) : 0;
+            check(bool(map.set(x, y, 7, key, bit(Trait::HasGround) | walls)), "desert cell");
+        }
+        std::vector<KeyRule> rules{{"swamp", StyleKind::Grass}};
+        rules.insert(rules.end(), defaultKeyRules().begin(), defaultKeyRules().end());
+        auto desert = proposeKeyMap(map.groundKeys(), rules);
+        promoteMainLand(desert, map);
+        check(std::ranges::find(desert, std::string("sand"), &KeyMapEntry::key)->kind == StyleKind::Grass, "sand is the main land of a desert");
+        const std::vector<GroundDoodadItems> walls{{floorKey, "limestone wall", 20}, {caveKey, "rock wall", 30}};
+        // Rubble on 10 of the 50 building floor tiles; the rubble on sand outside is no interior.
+        const std::vector<GroundOverlayItems> rubble{{floorKey, "raw:item:42", 0, 10}, {sand, "raw:item:43", 0, 30}};
+        const auto learned = inspectLearningSample(map, desert, {}, true, {}, rubble, walls);
+        check(learned && learned->interiors[0] == StyleOverlay{"raw:item:42", 0, 200000} && learned->interiors[1].name.empty(), "rubble inside buildings");
+        check(learned && learned->buildings.density == 32 && learned->buildings.ruinPercent == 50 &&
+            learned->buildings.floor == "sandstone floor" && learned->buildings.wall == "limestone wall", "buildings and ruins, not caves");
+        // Vertical wall tiles (wall pieces north and south): 3 on each house side and one in each ruin wall, 8 in all. A stack
+        // of two items stands on 3 of them, another only once (dropped); a blocking stack inside the house reaches no wall
+        // and one in the cave is the mountain's. The stack's items on the open sand are no longer loose overlays.
+        std::vector<PlacedStack> placed;
+        const auto at = [](int x, int y) { return uint32_t(y * 64 + x); };
+        for (const auto [x, y] : {std::pair{10, 11}, {10, 12}, {14, 12}}) placed.push_back({at(x, y), {50, 60}, true});
+        placed.push_back({at(14, 11), {70}, true});
+        placed.push_back({at(12, 12), {80}, true});
+        placed.push_back({at(51, 51), {50, 60}, true});
+        const std::vector<GroundOverlayItems> loose{{sand, "raw:item:50", 0, 5}, {sand, "raw:item:90", 0, 2}};
+        const auto decorated = inspectLearningSample(map, desert, {}, true, {}, loose, walls, placed);
+        check(decorated && decorated->wallStacks == std::vector<StyleWallStack>{{5, 375000, {50, 60}}}, "wall stacks by sides");
+        check(decorated && decorated->overlays[0].name == "raw:item:90" && decorated->overlays[1].name.empty(), "wall stack items are no loose overlays");
+        // Drifted sand laid with a carpet brush on 25 of the 50 floor tiles; the same carpet on sand outside does not count.
+        const std::vector<GroundDoodadItems> carpets{{floorKey, "sand gravel", 25}, {sand, "sand gravel", 40}, {floorKey, "rug", 2}};
+        const auto carpeted = inspectLearningSample(map, desert, {}, true, {}, {}, walls, {}, carpets);
+        check(carpeted && carpeted->carpet == StyleOverlay{"sand gravel", 0, 500000}, "carpet of the buildings");
+        auto both = decorated ? *decorated : LearningSample{};
+        if (carpeted) both.carpet = carpeted->carpet;
+        both.rockOutlinePermille = 400;
+        const auto withDecor = decorated ? fitLearningSample(both, desert, "10.98", "otb", "dat") : std::unexpected(std::string("no sample"));
+        check(withDecor && parseProfile(*serializeProfile(*withDecor)) == *withDecor, "wall stacks, carpet and rock outline round-trip");
+    }
+    {
+        // A wreck by the shore of a 48 x 48 sample (sea for x < 10): hull stacks on rows 10 and 13 (x 8..11), a deck of a
+        // ground without a brush between them and a loose crate beside the hull. Four blocking stacks next to a building floor
+        // belong to the building, not to a structure.
+        FloorBounds fb{7, 0, 0, 48, 48};
+        auto map = SemanticMap::create(std::span(&fb, 1), {2304}).value();
+        const auto sand = map.internGroundKey("sand").value();
+        const auto sea = map.internGroundKey("sea").value();
+        const auto floorKey = map.internGroundKey("sandstone floor").value();
+        std::vector<uint16_t> grounds(2304, 100);
+        std::vector<PlacedStack> placed;
+        for (int i = 0; i < 2304; ++i) {
+            const int x = i % 48, y = i / 48;
+            const bool deck = x >= 8 && x < 12 && (y == 11 || y == 12), hall = x >= 20 && x < 25 && y >= 15 && y < 20;
+            if (deck) grounds[size_t(i)] = 900;
+            if (x >= 8 && x < 12 && (y == 10 || y == 13)) placed.push_back({uint32_t(i), {500}, true});
+            if (x == 19 && y >= 15 && y < 19) placed.push_back({uint32_t(i), {700}, true});
+            const uint16_t key = deck ? noGroundKey : hall ? floorKey : x < 10 ? sea : sand;
+            check(bool(map.set(x, y, 7, key, bit(Trait::HasGround))), "wreck cell");
+        }
+        placed.push_back({uint32_t(11 * 48 + 12), {600}, false});
+        const auto mapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
+        const auto learned = inspectLearningSample(map, mapping, {}, true, {}, {}, {}, placed, {}, grounds);
+        const auto* wreck = learned && learned->structures.size() == 1 ? &learned->structures[0] : nullptr;
+        check(wreck && wreck->width == 5 && wreck->height == 4 && wreck->ppm == 434 && wreck->cells.size() == 17, "wreck box and rate");
+        check(wreck && wreck->cells[0] == StyleStructureCell{0, 0, 0, {500}} && wreck->cells[4] == StyleStructureCell{0, 1, 900, {}} &&
+            wreck->cells[8] == StyleStructureCell{4, 1, 0, {600}}, "wreck hull, deck and crate");
+        check(wreck && wreck->water.size() == 20 && wreck->water[0] == 1 && wreck->water[2] == 0 && wreck->water[5] == 0, "wreck water");
+        check(learned && learned->wallStacks.empty(), "wreck stacks are no walls");
+        auto profile = *a;
+        if (wreck) profile.structures = learned->structures;
+        check(wreck && parseProfile(*serializeProfile(profile)) == profile, "structures round-trip");
+    }
+    {
+        // A 4 x 4 mountain on grass: 20 grass tiles touch it, 15 of them carry the optional border.
+        FloorBounds fb{7, 0, 0, 32, 32};
+        auto map = SemanticMap::create(std::span(&fb, 1), {1024}).value();
+        const auto grass = map.internGroundKey("grass").value();
+        const auto rock = map.internGroundKey("mountain").value();
+        size_t flagged = 0;
+        for (int i = 0; i < 1024; ++i) {
+            const int x = i % 32, y = i / 32;
+            const bool mountain = x >= 6 && x < 10 && y >= 6 && y < 10, ring = !mountain && x >= 5 && x < 11 && y >= 5 && y < 11;
+            const bool outline = ring && flagged < 15;
+            flagged += outline;
+            check(bool(map.set(x, y, 7, mountain ? rock : grass, bit(Trait::HasGround) | (outline ? bit(Trait::OptionalBorder) : 0))), "outline cell");
+        }
+        const auto mapping = proposeKeyMap(map.groundKeys(), defaultKeyRules());
+        const auto learned = inspectLearningSample(map, mapping, {}, true);
+        check(learned && learned->rockOutlinePermille == 750, "mountain outline share");
+        // No stairs by the mountain: its top cannot be climbed; all the grass is one walkable area.
+        check(learned && learned->unreachedRockPermille == 1000 && learned->unreachedWalkPermille == 0, "mountain out of reach");
+        StyleProfile profile;
+        profile.unreachedRockPermille = 1000;
+        profile.unreachedWalkPermille = 12;
+        check(parseProfile(*serializeProfile(profile)) == profile, "unreached round-trip");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")

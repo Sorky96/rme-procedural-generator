@@ -152,7 +152,7 @@ struct StyleMix {
 	uint32_t permille = 0; // 1..1000 when brush is set, else 0
 	bool operator==(const StyleMix&) const = default;
 };
-inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 16;
+inline constexpr size_t maxTreeMix = 3, maxGrassMix = 3, maxOverlays = 32;
 
 // An item laid over other vegetation or bare land (cobwebs, leaves, debris): any learned item that is not a tree,
 // bush or stone. `name` is a doodad brush or "raw:item:<id>"; it goes on onTreePpm of the generated trees and
@@ -171,6 +171,45 @@ struct StyleMixDecor {
 	std::array<uint32_t, 3> keepPermille {1000, 1000, 1000};
 	std::array<std::string, 3> brushes;
 	bool operator==(const StyleMixDecor&) const = default;
+};
+
+// Buildings of the sample (floor tiles of a non-natural ground, walls and doors, in groups of pieces at most two tiles apart, at least 9
+// tiles with a wall piece or door): how many per 65536 tiles (SurfaceTuning::buildingDensity, 1..100), the share that are ruins (outline less
+// than 80% walled, SurfaceTuning::ruinPercent) and the floor ground and wall brush most used; density 0 = none.
+// floorPercent: share of a ruin's area that has floor (1..100; the rest is open ground); compoundPercent: share of the
+// buildings whose group is bigger than one room, i.e. rooms built wall to wall (0..100).
+struct StyleBuildings {
+	uint32_t density = 0, ruinPercent = 0, floorPercent = 100, compoundPercent = 0;
+	std::string floor, wall; // wall empty = no walls
+	bool operator==(const StyleBuildings&) const = default;
+};
+
+inline constexpr size_t maxWallStacks = 64, maxStackItems = 4;
+// One wall tile of the sample: the items stacked on it (bottom first, 1..maxStackItems, at least one not a piece of a wall
+// brush), the sides with a neighbouring wall tile (bit 0 north, 1 east, 2 south, 3 west) and the share of the wall
+// tiles with those sides that held it, ppm. The stacks of one mask sum to at most 1000000; the rest keep the wall brush.
+struct StyleWallStack {
+	uint32_t sides = 0, ppm = 0;
+	std::vector<uint16_t> items;
+	bool operator==(const StyleWallStack&) const = default;
+};
+
+inline constexpr size_t maxStructures = 8, maxStructureSide = 24, maxStructureCells = 255, maxStructureCellItems = 8;
+// One tile of a structure: its offset in the structure's box, its own ground item (0 = the generated ground stays) and the
+// items stacked on it, bottom first (0..maxStructureCellItems); a tile has a ground or items.
+struct StyleStructureCell {
+	uint32_t dx = 0, dy = 0, ground = 0;
+	std::vector<uint16_t> items;
+	bool operator==(const StyleStructureCell&) const = default;
+};
+// A group of items standing apart from any building, with the grounds laid for it (a ship wreck by the shore): its box,
+// its tiles (1..maxStructureCells, each once), which tiles of the box were water (row-major, empty = none) and how
+// often it stood in the sample, ppm of the sample tiles.
+struct StyleStructure {
+	uint32_t ppm = 0, width = 0, height = 0;
+	std::vector<StyleStructureCell> cells;
+	std::vector<uint8_t> water;
+	bool operator==(const StyleStructure&) const = default;
 };
 
 struct StyleProfile {
@@ -195,6 +234,24 @@ struct StyleProfile {
 	std::array<StyleMix, maxTreeMix> treeMix;
 	std::array<StyleMix, maxTreeMix> bushMix;
 	std::array<StyleOverlay, maxOverlays> overlays;
+	StyleBuildings buildings;
+	// Overlay items inside buildings (rubble, bones, drifted sand): onGroundPpm is the share of building floor tiles that
+	// hold it; onTreePpm stays 0.
+	std::array<StyleOverlay, maxOverlays> interiors;
+	// Wall tiles as the sample built them: whole item stacks (bottom first) standing in the line of a wall, per side mask of
+	// the neighbouring wall tiles, each on ppm of the wall tiles with that mask (see StyleWallStack).
+	std::vector<StyleWallStack> wallStacks;
+	// Structures placed whole on the open land (see StyleStructure), at most maxStructures.
+	std::vector<StyleStructure> structures;
+	// The carpet brush most laid on building floors (drifted sand, rugs); onGroundPpm is the share of the building floor
+	// tiles it covers, onTreePpm stays 0; empty name = none.
+	StyleOverlay carpet;
+	// Share of the land tiles beside rock that carry the optional border of the rock ground (the mountain outline), permille.
+	uint32_t rockOutlinePermille = 0;
+	// How much of the sample one cannot walk to, permille, so a generated map may leave as much: the rock tiles of the
+	// mountains with no floor change on or beside them (their tops cannot be climbed), and the walkable tiles outside the
+	// largest walkable area of the sample's floor.
+	uint32_t unreachedRockPermille = 0, unreachedWalkPermille = 0;
 	std::string shoreTree; // doodad brush or "raw:tree:<id>" of the trees in the water beside land; set with DecorTuning::shoreTreePermille
 	bool operator==(const StyleProfile&) const = default;
 };

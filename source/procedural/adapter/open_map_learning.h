@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "procedural/core/semantic_map.h"
+#include "procedural/core/style_learning.h"
 #include <cstdint>
 #include <map>
 #include <string>
 #include <utility>
+#include <vector>
 class Map;
 namespace rme::procedural {
 // Stacked items per (ground key of the sample, doodad brush name), summed over the rows read so far.
@@ -16,8 +18,18 @@ using SampleItemCounts = std::map<uint16_t, SampleItem>;
 // Overlay items (not a tree, bush or stone) per (ground key, doodad brush name or "raw:item:<id>"): how many stand on a
 // tile that also holds a tree, and how many on the other tiles.
 using OverlayItemCounts = std::map<std::pair<uint16_t, std::string>, std::pair<uint64_t, uint64_t>>;
+// Everything counted while reading a sample; walls are blocking wall pieces per (ground key, wall brush name).
+struct SampleCounts {
+    DoodadItemCounts doodads;
+    SampleItemCounts items;
+    OverlayItemCounts overlays;
+    DoodadItemCounts walls;
+    std::vector<PlacedStack> placed; // stacks of the tiles with items, no door and no vegetation (see PlacedStack)
+    DoodadItemCounts carpets;       // carpet pieces per (ground key, carpet brush name)
+    std::vector<uint16_t> grounds;  // ground item per cell of the sample rectangle, row-major (0 = none)
+};
 // GUI-thread read only. One row (at most 512 cells) per call; never holds tile/brush pointers.
-// A tile holding a tree, bush or stone doodad gets the matching decor trait (classifyDoodadBrush).
-std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, DoodadItemCounts& doodads,
-    SampleItemCounts& items, OverlayItemCounts& overlays, int row);
+// A tile holding a tree, bush or stone doodad gets the matching decor trait (classifyDoodadBrush); a tile with a
+// blocking wall piece gets Trait::Wall, one with a door Trait::Door.
+std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row);
 }

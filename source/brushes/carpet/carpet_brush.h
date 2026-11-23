@@ -43,6 +43,10 @@ public:
 	void draw(BaseMap* map, Tile* tile, void* parameter) override;
 	void undraw(BaseMap* map, Tile* tile) override;
 	static void doCarpets(BaseMap* map, Tile* tile);
+	// The alignment of a carpet piece whose eight neighbours (bit i: -1,-1 0,-1 1,-1 -1,0 1,0 -1,1 0,1 1,1) hold the same carpet.
+	static BorderType alignmentFor(uint8_t neighbours) {
+		return static_cast<BorderType>(carpet_types[neighbours]);
+	}
 
 	void getRelatedItems(std::vector<uint16_t>& items) override;
 

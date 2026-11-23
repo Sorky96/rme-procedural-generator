@@ -36,7 +36,8 @@ enum class Trait : uint32_t {
 	// the doodad brush (classifyDoodadBrush); a tile may carry several.
 	TreeDoodad = 1 << 17,
 	BushDoodad = 1 << 18,
-	StoneDoodad = 1 << 19
+	StoneDoodad = 1 << 19,
+	OptionalBorder = 1 << 20 // not reported: the tile carries the optional border of a neighbouring ground (mountain outline)
 };
 inline constexpr size_t traitCount = 16; // reportable traits; Present is not one of them
 

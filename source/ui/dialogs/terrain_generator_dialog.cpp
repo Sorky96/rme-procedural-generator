@@ -10,6 +10,7 @@
 #include "app/managers/version_manager.h"
 #include "app/settings.h"
 #include "brushes/brush.h"
+#include "brushes/carpet/carpet_brush.h"
 #include "brushes/doodad/doodad_brush.h"
 #include "brushes/ground/ground_brush.h"
 #include "brushes/wall/wall_brush.h"
@@ -1073,6 +1074,7 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	};
 	for (size_t i = 0; i < std::size(groundFields); ++i) if (!default_brushes_[i].empty()) setBrush(groundFields[i], default_brushes_[i]);
 	for (size_t i = 0; i < std::size(decorFields); ++i) if (!default_decor_brushes_[i].empty()) setBrush(decorFields[i], default_decor_brushes_[i]);
+	learned_ruin_floor_ = learned_compound_ = 0;
 	const int picked = profile_choice_->GetSelection();
 	if (style_history_ && picked > 0 && size_t(picked) <= profiles_.size()) {
         const auto& version = profiles_[size_t(picked)-1].versionId;
@@ -1103,6 +1105,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		return;
 	}
 	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
+	// A saved adjusted version keeps its own generation settings (restored above); learned defaults do not replace them.
+	const bool adjusted = !entry.versionId.empty() && entry.adjustment.has_value();
 	wxString applied, skipped;
 	const auto note = [](wxString& list, const char* label, const wxString& name) {
 		list += (list.empty() ? "" : ", ") + wxString(label) + ": " + name;
@@ -1125,6 +1129,45 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		const bool usable = (rme::procedural::rawDecorId(name) || doodad_names_.Index(wanted) != wxNOT_FOUND) && usableDecor(name);
 		if (usable) setBrush(decorFields[kind], wanted);
 		note(usable ? applied : skipped, decorLabels[kind], wanted);
+	}
+	// A learned style comes with rivers, rock and sea cut from a real map: they may leave land that cannot be walked to,
+	// which blocks Place. Repairing reachability (fords, passes) keeps such a series usable.
+	if (std::ranges::any_of(entry.profile.sources, [](const auto& source) { return source.alias == "user-local-surface"; })) {
+		if (!adjusted) {
+			repair_check_->SetValue(true);
+			if (entry.profile.tuning && entry.profile.tuning->riverCount && ford_length_spin_->GetValue() == 0) ford_length_spin_->SetValue(8);
+			if (entry.profile.tuning && entry.profile.tuning->rockPermille) rock_passes_check_->SetValue(true);
+		}
+		note(applied, "reachability repair", wxString(repair_check_->GetValue() ? "on" : "off"));
+	}
+	// The top of a mountain level is the style's own land (sand in a desert), not the built-in grass.
+	if (const std::string& land = entry.profile.palette[size_t(rme::procedural::StyleKind::Grass)]; !land.empty()) {
+		const Brush* brush = g_brushes.getBrush(land);
+		const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+		if (ground && ground->getTotalChance() > 0) {
+			setBrush(plateau_ground_choice_, wxstr(land));
+			note(applied, "mountain top", wxstr(land));
+		}
+	}
+	// Buildings and ruins the profile learned: density, ruin share, floor and walls (a brush this client lacks is skipped).
+	if (const auto& buildings = entry.profile.buildings; buildings.density) {
+		if (!adjusted) {
+			building_density_spin_->SetValue(int(buildings.density));
+			ruin_percent_spin_->SetValue(int(buildings.ruinPercent));
+		}
+		learned_ruin_floor_ = buildings.floorPercent < 100 ? buildings.floorPercent : 0;
+		learned_compound_ = buildings.compoundPercent;
+		const Brush* floorBrush = g_brushes.getBrush(buildings.floor);
+		const auto* floorGround = floorBrush ? floorBrush->as<GroundBrush>() : nullptr;
+		if (floorGround && floorGround->getTotalChance() > 0) setBrush(floor_brush_choice_, wxstr(buildings.floor));
+		note(floorGround ? applied : skipped, "building floor", wxstr(buildings.floor));
+		const Brush* wallBrush = buildings.wall.empty() ? nullptr : g_brushes.getBrush(buildings.wall);
+		const bool walls = wallBrush && wallBrush->as<WallBrush>() && !wallBrush->is<WallDecorationBrush>();
+		walls_check_->SetValue(walls);
+		if (walls) setBrush(wall_brush_choice_, wxstr(buildings.wall));
+		if (!buildings.wall.empty()) note(walls ? applied : skipped, "building walls", wxstr(buildings.wall));
+		note(applied, "buildings", wxstr(std::format("{} per 65536 tiles, {}% ruins with {}% floor, {}% in halls",
+			buildings.density, buildings.ruinPercent, buildings.floorPercent, buildings.compoundPercent)));
 	}
 	for (const auto& mix : entry.profile.grassMix)
 		if (!mix.brush.empty()) note(applied, "grass patches", wxstr(std::format("{} {}%", mix.brush, mix.permille / 10)));
@@ -1394,6 +1437,8 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		config.surface.pathLength = uint32_t(path_length_spin_->GetValue()); // not part of a style profile
 		config.surface.buildingDensity = uint32_t(building_density_spin_->GetValue());
 		config.surface.ruinPercent = config.surface.buildingDensity ? uint32_t(ruin_percent_spin_->GetValue()) : 0;
+		config.surface.ruinFloorPercent = config.surface.ruinPercent ? learned_ruin_floor_ : 0;
+		config.surface.compoundPercent = config.surface.buildingDensity ? learned_compound_ : 0;
 		config.surface.campCount = uint32_t(camp_count_spin_->GetValue());
 		config.surface.fordLength = uint32_t(ford_length_spin_->GetValue());
 		config.surface.rockPasses = rock_passes_check_->GetValue() && config.surface.pathLength > 0 ? 1 : 0;
@@ -1524,6 +1569,62 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		copyMix(profile.treeMix, request.profile.treeMix, request.profile.treeMixPermille);
 		copyMix(profile.bushMix, request.profile.bushMix, request.profile.bushMixPermille);
 		if (config.vegetation && !profile.shoreTree.empty() && usableDecor(profile.shoreTree)) request.profile.waterTree = profile.shoreTree;
+		for (size_t i = 0, used = 0; config.vegetation && i < profile.interiors.size() && used < GroundProfile::overlayCount; ++i) {
+			const auto& interior = profile.interiors[i];
+			if (interior.name.empty() || !usableDecor(interior.name) ||
+				!rme::procedural::decorItemPassable(rme::procedural::findDecorSource(interior.name, 100000).item(1))) continue;
+			request.profile.interior[used] = interior.name;
+			request.profile.interiorPpm[used++] = interior.onGroundPpm;
+		}
+		// The outline is drawn when the sample outlined most of its mountains (at least a quarter of the land beside them).
+		request.profile.rockOutline = profile.rockOutlinePermille >= 250;
+		request.profile.unreachedCapPermille = profile.unreachedRockPermille;
+		// The sample is small, so its share of cut-off ground is a rough figure: a generated map may have up to twice as much.
+		request.profile.unreachedWalkPermille = std::min<uint32_t>(1000, profile.unreachedWalkPermille * 2);
+		if (config.vegetation && !profile.carpet.name.empty()) {
+			const auto* brush = g_brushes.getBrush(profile.carpet.name);
+			if (brush && brush->as<CarpetBrush>()) {
+				request.profile.carpet = profile.carpet.name;
+				request.profile.carpetPpm = profile.carpet.onGroundPpm;
+			}
+		}
+		// A learned item this client has and the generator places as a plain item: no ground, container, teleport, depot or
+		// podium (profiles learned before such stacks were left out may still list them).
+		const auto placeable = [](uint16_t id) {
+			const auto definition = g_item_definitions.get(id);
+			return definition && definition.clientId() && !definition.isMetaItem() && !definition.isGroundTile() && !definition.isContainer() &&
+				!definition.isDepot() && !definition.isTeleport() && !definition.isPodium();
+		};
+		// Wall stacks whose items this client has; they come with the walls.
+		for (size_t i = 0, used = 0; i < profile.wallStacks.size() && used < GroundProfile::wallStackCount; ++i) {
+			const auto& stack = profile.wallStacks[i];
+			if (stack.items.size() > 4 || !std::ranges::all_of(stack.items, placeable)) continue;
+			auto& placed = request.profile.wallStacks[used++];
+			placed.sides = uint8_t(stack.sides);
+			placed.ppm = stack.ppm;
+			std::ranges::copy(stack.items, placed.items.begin());
+		}
+		// Structures whose items this client has.
+		for (const auto& structure : profile.structures) {
+			if (request.profile.structures.size() == GroundProfile::structureCount || structure.width > GroundProfile::structureSide ||
+				structure.height > GroundProfile::structureSide || structure.cells.size() > GroundProfile::structureCells) continue;
+			GroundProfile::Structure placed {structure.ppm, uint8_t(structure.width), uint8_t(structure.height), {}, structure.water};
+			bool usable = true;
+			for (const auto& cell : structure.cells) {
+				if (cell.items.size() > 8) { usable = false; break; }
+				GroundProfile::StructureCell copied {uint8_t(cell.dx), uint8_t(cell.dy), uint16_t(cell.ground), {}};
+				if (cell.ground) {
+					const auto definition = g_item_definitions.get(uint16_t(cell.ground));
+					usable = usable && definition && definition.clientId() && !definition.isMetaItem() && definition.isGroundTile();
+				}
+				for (size_t k = 0; k < cell.items.size(); ++k) {
+					usable = usable && placeable(cell.items[k]);
+					copied.items[k] = cell.items[k];
+				}
+				placed.cells.push_back(copied);
+			}
+			if (usable) request.profile.structures.push_back(std::move(placed));
+		}
 		for (size_t i = 0, used = 0; config.vegetation && i < profile.overlays.size() && used < GroundProfile::overlayCount; ++i) {
 			const auto& overlay = profile.overlays[i];
 			// An overlay one cannot walk through would block the planned paths; it is left out.
@@ -1786,7 +1887,8 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
         const bool hardFail = result->copyAssessment.hardFail() ||
-            (result->levels && candidateHardFail(true, result->levels->report, result->levels->repair));
+            (result->levels && candidateHardFail(true, result->levels->plan, result->levels->report, result->levels->repair,
+                {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}));
         const auto fingerprints = candidateFingerprints(*result);
         if (!collecting_) {
             const auto& row = candidates_[*selected_candidate_];
@@ -1809,6 +1911,42 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 for (const auto& category : levels.report.categories) { reached += category.reached; total += category.total; }
                 message += std::format(" Reachable: {}/{} places. Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.",
                     reached, total, levels.repair.repairs, levels.repair.bridges, levels.repair.removedCaps, levels.repair.removedPois);
+                // Where the hardFail comes from: the first places that cannot be walked to, and closed-off pockets.
+                static constexpr const char* poiNames[] {"door", "site", "cave entrance", "cave exit", "cap", "cave cell", "storey", "dungeon"};
+                static_assert(std::size(poiNames) == rme::procedural::levelPoiKindCount);
+                for (size_t k = 0; k < std::min<size_t>(levels.report.firstUnreachable.size(), 5); ++k) {
+                    const auto& place = levels.report.firstUnreachable[k];
+                    message += std::format("{} {} at {},{},{}", k ? "," : " Unreachable:", poiNames[size_t(place.kind)], place.x, place.y, place.z);
+                }
+                if (!levels.report.firstUnreachable.empty()) message += ".";
+                // Per kind of place, how many are out of reach; and the floor transitions one cannot walk.
+                bool listed = false;
+                for (size_t k = 0; k < levels.report.categories.size(); ++k) {
+                    const auto& category = levels.report.categories[k];
+                    if (category.reached == category.total) continue;
+                    message += std::format("{} {} {}/{}", listed ? "," : " Out of reach:", poiNames[k], category.total - category.reached, category.total);
+                    listed = true;
+                }
+                if (listed) message += ".";
+                if (levels.report.walkableEdges != levels.report.edges)
+                    message += std::format(" Unwalkable floor transitions: {}/{}.", levels.report.edges - levels.report.walkableEdges, levels.report.edges);
+                if (levels.repair.unrepaired) message += " Repair gave up.";
+                // Walkable cells out of reach on the ground floor (with the caves) and above it, against what the
+                // reference allows (candidateHardFail).
+                const size_t cells = size_t(levels.plan.region.width) * levels.plan.region.height;
+                if (cells && levels.report.walkable.size() == cells * levels.plan.floors.size() &&
+                    levels.report.reached.size() == levels.report.walkable.size()) {
+                    std::array<uint64_t, 2> walkable {}, out {};
+                    for (size_t i = 0; i < levels.report.walkable.size(); ++i) {
+                        const size_t upper = levels.plan.floors[i / cells].z < levels.plan.region.z;
+                        walkable[upper] += levels.report.walkable[i] != 0;
+                        out[upper] += levels.report.walkable[i] && !levels.report.reached[i];
+                    }
+                    message += std::format(" Cells out of reach: ground {}/{} (allowed {} per mille), above {}/{} (allowed {} per mille).",
+                        out[0], walkable[0], request->profile.unreachedWalkPermille, out[1], walkable[1],
+                        request->profile.unreachedCapPermille);
+                }
+                if (!levels.report.pockets.empty()) message += std::format(" Closed pockets: {}.", levels.report.pockets.size());
             }
             SetStatus(wxstr(message), hardFail);
             preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;

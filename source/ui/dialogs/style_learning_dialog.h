@@ -41,9 +41,7 @@ private:
     int map_width_ = 0, map_height_ = 0, row_ = 0;
     bool captured_ = false, reading_ = false, source_valid_ = false;
     std::optional<rme::procedural::SemanticMap> sample_;
-    rme::procedural::DoodadItemCounts doodads_;
-    rme::procedural::SampleItemCounts items_;
-    rme::procedural::OverlayItemCounts overlays_;
+    rme::procedural::SampleCounts counts_;
     std::optional<rme::procedural::StyleProfile> result_;
     std::optional<rme::procedural::ClientAssetIds> ids_;
     std::string analyzed_mapping_;

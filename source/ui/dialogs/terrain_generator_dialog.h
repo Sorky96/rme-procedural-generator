@@ -167,6 +167,8 @@ private:
 	wxSpinCtrl* path_length_spin_ = nullptr;
 	wxSpinCtrl* ford_length_spin_ = nullptr;
 	wxSpinCtrl* ruin_percent_spin_ = nullptr;
+	// Building layout of the chosen learned profile (SurfaceTuning::ruinFloorPercent, compoundPercent); 0 = as built in.
+	uint32_t learned_ruin_floor_ = 0, learned_compound_ = 0;
 	wxSpinCtrl* camp_count_spin_ = nullptr;
 	wxSpinCtrl* cave_entrances_spin_ = nullptr;
     wxSpinCtrl *plateau_levels_spin_ = nullptr, *plateau_percent_spin_ = nullptr;
