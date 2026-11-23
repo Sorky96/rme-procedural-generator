@@ -92,7 +92,7 @@ def read_matrix(directory):
                                        first_seed=3001, count=4)
         lines = path.read_text().splitlines()
         similarity = [s for s in lines if s.startswith('similarity\t')]
-        if similarity != ['similarity\ti53-index/1\tg4-natural-v1\twindow=16\tmodulo=4\tminpresent=50\tshared>=16\tcontainment>=100']:
+        if similarity != ['similarity\ti53-index/2\tg4-natural-v1\td4-canonical-v1\twindow=16\tmodulo=4\tminpresent=50\tshared>=16\tcontainment>=100']:
             raise ValueError('I55 requires the frozen I53 index policy')
         refs = [s.split('\t') for s in lines if s.startswith('reference\t')]
         if len(refs) != 2 or {r[1] for r in refs} != {'M06', 'M19'}:
