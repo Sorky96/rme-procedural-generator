@@ -386,11 +386,15 @@ Update 2026-10-28: prepared Save As and backup fix passed limited collision and 
 
 ### PHASE 6 - Advanced learning and L3/L4/L5 ranking
 
-- [ ] Multiple candidate generation + quality scoring + best selection.
-- [ ] Feedback `approve/reject/adjust` and profile history.
-- [ ] Optional ML experiment for selected subtask only when data sufficient and rights-compliant. Documented ML deferral does not block statistical generator release.
-- [ ] Holdout comparison with L2/L3, overfitting analysis and copied-fragment detection.
-- [ ] Model versioning and rollback mechanism.
+Criteria and evidence: [G6_METRICS.md](procedural/G6_METRICS.md), [G6_GATE_STATUS.md](procedural/G6_GATE_STATUS.md).
+
+- [~] Multiple candidate generation + quality scoring + best selection. Lexicographic score (I51) and candidate gallery N=1–16, default 4 (I52) are implemented. The I51 and I51b quality criteria failed, so the recommendation is not proven better than random selection. Manual GUI review is open.
+- [x] Feedback `approve/reject/adjust` and profile history. I54: local versioned JSON history; Adjust saves a new profile version. I56 adds learning a local profile from the open map. Manual GUI and keyboard review is open.
+- [x] Optional ML experiment for selected subtask only when data sufficient and rights-compliant. Documented ML deferral does not block statistical generator release. Withdrawn with justification on 2026-11-17; reconsidered after at least 200 ratings from at least 3 map families.
+- [~] Holdout comparison with L2/L3, overfitting analysis and copied-fragment detection. Copied-fragment detection, including rotations and reflections, is done (I53, D10). I55 tools for the blind test and new-family intake are ready, but no results exist: the 20 blind ratings and independent new map families are missing.
+- [x] Model versioning and rollback mechanism. I54: return to an earlier profile version without deleting newer ones, and branching from it.
+
+**Status 2026-11-23: G6 open.** Missing evidence: the 20-pair blind test (≥ 13/20 L3 wins, [instructions](procedural/smoke/g6_i55.md)) and the quantitative comparison on new families (≥ 23/32 per profile, [intake](procedural/smoke/g6_i55_intake.md)). Both require user input.
 
 **G6:** ranking and versioned feedback evaluated on unseen maps and in blind user test; optional ML model deployed only if it exceeds simpler baseline per pre-set criteria.
 
