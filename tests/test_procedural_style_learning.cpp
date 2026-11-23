@@ -243,10 +243,11 @@ int main(int argc, char** argv) {
         check(learned && learned->rockOutlinePermille == 750, "mountain outline share");
         // No stairs by the mountain: its top cannot be climbed; all the grass is one walkable area.
         check(learned && learned->unreachedRockPermille == 1000 && learned->unreachedWalkPermille == 0, "mountain out of reach");
-        StyleProfile profile;
+        auto profile = *a; // a valid fitted profile: serializing an invalid one returns an error
         profile.unreachedRockPermille = 1000;
         profile.unreachedWalkPermille = 12;
-        check(parseProfile(*serializeProfile(profile)) == profile, "unreached round-trip");
+        const auto text = serializeProfile(profile);
+        check(text && parseProfile(*text) == profile, "unreached round-trip");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")
