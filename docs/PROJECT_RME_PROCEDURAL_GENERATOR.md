@@ -386,11 +386,15 @@ Update 2026-10-28: prepared Save As and backup fix passed limited collision and 
 
 ### PHASE 6 - Advanced learning and L3/L4/L5 ranking
 
-- [ ] Multiple candidate generation + quality scoring + best selection.
-- [ ] Feedback `approve/reject/adjust` and profile history.
-- [ ] Optional ML experiment for selected subtask only when data sufficient and rights-compliant. Documented ML deferral does not block statistical generator release.
-- [ ] Holdout comparison with L2/L3, overfitting analysis and copied-fragment detection.
-- [ ] Model versioning and rollback mechanism.
+Criteria and evidence: [G6_METRICS.md](procedural/G6_METRICS.md), [G6_GATE_STATUS.md](procedural/G6_GATE_STATUS.md).
+
+- [~] Multiple candidate generation + quality scoring + best selection. Lexicographic score (I51) and candidate gallery N=1–16, default 4 (I52) are implemented. The I51 and I51b quality criteria failed, so the recommendation is not proven better than random selection. Manual GUI review is open.
+- [x] Feedback `approve/reject/adjust` and profile history. I54: local versioned JSON history; Adjust saves a new profile version. I56 adds learning a local profile from the open map. Manual GUI and keyboard review is open.
+- [x] Optional ML experiment for selected subtask only when data sufficient and rights-compliant. Documented ML deferral does not block statistical generator release. Withdrawn with justification on 2026-11-17; reconsidered after at least 200 ratings from at least 3 map families.
+- [~] Holdout comparison with L2/L3, overfitting analysis and copied-fragment detection. Copied-fragment detection, including rotations and reflections, is done (I53, D10). Blind test run 2026-11-23: FAIL, 9/20. New-family comparison not run (no data).
+- [x] Model versioning and rollback mechanism. I54: return to an earlier profile version without deleting newer ones, and branching from it.
+
+**G6 CLOSED WITH DEBT, 2026-11-23 (user decision).** I55 blind test FAIL: L3 won 9/20 pairs, threshold 13 ([G6_GATE_STATUS.md](procedural/G6_GATE_STATUS.md#i55--blind-test-result-2026-11-23)). The comparison on new families was not run because none were supplied. Debt D28 and D29 in [TECH_DEBT.md](procedural/TECH_DEBT.md).
 
 **G6:** ranking and versioned feedback evaluated on unseen maps and in blind user test; optional ML model deployed only if it exceeds simpler baseline per pre-set criteria.
 
