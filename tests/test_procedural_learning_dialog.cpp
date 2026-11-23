@@ -19,6 +19,7 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/module.h>
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <fstream>
@@ -51,8 +52,13 @@ void preview(TerrainGeneratorDialog& d) {
     check(field<wxButton>(d, "terrain-place").IsEnabled(), "Preview refused: " + field<wxStaticText>(d, "terrain-status").GetLabel().ToStdString());
 }
 void place(TerrainGeneratorDialog& d) {
-    d.Hide(); wxTheApp->CallAfter([&d] { click(d, "terrain-place"); });
-    check(d.ShowModal() == wxID_OK, "Place refused");
+    // A refused Place only sets the status; close the dialog then instead of waiting forever.
+    d.Hide(); wxTheApp->CallAfter([&d] {
+        d.SetReturnCode(wxID_NONE); click(d, "terrain-place");
+        // Success has already called EndModal(wxID_OK); the loop exits after this handler.
+        if (d.GetReturnCode() != wxID_OK) d.EndModal(wxID_CANCEL);
+    });
+    check(d.ShowModal() == wxID_OK, "Place refused: " + field<wxStaticText>(d, "terrain-status").GetLabel().ToStdString());
 }
 uint64_t contents(Map& map) {
     uint64_t h = 1469598103934665603ULL;
@@ -63,6 +69,109 @@ uint64_t contents(Map& map) {
         for (const auto& item : t->items) add(item->getID());
     }
     return h;
+}
+// The status label is wrapped to the dialog width; join its lines before searching it.
+std::string statusText(wxWindow& d) {
+    auto text = field<wxStaticText>(d, "terrain-status").GetLabel().ToStdString();
+    std::ranges::replace(text, '\n', ' ');
+    return text;
+}
+// Natural surface, built-in settings, 128 x 128 at (100, 100, 7), built-in profile, one candidate, no plateaus.
+TerrainGeneratorDialog* naturalGenerator(const char* seed) {
+    auto* d = new TerrainGeneratorDialog(g_gui.root);
+    auto& style = field<wxChoice>(*d, "terrain-style"); style.SetSelection(1); changed(style);
+    // The I56 part leaves an adjusted all-grass profile chosen; its uniform terrain has nothing to protect.
+    auto& builtIn = field<wxChoice>(*d, "terrain-profile"); builtIn.SetSelection(0); changed(builtIn);
+    field<wxSpinCtrl>(*d, "terrain-candidate-count").SetValue(1);
+    field<wxSpinCtrl>(*d, "terrain-plateau-percent").SetValue(0);
+    field<wxTextCtrl>(*d, "terrain-seed").SetValue(seed);
+    field<wxSpinCtrl>(*d, "terrain-width").SetValue(128); field<wxSpinCtrl>(*d, "terrain-height").SetValue(128);
+    return d;
+}
+// I57: Learn adds a varied area to a new copy index; the generator lists it; generating the same
+// terrain again is blocked at Place, while other terrain places with one Undo and an exact Redo.
+void i57CopyIndex(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I57 source map"); auto& source = *g_gui.GetCurrentEditor();
+    auto* fixture = naturalGenerator("1729"); fixture->Show(); preview(*fixture);
+    report << "I57_STAGE source preview\n";
+    place(*fixture); fixture->Destroy();
+    report << "I57_STAGE source placed\n";
+    const auto sourceHash = contents(source.map), undoSize = source.actionQueue->getSize();
+    auto* generator = new TerrainGeneratorDialog(g_gui.root); generator->Show();
+    std::exception_ptr learningError;
+    wxTheApp->CallAfter([&] {
+        auto* d = dynamic_cast<StyleLearningDialog*>(wxWindow::FindWindowByName("style-learning-dialog"));
+        try {
+            check(d != nullptr, "I57 learning entry");
+            field<wxCheckBox>(*d, "learn-permission").SetValue(true);
+            field<wxSpinCtrl>(*d, "learn-x").SetValue(100); field<wxSpinCtrl>(*d, "learn-y").SetValue(100);
+            field<wxSpinCtrl>(*d, "learn-z").SetValue(7);
+            field<wxSpinCtrl>(*d, "learn-width").SetValue(128); field<wxSpinCtrl>(*d, "learn-height").SetValue(128);
+            click(*d, "learn-read"); until([&] { return field<wxButton>(*d, "learn-analyze").IsEnabled(); });
+            report << "I57_STAGE read\n";
+            click(*d, "learn-analyze");
+            until([&] { return field<wxButton>(*d, "learn-save").IsEnabled() || field<wxButton>(*d, "learn-analyze").IsEnabled(); });
+            report << "I57_STAGE analyzed\n";
+            check(field<wxButton>(*d, "learn-save").IsEnabled(), "I57 fit failed: " + field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString());
+            field<wxCheckBox>(*d, "learn-protect").SetValue(true);
+            field<wxTextCtrl>(*d, "learn-index-name").SetValue("../escape");
+            field<wxTextCtrl>(*d, "learn-name").SetValue("i57-source"); click(*d, "learn-save");
+            check(!std::filesystem::exists(dir / "i57-source.profile") && !std::filesystem::exists(dir.parent_path() / "escape.i53"),
+                "Refused index name saved something");
+            report << "I57_STAGE refused name checked\n";
+            field<wxTextCtrl>(*d, "learn-index-name").SetValue("i57-fixture"); click(*d, "learn-save");
+            // A refused save keeps the modal dialog open; report it instead of waiting forever.
+            check(std::filesystem::exists(dir / "i57-fixture.i53"),
+                "I57 save refused: " + field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString() +
+                "\nmapping:\n" + field<wxTextCtrl>(*d, "learn-mapping").GetValue().ToStdString());
+        } catch (...) { learningError = std::current_exception(); if (d) d->EndModal(wxID_CANCEL); }
+    });
+    click(*generator, "terrain-learn");
+    if (learningError) std::rethrow_exception(learningError);
+    check(contents(source.map) == sourceHash && source.actionQueue->getSize() == undoSize, "I57 learning modified map or Undo");
+    const auto ids = loadedClientAssetIds();
+    const auto index = readCopyIndex(dir / "i57-fixture.i53", ids->client, ids->otbSha256, ids->datSha256);
+    check(index && index->references.size() == 1 && index->references[0].alias == "i57-source", "I57 index written with one area");
+    check(field<wxChoice>(*generator, "terrain-copy-index-choice").FindString("i57-fixture (1 area)") != wxNOT_FOUND,
+        "I57 index not listed after learning");
+    generator->Destroy(); source.map.clearChanges(); g_gui.CloseCurrentEditor();
+    report << "I57_LEARN_ADDS_INDEX_NO_MUTATION_PASS\n";
+
+    check(g_gui.NewMap(), "I57 target map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* copy = naturalGenerator("1729");
+    auto& choice = field<wxChoice>(*copy, "terrain-copy-index-choice");
+    check(choice.SetStringSelection("i57-fixture (1 area)"), "I57 index choice"); changed(choice);
+    check(field<wxTextCtrl>(*copy, "terrain-copy-index").GetValue() == wxString((dir / "i57-fixture.i53").wstring()), "Choice fills the index path");
+    copy->Show();
+    click(*copy, "terrain-preview"); until([&] { return field<wxButton>(*copy, "terrain-preview").IsEnabled(); });
+    const auto status = statusText(*copy);
+    check(!field<wxButton>(*copy, "terrain-place").IsEnabled() && status.find("Place blocked") != std::string::npos,
+        "Copy of the learned area not blocked: " + status);
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "Blocked copy modified target");
+    copy->Destroy();
+    report << "I57_COPY_BLOCKED_PASS\n";
+
+    // Other seeds: the first one that is placeable at all (some fail reachability; D30) must be
+    // evaluated below the copy thresholds and then place normally.
+    TerrainGeneratorDialog* other = nullptr;
+    for (const char* seed : {"4242", "4243", "4244", "4245", "4246", "4247", "4248", "4249"}) {
+        other = naturalGenerator(seed);
+        auto& otherChoice = field<wxChoice>(*other, "terrain-copy-index-choice");
+        check(otherChoice.SetStringSelection("i57-fixture (1 area)"), "I57 index choice (other seed)"); changed(otherChoice);
+        other->Show();
+        click(*other, "terrain-preview"); until([&] { return field<wxButton>(*other, "terrain-preview").IsEnabled(); });
+        const auto otherStatus = statusText(*other);
+        check(otherStatus.find("evaluated (below copy thresholds)") != std::string::npos, "Other terrain not evaluated as clear: " + otherStatus);
+        if (field<wxButton>(*other, "terrain-place").IsEnabled()) { report << "I57_STAGE other seed " << seed << '\n'; break; }
+        other->Destroy(); other = nullptr;
+    }
+    check(other != nullptr, "No placeable other seed among 8");
+    place(*other); check(target.actionQueue->getSize() == 1 && target.actionQueue->getCurrentIndex() == 1, "I57 Place one Undo");
+    const auto placed = contents(target.map); check(target.map.getTileCount() > 0, "I57 empty Place");
+    check(target.actionQueue->undo() && target.map.getTileCount() == 0, "I57 Undo");
+    check(target.actionQueue->redo() && contents(target.map) == placed, "I57 Redo exact payload");
+    other->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+    report << "I57_OTHER_TERRAIN_PLACE_UNDO_REDO_PASS\n";
 }
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
@@ -161,7 +270,9 @@ void run() {
         check(target.actionQueue->undo() && target.map.getTileCount() == 0, "Undo source");
         check(target.actionQueue->redo() && contents(target.map) == placed, "Redo exact payload");
         d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
-        report << "LEARNING_PROFILE_PREVIEW_I54_PLACE_UNDO_REDO_PASS\nLEARNING_DIALOG_PASS\n";
+        report << "LEARNING_PROFILE_PREVIEW_I54_PLACE_UNDO_REDO_PASS\n";
+        i57CopyIndex(report, dir);
+        report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
 }

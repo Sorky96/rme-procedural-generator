@@ -3,6 +3,7 @@
 #include "ui/dialogs/style_learning_dialog.h"
 #include "procedural/adapter/open_map_learning.h"
 #include "procedural/core/doodad_class.h"
+#include "procedural/core/reference_header.h"
 #include "procedural/adapter/generation_assets.h"
 #include "procedural/adapter/generation_selection.h"
 #include "app/managers/version_manager.h"
@@ -71,6 +72,17 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     name_ = new wxTextCtrl(this, wxID_ANY); name_->SetName("learn-name");
     nameRow->Add(name_, 1); root->Add(nameRow, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
     root->Add(new wxStaticText(this, wxID_ANY, "Use 1-64 ASCII letters, digits, hyphens or underscores."), 0, wxALL, margin);
+    auto* protectRow = new wxBoxSizer(wxHORIZONTAL);
+    protect_ = new wxCheckBox(this, wxID_ANY, "Also add this area to the cop&y index:");
+    protect_->SetName("learn-protect");
+    protect_->SetToolTip("The generator can then refuse to place terrain that copies this area (also rotated or mirrored). "
+        "The index keeps window hashes of the five natural ground classes only, under the profile name; no map name or position.");
+    protectRow->Add(protect_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+    index_name_ = new wxTextCtrl(this, wxID_ANY, "my-maps"); index_name_->SetName("learn-index-name");
+    index_name_->SetToolTip("Copy index file name in the local profile folder (1-64 letters, digits, '-' or '_'). "
+        "A new index is created when none has this name; an existing one gets this area added (up to 16 areas).");
+    protectRow->Add(index_name_, 1);
+    root->Add(protectRow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, margin);
     progress_ = new wxGauge(this, wxID_ANY, 100); root->Add(progress_, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
     status_ = new wxStaticText(this, wxID_ANY, "Read the rectangle to review ground names. Data stays on this computer.");
     status_->SetName("learn-status"); root->Add(status_, 0, wxEXPAND | wxALL, margin);
@@ -205,13 +217,29 @@ void StyleLearningDialog::Analyze() {
     auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems, wallBrushes, counts_.placed, carpetItems, counts_.grounds);
     if (!sample) { Status(sample.error()); return; }
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));
+    auto raster = sampleClassRaster(*sample_, *mapping);
+    if (!raster) { Status("Not enough memory for the sample's ground classes."); return; }
+    {
+        Sha256 hash;
+        hash.update(std::as_bytes(std::span(raster->data(), raster->size())));
+        raster_sha_ = Sha256::hex(hash.finish());
+    }
+    const auto& bounds = sample_->floors().front().bounds;
+    const auto width = uint32_t(bounds.width), height = uint32_t(bounds.height);
     result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); stop_ = std::stop_source{};
     const auto ids = *ids_; const auto token = stop_.get_token();
     analyzed_mapping_ = mapping_->GetValue().ToStdString(wxConvUTF8);
     try {
-        worker_ = std::async(std::launch::async, [sample = std::move(*sample), mapping = std::move(*mapping), ids, token]() mutable {
-            try { return fitLearningSample(sample, std::move(mapping), ids.client, ids.otbSha256, ids.datSha256, token); }
-            catch (const std::exception&) { return std::expected<StyleProfile, std::string>(std::unexpected("Analysis failed; no profile saved.")); }
+        worker_ = std::async(std::launch::async, [sample = std::move(*sample), mapping = std::move(*mapping), raster = std::move(*raster),
+                                                  width, height, ids, token]() mutable -> std::expected<Learned, std::string> {
+            try {
+                auto profile = fitLearningSample(sample, std::move(mapping), ids.client, ids.otbSha256, ids.datSha256, token);
+                if (!profile) return std::unexpected(profile.error());
+                auto fingerprint = classFingerprint(width, height, raster, token);
+                if (!fingerprint) return std::unexpected(fingerprint.error() == SimilarityError::Cancelled
+                    ? "Analysis stopped." : "Cannot fingerprint the sample's ground classes; no profile saved.");
+                return Learned{std::move(*profile), std::move(*fingerprint)};
+            } catch (const std::exception&) { return std::unexpected("Analysis failed; no profile saved."); }
         });
         cancel_->Enable();
     } catch (const std::exception&) {
@@ -260,7 +288,7 @@ void StyleLearningDialog::Tick() {
         }
         if (!result) { Status(result.error()); return; }
         result_ = std::move(*result); save_->Enable(); progress_->SetValue(100);
-        const auto& stats = result_->stats;
+        const auto& stats = result_->profile.stats;
         uint64_t present = 0, natural = 0;
         for (size_t i = 0; i < styleKindCount; ++i) { present += stats.kindTiles[i]; if (i < naturalKindCount) natural += stats.kindTiles[i]; }
         Status(std::format("Fit ready. Used {} of {} present tiles ({} skipped). Enter a name and choose Save profile.", natural, present, present - natural));
@@ -272,12 +300,64 @@ void StyleLearningDialog::Save() {
         Invalidate(); Status("Result stale or permission missing. Analyze again."); return;
     }
     const auto ids = loadedClientAssetIds();
-    if (!ids || checkProfile(*result_, ids->client, ids->otbSha256, ids->datSha256, 7) != ProfileCompatibility::Compatible) {
+    if (!ids || checkProfile(result_->profile, ids->client, ids->otbSha256, ids->datSha256, 7) != ProfileCompatibility::Compatible) {
         Invalidate(); Status("Client assets changed. Analyze again."); return;
     }
-    const auto saved = saveLearnedProfile(styleProfileDirectory(), name_->GetValue().ToStdString(wxConvUTF8), *result_);
+    // The index edit is checked before the profile is written, so a refused edit saves nothing.
+    std::optional<Protection> protection;
+    if (protect_->GetValue()) {
+        auto prepared = PrepareProtection(*ids);
+        if (!prepared) { Status(prepared.error() + " Nothing saved."); return; }
+        protection = std::move(*prepared);
+    }
+    const auto name = name_->GetValue().ToStdString(wxConvUTF8);
+    const auto saved = saveLearnedProfile(styleProfileDirectory(), name, result_->profile);
     if (!saved) { Status(saved.error()); return; }
-    if (IsModal()) EndModal(wxID_OK); else { save_->Disable(); Status("Profile saved locally. Reopen the generator to choose it."); }
+    if (protection) {
+        const auto indexName = index_name_->GetValue().ToStdString(wxConvUTF8);
+        const auto written = saveCopyIndex(styleProfileDirectory(), indexName, protection->index, protection->previousSha256);
+        if (!written) {
+            save_->Disable();
+            Status(std::format("Profile \"{}\" saved, but the copy index was not updated: {}", name, written.error()));
+            return;
+        }
+    }
+    if (IsModal()) EndModal(wxID_OK);
+    else {
+        save_->Disable();
+        Status(protection ? "Profile and copy index saved locally. Reopen the generator to choose them."
+                          : "Profile saved locally. Reopen the generator to choose it.");
+    }
+}
+std::expected<StyleLearningDialog::Protection, std::string> StyleLearningDialog::PrepareProtection(const ClientAssetIds& ids) const {
+    const auto indexName = index_name_->GetValue().ToStdString(wxConvUTF8);
+    if (!validCopyAlias(indexName)) return std::unexpected("Use 1-64 letters, digits, '-' or '_' for the copy index name.");
+    const auto path = styleProfileDirectory() / (indexName + ".i53");
+    Protection protection;
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) {
+        if (copyIndexNeedsRebuild(path)) return std::unexpected("That copy index has the old format. Choose another index name.");
+        protection.previousSha256 = fileSha256(path);
+        auto existing = readCopyIndex(path, ids.client, ids.otbSha256, ids.datSha256);
+        if (!existing || protection.previousSha256.empty())
+            return std::unexpected("That copy index cannot be read or belongs to another client. Choose another index name.");
+        protection.index = std::move(*existing);
+    } else if (ec) {
+        return std::unexpected("Cannot inspect the local profile folder.");
+    } else {
+        protection.index.client = ids.client; protection.index.otbSha256 = ids.otbSha256; protection.index.datSha256 = ids.datSha256;
+    }
+    const auto sha = [](std::string_view text) {
+        Sha256 hash;
+        hash.update(std::as_bytes(std::span(text.data(), text.size())));
+        return Sha256::hex(hash.finish());
+    };
+    CopyReference reference{name_->GetValue().ToStdString(wxConvUTF8), raster_sha_,
+        sha(serializeFingerprint(result_->fingerprint)), sha(analyzed_mapping_), result_->fingerprint};
+    auto added = addCopyReference(std::move(protection.index), std::move(reference));
+    if (!added) return std::unexpected(copyEditErrorText(added.error()));
+    protection.index = std::move(*added);
+    return protection;
 }
 void StyleLearningDialog::ShowItems() {
     std::vector<std::pair<uint16_t, const SampleItem*>> sorted;

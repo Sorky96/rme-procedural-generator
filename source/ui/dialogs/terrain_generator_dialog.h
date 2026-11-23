@@ -87,6 +87,12 @@ private:
     std::span<const rme::procedural::CandidateBand> ranking_bands_;
     wxSpinCtrl* candidate_count_spin_ = nullptr;
     wxTextCtrl* copy_index_text_ = nullptr;
+    // I57: "None", the local copy indices (usable or with the reason they are not), "Other file...".
+    // Choosing an index fills copy_index_text_, which the series reads.
+    wxChoice* copy_index_choice_ = nullptr;
+    std::vector<rme::procedural::CopyIndexFile> copy_index_files_; // entry i is choice i + 1
+    void LoadCopyIndices();
+    void OnCopyIndexChosen(wxCommandEvent& event);
     std::optional<rme::procedural::CopyIndex> copy_index_;
     wxListCtrl* candidate_list_ = nullptr;
     wxImageList* candidate_images_ = nullptr; // owned by list via AssignImageList

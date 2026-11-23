@@ -468,9 +468,25 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
         formatMiB(preparationBudget.maxBytes))));
     candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
     candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-    form->Add(label("Local similarity index (optional):"), 0, wxALIGN_CENTER_VERTICAL);
+    form->Add(label("Cop&y check:"), 0, wxALIGN_CENTER_VERTICAL);
+    copy_index_choice_ = new wxChoice(host, wxID_ANY);
+    copy_index_choice_->SetName("terrain-copy-index-choice");
+    copy_index_choice_->SetToolTip("Refuse to place terrain that copies an area saved in a local copy index (Learn from open map can add areas). "
+        "Indices of another client or in an old format are listed but cannot be chosen.");
+    copy_index_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnCopyIndexChosen, this);
+    form->Add(copy_index_choice_, 1, wxEXPAND);
+    form->Add(label("Copy index file:"), 0, wxALIGN_CENTER_VERTICAL);
     copy_index_text_ = text("terrain-copy-index", "");
     copy_index_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    copy_index_text_->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
+        // Typing a path shows "None", the matching listed index, or "Other file...".
+        const auto value = copy_index_text_->GetValue();
+        int selected = value.empty() ? 0 : int(copy_index_choice_->GetCount()) - 1;
+        for (size_t i = 0; !value.empty() && i < copy_index_files_.size(); ++i)
+            if (std::filesystem::path(value.ToStdWstring()) == copy_index_files_[i].path) selected = int(i) + 1;
+        if (copy_index_choice_->GetCount() > 0) copy_index_choice_->SetSelection(selected);
+        event.Skip();
+    });
     copy_index_text_->SetToolTip("Explicit local I53 index path. Empty: similarity is not evaluated. Invalid or incompatible: entire series refused. Five G4 natural ground classes only; items and underground excluded.");
     form->Add(copy_index_text_, 1, wxEXPAND);
     retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
@@ -515,6 +531,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	profile_choice_->Append("Built-in (manual settings)");
 	profile_choice_->SetSelection(0);
 	LoadStyleProfiles();
+	LoadCopyIndices();
 	form->Add(profile_choice_, 1, wxEXPAND);
 
     form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
@@ -524,7 +541,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
         ReleasePreview(); UpdateControlStates();
         StyleLearningDialog dialog(this);
         if (dialog.ShowModal() == wxID_OK) {
-            LoadStyleProfiles(); RefreshHistoryChoices();
+            LoadStyleProfiles(); LoadCopyIndices(); RefreshHistoryChoices();
             SetStatus("Profile saved locally. Choose it in Style profile to generate a preview.", false);
         }
     });
@@ -1010,6 +1027,41 @@ bool TerrainGeneratorDialog::NaturalSurface() const {
 
 // Offers the style profiles that were learned for exactly the loaded client and its assets. Read-only: the
 // folder is never created and a profile that does not match is not listed, only counted in the tooltip.
+void TerrainGeneratorDialog::LoadCopyIndices() {
+    const auto current = copy_index_text_->GetValue();
+    copy_index_choice_->Clear();
+    copy_index_files_.clear();
+    copy_index_choice_->Append("None");
+    if (const auto ids = loadedClientAssetIds())
+        copy_index_files_ = listCopyIndices(styleProfileDirectory(), ids->client, ids->otbSha256, ids->datSha256);
+    int selected = current.empty() ? 0 : -1;
+    for (size_t i = 0; i < copy_index_files_.size(); ++i) {
+        const auto& file = copy_index_files_[i];
+        copy_index_choice_->Append(wxstr(file.problem.empty()
+            ? std::format("{} ({} area{})", file.name, file.references, file.references == 1 ? "" : "s")
+            : std::format("{} - cannot be used: {}", file.name, file.problem)));
+        if (!current.empty() && std::filesystem::path(current.ToStdWstring()) == file.path) selected = int(i) + 1;
+    }
+    copy_index_choice_->Append("Other file...");
+    copy_index_choice_->SetSelection(selected >= 0 ? selected : int(copy_index_choice_->GetCount()) - 1);
+}
+void TerrainGeneratorDialog::OnCopyIndexChosen(wxCommandEvent& event) {
+    const int choice = copy_index_choice_->GetSelection();
+    if (choice == 0) copy_index_text_->SetValue(wxEmptyString);
+    else if (size_t(choice) <= copy_index_files_.size()) {
+        const auto& file = copy_index_files_[size_t(choice) - 1];
+        if (!file.problem.empty()) {
+            LoadCopyIndices();
+            SetStatus(wxstr(std::format("Copy index \"{}\" cannot be used: {}.", file.name, file.problem)), true);
+            return;
+        }
+        copy_index_text_->SetValue(wxString(file.path.wstring()));
+    } else {
+        copy_index_text_->SetFocus();
+        SetStatus("Type the path of a copy index file below.", false);
+    }
+    event.Skip();
+}
 void TerrainGeneratorDialog::LoadStyleProfiles() {
 	namespace rp = rme::procedural;
 	const auto folder = rp::styleProfileDirectory();
@@ -1380,6 +1432,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	place_button_->Enable(CandidateAllowed());
     candidate_count_spin_->Enable(natural);
     copy_index_text_->Enable(natural);
+    copy_index_choice_->Enable(natural);
     const bool feedback = natural && style_history_ && !collecting_ && !preview_steps_ && prepared_ && selected_candidate_ && *selected_candidate_ < candidates_.size();
     reject_button_->Enable(feedback);
     approve_button_->Enable(feedback && CandidateAllowed());
