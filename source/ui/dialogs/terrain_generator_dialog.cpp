@@ -1105,6 +1105,8 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 		return;
 	}
 	const auto& entry = profiles_[static_cast<size_t>(picked) - 1];
+	// A saved adjusted version keeps its own generation settings (restored above); learned defaults do not replace them.
+	const bool adjusted = !entry.versionId.empty() && entry.adjustment.has_value();
 	wxString applied, skipped;
 	const auto note = [](wxString& list, const char* label, const wxString& name) {
 		list += (list.empty() ? "" : ", ") + wxString(label) + ": " + name;
@@ -1131,10 +1133,12 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	// A learned style comes with rivers, rock and sea cut from a real map: they may leave land that cannot be walked to,
 	// which blocks Place. Repairing reachability (fords, passes) keeps such a series usable.
 	if (std::ranges::any_of(entry.profile.sources, [](const auto& source) { return source.alias == "user-local-surface"; })) {
-		repair_check_->SetValue(true);
-		if (entry.profile.tuning && entry.profile.tuning->riverCount && ford_length_spin_->GetValue() == 0) ford_length_spin_->SetValue(8);
-		if (entry.profile.tuning && entry.profile.tuning->rockPermille) rock_passes_check_->SetValue(true);
-		note(applied, "reachability repair", wxString("on"));
+		if (!adjusted) {
+			repair_check_->SetValue(true);
+			if (entry.profile.tuning && entry.profile.tuning->riverCount && ford_length_spin_->GetValue() == 0) ford_length_spin_->SetValue(8);
+			if (entry.profile.tuning && entry.profile.tuning->rockPermille) rock_passes_check_->SetValue(true);
+		}
+		note(applied, "reachability repair", wxString(repair_check_->GetValue() ? "on" : "off"));
 	}
 	// The top of a mountain level is the style's own land (sand in a desert), not the built-in grass.
 	if (const std::string& land = entry.profile.palette[size_t(rme::procedural::StyleKind::Grass)]; !land.empty()) {
@@ -1147,8 +1151,10 @@ void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	}
 	// Buildings and ruins the profile learned: density, ruin share, floor and walls (a brush this client lacks is skipped).
 	if (const auto& buildings = entry.profile.buildings; buildings.density) {
-		building_density_spin_->SetValue(int(buildings.density));
-		ruin_percent_spin_->SetValue(int(buildings.ruinPercent));
+		if (!adjusted) {
+			building_density_spin_->SetValue(int(buildings.density));
+			ruin_percent_spin_->SetValue(int(buildings.ruinPercent));
+		}
 		learned_ruin_floor_ = buildings.floorPercent < 100 ? buildings.floorPercent : 0;
 		learned_compound_ = buildings.compoundPercent;
 		const Brush* floorBrush = g_brushes.getBrush(buildings.floor);
