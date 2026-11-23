@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/copy_guard.h"
 #include "procedural/core/reference_header.h"
+#include "procedural/core/style_learning.h"
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <format>
 #include <fstream>
@@ -50,6 +52,24 @@ std::string checksum(std::string_view text) {
 }
 bool sha(std::string_view value) {
     return value.size() == 64 && std::ranges::all_of(value, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
+}
+// Recomputes generic windows and the estimate; false when a reference keeps too few windows.
+bool finish(CopyIndex& index) {
+    index.generic.clear();
+    uint64_t hashes = 0;
+    for (const auto& r : index.references) hashes += r.fingerprint.hashes.size();
+    if (index.references.size() >= 2) {
+        index.generic = index.references[0].fingerprint.hashes;
+        for (size_t r = 1; r < index.references.size() && !index.generic.empty(); ++r) {
+            std::vector<uint64_t> next;
+            std::ranges::set_intersection(index.generic, index.references[r].fingerprint.hashes, std::back_inserter(next));
+            index.generic = std::move(next);
+        }
+    }
+    for (const auto& r : index.references)
+        if (r.fingerprint.hashes.size() - index.generic.size() < minCopyReferenceWindows) return false;
+    index.estimatedBytes = 65536 + 16 * (hashes + index.generic.size());
+    return true;
 }
 bool valid(const Fingerprint& f) {
     return f.options == FingerprintOptions{} && std::ranges::is_sorted(f.hashes) &&
@@ -171,15 +191,18 @@ std::expected<CopyAssessment, SimilarityError> assessCopy(const Fingerprint& can
     std::erase_if(filtered.hashes, [&](uint64_t h) { return std::ranges::binary_search(index.generic, h); });
     if (stop.stop_requested()) return std::unexpected(SimilarityError::Cancelled);
     result.after = filtered.hashes.size();
-    bool enough = true, copied = false;
-    for (size_t r = 0; r < 2; ++r) {
+    bool enough = !index.references.empty(), copied = false;
+    const size_t count = index.references.size();
+    result.referenceBefore.resize(count); result.referenceAfter.resize(count);
+    result.shared.resize(count); result.permille.resize(count);
+    for (size_t r = 0; r < count; ++r) {
         if (stop.stop_requested()) return std::unexpected(SimilarityError::Cancelled);
         const auto& reference = index.references[r].fingerprint;
         if (!valid(reference)) return std::unexpected(SimilarityError::BadFormat);
         result.referenceBefore[r] = reference.hashes.size();
         if (index.generic.size() > reference.hashes.size()) return std::unexpected(SimilarityError::BadFormat);
         result.referenceAfter[r] = reference.hashes.size() - index.generic.size();
-        enough &= result.referenceAfter[r] >= 16;
+        enough &= result.referenceAfter[r] >= minCopyReferenceWindows;
         const auto overlap = compareFingerprints(filtered, reference); // filtered candidate contains no generic hashes
         if (stop.stop_requested()) return std::unexpected(SimilarityError::Cancelled);
         result.shared[r] = overlap.shared;
@@ -210,8 +233,8 @@ std::expected<CopyAssessment, SimilarityError> assessCopy(const SurfaceGrid& sur
 }
 
 std::string serializeCopyIndex(const CopyIndex& index) {
-    auto text = std::format("{} {} {}\n{} {} {}\n", copyIndexSchema, copyProjection, copyFingerprintKind,
-        index.client, index.otbSha256, index.datSha256);
+    auto text = std::format("{} {} {}\n{} {} {}\nreferences {}\n", copyIndexSchema, copyProjection, copyFingerprintKind,
+        index.client, index.otbSha256, index.datSha256, index.references.size());
     for (const auto& r : index.references) {
         const auto fp = serializeFingerprint(r.fingerprint);
         text += std::format("{} {} {} {} {}\n", r.alias, r.sourceSha256, r.semanticSha256, r.keymapSha256, fp.size());
@@ -230,18 +253,29 @@ std::expected<CopyIndex, SimilarityError> parseCopyIndex(std::string_view text) 
         if (end == text.npos) return std::string{};
         std::string value(text.substr(0, end)); text.remove_prefix(end + 1); return value;
     };
-    if (line() != std::format("{} {} {}", copyIndexSchema, copyProjection, copyFingerprintKind))
-        return std::unexpected(SimilarityError::BadFormat);
+    const auto first = line();
+    if (first == std::format("{} {} {}", copyIndexSchema, copyProjection, copyFingerprintKind)) index.schema = copyIndexSchema;
+    else if (first == std::format("{} {} {}", copyIndexSchemaV2, copyProjection, copyFingerprintKind)) index.schema = copyIndexSchemaV2;
+    else return std::unexpected(SimilarityError::BadFormat);
+    const bool legacy = index.schema == copyIndexSchemaV2;
     std::istringstream header(line());
     std::string extra;
     if (!(header >> index.client >> index.otbSha256 >> index.datSha256) || header >> extra ||
         !sha(index.otbSha256) || !sha(index.datSha256)) return std::unexpected(SimilarityError::BadFormat);
-    for (size_t i = 0; i < 2; ++i) {
+    size_t count = 2;
+    if (!legacy) {
+        std::istringstream row(line());
+        std::string word;
+        if (!(row >> word >> count) || row >> extra || word != "references" || count < 1 || count > maxCopyReferences)
+            return std::unexpected(SimilarityError::BadFormat);
+    }
+    index.references.resize(count);
+    for (size_t i = 0; i < count; ++i) {
         auto& r = index.references[i];
         uint64_t length = 0;
         std::istringstream row(line());
         if (!(row >> r.alias >> r.sourceSha256 >> r.semanticSha256 >> r.keymapSha256 >> length) || row >> extra ||
-            r.alias != (i == 0 ? "M06" : "M19") || !sha(r.sourceSha256) || !sha(r.semanticSha256) ||
+            (legacy ? r.alias != (i == 0 ? "M06" : "M19") : !validCopyAlias(r.alias)) || !sha(r.sourceSha256) || !sha(r.semanticSha256) ||
             !sha(r.keymapSha256) || length > text.size()) return std::unexpected(SimilarityError::BadFormat);
         const auto payload = text.substr(0, size_t(length));
         // Bound the legacy fingerprint parser's declared reserve BEFORE it allocates.
@@ -259,15 +293,14 @@ std::expected<CopyIndex, SimilarityError> parseCopyIndex(std::string_view text) 
         r.fingerprint = std::move(*fp);
         text.remove_prefix(size_t(length));
     }
-    if (!text.empty() || index.references[0].sourceSha256 == index.references[1].sourceSha256 ||
-        index.references[0].keymapSha256 != index.references[1].keymapSha256)
+    if (!text.empty()) return std::unexpected(SimilarityError::BadFormat);
+    if (legacy && index.references[0].keymapSha256 != index.references[1].keymapSha256)
         return std::unexpected(SimilarityError::BadFormat);
-    const auto& a = index.references[0].fingerprint.hashes;
-    const auto& b = index.references[1].fingerprint.hashes;
-    std::ranges::set_intersection(a, b, std::back_inserter(index.generic));
-    if (a.size() - index.generic.size() < 16 || b.size() - index.generic.size() < 16)
-        return std::unexpected(SimilarityError::BadFormat);
-    index.estimatedBytes = 65536 + 16 * (a.size() + b.size() + index.generic.size());
+    for (size_t i = 0; i < count; ++i)
+        for (size_t j = 0; j < i; ++j)
+            if (index.references[i].alias == index.references[j].alias ||
+                index.references[i].sourceSha256 == index.references[j].sourceSha256) return std::unexpected(SimilarityError::BadFormat);
+    if (!finish(index)) return std::unexpected(SimilarityError::BadFormat);
     return index;
 } catch (const std::bad_alloc&) { return std::unexpected(SimilarityError::AllocationFailed); }
 
@@ -292,5 +325,109 @@ bool copyIndexNeedsRebuild(const std::filesystem::path& path) {
     file.read(first.data(), std::streamsize(first.size()));
     first.resize(size_t(file.gcount()));
     return first.starts_with("i53-index/1 ");
+}
+bool validCopyAlias(std::string_view alias) { return validLearnedProfileName(alias); }
+const char* copyEditErrorText(CopyEditError error) noexcept {
+    switch (error) {
+        case CopyEditError::BadAlias: return "Use 1-64 letters, digits, '-' or '_' for the reference name.";
+        case CopyEditError::DuplicateAlias: return "The copy index already has a reference with this name.";
+        case CopyEditError::DuplicateSample: return "The copy index already holds this exact sample.";
+        case CopyEditError::TooMany: return "A copy index holds at most 16 references. Choose another index.";
+        case CopyEditError::TooSmall: return "The sample has too few distinct 16 x 16 windows to protect. Read a larger area.";
+        case CopyEditError::WrongClient: return "The copy index belongs to another client or other client assets.";
+        case CopyEditError::AllocationFailed: return "Not enough memory to update the copy index.";
+    }
+    return "The copy index cannot be updated.";
+}
+std::expected<CopyIndex, CopyEditError> addCopyReference(CopyIndex index, CopyReference reference) try {
+    if (!validCopyAlias(reference.alias)) return std::unexpected(CopyEditError::BadAlias);
+    if (!sha(reference.sourceSha256) || !sha(reference.semanticSha256) || !sha(reference.keymapSha256) || !valid(reference.fingerprint))
+        return std::unexpected(CopyEditError::TooSmall);
+    if (index.references.size() >= maxCopyReferences) return std::unexpected(CopyEditError::TooMany);
+    for (const auto& r : index.references) {
+        if (r.alias == reference.alias) return std::unexpected(CopyEditError::DuplicateAlias);
+        if (r.sourceSha256 == reference.sourceSha256) return std::unexpected(CopyEditError::DuplicateSample);
+    }
+    index.references.push_back(std::move(reference));
+    index.schema = copyIndexSchema;
+    if (!finish(index)) return std::unexpected(CopyEditError::TooSmall);
+    return index;
+} catch (const std::bad_alloc&) { return std::unexpected(CopyEditError::AllocationFailed); }
+
+std::expected<std::vector<uint8_t>, SimilarityError> sampleClassRaster(const SemanticMap& sample,
+    std::span<const KeyMapEntry> mapping) try {
+    if (sample.floors().size() != 1) return std::unexpected(SimilarityError::BadFormat);
+    const auto& floor = sample.floors().front();
+    std::array<uint8_t, 65536> classOfKey;
+    classOfKey.fill(255);
+    const auto& keys = sample.groundKeys();
+    for (size_t k = 1; k < keys.size() && k < classOfKey.size(); ++k)
+        for (const auto& entry : mapping)
+            if (entry.key == keys[k]) {
+                if (size_t(entry.kind) < naturalKindCount) classOfKey[k] = uint8_t(entry.kind);
+                break;
+            }
+    std::vector<uint8_t> raster(floor.ground.size(), 255);
+    for (size_t i = 0; i < raster.size(); ++i)
+        if (floor.traits[i] & bit(Trait::Present)) raster[i] = classOfKey[floor.ground[i]];
+    return raster;
+} catch (const std::bad_alloc&) { return std::unexpected(SimilarityError::AllocationFailed); }
+
+std::string fileSha256(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return {};
+    Sha256 hash;
+    std::array<char, 65536> chunk;
+    while (file) {
+        file.read(chunk.data(), std::streamsize(chunk.size()));
+        if (const auto got = size_t(file.gcount())) hash.update(std::as_bytes(std::span(chunk.data(), got)));
+    }
+    return file.eof() ? Sha256::hex(hash.finish()) : std::string{};
+}
+
+std::expected<void, std::string> saveCopyIndex(const std::filesystem::path& directory, std::string_view name,
+    const CopyIndex& index, std::string_view expectedSha256) {
+    if (!validCopyAlias(name)) return std::unexpected("Use 1-64 letters, digits, '-' or '_' for the index name; no paths or device names.");
+    std::string text;
+    try { text = serializeCopyIndex(index); }
+    catch (const std::bad_alloc&) { return std::unexpected("Not enough memory to write the copy index."); }
+    if (!parseCopyIndex(text)) return std::unexpected("The copy index is invalid; nothing saved.");
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+    if (ec) return std::unexpected("Cannot create the local profile directory.");
+    const auto path = directory / (std::string(name) + ".i53");
+    const auto lock = directory / ".copy-index-save.lock";
+    if (!std::filesystem::create_directory(lock, ec)) return std::unexpected("The profile folder is busy. Retry after the other save finishes.");
+    struct Cleanup { std::filesystem::path path; ~Cleanup() { std::error_code e; std::filesystem::remove_all(path, e); } } cleanup{lock};
+    const bool exists = std::filesystem::exists(path, ec);
+    if (ec) return std::unexpected("Cannot inspect the copy index file.");
+    if (expectedSha256.empty() ? exists : (!exists || fileSha256(path) != expectedSha256))
+        return std::unexpected("The copy index changed or was created meanwhile; nothing saved. Choose the index again.");
+    const auto temporary = lock / "pending";
+    {
+        std::ofstream out(temporary, std::ios::binary);
+        out.write(text.data(), std::streamsize(text.size()));
+        out.flush();
+        if (!out) return std::unexpected("Cannot write the copy index; previous file unchanged.");
+    }
+    std::filesystem::rename(temporary, path, ec);
+    if (ec) return std::unexpected("Cannot replace the copy index; previous file unchanged.");
+    return {};
+}
+
+std::vector<CopyIndexFile> listCopyIndices(const std::filesystem::path& directory,
+    std::string_view client, std::string_view otb, std::string_view dat) {
+    std::vector<CopyIndexFile> files;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(directory, ec), end; !ec && it != end && files.size() < 64; it.increment(ec)) {
+        if (it->path().extension() != ".i53" || !it->is_regular_file(ec)) continue;
+        CopyIndexFile file{it->path(), it->path().stem().string(), {}, 0};
+        if (copyIndexNeedsRebuild(file.path)) file.problem = "old format, rebuild it";
+        else if (auto index = readCopyIndex(file.path, client, otb, dat)) file.references = index->references.size();
+        else file.problem = index.error() == SimilarityError::AllocationFailed ? "not enough memory" : "unreadable or for another client";
+        files.push_back(std::move(file));
+    }
+    std::ranges::sort(files, {}, &CopyIndexFile::name);
+    return files;
 }
 } // namespace rme::procedural

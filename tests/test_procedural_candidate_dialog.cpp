@@ -283,7 +283,7 @@ void copyGuard(std::ostream& report) {
     const auto surface = generateSurface({config.region, config.seed, config.surface}, {65001,65001,16}, {10000,100000,10000000});
     check(bool(surface), "I53 fixture surface");
     const auto fp = surfaceClassFingerprint(*surface); check(fp && fp->hashes.size() >= 16, "I53 sufficient fixture");
-    CopyIndex index; index.client=ids->client; index.otbSha256=ids->otbSha256; index.datSha256=ids->datSha256;
+    CopyIndex index; index.client=ids->client; index.otbSha256=ids->otbSha256; index.datSha256=ids->datSha256; index.references.resize(2);
     index.references[0] = {"M06", std::string(64,'a'), std::string(64,'b'), std::string(64,'c'), *fp};
     Fingerprint independent; independent.windows=independent.candidateWindows=32;
     for (uint64_t i=1; i<=32; ++i) independent.hashes.push_back(i);

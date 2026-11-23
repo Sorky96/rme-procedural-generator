@@ -1902,9 +1902,13 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 *selected_candidate_, row.seed, row.initialSeed, row.attempts,
                 hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
                 ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.");
-            message += std::format(" Similarity: {}. Windows {}/{} after/before filter; M06 shared {} ({} per mille), M19 shared {} ({} per mille).",
-                copyStateName(row.copyAssessment.state), row.copyAssessment.after, row.copyAssessment.before,
-                row.copyAssessment.shared[0], row.copyAssessment.permille[0], row.copyAssessment.shared[1], row.copyAssessment.permille[1]);
+            const auto& copy = row.copyAssessment;
+            message += std::format(" Similarity: {}. Windows {}/{} after/before filter",
+                copyStateName(copy.state), copy.after, copy.before);
+            if (copy_index_ && copy_index_->references.size() == copy.shared.size())
+                for (size_t r = 0; r < copy.shared.size(); ++r)
+                    message += std::format("; {} shared {} ({} per mille)", copy_index_->references[r].alias, copy.shared[r], copy.permille[r]);
+            message += '.';
             if (prepared_->levels) {
                 const auto& levels = *prepared_->levels;
                 uint64_t reached = 0, total = 0;
