@@ -21,6 +21,17 @@ bool namedAsWall(std::string_view name) {
     return std::ranges::any_of(std::array<std::string_view, 4> {"wall", "pillar", "column", "railing"},
         [&](std::string_view word) { return name.find(word) != std::string_view::npos; });
 }
+// What one walks against: Blocking for an unpassable item, FloorChange for stairs, ladders, ramps and holes.
+uint32_t walkTraits(const Item& item) {
+    if (!item.typeExists() || item.isInvalidOTBMItem()) return 0;
+    const auto definition = item.getDefinition();
+    uint32_t traits = item.isBlocking() ? bit(Trait::Blocking) : 0;
+    for (const auto flag : {ItemFlag::FloorChange, ItemFlag::FloorChangeDown, ItemFlag::FloorChangeNorth, ItemFlag::FloorChangeSouth,
+        ItemFlag::FloorChangeEast, ItemFlag::FloorChangeWest}) {
+        if (definition.hasFlag(flag)) { traits |= bit(Trait::FloorChange); break; }
+    }
+    return traits;
+}
 } // namespace
 std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap& destination, SampleCounts& counts, int row) try {
     auto& [doodads, items, overlays, walls, placed, carpets, grounds] = counts;
@@ -38,7 +49,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
         uint32_t traits = 0;
         if (tile->hasOptionalBorder()) traits |= bit(Trait::OptionalBorder);
         if (tile->ground) {
-            traits |= bit(Trait::HasGround);
+            traits |= bit(Trait::HasGround) | walkTraits(*tile->ground);
             if (!tile->ground->typeExists() || tile->ground->isInvalidOTBMItem()) traits |= bit(Trait::Unknown);
             else {
                 grounds[cell] = tile->ground->getID();
@@ -57,6 +68,7 @@ std::expected<void, std::string> readLearningRow(const Map& source, SemanticMap&
         stack.plainWall = true;
         for (const auto& item : tile->items) {
             if (!item->typeExists() || item->isInvalidOTBMItem()) continue;
+            traits |= walkTraits(*item);
             // A wall piece one can walk through (spider webs are a wall brush) is decoration, learned as an overlay.
             if (item->isDoor()) { traits |= bit(Trait::Door); door = true; continue; }
             if (item->isWall() && item->isBlocking()) {
