@@ -48,3 +48,20 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32 for both profiles, plan fingerprints unchanged (fingerprint 1729 in the core suite).
 
 **Out of scope.** Charts, export of statistics, statistics for the gallery thumbnails, runtime/memory measured by the OS (the memory row is the preparation's own estimate). Manual visual and keyboard review is reported separately.
+
+## I59 — presets and seed randomization (2026-11-24, before implementation)
+
+**Goal.** A user can keep a set of generator settings under a name, load it later or on another map, and draw a new seed with one button.
+
+**Scope.**
+1. **Format `terrain-preset/1`** (text, UTF-8): a schema line, then `name<TAB>value` lines sorted by name. Names are the generator controls' names (`terrain-…`); values have no tab, newline or control characters, at most 1024 bytes; at most 128 entries. Parsing is strict: unknown schema, duplicate or unsorted names, bad characters or an oversize file are refused.
+2. **What a preset holds:** every input of the generator's sections except the area position (`terrain-scope`, `-x`, `-y`, `-z`) and the copy check (a local file). Size, seed, retries, candidate count, style, profile, brushes and all generation options are included.
+3. **Dialog:** a **Preset** choice (None plus the presets in the local profile folder's `presets` subfolder), **Save preset…** (name; the same name rules as learned profiles; overwriting asks first; temp file and rename) and **Delete preset** (asks first). Loading applies the values in tab order with the same change events as the user's edits. If any value cannot be applied (unknown control, choice entry or brush not available, number out of range), the dialog returns to its previous settings and the status names the first value refused. Loading or saving invalidates the series like any edit and never changes the map or Undo.
+4. **Seed randomization:** a **Random seed** button next to the seed field fills a new seed from `std::random_device` (64-bit, decimal). It never generates by itself.
+
+**Criteria.**
+1. **Unit tests (core format):** round trip; sorted output independent of input order; refusals for wrong schema, duplicate name, unsorted names, tab/newline/control characters in a value, a value over 1024 bytes, more than 128 entries, a truncated line; a file with CRLF line ends reads like LF.
+2. **Real-client GUI probe:** change several settings on different tabs → save preset → change them again → load → every control equals the saved value; the area position stays as it was. A preset with a missing brush or an out-of-range number is refused and every control keeps its previous value. Overwrite and delete ask first (probe answers no, then yes). Random seed changes the seed field to a valid 64-bit number and starts nothing. Map and Undo unchanged throughout.
+3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Sharing presets between clients beyond copying the file, built-in presets shipped with the editor, preset versions or history.
