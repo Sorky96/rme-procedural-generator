@@ -1951,6 +1951,8 @@ bool TerrainGeneratorDialog::StartCandidate(uint64_t seed) {
     }
     preview_steps_.emplace(std::move(*steps));
     candidate_started_ = std::chrono::steady_clock::now();
+    preview_step_count_ = 0;
+    preview_longest_step_ = {};
     SetStatus(wxstr(std::format("{} candidate {}/{}; seed {}, initial {}, attempt {}. Cancel stops the whole series.",
         collecting_ ? "Generating" : "Loading", collecting_ ? candidates_.size() + 1 : *selected_candidate_ + 1,
         candidate_count_, seed, preview_first_seed_, preview_attempt_)), false);
@@ -1997,7 +1999,10 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
     }
     if (!preview_steps_) { preview_timer_.StartOnce(100); return; }
     try {
+        const auto stepStarted = std::chrono::steady_clock::now();
         auto outcome = preview_steps_->advance();
+        ++preview_step_count_;
+        preview_longest_step_ = std::max(preview_longest_step_, std::chrono::steady_clock::now() - stepStarted);
         if (!outcome) { SchedulePreviewTick(); return; }
         preview_steps_.reset();
         auto request = std::move(pending_request_);
@@ -2037,10 +2042,12 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             if (hardFail != row.score.hardFail || fingerprints != row.fingerprints || result->copyAssessment != row.copyAssessment) {
                 ReleasePreview(); UpdateControlStates(); SetStatus("Candidate rebuild differs from the validated gallery. Generate a new series.", true); return;
             }
+            spdlog::info("Terrain generator: Selected #{} rebuilt in {} GUI-thread steps, longest {} ms.", *selected_candidate_, preview_step_count_,
+                std::chrono::duration_cast<std::chrono::milliseconds>(preview_longest_step_).count());
             prepared_ = std::move(*result);
             if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
             UpdateControlStates();
-            const auto [blocking, other] = ShowReport(*request, row.elapsedMs);
+            const auto [blocking, other] = ShowReport(*request, row);
             SetStatus(wxstr(std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {} Similarity: {}. {} blocking and {} other warning(s); see Warnings.",
                 *selected_candidate_, row.seed, row.initialSeed, row.attempts,
                 hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
@@ -2053,6 +2060,9 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         row.initialSeed = preview_first_seed_; row.seed = request->config.seed; row.attempts = preview_attempt_;
         row.fingerprints = fingerprints;
         row.elapsedMs = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - candidate_started_).count());
+        row.longestStepMs = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(preview_longest_step_).count());
+        spdlog::info("Terrain generator: candidate #{} prepared in {} GUI-thread steps, longest {} ms, total {} ms.", candidates_.size(),
+            preview_step_count_, row.longestStepMs, row.elapsedMs);
         row.score = {hardFail, 0, 0, uint32_t(candidates_.size())};
         if (!ranking_bands_.empty()) {
             if (!result->candidateMetrics) { ReleasePreview(); UpdateControlStates(); SetStatus("Candidate measurement missing. Entire series refused.", true); return; }
@@ -2275,7 +2285,7 @@ void TerrainGeneratorDialog::OnRandomSeed(wxCommandEvent&) {
     seed_text_->SetValue(wxstr(std::to_string(seed))); // the edit releases the preview like any other input
 }
 
-std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& request, uint64_t elapsedMs) {
+std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& request, const Candidate& row) {
     TerrainReportInput input;
     const auto& region = prepared_->snapshot.input.config.region;
     input.width = region.width; input.height = region.height;
@@ -2296,7 +2306,8 @@ std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& requ
     }
     input.memoryBytes = prepared_->memory.totalBytes;
     input.memoryBudget = working_bytes_;
-    input.elapsedMs = elapsedMs;
+    input.elapsedMs = row.elapsedMs;
+    input.longestStepMs = row.longestStepMs;
     const auto report = terrainReportOf(input);
     statistics_list_->Freeze(); warnings_list_->Freeze();
     statistics_list_->DeleteAllItems(); warnings_list_->DeleteAllItems();

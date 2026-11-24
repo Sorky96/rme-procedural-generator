@@ -83,6 +83,7 @@ private:
         wxBitmap thumbnail;
         rme::procedural::CopyAssessment copyAssessment;
         uint64_t elapsedMs = 0; // preparation of the last attempt
+        uint64_t longestStepMs = 0; // I61: longest GUI-thread step of that preparation
         wxBitmap surface;       // I60: Surface minimap for comparison, reduced when the series keeps too much
     };
     std::vector<Candidate> candidates_;
@@ -108,8 +109,11 @@ private:
     wxListCtrl* statistics_list_ = nullptr;
     wxListCtrl* warnings_list_ = nullptr;
     std::chrono::steady_clock::time_point candidate_started_;
+    // I61: GUI-thread steps of the running preparation and the longest one.
+    uint64_t preview_step_count_ = 0;
+    std::chrono::steady_clock::duration preview_longest_step_ {};
     // Fills both lists; returns the number of {blocking, other} warnings.
-    std::pair<size_t, size_t> ShowReport(const Request& request, uint64_t elapsedMs);
+    std::pair<size_t, size_t> ShowReport(const Request& request, const Candidate& row);
     // I59: named settings in the local profile folder's "presets" subfolder, and a random seed.
     wxChoice* preset_choice_ = nullptr; // "(none)", then the preset names
     wxTextCtrl* preset_name_text_ = nullptr;

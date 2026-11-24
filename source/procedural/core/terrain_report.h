@@ -31,6 +31,7 @@ struct TerrainReportInput {
     std::span<const std::string> aliases; // copy-index references, in index order
     uint64_t memoryBytes = 0, memoryBudget = 0;
     std::optional<uint64_t> elapsedMs;
+    std::optional<uint64_t> longestStepMs; // longest GUI-thread step of the preparation
 };
 
 struct TerrainWarning {

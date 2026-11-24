@@ -143,6 +143,7 @@ TerrainReport terrainReportOf(const TerrainReportInput& in) {
             report.warnings.push_back({false, std::format("Memory estimate {} is above 75% of the budget {}.", mib(in.memoryBytes), mib(in.memoryBudget))});
     }
     if (in.elapsedMs) rows.emplace_back("Preparation time", std::format("{} ms", *in.elapsedMs));
+    if (in.longestStepMs) rows.emplace_back("Longest GUI-thread step", std::format("{} ms", *in.longestStepMs));
     return report;
 }
 
