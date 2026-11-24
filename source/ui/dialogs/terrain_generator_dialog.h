@@ -92,7 +92,9 @@ private:
     uint32_t candidate_count_ = 1;
     uint64_t series_revision_ = 0, series_assets_ = 0, working_bytes_ = 0;
     bool collecting_ = false, updating_candidates_ = false;
-    std::span<const rme::procedural::CandidateBand> ranking_bands_;
+    // A copy: a learned profile's bands live in profiles_, which a reload replaces.
+    std::vector<rme::procedural::CandidateBand> ranking_bands_;
+    bool ranking_learned_ = false; // the bands are the profile's own learned ones (I62), not g6-bands-v1
     wxSpinCtrl* candidate_count_spin_ = nullptr;
     wxTextCtrl* copy_index_text_ = nullptr;
     // I57: "None", the local copy indices (usable or with the reason they are not), "Other file...".

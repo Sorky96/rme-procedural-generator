@@ -1376,7 +1376,7 @@ void TerrainGeneratorDialog::OnFeedback(FeedbackAction action) try {
     f.adjustment = styleAdjustment(effective.surface);
     f.base=p ? (p->baseId.empty() ? styleIdentity(p->profile) : p->baseId) : "";
     f.version=p ? p->versionId : "";
-    f.policy=ranking_bands_.empty() ? "unranked/I54-v1" : "g6-bands-v1/A/I54-v1";
+    f.policy=ranking_bands_.empty() ? "unranked/I54-v1" : ranking_learned_ ? "learned-bands/A/I54-v1" : "g6-bands-v1/A/I54-v1";
     const auto& c=candidates_[*selected_candidate_];
     f.candidate=*selected_candidate_; f.userSeed=series_request_->config.seed;
     f.initialSeed=c.initialSeed; f.actualSeed=c.seed; f.fingerprints=c.fingerprints; f.hardFail=c.score.hardFail;
@@ -1852,10 +1852,14 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
         series_revision_ = editor->map.getChangeTracker().getGeneration();
         series_assets_ = g_version.GetAssetRevision();
         candidate_count_ = NaturalSurface() ? uint32_t(candidate_count_spin_->GetValue()) : 1;
-        ranking_bands_ = {};
+        ranking_bands_.clear(); ranking_learned_ = false;
         const auto picked = profile_choice_->GetSelection();
-        if (NaturalSurface() && picked > 0 && size_t(picked) <= profiles_.size())
-            ranking_bands_ = candidateBandsFor(profiles_[size_t(picked) - 1].profile);
+        if (NaturalSurface() && picked > 0 && size_t(picked) <= profiles_.size()) {
+            const auto& profile = profiles_[size_t(picked) - 1].profile;
+            const auto bands = candidateBandsFor(profile);
+            ranking_bands_.assign(bands.begin(), bands.end());
+            ranking_learned_ = !profile.bands.empty();
+        }
         const uint64_t imageBytes = uint64_t(request->config.region.width) * request->config.region.height * 7 + bitmapOverheadBytes;
         const auto available = candidateWorkingBudget(preparationBudget.maxBytes, candidate_count_,
             selection_ ? selection_->estimatedBytes : 0, imageBytes);
@@ -2051,7 +2055,9 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             SetStatus(wxstr(std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {} Similarity: {}. {} blocking and {} other warning(s); see Warnings.",
                 *selected_candidate_, row.seed, row.initialSeed, row.attempts,
                 hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
-                ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.",
+                ranking_bands_.empty() ? "No ranking policy; default is first admissible." :
+                ranking_learned_ ? "A / bands learned from the profile's samples (paths and buildings not ranked); quality not validated." :
+                "A / g6-bands-v1 baseline; quality gate I51 failed.",
                 copyStateName(row.copyAssessment.state), blocking, other)), hardFail);
             preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
         }
