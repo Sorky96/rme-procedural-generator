@@ -155,6 +155,11 @@ void runProbe() {
         limits.stop = stopSource.get_token();
         const auto before = hashReferenceFile(map);
         check(before.has_value(), "Hash before failed");
+        std::stop_source stoppedHash;
+        stoppedHash.request_stop();
+        const auto cancelledHash = hashReferenceFile(map, stoppedHash.get_token());
+        check(!cancelledHash && cancelledHash.error() == ReferenceImportError::Cancelled, "Stopped hash did not report cancellation");
+        log << "HASH_CANCEL_PASS\n";
         // Cancellation test mode: a second thread requests stop after the given delay and the
         // latency from that request to normalizeReference returning is measured.
         const std::string cancelSetting = readSetting("cancel-after-ms.txt");
