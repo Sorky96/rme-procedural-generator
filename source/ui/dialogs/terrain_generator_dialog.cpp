@@ -1939,9 +1939,13 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         if (!target) {
             ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
-        const bool hardFail = result->copyAssessment.hardFail() ||
-            (result->levels && candidateHardFail(true, result->levels->plan, result->levels->report, result->levels->repair,
-                {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}));
+        // A profile without learned out-of-reach shares keeps the rule from before they were learned: every place and
+        // floor transition reached, single cells not counted.
+        const bool learnedReach = request->profile.unreachedCapPermille || request->profile.unreachedWalkPermille;
+        const bool hardFail = result->copyAssessment.hardFail() || (result->levels && (learnedReach ?
+            candidateHardFail(true, result->levels->plan, result->levels->report, result->levels->repair,
+                {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}) :
+            candidateHardFail(true, result->levels->report, result->levels->repair)));
         const auto fingerprints = candidateFingerprints(*result);
         if (!collecting_) {
             const auto& row = candidates_[*selected_candidate_];
@@ -1991,7 +1995,7 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 // Walkable cells out of reach on the ground floor (with the caves) and above it, against what the
                 // reference allows (candidateHardFail).
                 const size_t cells = size_t(levels.plan.region.width) * levels.plan.region.height;
-                if (cells && levels.report.walkable.size() == cells * levels.plan.floors.size() &&
+                if (learnedReach && cells && levels.report.walkable.size() == cells * levels.plan.floors.size() &&
                     levels.report.reached.size() == levels.report.walkable.size()) {
                     std::array<uint64_t, 2> walkable {}, out {};
                     for (size_t i = 0; i < levels.report.walkable.size(); ++i) {
