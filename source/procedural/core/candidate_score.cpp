@@ -55,6 +55,16 @@ bool candidateHardFail(bool validationPassed, const LevelPlan& plan, const Level
     return out[0] * 1000 > uint64_t(tolerance.walkPermille) * walkable[0] || out[1] * 1000 > uint64_t(tolerance.capPermille) * walkable[1];
 }
 
+std::optional<CandidateBand> learnedCandidateBand(size_t metric, int64_t reference) noexcept {
+    if (!learnableCandidateMetric(metric) || (reference < 0 && !candidateSignedMetric(metric))) return std::nullopt;
+    if (reference > INT64_MAX / 200 || reference < INT64_MIN / 200) return std::nullopt;
+    if (metric >= 12 && metric <= 19 && reference < 50)
+        return CandidateBand{metric, reference, std::max<int64_t>(0, reference - 50) * 100, (reference + 50) * 100};
+    if (metric == 11 && reference < 20) return CandidateBand{metric, reference, 0, (reference + 20) * 100};
+    const int64_t a = 67 * reference, b = 150 * reference;
+    return CandidateBand{metric, reference, std::min(a, b), std::max(a, b)};
+}
+
 std::expected<CandidateScore, CandidateScoreError> scoreCandidateMetrics(
     const CandidateMetrics& metrics, std::span<const CandidateBand> bands, bool hardFail, uint32_t index) {
     if (bands.empty() || bands.size() > metrics.size()) return std::unexpected(CandidateScoreError::InvalidBands);

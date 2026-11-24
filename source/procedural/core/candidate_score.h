@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "procedural/core/candidate_band.h"
 #include "procedural/core/level_repair.h"
 
 #include <array>
@@ -27,13 +28,15 @@ inline constexpr size_t candidateRankingMetricCount = 26;
 }
 using CandidateMetrics = std::array<std::optional<int64_t>, candidateMetricNames.size()>;
 
-// Shape references are not stored in g4-profile/6. Supply reviewed bands explicitly; never infer them from tuning.
-// Bounds are hundredths of the metric's native unit, inclusive: 67*ref and 150*ref express the relative band exactly.
-struct CandidateBand {
-    size_t metric = 0;
-    int64_t reference = 0;
-    int64_t lowerHundredths = 0, upperHundredths = 0;
-};
+// Bands come from reviewed references (g6-bands-v1) or from measured learning samples; never inferred from tuning.
+// A learned band exists for the ranking metrics except paths and buildings, which a learning sample does not contain.
+[[nodiscard]] constexpr bool learnableCandidateMetric(size_t metric) noexcept {
+    return metric < candidateRankingMetricCount && (metric < 20 || metric > 25);
+}
+// The band rule of policy 396e057 for a measured reference: [0.67r; 1.5r]; trans.R*/D* [max(0, r-50); r+50] when r < 50;
+// patch.RS [0; r+20] when r < 20. A signed reference below zero gets its bounds in ascending order. nullopt for a metric
+// that is not learnable or a negative reference of an unsigned metric.
+[[nodiscard]] std::optional<CandidateBand> learnedCandidateBand(size_t metric, int64_t reference) noexcept;
 enum class CandidateScoreError : uint8_t {
     InvalidGrid, MeasurementFailed, Cancelled, AllocationFailed, InvalidBands, NegativeMetric
 };
