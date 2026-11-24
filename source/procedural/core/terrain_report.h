@@ -18,8 +18,8 @@ inline constexpr size_t surfaceKindCount = size_t(SurfaceKind::Bridge) + 1;
 
 // Existing content of the generated floor inside the area, all left unchanged (I63).
 struct PreservedContent {
-    uint64_t tiles = 0;          // existing tiles (any content)
-    uint64_t houseTiles = 0, houseExits = 0, spawns = 0, waypoints = 0, towns = 0, zoneTiles = 0, idItems = 0;
+    uint64_t tiles = 0;          // protected cells: existing tiles and cells of spawn areas, waypoints, towns, house exits
+    uint64_t houseTiles = 0, houseExits = 0, spawns = 0, spawnCells = 0, waypoints = 0, towns = 0, zoneTiles = 0, idItems = 0;
     uint64_t writable = 0;       // cells the generator may write before the margin
     uint64_t marginCells = 0;    // writable cells kept clear by the protection margin
     uint32_t margin = 0;

@@ -52,6 +52,8 @@ std::expected<GenerationSnapshot, SnapshotError> captureGenerationSnapshot(
 // profileNeedsEdgeClearance) a cell also qualifies beside a non-writable neighbour that holds no ground:
 // that empty tile would otherwise receive the border. The cleared cells are inside the area, so the
 // border lands on them, and nothing outside the allowed area is touched.
+// Includes the cells of the config's protection margin (I63): they stay empty, and the cells beside them are kept clear
+// as beside existing content.
 [[nodiscard]] std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool outerBorderBrushes = false);
 
 [[nodiscard]] bool emptyTerrainContent(const Tile* tile) noexcept;

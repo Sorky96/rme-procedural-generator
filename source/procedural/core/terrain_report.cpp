@@ -101,7 +101,7 @@ TerrainReport terrainReportOf(const TerrainReportInput& in) {
         const auto& kept = in.preserved;
         rows.emplace_back("Existing tiles kept", std::format("{}", kept.tiles));
         const std::pair<const char*, uint64_t> parts[] {{"House tiles kept", kept.houseTiles}, {"House exits kept", kept.houseExits},
-            {"Spawns kept", kept.spawns}, {"Waypoints kept", kept.waypoints}, {"Towns kept", kept.towns},
+            {"Spawns kept", kept.spawns}, {"Cells of spawn areas kept", kept.spawnCells}, {"Waypoints kept", kept.waypoints}, {"Towns kept", kept.towns},
             {"Tiles with zones kept", kept.zoneTiles}, {"Items with unique or action id kept", kept.idItems}};
         for (const auto& [name, part] : parts) if (part) rows.emplace_back(name, std::format("{}", part));
         if (kept.margin) rows.emplace_back("Kept clear by the margin", std::format("{} cells ({} tiles around existing ones)", kept.marginCells, kept.margin));

@@ -109,10 +109,11 @@ PreservedContent preservedContentOf(const GenerationSnapshot& snapshot) {
 			if (index < snapshot.input.mask.size() && snapshot.input.mask[index] && !snapshot.input.protection[index]) ++out.writable;
 			const auto& cell = snapshot.cells[size_t(region.y + int(y) - context.y) * context.width + size_t(region.x + int(x) - context.x)];
 			const Tile* tile = cell.original.get();
-			const bool kept = (tile && !emptyTerrainContent(tile)) || cell.spawnCount || cell.waypointCount || cell.townCount || !cell.houseExits.empty();
-			if (!kept) continue;
+			// The capture's protection decides what is kept (it also covers spawn areas and other registry cells).
+			if (index >= snapshot.input.protection.size() || !snapshot.input.protection[index]) continue;
 			++out.tiles;
-			out.spawns += cell.spawnCount || (tile && tile->spawn);
+			out.spawns += tile && tile->spawn;
+			out.spawnCells += cell.spawnCount != 0;
 			out.waypoints += cell.waypointCount != 0;
 			out.towns += cell.townCount != 0;
 			out.houseExits += !cell.houseExits.empty();
@@ -185,10 +186,12 @@ std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool o
 	const auto& region = input.config.region;
 	const auto& context = snapshot.context;
 	std::vector<uint8_t> result(input.mask.size(), 0);
+	const auto margin = protectionMarginCells(input.protection, region.width, region.height, input.config.protectionMargin);
+	for (size_t i = 0; i < margin.size(); ++i) result[i] = margin[i] && input.mask[i] && !input.protection[i];
 	const auto writableAt = [&](int64_t x, int64_t y) {
 		if (x < 0 || y < 0 || x >= int64_t(region.width) || y >= int64_t(region.height)) return false;
 		const size_t index = size_t(y) * region.width + size_t(x);
-		return input.mask[index] && !input.protection[index];
+		return input.mask[index] && !input.protection[index] && (margin.empty() || !margin[index]);
 	};
 	const auto holdsGround = [&](int64_t x, int64_t y) {
 		const int64_t cx = region.x + x - context.x, cy = region.y + y - context.y;

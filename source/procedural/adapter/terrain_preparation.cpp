@@ -361,6 +361,8 @@ std::expected<PreparationPreflight, PreparationError> preflight(
 			return fail(PreparationInputError::MemoryLimit);
 		}
 		semanticBytes += 2 * cellCount + 2 * kSnapshotAllocationOverhead;
+		// The I63 margin mask, alive with them.
+		if (config.protectionMargin) semanticBytes += cellCount + kSnapshotAllocationOverhead;
 		if (background) {
 			// The worker owns a mask copy; combined protection is moved into it.
 			if (cellCount > UINT64_MAX - semanticBytes - kSnapshotAllocationOverhead) return fail(PreparationInputError::MemoryLimit);
@@ -459,18 +461,15 @@ TerrainPreparationSteps runPreparation(
         std::unique_ptr<PreparedTerrain::Levels> levels;
         {
 			if (input.config.algorithm == GenerationAlgorithm::Surface) {
-				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
-				std::vector<uint8_t> protection = input.protection;
-				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
-				// I63: the margin around existing tiles; counted on the cells the generator could otherwise write.
+				// I63: surfaceKeepClear includes the margin around existing tiles; counted here on cells otherwise writable.
 				preserved = preservedContentOf(*snapshot);
 				preserved.margin = input.config.protectionMargin;
 				const auto margin = protectionMarginCells(input.protection, input.config.region.width, input.config.region.height,
 					input.config.protectionMargin);
-				for (size_t i = 0; i < margin.size(); ++i) {
-					if (margin[i] && input.mask[i] && !protection[i]) ++preserved.marginCells;
-					protection[i] |= margin[i];
-				}
+				for (size_t i = 0; i < margin.size(); ++i) preserved.marginCells += margin[i] && input.mask[i] && !input.protection[i];
+				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
+				std::vector<uint8_t> protection = input.protection;
+				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
 				const SurfaceBudget surfaceBudget{budget.maxCells, semanticBytes, semanticBytes};
 				SurfaceResult generated = std::unexpected(SurfaceError::Cancelled);
 				if (background) {
