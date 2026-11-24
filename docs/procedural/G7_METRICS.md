@@ -82,3 +82,23 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Sprite (asset) rendering of the preview, comparison of the lower floors, synchronized statistics of the compared candidate, more than two candidates at once. Manual visual and keyboard review is reported separately; the probe cannot check what is drawn.
+
+## I61 — preview off the GUI thread (2026-11-24, before implementation)
+
+**Goal.** The generator dialog stays responsive while a preview is prepared: no single step of the preparation holds the GUI thread long enough to be noticed.
+
+**Baseline (measured 2026-11-24 before the change, temporary instrumentation, `g1_run_resolver_probe.py --surface --visible`, mostly 512x512 dialog runs, 4384 GUI-thread steps).** Longest step 117 ms; 376 steps of 50 ms or more, 35 of 33-50 ms. The long steps are: one step of the DrawOperations preview builder (up to 118 ms; the passes for structures, mountain outline, vegetation, overlays, walls, wall alignment and doors run without a yield), one iteration of the reachability check and repair loop (up to 120 ms: tile scan, `levelReachabilityOf`, `repairLevelReach`), and the cave and plateau stages (60-100 ms).
+
+**Scope.**
+1. Pure computations of these stages run on the existing owned worker (`CoreTask`), with the GUI coroutine suspended until they finish: reachability and repair in the loop, and any other pure core call found in a step over the limit.
+2. Passes that must touch the map, brushes or the preview buffer (GUI thread only) yield on the same 8 ms deadline as the existing ones.
+3. The dialog logs one line per prepared candidate: number of GUI-thread steps and the longest one in ms. The statistics list shows the longest step.
+4. Results do not change: same plan, preview and reachability for the same inputs.
+
+**Criteria.**
+1. **Responsiveness:** in the same Surface probe run, no GUI-thread step of 50 ms or more, and at most 1% of steps of 33 ms or more. Reported with the same measurement as the baseline (the new log line).
+2. **Identical results:** G5 `--i47` 32/32 with fingerprints, passes, categories and edges identical to the run before the change (`scratchpad/i60-g5`); core fingerprint 1729 unchanged; the I57 copy probe and the I58 report probe pass with the same seeds.
+3. **Cancellation:** Cancel during the worker stages still stops the series without a late result (existing Surface probe cancellation checks pass).
+4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Moving map, brush or preview-buffer access off the GUI thread (not thread-safe in RME), Place/commit time, the learning dialog's steps. Areas larger than 512x512 are measured if the probe covers them but not required.
