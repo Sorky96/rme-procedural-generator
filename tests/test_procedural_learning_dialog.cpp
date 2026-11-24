@@ -18,6 +18,7 @@
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/listbox.h>
 #include <wx/listctrl.h>
 #include <wx/notebook.h>
 #include <wx/modalhook.h>
@@ -417,6 +418,81 @@ void i60Navigation(std::ofstream& report) {
     d->Destroy(); g_gui.CloseCurrentEditor();
     report << "I60_VIEW_KEPT_NO_MUTATION_PASS\n";
 }
+// I62: two rectangles of a varied map (and a third added then removed) learn one profile with two sources and bands;
+// the generator recommends a candidate for it; learning leaves map and Undo unchanged; Place, Undo, Redo.
+void i62Samples(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I62 source map"); auto& source = *g_gui.GetCurrentEditor();
+    auto* fixture = naturalGenerator("1729"); fixture->Show(); preview(*fixture); place(*fixture); fixture->Destroy();
+    const auto sourceHash = contents(source.map), undoSize = source.actionQueue->getSize();
+    auto* generator = new TerrainGeneratorDialog(g_gui.root); generator->Show();
+    std::exception_ptr learningError;
+    wxTheApp->CallAfter([&] {
+        auto* d = dynamic_cast<StyleLearningDialog*>(wxWindow::FindWindowByName("style-learning-dialog"));
+        try {
+            check(d != nullptr, "I62 learning entry");
+            field<wxCheckBox>(*d, "learn-permission").SetValue(true);
+            check(!field<wxButton>(*d, "learn-add-sample").IsEnabled(), "I62 Add sample before reading");
+            const auto readAt = [&](int x, int y) {
+                field<wxSpinCtrl>(*d, "learn-x").SetValue(x); field<wxSpinCtrl>(*d, "learn-y").SetValue(y);
+                field<wxSpinCtrl>(*d, "learn-z").SetValue(7);
+                field<wxSpinCtrl>(*d, "learn-width").SetValue(64); field<wxSpinCtrl>(*d, "learn-height").SetValue(64);
+                click(*d, "learn-read"); until([&] { return field<wxButton>(*d, "learn-analyze").IsEnabled(); });
+                click(*d, "learn-add-sample");
+            };
+            readAt(100, 100); readAt(164, 164); readAt(100, 164);
+            auto& list = field<wxListBox>(*d, "learn-samples");
+            check(list.GetCount() == 3, "I62 three samples listed: " + field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString());
+            list.SetSelection(2);
+            wxCommandEvent select(wxEVT_LISTBOX, list.GetId()); select.SetEventObject(&list); select.SetInt(2);
+            list.GetEventHandler()->ProcessEvent(select);
+            click(*d, "learn-remove-sample");
+            check(list.GetCount() == 2, "I62 sample removed");
+            click(*d, "learn-analyze");
+            until([&] { return field<wxButton>(*d, "learn-save").IsEnabled() || field<wxButton>(*d, "learn-analyze").IsEnabled(); });
+            const auto status = field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString();
+            check(field<wxButton>(*d, "learn-save").IsEnabled() && status.find("from 2 samples") != std::string::npos, "I62 fit failed: " + status);
+            field<wxCheckBox>(*d, "learn-protect").SetValue(true);
+            field<wxTextCtrl>(*d, "learn-name").SetValue("i62-two"); click(*d, "learn-save");
+            check(!std::filesystem::exists(dir / "i62-two.profile"), "I62 copy index of several samples saved something");
+            field<wxCheckBox>(*d, "learn-protect").SetValue(false); click(*d, "learn-save");
+            check(std::filesystem::exists(dir / "i62-two.profile"), "I62 save refused: " + field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString());
+        } catch (...) { learningError = std::current_exception(); if (d) d->EndModal(wxID_CANCEL); }
+    });
+    click(*generator, "terrain-learn");
+    if (learningError) std::rethrow_exception(learningError);
+    check(contents(source.map) == sourceHash && source.actionQueue->getSize() == undoSize, "I62 learning modified map or Undo");
+    generator->Destroy(); source.map.clearChanges(); g_gui.CloseCurrentEditor();
+    const auto profile = parseProfile(fileText(dir / "i62-two.profile"));
+    check(profile && profile->sources.size() == 2 && profile->sources[0].alias == "sample-1" &&
+        profile->sources[0].weightPermille + profile->sources[1].weightPermille == 1000 && !profile->bands.empty() &&
+        std::ranges::none_of(profile->bands, [](const CandidateBand& b) { return !learnableCandidateMetric(b.metric); }),
+        "I62 profile has two weighted sources and learned bands");
+    report << "I62_SAMPLES_PROFILE_NO_MUTATION_PASS\n";
+
+    check(g_gui.NewMap(), "I62 target map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4243");
+    auto& choice = field<wxChoice>(*d, "terrain-profile"); check(choice.SetStringSelection("i62-two"), "I62 profile offered"); changed(choice);
+    field<wxSpinCtrl>(*d, "terrain-candidate-count").SetValue(4);
+    d->Show();
+    click(*d, "terrain-preview"); until([&] { return field<wxButton>(*d, "terrain-preview").IsEnabled(); });
+    const auto status = statusText(*d);
+    auto& list = field<wxListCtrl>(*d, "terrain-candidates");
+    bool recommended = false;
+    for (long i = 0; i < list.GetItemCount(); ++i) recommended |= list.GetItemText(i, 0).Contains("Recommended");
+    check(list.GetItemCount() == 4 && (recommended || status.find("No admissible") != std::string::npos), "I62 no recommendation: " + status);
+    check(status.find("learned from the profile") != std::string::npos || hasRow(rows(*d, "terrain-statistics"), "Ranking"),
+        "I62 learned policy not named: " + status);
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I62 preview modified target");
+    report << "I62_GENERATOR_RECOMMENDS_PASS\n";
+    if (field<wxButton>(*d, "terrain-place").IsEnabled()) {
+        place(*d); check(target.actionQueue->getSize() == 1, "I62 Place one Undo");
+        const auto placed = contents(target.map);
+        check(target.actionQueue->undo() && target.map.getTileCount() == 0, "I62 Undo");
+        check(target.actionQueue->redo() && contents(target.map) == placed, "I62 Redo exact payload");
+        report << "I62_PLACE_UNDO_REDO_PASS\n";
+    } else report << "I62_PLACE_SKIPPED selected candidate blocked\n";
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -479,7 +555,8 @@ void run() {
         const auto ids = loadedClientAssetIds(); const auto offered = scanStyleProfiles(dir, *ids);
         check(offered.offer.offered.size() == 1, "Normal disk offer");
         const auto profile = offered.offer.offered.front().profile;
-        check(candidateBandsFor(profile).empty() && profile.sources[0].alias == "user-local-surface", "No invented M06/M19 provenance");
+        check(!profile.bands.empty() && candidateBandsFor(profile).data() == profile.bands.data() && profile.sources[0].alias == "user-local-surface",
+            "Learned bands, no invented M06/M19 provenance");
         report << "LEARNING_PERMISSION_CANCEL_FIT_SAVE_OFFER_NO_MUTATION_PASS\n";
         // A map revision change must invalidate the result even with no dialog input event.
         auto* stale = new StyleLearningDialog(g_gui.root); stale->Show();
@@ -519,6 +596,7 @@ void run() {
         i58Report(report);
         i59Presets(report, dir);
         i60Navigation(report);
+        i62Samples(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
