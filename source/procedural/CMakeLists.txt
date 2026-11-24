@@ -1,6 +1,6 @@
 add_library(rme_procedural_core STATIC core/generation.cpp core/surface.cpp core/decoration.cpp core/reference_header.cpp core/semantic_map.cpp core/topology.cpp core/features.cpp core/feature_report.cpp core/png_writer.cpp core/semantic_image.cpp core/similarity.cpp core/reference_split.cpp core/style_profile.cpp core/style_fit.cpp core/doodad_class.cpp core/decor_context.cpp core/style_profile_set.cpp core/water_shape.cpp core/scale_stats.cpp core/settlement_stats.cpp core/reachability.cpp core/level_repair.cpp core/mountain_pass.cpp core/building_storey.cpp core/building_dungeon.cpp core/region_graph.cpp core/underground.cpp core/grass_patches.cpp)
 target_compile_features(rme_procedural_core PUBLIC cxx_std_23)
-target_sources(rme_procedural_core PRIVATE core/candidate_score.cpp core/candidate_series.cpp core/copy_guard.cpp core/terrain_report.cpp core/terrain_preset.cpp)
+target_sources(rme_procedural_core PRIVATE core/candidate_score.cpp core/candidate_series.cpp core/copy_guard.cpp core/terrain_report.cpp core/terrain_preset.cpp core/preview_viewport.cpp)
 find_package(nlohmann_json CONFIG REQUIRED)
 target_sources(rme_procedural_core PRIVATE core/style_history.cpp)
 target_sources(rme_procedural_core PRIVATE core/style_learning.cpp)
@@ -170,3 +170,7 @@ add_test(NAME test_procedural_terrain_report COMMAND test_procedural_terrain_rep
 add_executable(test_procedural_terrain_preset ${PROJECT_SOURCE_DIR}/tests/test_procedural_terrain_preset.cpp)
 target_link_libraries(test_procedural_terrain_preset PRIVATE rme_procedural_core)
 add_test(NAME test_procedural_terrain_preset COMMAND test_procedural_terrain_preset)
+
+add_executable(test_procedural_preview_viewport ${PROJECT_SOURCE_DIR}/tests/test_procedural_preview_viewport.cpp)
+target_link_libraries(test_procedural_preview_viewport PRIVATE rme_procedural_core)
+add_test(NAME test_procedural_preview_viewport COMMAND test_procedural_preview_viewport)
