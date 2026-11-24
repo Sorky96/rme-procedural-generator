@@ -66,3 +66,18 @@ Criteria `d410e19`.
 3. **Regression: PASS.** `g5_run_suite.py --probes`: core 26/26 (new `test_procedural_preview_viewport`), Commit and Surface probes, `SUITE_PASS`. G5 `--i47`: `G5_GATE_PASS`.
 
 **Not verified.** What is drawn: the probe reads the view label, not pixels, so the side-by-side images, captions, focus ring and stretched drawing were not checked. Mouse drag (only wheel and keys were exercised). The 64 MiB reduction (the probe's series is far below it). Manual visual and keyboard review.
+
+## I61 — preview off the GUI thread (2026-11-24)
+
+Criteria and baseline `21b77ea`.
+
+**What it does.** The reachability check and repair in the preview's level loop run on the owned worker (`CoreTask`) while the preparation waits. Passes that must touch the map, brushes or the preview buffer stay on the GUI thread but now yield: the DrawOperations preview builder checks its 8 ms deadline in the item check, the memory estimate and every placement pass (structures, outline, vegetation, overlays, fires, entrances and ramps, walls, wall alignment, wall stacks, doors); the level loop's tile scan yields on the same deadline; the resolver, snapshot and blocker-clearing calls of the cave and plateau stages each start a new step. The dialog logs, per prepared candidate, the number of GUI-thread steps and the longest one, and the statistics list shows the longest step.
+
+**Criteria results.**
+
+1. **Responsiveness: PASS.** Same measurement as the baseline (temporary per-step instrumentation, removed again; `g1_run_resolver_probe.py --surface --visible`): 6929 steps, longest 49.4 ms (baseline 117 ms), none of 50 ms or more (baseline 376), 69 of 33 ms or more = 1.0% (baseline 9.4%). The remaining longest steps are single resolver or `clearTerrainPreviewBlockers` calls (up to 49 ms) on 512x512 multi-floor areas.
+2. **Identical results: PASS.** G5 `--i47` `G5_GATE_PASS`; all 16 run logs identical to the I60 run except timing lines (repairs, bridges, removed decor, passes, routes, categories, edges). Core suite with fingerprint 1729 passed. `LEARNING_DIALOG_PASS` with the same seeds (I57 other seed 4242, I58 and I60 sections).
+3. **Cancellation: PASS.** The Surface probe's cancellation and retry checks (`SURFACE_WORKER_CANCEL_RETRY_PASS`) passed.
+4. **Regression: PASS.** `g5_run_suite.py --probes`: core 26/26, Commit and Surface probes, `SUITE_PASS`.
+
+**Not verified.** The 1% limit is met with no margin (69 of 6929). Areas above 512x512 (up to 2000x2000) were not measured; single resolver calls grow with the area and will exceed 50 ms there. How the dialog feels to a user (no manual test).
