@@ -1308,6 +1308,8 @@ public:
     const std::string& failure() const {return failure_;}
     size_t floors() const {return floors_;}
     const std::string& status() const {return status_;}
+    // I58: the Repairs row of the statistics list at Preview.
+    const std::string& repairs() const {return repairs_;}
 private:
     enum class Phase {Start, Preparing, Placing, Placed};
     void command(const char* name) {
@@ -1329,6 +1331,9 @@ private:
                 const auto message = status->GetLabel();
                 if (!wxWindow::FindWindowByName("terrain-preview", &dialog_)->IsEnabled()) return;
                 status_ = message.ToStdString();
+                if (auto* list = dynamic_cast<wxListCtrl*>(wxWindow::FindWindowByName("terrain-statistics", &dialog_)))
+                    for (long i = 0; i < list->GetItemCount(); ++i)
+                        if (list->GetItemText(i, 0) == "Repairs") repairs_ = list->GetItemText(i, 1).ToStdString();
                 if (requireReachable_) check(message.StartsWith("Selected #") && !message.Contains("hardFail"),
                     "Final-mask repair status: " + status_);
                 check(message.StartsWith("Selected #"), "GUI mountain preview refused: " + message.ToStdString());
@@ -1365,7 +1370,7 @@ private:
     size_t floors_;
     bool requireReachable_;
     bool previewOnly_;
-    std::string status_;
+    std::string status_, repairs_;
     bool sourceChanged_;
     uint64_t sourceGeneration_, sourceRevision_;
     Phase phase_ = Phase::Start;
@@ -3106,7 +3111,7 @@ void fallbackEntranceLookCase(std::ostream& report) {
         check(run.placed(), label + ": " + run.failure() + " " + run.status());
         std::string status = run.status();
         std::ranges::replace(status, '\n', ' ');
-        check(status.find("removed places: 0.") != std::string::npos, label + " removed places: " + status);
+        check(run.repairs().ends_with(" and 0 places"), label + " removed places: " + run.repairs() + "; " + status);
         const auto look = checkEntranceLook(editor.map, 1000, 1000, 7, 512, 512, g_brushes.getBrush("mountain"), *exitBrush, label);
         check(look.rockFace > 0, label + " placed no rock-face entrance");
         if (perArea == 15) check(look.holes > 0, label + " placed no ordinary fallback entrance");

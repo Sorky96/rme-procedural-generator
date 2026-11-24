@@ -12,8 +12,10 @@
 #include "procedural/core/candidate_series.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 #include <wx/arrstr.h>
 #include <wx/bitmap.h>
@@ -77,6 +79,7 @@ private:
         std::array<uint64_t, 5> fingerprints {};
         wxBitmap thumbnail;
         rme::procedural::CopyAssessment copyAssessment;
+        uint64_t elapsedMs = 0; // preparation of the last attempt
     };
     std::vector<Candidate> candidates_;
     std::optional<Request> series_request_;
@@ -97,6 +100,12 @@ private:
     wxListCtrl* candidate_list_ = nullptr;
     wxImageList* candidate_images_ = nullptr; // owned by list via AssignImageList
     wxGauge* candidate_progress_ = nullptr;
+    // I58: statistics and warnings of the Selected candidate (terrainReportOf).
+    wxListCtrl* statistics_list_ = nullptr;
+    wxListCtrl* warnings_list_ = nullptr;
+    std::chrono::steady_clock::time_point candidate_started_;
+    // Fills both lists; returns the number of {blocking, other} warnings.
+    std::pair<size_t, size_t> ShowReport(const Request& request, uint64_t elapsedMs);
 	void OnCancel(wxCommandEvent& event);
 	void SchedulePreviewTick();
 	void OnValidate(wxCommandEvent& event);

@@ -415,6 +415,7 @@ TerrainPreparationSteps runPreparation(
 		const auto cellCount = limits.cellCount;
         std::optional<CandidateMetrics> candidateMetrics;
         CopyAssessment copyAssessment;
+        std::array<uint64_t, surfaceKindCount> surfaceCells {};
 		auto& remaining = limits.remaining;
 		const auto semanticBytes = limits.semanticBytes;
 		const auto planBytes = limits.planBytes;
@@ -1091,6 +1092,7 @@ TerrainPreparationSteps runPreparation(
                 // independent of client assets and map state.
                 const uint64_t levelCells = cellCount * (1 + (cave ? 1 : 0) + std::max(levelCaps.size(), levelStoreys.empty() ? size_t(0) : size_t(1)));
                 if (!reserve(levelCells * 96 + 65536)) co_return fail(PreparationInputError::MemoryLimit);
+                for (const auto kind : grid->cells) ++surfaceCells[size_t(kind)];
                 bool rockBlocks = false;
                 for (size_t i = 0; i < cellCount; ++i) if (grid->cells[i] == SurfaceKind::Rock && plan.items[i]) {
                     // The final plan already substitutes mountain below caps.
@@ -1249,7 +1251,7 @@ TerrainPreparationSteps runPreparation(
 		const PreparationMemory memory {
 			infrastructureBytes, snapshotBytes, semanticBytes, planBytes, previewBytes, budget.maxBytes - remaining
 		};
-        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics), copyAssessment};
+        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics), copyAssessment, surfaceCells};
     } catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
 	} catch (const std::system_error&) {

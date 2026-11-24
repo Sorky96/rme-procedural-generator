@@ -876,6 +876,27 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     candidate_progress_ = newd wxGauge(this, wxID_ANY, int(maxCandidateCount));
     candidate_progress_->SetName("terrain-candidate-progress");
     right->Add(candidate_progress_, 0, wxEXPAND | wxTOP, gap);
+    const auto reportList = [&](const char* name, const char* first, const char* second, int firstWidth, int secondWidth) {
+        auto* list = newd wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(-1, Theme::Grid(30)), wxLC_REPORT | wxLC_SINGLE_SEL);
+        list->SetName(name);
+        list->SetBackgroundColour(Theme::Get(Theme::Role::Background));
+        list->SetForegroundColour(Theme::Get(Theme::Role::Text));
+        list->InsertColumn(0, first, wxLIST_FORMAT_LEFT, Theme::Grid(firstWidth));
+        list->InsertColumn(1, second, wxLIST_FORMAT_LEFT, Theme::Grid(secondWidth));
+        return list;
+    };
+    auto* reports = newd wxBoxSizer(wxHORIZONTAL);
+    auto* statisticsColumn = newd wxBoxSizer(wxVERTICAL);
+    statisticsColumn->Add(label("Statistics of the Selected candidate:"), 0, wxBOTTOM, gap);
+    statistics_list_ = reportList("terrain-statistics", "Statistic", "Value", 36, 40);
+    statisticsColumn->Add(statistics_list_, 1, wxEXPAND);
+    auto* warningsColumn = newd wxBoxSizer(wxVERTICAL);
+    warningsColumn->Add(label("Warnings:"), 0, wxBOTTOM, gap);
+    warnings_list_ = reportList("terrain-warnings", "Severity", "Warning", 14, 80);
+    warningsColumn->Add(warnings_list_, 1, wxEXPAND);
+    reports->Add(statisticsColumn, 1, wxEXPAND | wxRIGHT, gap);
+    reports->Add(warningsColumn, 1, wxEXPAND);
+    right->Add(reports, 0, wxEXPAND | wxTOP, gap);
     right->Add(label("Feedback for Selected candidate (independent of Place):"), 0, wxTOP, gap);
     right->Add(label("Optional note (maximum 1024 UTF-8 bytes):"), 0, wxTOP, gap);
     feedback_note_ = newd wxTextCtrl(this, wxID_ANY);
@@ -1319,6 +1340,7 @@ void TerrainGeneratorDialog::ReleasePreview() {
     selected_candidate_.reset(); recommended_candidate_.reset();
     candidate_list_->DeleteAllItems(); candidate_images_->RemoveAll();
     candidate_progress_->SetValue(0);
+    statistics_list_->DeleteAllItems(); warnings_list_->DeleteAllItems();
 	preview_steps_.reset();
 	copy_index_.reset();
 	pending_request_.reset();
@@ -1867,6 +1889,7 @@ bool TerrainGeneratorDialog::StartCandidate(uint64_t seed) {
         ReleasePreview(); SetStatus(message + " Entire series refused; N was not reduced.", true); UpdateControlStates(); return false;
     }
     preview_steps_.emplace(std::move(*steps));
+    candidate_started_ = std::chrono::steady_clock::now();
     SetStatus(wxstr(std::format("{} candidate {}/{}; seed {}, initial {}, attempt {}. Cancel stops the whole series.",
         collecting_ ? "Generating" : "Loading", collecting_ ? candidates_.size() + 1 : *selected_candidate_ + 1,
         candidate_count_, seed, preview_first_seed_, preview_attempt_)), false);
@@ -1955,67 +1978,19 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
             prepared_ = std::move(*result);
             if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
             UpdateControlStates();
-            auto message = std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {}",
+            const auto [blocking, other] = ShowReport(*request, row.elapsedMs);
+            SetStatus(wxstr(std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {} Similarity: {}. {} blocking and {} other warning(s); see Warnings.",
                 *selected_candidate_, row.seed, row.initialSeed, row.attempts,
                 hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
-                ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.");
-            const auto& copy = row.copyAssessment;
-            message += std::format(" Similarity: {}. Windows {}/{} after/before filter",
-                copyStateName(copy.state), copy.after, copy.before);
-            if (copy_index_ && copy_index_->references.size() == copy.shared.size())
-                for (size_t r = 0; r < copy.shared.size(); ++r)
-                    message += std::format("; {} shared {} ({} per mille)", copy_index_->references[r].alias, copy.shared[r], copy.permille[r]);
-            message += '.';
-            if (prepared_->levels) {
-                const auto& levels = *prepared_->levels;
-                uint64_t reached = 0, total = 0;
-                for (const auto& category : levels.report.categories) { reached += category.reached; total += category.total; }
-                message += std::format(" Reachable: {}/{} places. Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.",
-                    reached, total, levels.repair.repairs, levels.repair.bridges, levels.repair.removedCaps, levels.repair.removedPois);
-                // Where the hardFail comes from: the first places that cannot be walked to, and closed-off pockets.
-                static constexpr const char* poiNames[] {"door", "site", "cave entrance", "cave exit", "cap", "cave cell", "storey", "dungeon"};
-                static_assert(std::size(poiNames) == rme::procedural::levelPoiKindCount);
-                for (size_t k = 0; k < std::min<size_t>(levels.report.firstUnreachable.size(), 5); ++k) {
-                    const auto& place = levels.report.firstUnreachable[k];
-                    message += std::format("{} {} at {},{},{}", k ? "," : " Unreachable:", poiNames[size_t(place.kind)], place.x, place.y, place.z);
-                }
-                if (!levels.report.firstUnreachable.empty()) message += ".";
-                // Per kind of place, how many are out of reach; and the floor transitions one cannot walk.
-                bool listed = false;
-                for (size_t k = 0; k < levels.report.categories.size(); ++k) {
-                    const auto& category = levels.report.categories[k];
-                    if (category.reached == category.total) continue;
-                    message += std::format("{} {} {}/{}", listed ? "," : " Out of reach:", poiNames[k], category.total - category.reached, category.total);
-                    listed = true;
-                }
-                if (listed) message += ".";
-                if (levels.report.walkableEdges != levels.report.edges)
-                    message += std::format(" Unwalkable floor transitions: {}/{}.", levels.report.edges - levels.report.walkableEdges, levels.report.edges);
-                if (levels.repair.unrepaired) message += " Repair gave up.";
-                // Walkable cells out of reach on the ground floor (with the caves) and above it, against what the
-                // reference allows (candidateHardFail).
-                const size_t cells = size_t(levels.plan.region.width) * levels.plan.region.height;
-                if (learnedReach && cells && levels.report.walkable.size() == cells * levels.plan.floors.size() &&
-                    levels.report.reached.size() == levels.report.walkable.size()) {
-                    std::array<uint64_t, 2> walkable {}, out {};
-                    for (size_t i = 0; i < levels.report.walkable.size(); ++i) {
-                        const size_t upper = levels.plan.floors[i / cells].z < levels.plan.region.z;
-                        walkable[upper] += levels.report.walkable[i] != 0;
-                        out[upper] += levels.report.walkable[i] && !levels.report.reached[i];
-                    }
-                    message += std::format(" Cells out of reach: ground {}/{} (allowed {} per mille), above {}/{} (allowed {} per mille).",
-                        out[0], walkable[0], request->profile.unreachedWalkPermille, out[1], walkable[1],
-                        request->profile.unreachedCapPermille);
-                }
-                if (!levels.report.pockets.empty()) message += std::format(" Closed pockets: {}.", levels.report.pockets.size());
-            }
-            SetStatus(wxstr(message), hardFail);
+                ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.",
+                copyStateName(row.copyAssessment.state), blocking, other)), hardFail);
             preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
         }
         Candidate row;
         row.copyAssessment = result->copyAssessment;
         row.initialSeed = preview_first_seed_; row.seed = request->config.seed; row.attempts = preview_attempt_;
         row.fingerprints = fingerprints;
+        row.elapsedMs = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - candidate_started_).count());
         row.score = {hardFail, 0, 0, uint32_t(candidates_.size())};
         if (!ranking_bands_.empty()) {
             if (!result->candidateMetrics) { ReleasePreview(); UpdateControlStates(); SetStatus("Candidate measurement missing. Entire series refused.", true); return; }
@@ -2056,6 +2031,48 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
     } catch (const std::bad_alloc&) {
         ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true);
     }
+}
+
+std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& request, uint64_t elapsedMs) {
+    TerrainReportInput input;
+    const auto& region = prepared_->snapshot.input.config.region;
+    input.width = region.width; input.height = region.height;
+    input.surfaceCells = prepared_->surfaceCells;
+    if (prepared_->levels) {
+        input.plan = &prepared_->levels->plan;
+        input.reach = &prepared_->levels->report;
+        input.repair = &prepared_->levels->repair;
+    }
+    // The same rule as the hardFail decision in OnPreviewTick.
+    if (request.profile.unreachedCapPermille || request.profile.unreachedWalkPermille)
+        input.tolerance = ReachTolerance {request.profile.unreachedCapPermille, request.profile.unreachedWalkPermille};
+    std::vector<std::string> aliases;
+    if (copy_index_) {
+        input.copy = &prepared_->copyAssessment;
+        for (const auto& reference : copy_index_->references) aliases.push_back(reference.alias);
+        input.aliases = aliases;
+    }
+    input.memoryBytes = prepared_->memory.totalBytes;
+    input.memoryBudget = working_bytes_;
+    input.elapsedMs = elapsedMs;
+    const auto report = terrainReportOf(input);
+    statistics_list_->Freeze(); warnings_list_->Freeze();
+    statistics_list_->DeleteAllItems(); warnings_list_->DeleteAllItems();
+    for (const auto& [name, value] : report.rows) {
+        const long item = statistics_list_->InsertItem(statistics_list_->GetItemCount(), wxstr(name));
+        statistics_list_->SetItem(item, 1, wxstr(value));
+    }
+    // Blocking first, in the order the report gives them.
+    for (const bool blocking : {true, false})
+        for (const auto& warning : report.warnings) {
+            if (warning.blocking != blocking) continue;
+            const long item = warnings_list_->InsertItem(warnings_list_->GetItemCount(), blocking ? "Blocking" : "Warning");
+            warnings_list_->SetItem(item, 1, wxstr(warning.text));
+        }
+    if (report.warnings.empty()) warnings_list_->SetItem(warnings_list_->InsertItem(0, "None"), 1, "No warnings");
+    statistics_list_->Thaw(); warnings_list_->Thaw();
+    const auto blocking = size_t(std::ranges::count_if(report.warnings, [](const TerrainWarning& w) { return w.blocking; }));
+    return {blocking, report.warnings.size() - blocking};
 }
 
 bool TerrainGeneratorDialog::BuildPreviewBitmap() {
