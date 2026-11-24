@@ -96,6 +96,22 @@ TerrainReport terrainReportOf(const TerrainReportInput& in) {
             if (part) rows.emplace_back(name, std::format("{}" PERMILLE " ({} cells)", permilleOf(part, surface), part));
     }
 
+    if (surface) {
+        // I63: what stays as it was on the generated floor.
+        const auto& kept = in.preserved;
+        rows.emplace_back("Existing tiles kept", std::format("{}", kept.tiles));
+        const std::pair<const char*, uint64_t> parts[] {{"House tiles kept", kept.houseTiles}, {"House exits kept", kept.houseExits},
+            {"Spawns kept", kept.spawns}, {"Waypoints kept", kept.waypoints}, {"Towns kept", kept.towns},
+            {"Tiles with zones kept", kept.zoneTiles}, {"Items with unique or action id kept", kept.idItems}};
+        for (const auto& [name, part] : parts) if (part) rows.emplace_back(name, std::format("{}", part));
+        if (kept.margin) rows.emplace_back("Kept clear by the margin", std::format("{} cells ({} tiles around existing ones)", kept.marginCells, kept.margin));
+        if (kept.contacts)
+            report.warnings.push_back({false, std::format("Generated terrain touches {} house or spawn tile(s); a margin keeps it away.", kept.contacts)});
+        if (kept.marginCells * 2 > kept.writable)
+            report.warnings.push_back({false, std::format("The margin leaves only {}% of the area to generate.",
+                kept.writable ? (kept.writable - kept.marginCells) * 100 / kept.writable : 0)});
+    }
+
     if (in.reach && in.repair) {
         const auto& reach = *in.reach;
         uint64_t reached = 0, total = 0;

@@ -16,6 +16,17 @@ namespace rme::procedural {
 
 inline constexpr size_t surfaceKindCount = size_t(SurfaceKind::Bridge) + 1;
 
+// Existing content of the generated floor inside the area, all left unchanged (I63).
+struct PreservedContent {
+    uint64_t tiles = 0;          // existing tiles (any content)
+    uint64_t houseTiles = 0, houseExits = 0, spawns = 0, waypoints = 0, towns = 0, zoneTiles = 0, idItems = 0;
+    uint64_t writable = 0;       // cells the generator may write before the margin
+    uint64_t marginCells = 0;    // writable cells kept clear by the protection margin
+    uint32_t margin = 0;
+    uint64_t contacts = 0;       // house or spawn tiles with a generated cell beside them (4-neighbours)
+    bool operator==(const PreservedContent&) const = default;
+};
+
 // What the generator dialog shows for one prepared candidate (I58). Plain inputs; pointers may be null when the
 // candidate has no such part (no levels, no copy index).
 struct TerrainReportInput {
@@ -32,6 +43,7 @@ struct TerrainReportInput {
     uint64_t memoryBytes = 0, memoryBudget = 0;
     std::optional<uint64_t> elapsedMs;
     std::optional<uint64_t> longestStepMs; // longest GUI-thread step of the preparation
+    PreservedContent preserved;
 };
 
 struct TerrainWarning {

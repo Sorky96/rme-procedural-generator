@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "procedural/core/generation.h"
 #include "procedural/core/terrain_report.h"
 
 #include <algorithm>
@@ -146,7 +147,43 @@ void copies() {
 
 } // namespace
 
+// I63: the margin dilation, hand-counted, and the preserved rows and warnings.
+void margin() {
+    // 5 x 4, one protected cell at (0, 0) and one at (4, 3).
+    std::vector<uint8_t> protection(20);
+    protection[0] = 1; protection[19] = 1;
+    require(protectionMarginCells(protection, 5, 4, 0).empty(), "margin 0 is empty");
+    const auto one = protectionMarginCells(protection, 5, 4, 1);
+    // (1,0) (0,1) (1,1) around the first; (3,3) (3,2) (4,2) around the second; never the protected cells themselves.
+    const std::vector<uint8_t> expected {0,1,0,0,0, 1,1,0,0,0, 0,0,0,1,1, 0,0,0,1,0};
+    require(one == expected, "margin 1 hand-counted");
+    const auto eight = protectionMarginCells(protection, 5, 4, 8);
+    require(std::ranges::count(eight, 1) == 18 && !eight[0] && !eight[19], "margin 8 covers the area but the protected cells");
+    require(protectionMarginCells(std::vector<uint8_t>(20), 5, 4, 3).empty(), "nothing protected, no margin");
+    require(protectionMarginCells(protection, 5, 3, 1).empty(), "size mismatch refused");
+    require(protectionMarginCells(protection, 5, 4, 99) == eight, "margin clamped to 8");
+
+    TerrainReportInput input;
+    input.width = 10; input.height = 10;
+    input.surfaceCells[size_t(SurfaceKind::Grass)] = 100;
+    input.preserved = {.tiles = 4, .houseTiles = 2, .spawns = 1, .idItems = 1, .writable = 96, .marginCells = 10, .margin = 1};
+    auto report = terrainReportOf(input);
+    const auto row = [&](std::string_view name) {
+        const auto found = std::ranges::find(report.rows, name, &std::pair<std::string, std::string>::first);
+        return found == report.rows.end() ? std::string() : found->second;
+    };
+    require(row("Existing tiles kept") == "4" && row("House tiles kept") == "2" && row("Spawns kept") == "1" &&
+        row("Items with unique or action id kept") == "1" && row("Waypoints kept").empty(), "preserved rows");
+    require(row("Kept clear by the margin").starts_with("10 cells"), "margin row");
+    require(report.warnings.empty(), "no contacts, small margin: no warning");
+    input.preserved.contacts = 3; input.preserved.marginCells = 60;
+    report = terrainReportOf(input);
+    require(hasWarning(report, false, "touches 3 house or spawn") && hasWarning(report, false, "leaves only 37%") && blocking(report) == 0,
+        "contact and margin warnings, not blocking");
+}
+
 int main() try {
+    margin();
     parity();
     cells();
     shares();
