@@ -473,6 +473,13 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
     retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
     form->Add(retry_spin_, 1, wxEXPAND);
+    form->Add(label("Keep a &margin around existing tiles:"), 0, wxALIGN_CENTER_VERTICAL);
+    margin_spin_ = spin("terrain-protection-margin", 0, int(maxProtectionMargin), 0);
+    margin_spin_->SetToolTip(wxstr(std::format("Existing tiles (houses, spawns, zones, items) are never changed. Cells within this many tiles "
+        "(0-{}) of them on the generated floor stay unchanged too; only tiles inside the area count.", maxProtectionMargin)));
+    margin_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    margin_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(margin_spin_, 1, wxEXPAND);
     form->Add(label("Candidates (1-16):"), 0, wxALIGN_CENTER_VERTICAL);
     candidate_count_spin_ = spin("terrain-candidate-count", 1, int(maxCandidateCount), int(defaultCandidateCount));
     form->Add(candidate_count_spin_, 1, wxEXPAND);
@@ -1457,6 +1464,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	repair_check_->Enable(natural);
     bridge_brush_choice_->Enable(natural && repair_check_->GetValue());
     retry_spin_->Enable(natural);
+    margin_spin_->Enable(natural);
 	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
     const bool caves = natural && cave_entrances_spin_->GetValue() > 0;
@@ -1661,6 +1669,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();
+	config.protectionMargin = natural ? uint32_t(margin_spin_->GetValue()) : 0;
 	if (config.vegetation) {
 		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
 		request.profile.decorCount = GroundProfile::decorationCount;
@@ -2296,6 +2305,7 @@ std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& requ
     const auto& region = prepared_->snapshot.input.config.region;
     input.width = region.width; input.height = region.height;
     input.surfaceCells = prepared_->surfaceCells;
+    input.preserved = prepared_->preserved;
     if (prepared_->levels) {
         input.plan = &prepared_->levels->plan;
         input.reach = &prepared_->levels->report;

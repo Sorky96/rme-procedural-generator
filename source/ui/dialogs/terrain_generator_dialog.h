@@ -186,6 +186,7 @@ private:
 	wxSpinCtrl* height_spin_ = nullptr;
 	wxTextCtrl* seed_text_ = nullptr;
 	wxSpinCtrl* retry_spin_ = nullptr;
+	wxSpinCtrl* margin_spin_ = nullptr; // I63 protection margin
     uint32_t preview_attempt_ = 0;
     uint64_t preview_first_seed_ = 0;
     bool preview_fallback_ = false;
