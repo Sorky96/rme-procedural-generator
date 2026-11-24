@@ -81,3 +81,15 @@ Criteria and baseline `21b77ea`.
 4. **Regression: PASS.** `g5_run_suite.py --probes`: core 26/26, Commit and Surface probes, `SUITE_PASS`.
 
 **Not verified.** The 1% limit is met with no margin (69 of 6929). Areas above 512x512 (up to 2000x2000) were not measured; single resolver calls grow with the area and will exceed 50 ms there. How the dialog feels to a user (no manual test).
+
+## I62 — profiles from several samples and learned ranking bands (2026-11-24)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i62--profiles-from-several-samples-and-learned-ranking-bands-2026-11-24-before-implementation).
+
+1. **Unit tests: PASS.** `test_procedural_candidate_score`: the 396e057 rule reproduces the frozen m06/m19 bounds (B, A50 below 50, U20 below 20), no band for paths, buildings or non-ranking metrics, signed and zero references. `test_procedural_style_profile`: `band` lines round-trip; a bound off the rule, a path metric, an unknown metric and a duplicate are refused. `test_procedural_style_learning`: one sample merges to itself; three samples in two orders give byte-identical profiles; counts are summed; sources `sample-1..3` sum to 1000; two identical samples fit the same target, tuning and bands as one; 0 and 9 samples refused; conflicting classes for one ground refused.
+2. **Parity: PASS.** One read rectangle takes the I56 path unchanged (merge of one is identity, sources stay `user-local-surface`); the profile only gains `band` lines. M06/M19 keep g6-bands-v1. G5 `--i47` G5_GATE_PASS with all 32 logs identical to the I60 run apart from timings.
+3. **GUI probe: PASS** (`--learn --visible`, client 1098-BlackTek): three rectangles added, one removed, Analyze reports "from 2 samples"; a copy index with several samples is refused and saves nothing; the profile has two weighted sources and only learnable bands; the generator recommends a candidate for it and names the learned policy; map and Undo unchanged by learning; Place → one Undo → exact Redo. I56–I60 sections, including the I57 copy and I58 report checks, still pass (`LEARNING_DIALOG_PASS`).
+4. **Report only: not measured.** Learned references on M06/M19 rectangles against the frozen bands need those maps opened in the GUI; not run. No claim that learned bands improve ranking.
+5. **Regression: PASS.** `g5_run_suite.py --probes`: SUITE_PASS (core tests, commit and surface probes).
+
+Deviations from the scope text: a metric without a learned band is not scored at all (no N/A penalty), as for any metric absent from a band list. Sources are numbered heaviest first so that the profile does not depend on sample order. Not verified: manual GUI review of the sample list, and samples from two different open maps in one session (the probe reads all three from one map).
