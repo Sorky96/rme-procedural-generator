@@ -52,3 +52,17 @@ Criteria `5f4eb7e`.
 3. **Regression: PASS.** `g5_run_suite.py --probes`: core 25/25 (new `test_procedural_terrain_preset`), Commit and Surface probes, `SUITE_PASS`. G5 `--i47`: `G5_GATE_PASS`.
 
 **Not verified.** Manual visual and keyboard review of the new rows. Every input of the dialog after load (the probe checks six settings on four tabs plus the area position). A preset saved under one client and loaded under another with different brushes beyond the missing-brush refusal.
+
+## I60 — comparison and preview navigation (2026-11-24)
+
+Criteria `d410e19`.
+
+**What it does.** The minimap preview zooms with the mouse wheel at the cursor (1x fit up to 32x, never above 64 pixels per cell), pans by dragging, and fits on double click. It takes keyboard focus (focus ring drawn): `+`/`-` zoom at the centre, arrows pan by a tenth of the pane, `0` fits. The label `terrain-preview-view` gives the zoom, the visible cells with map coordinates and the cell under the cursor. **Compare with** (`terrain-compare`) shows the Selected candidate on the left and another candidate of the series on the right with one shared view, only on the Surface floor. Each candidate's Surface image is kept when the gallery is built, within 64 MiB for the series; larger images are reduced and the label says so. The view stays for an area of the same size and fits otherwise. The viewport arithmetic is in core (`preview_viewport`).
+
+**Criteria results.**
+
+1. **Unit tests: PASS** (`PREVIEW_VIEWPORT_PASS`). Fit scale and centring; for 6 areas (including 1x1, 1x2000, 2000x2000) x 4 panes (including 1x1 pixel) x 16 anchor points x every level: the scale doubles per step, the anchor keeps its screen position within one pixel unless the view stops at the area's edge, the anchor cell stays visible, the 64 px cap holds, no level above the cap, zoom out returns to the fit. Pan clamps at all four edges, an 80 px pan at 8 px per cell moves 10 cells, the cell under a point agrees with the visible rectangle, letterbox points have no cell.
+2. **Real-client probe: PASS** (`--learn --visible`, `LEARNING_DIALOG_PASS`). On a two-candidate 128x128 series: the initial view is the whole area; a wheel step at a quarter of the panel gave 2x with the reported cursor cell inside the visible cells; `+` gave 4x with a smaller view; arrows panned right; `0` fitted. Comparing with the other candidate named it in the label, kept the zoom, the statistics, the Place state and the selection. Selecting the other candidate kept the 2x view. Map and Undo unchanged.
+3. **Regression: PASS.** `g5_run_suite.py --probes`: core 26/26 (new `test_procedural_preview_viewport`), Commit and Surface probes, `SUITE_PASS`. G5 `--i47`: `G5_GATE_PASS`.
+
+**Not verified.** What is drawn: the probe reads the view label, not pixels, so the side-by-side images, captions, focus ring and stretched drawing were not checked. Mouse drag (only wheel and keys were exercised). The 64 MiB reduction (the probe's series is far below it). Manual visual and keyboard review.
