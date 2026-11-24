@@ -10,6 +10,7 @@
 #include "procedural/adapter/style_profile_store.h"
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/core/candidate_series.h"
+#include "procedural/core/terrain_preset.h"
 
 #include <array>
 #include <chrono>
@@ -30,6 +31,7 @@ class wxComboBox;
 class wxPanel;
 class wxListCtrl;
 class wxListEvent;
+class wxNotebook;
 class wxImageList;
 class wxGauge;
 class wxSpinCtrl;
@@ -106,6 +108,21 @@ private:
     std::chrono::steady_clock::time_point candidate_started_;
     // Fills both lists; returns the number of {blocking, other} warnings.
     std::pair<size_t, size_t> ShowReport(const Request& request, uint64_t elapsedMs);
+    // I59: named settings in the local profile folder's "presets" subfolder, and a random seed.
+    wxChoice* preset_choice_ = nullptr; // "(none)", then the preset names
+    wxTextCtrl* preset_name_text_ = nullptr;
+    wxNotebook* sections_ = nullptr;
+    void LoadPresets(const wxString& select = wxEmptyString);
+    void OnPresetChosen(wxCommandEvent& event);
+    void OnPresetSave(wxCommandEvent& event);
+    void OnPresetDelete(wxCommandEvent& event);
+    void OnRandomSeed(wxCommandEvent& event);
+    [[nodiscard]] bool Confirm(const wxString& question);
+    // The section inputs a preset holds, in tab order (not the area position or the copy check).
+    [[nodiscard]] std::vector<wxWindow*> PresetControls() const;
+    [[nodiscard]] rme::procedural::TerrainPreset CollectPreset() const;
+    // Applies every value or none: on a refusal the previous settings return and the reason is given.
+    [[nodiscard]] std::optional<std::string> ApplyPreset(const rme::procedural::TerrainPreset& preset);
 	void OnCancel(wxCommandEvent& event);
 	void SchedulePreviewTick();
 	void OnValidate(wxCommandEvent& event);

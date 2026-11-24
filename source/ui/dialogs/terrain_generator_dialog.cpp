@@ -32,6 +32,9 @@
 
 #include <algorithm>
 #include <charconv>
+#include <filesystem>
+#include <random>
+#include <wx/generic/msgdlgg.h>
 #include <cmath>
 #include <wx/dcmemory.h>
 #include <format>
@@ -404,6 +407,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 	// Inputs, in tab order.
 	auto* sections = newd wxNotebook(this, wxID_ANY);
+	sections_ = sections;
 	sections->SetName("terrain-sections");
 	sections->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
 	wxFlexGridSizer* form = nullptr;
@@ -455,7 +459,16 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 	form->Add(label("&Seed:"), 0, wxALIGN_CENTER_VERTICAL);
 	seed_text_ = text("terrain-seed", "1729");
-	form->Add(seed_text_, 1, wxEXPAND);
+	{
+		auto* seedRow = newd wxBoxSizer(wxHORIZONTAL);
+		seedRow->Add(seed_text_, 1, wxEXPAND | wxRIGHT, gap);
+		auto* random = newd wxButton(host, wxID_ANY, "&Random");
+		random->SetName("terrain-seed-random");
+		random->SetToolTip("Fill in a new random seed. Nothing is generated until you press Preview.");
+		random->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnRandomSeed, this);
+		seedRow->Add(random, 0);
+		form->Add(seedRow, 1, wxEXPAND);
+	}
     form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
     retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
     retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
@@ -814,7 +827,28 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	client_label_ = label(wxEmptyString);
 	client_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 
+	auto* presetRow = newd wxBoxSizer(wxHORIZONTAL);
+	presetRow->Add(label("Pre&set:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+	preset_choice_ = newd wxChoice(this, wxID_ANY);
+	preset_choice_->SetName("terrain-preset");
+	preset_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnPresetChosen, this);
+	presetRow->Add(preset_choice_, 1, wxEXPAND | wxRIGHT, gap);
+	auto* presetDelete = newd wxButton(this, wxID_ANY, "Delete preset");
+	presetDelete->SetName("terrain-preset-delete");
+	presetDelete->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPresetDelete, this);
+	presetRow->Add(presetDelete, 0);
+	auto* presetSaveRow = newd wxBoxSizer(wxHORIZONTAL);
+	presetSaveRow->Add(label("Preset name:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+	preset_name_text_ = text("terrain-preset-name", wxEmptyString);
+	presetSaveRow->Add(preset_name_text_, 1, wxEXPAND | wxRIGHT, gap);
+	auto* presetSave = newd wxButton(this, wxID_ANY, "Save preset");
+	presetSave->SetName("terrain-preset-save");
+	presetSave->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPresetSave, this);
+	presetSaveRow->Add(presetSave, 0);
+
 	auto* left = newd wxBoxSizer(wxVERTICAL);
+	left->Add(presetRow, 0, wxEXPAND | wxBOTTOM, gap);
+	left->Add(presetSaveRow, 0, wxEXPAND | wxBOTTOM, gap);
 	left->Add(sections, 1, wxEXPAND);
 	left->AddSpacer(Theme::Grid(3));
 	left->Add(helper, 0, wxEXPAND);
@@ -978,6 +1012,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) default_brushes_[kind] = fields[kind]->GetValue();		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
 		for (size_t kind = 0; kind < std::size(decorFields); ++kind) default_decor_brushes_[kind] = decorFields[kind]->GetValue();
 	}
+	LoadPresets();
 	CentreOnParent();
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
         ReleasePreview(); // Stop and join owned workers before the window or map can disappear.
@@ -2031,6 +2066,171 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
     } catch (const std::bad_alloc&) {
         ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true);
     }
+}
+
+namespace {
+std::filesystem::path presetDirectory() { return rme::procedural::styleProfileDirectory() / "presets"; }
+// Inputs a preset never holds: the area position belongs to the map, the copy check to a local file.
+bool presetExcluded(std::string_view name) {
+    return name == "terrain-scope" || name == "terrain-x" || name == "terrain-y" || name == "terrain-z" ||
+        name == "terrain-copy-index-choice" || name == "terrain-copy-index";
+}
+std::string presetValueOf(const wxWindow& control) {
+    if (const auto* spin = dynamic_cast<const wxSpinCtrl*>(&control)) return std::to_string(spin->GetValue());
+    if (const auto* check = dynamic_cast<const wxCheckBox*>(&control)) return check->GetValue() ? "1" : "0";
+    // wxMSW derives wxComboBox from wxChoice: test the combo box first.
+    if (const auto* combo = dynamic_cast<const wxComboBox*>(&control)) return combo->GetValue().utf8_string();
+    if (const auto* choice = dynamic_cast<const wxChoice*>(&control)) return choice->GetStringSelection().utf8_string();
+    if (const auto* field = dynamic_cast<const wxTextCtrl*>(&control)) return field->GetValue().utf8_string();
+    return {};
+}
+// Sets one input as the user would, with the event its handlers listen to; a refusal names the reason.
+std::optional<std::string> applyPresetValue(wxWindow& control, const std::string& value) {
+    const auto send = [&](wxCommandEvent&& event) { event.SetEventObject(&control); control.GetEventHandler()->ProcessEvent(event); };
+    const auto name = control.GetName().utf8_string();
+    if (auto* spin = dynamic_cast<wxSpinCtrl*>(&control)) {
+        int number = 0;
+        const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+        if (error != std::errc() || end != value.data() + value.size() || number < spin->GetMin() || number > spin->GetMax())
+            return std::format("{} = \"{}\" is not a number from {} to {}", name, value, spin->GetMin(), spin->GetMax());
+        spin->SetValue(number);
+        wxSpinEvent event(wxEVT_SPINCTRL, spin->GetId()); event.SetPosition(number); send(std::move(event));
+    } else if (auto* check = dynamic_cast<wxCheckBox*>(&control)) {
+        if (value != "0" && value != "1") return std::format("{} = \"{}\" is not 0 or 1", name, value);
+        check->SetValue(value == "1");
+        wxCommandEvent event(wxEVT_CHECKBOX, check->GetId()); event.SetInt(value == "1"); send(std::move(event));
+    } else if (auto* combo = dynamic_cast<wxComboBox*>(&control)) { // before wxChoice, its base on wxMSW
+        if (!value.empty() && !g_brushes.getBrush(value)) return std::format("{}: brush \"{}\" is not available in the loaded client", name, value);
+        combo->Clear();
+        if (!value.empty()) { combo->Append(wxString::FromUTF8(value)); combo->SetSelection(0); }
+        wxCommandEvent event(wxEVT_COMBOBOX, combo->GetId()); event.SetInt(value.empty() ? -1 : 0); event.SetString(combo->GetValue()); send(std::move(event));
+    } else if (auto* choice = dynamic_cast<wxChoice*>(&control)) {
+        const int index = choice->FindString(wxString::FromUTF8(value), true);
+        if (index == wxNOT_FOUND) return std::format("{} has no entry \"{}\"", name, value);
+        choice->SetSelection(index);
+        wxCommandEvent event(wxEVT_CHOICE, choice->GetId()); event.SetInt(index); event.SetString(choice->GetString(index)); send(std::move(event));
+    } else if (auto* field = dynamic_cast<wxTextCtrl*>(&control)) {
+        field->SetValue(wxString::FromUTF8(value)); // sends wxEVT_TEXT
+    } else {
+        return std::format("{} cannot be set", name);
+    }
+    return std::nullopt;
+}
+} // namespace
+
+std::vector<wxWindow*> TerrainGeneratorDialog::PresetControls() const {
+    std::vector<wxWindow*> controls;
+    const auto visit = [&](const auto& self, const wxWindow& parent) -> void {
+        for (wxWindow* child : parent.GetChildren()) {
+            const auto name = child->GetName().utf8_string();
+            const bool input = dynamic_cast<wxSpinCtrl*>(child) || dynamic_cast<wxCheckBox*>(child) || dynamic_cast<wxChoice*>(child) ||
+                dynamic_cast<wxComboBox*>(child) || dynamic_cast<wxTextCtrl*>(child);
+            if (input && rme::procedural::validPresetKey(name) && !presetExcluded(name)) controls.push_back(child);
+            else if (!input) self(self, *child);
+        }
+    };
+    visit(visit, *sections_);
+    return controls;
+}
+
+rme::procedural::TerrainPreset TerrainGeneratorDialog::CollectPreset() const {
+    rme::procedural::TerrainPreset preset;
+    for (const wxWindow* control : PresetControls()) preset.values[control->GetName().utf8_string()] = presetValueOf(*control);
+    return preset;
+}
+
+std::optional<std::string> TerrainGeneratorDialog::ApplyPreset(const rme::procedural::TerrainPreset& preset) {
+    const auto controls = PresetControls();
+    for (const auto& [key, value] : preset.values) {
+        if (std::ranges::none_of(controls, [&](const wxWindow* control) { return control->GetName().utf8_string() == key; }))
+            return std::format("{} is not a setting of this generator", key);
+    }
+    const auto previous = CollectPreset();
+    // A choice can reset later inputs (a profile sets its brushes), so repeat until every value holds.
+    const auto settle = [&](const rme::procedural::TerrainPreset& target) -> std::optional<std::string> {
+        for (int pass = 0; pass < 3; ++pass) {
+            bool changed = false;
+            for (wxWindow* control : controls) {
+                const auto found = target.values.find(control->GetName().utf8_string());
+                if (found == target.values.end() || presetValueOf(*control) == found->second) continue;
+                if (auto refused = applyPresetValue(*control, found->second)) return refused;
+                changed = true;
+            }
+            if (!changed) return std::nullopt;
+        }
+        for (const wxWindow* control : controls) {
+            const auto found = target.values.find(control->GetName().utf8_string());
+            if (found != target.values.end() && presetValueOf(*control) != found->second)
+                return std::format("{} does not keep \"{}\"", found->first, found->second);
+        }
+        return std::nullopt;
+    };
+    auto refused = settle(preset);
+    if (refused) static_cast<void>(settle(previous));
+    return refused;
+}
+
+void TerrainGeneratorDialog::LoadPresets(const wxString& select) {
+    preset_choice_->Clear();
+    preset_choice_->Append("(none)");
+    for (const auto& name : rme::procedural::listTerrainPresets(presetDirectory())) preset_choice_->Append(wxstr(name));
+    const int index = select.empty() ? wxNOT_FOUND : preset_choice_->FindString(select, true);
+    preset_choice_->SetSelection(index == wxNOT_FOUND ? 0 : index);
+}
+
+bool TerrainGeneratorDialog::Confirm(const wxString& question) {
+    // A wx dialog rather than the native message box, so it follows the dialog's keyboard handling and can be tested.
+    wxGenericMessageDialog dialog(this, question, "Terrain generator", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+    dialog.SetName("terrain-confirm");
+    return dialog.ShowModal() == wxID_YES;
+}
+
+void TerrainGeneratorDialog::OnPresetChosen(wxCommandEvent&) {
+    const int index = preset_choice_->GetSelection();
+    if (index <= 0) return;
+    const auto name = preset_choice_->GetString(index);
+    const auto preset = rme::procedural::readTerrainPreset(presetDirectory() / (name.utf8_string() + std::string(rme::procedural::terrainPresetExtension)));
+    if (!preset) {
+        preset_choice_->SetSelection(0);
+        SetStatus(wxstr(std::format("Preset \"{}\" not loaded: {}.", name.utf8_string(), rme::procedural::presetErrorText(preset.error()))), true);
+        return;
+    }
+    if (const auto refused = ApplyPreset(*preset)) {
+        preset_choice_->SetSelection(0);
+        SetStatus(wxstr(std::format("Preset \"{}\" not loaded; settings unchanged. {}.", name.utf8_string(), *refused)), true);
+        return;
+    }
+    preset_name_text_->ChangeValue(name);
+    SetStatus(wxstr(std::format("Preset \"{}\" loaded. Press Preview to generate.", name.utf8_string())), false);
+}
+
+void TerrainGeneratorDialog::OnPresetSave(wxCommandEvent&) {
+    const auto name = preset_name_text_->GetValue().utf8_string();
+    const auto preset = CollectPreset();
+    auto saved = rme::procedural::saveTerrainPreset(presetDirectory(), name, preset, false);
+    if (!saved && saved.error() == rme::procedural::PresetSaveError::Exists) {
+        if (!Confirm(wxstr(std::format("Replace the preset \"{}\"?", name)))) { SetStatus("Preset not saved.", false); return; }
+        saved = rme::procedural::saveTerrainPreset(presetDirectory(), name, preset, true);
+    }
+    if (!saved) { SetStatus(wxstr(rme::procedural::presetSaveErrorText(saved.error())), true); return; }
+    LoadPresets(wxstr(name));
+    SetStatus(wxstr(std::format("Preset \"{}\" saved with {} settings.", name, preset.values.size())), false);
+}
+
+void TerrainGeneratorDialog::OnPresetDelete(wxCommandEvent&) {
+    const int index = preset_choice_->GetSelection();
+    if (index <= 0) { SetStatus("Choose a preset to delete.", true); return; }
+    const auto name = preset_choice_->GetString(index).utf8_string();
+    if (!Confirm(wxstr(std::format("Delete the preset \"{}\"?", name)))) return;
+    if (!rme::procedural::deleteTerrainPreset(presetDirectory(), name)) { SetStatus("Cannot delete the preset.", true); return; }
+    LoadPresets();
+    SetStatus(wxstr(std::format("Preset \"{}\" deleted.", name)), false);
+}
+
+void TerrainGeneratorDialog::OnRandomSeed(wxCommandEvent&) {
+    std::random_device device;
+    const uint64_t seed = (uint64_t(device()) << 32) | device();
+    seed_text_->SetValue(wxstr(std::to_string(seed))); // the edit releases the preview like any other input
 }
 
 std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& request, uint64_t elapsedMs) {

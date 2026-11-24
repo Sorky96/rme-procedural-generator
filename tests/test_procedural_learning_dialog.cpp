@@ -19,6 +19,9 @@
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 #include <wx/listctrl.h>
+#include <wx/notebook.h>
+#include <wx/modalhook.h>
+#include <charconv>
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
@@ -219,6 +222,121 @@ void i58Report(std::ofstream& report) {
     d->Destroy(); g_gui.CloseCurrentEditor();
     report << "I58_SELECTION_REFRESH_NO_MUTATION_PASS\n";
 }
+// I59: the value of a generator input as the preset stores it.
+std::string valueOf(wxWindow& d, const char* name) {
+    auto* w = wxWindow::FindWindowByName(name, &d);
+    check(w != nullptr, std::string("Missing field: ") + name);
+    if (auto* spin = dynamic_cast<wxSpinCtrl*>(w)) return std::to_string(spin->GetValue());
+    if (auto* box = dynamic_cast<wxCheckBox*>(w)) return box->GetValue() ? "1" : "0";
+    if (auto* combo = dynamic_cast<wxComboBox*>(w)) return combo->GetValue().utf8_string(); // a wxChoice on wxMSW
+    if (auto* choice = dynamic_cast<wxChoice*>(w)) return choice->GetStringSelection().utf8_string();
+    if (auto* text = dynamic_cast<wxTextCtrl*>(w)) return text->GetValue().utf8_string();
+    throw std::runtime_error(std::string("Unsupported field: ") + name);
+}
+// Settings on four tabs plus the area position, which a preset never holds.
+constexpr const char* i59Fields[] {"terrain-seed", "terrain-width", "terrain-path-length", "terrain-grass-brush", "terrain-vegetation", "terrain-style"};
+std::vector<std::string> i59Values(wxWindow& d) {
+    std::vector<std::string> values;
+    for (const char* name : i59Fields) values.push_back(valueOf(d, name));
+    values.push_back(valueOf(d, "terrain-x"));
+    return values;
+}
+void i59Set(wxWindow& d, const char* seed, int width, int path, const char* grass, bool vegetation, int style, int x) {
+    field<wxTextCtrl>(d, "terrain-seed").SetValue(seed);
+    field<wxSpinCtrl>(d, "terrain-width").SetValue(width);
+    field<wxSpinCtrl>(d, "terrain-path-length").SetValue(path);
+    auto& brush = field<wxComboBox>(d, "terrain-grass-brush"); brush.Clear(); brush.Append(grass); brush.SetSelection(0); changed(brush, wxEVT_COMBOBOX);
+    field<wxCheckBox>(d, "terrain-vegetation").SetValue(vegetation);
+    auto& styles = field<wxChoice>(d, "terrain-style"); styles.SetSelection(style); changed(styles);
+    field<wxSpinCtrl>(d, "terrain-x").SetValue(x);
+}
+// Answers "terrain-confirm" questions while it lives, before they are shown (wxModalDialogHook); other dialogs open normally.
+class Answerer final : public wxModalDialogHook {
+public:
+    Answerer() { Register(); }
+    ~Answerer() override { Unregister(); }
+    void reply(int id) { id_ = id; asked = false; }
+    bool asked = false;
+protected:
+    int Enter(wxDialog* dialog) override {
+        if (dialog->GetName() != "terrain-confirm") return wxID_NONE;
+        asked = true;
+        return id_;
+    }
+    void Exit(wxDialog*) override {}
+private:
+    int id_ = wxID_NO;
+};
+std::string fileText(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+// I59: save, change, load; refused presets leave every setting; overwrite and delete ask; Random seed starts nothing.
+void i59Presets(std::ofstream& report, const std::filesystem::path& dir) {
+    const auto presets = dir / "presets";
+    std::filesystem::create_directories(presets);
+    std::filesystem::remove(presets / "i59-fixture.preset");
+    { std::ofstream(presets / "i59-missing-brush.preset", std::ios::binary) << "terrain-preset/1\nterrain-grass-brush\tno such brush i59\nterrain-seed\t5\n"; }
+    { std::ofstream(presets / "i59-range.preset", std::ios::binary) << "terrain-preset/1\nterrain-seed\t6\nterrain-width\t999999\n"; }
+    { std::ofstream(presets / "i59-unknown.preset", std::ios::binary) << "terrain-preset/1\nterrain-no-such-control\t1\n"; }
+    check(g_gui.NewMap(), "I59 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = new TerrainGeneratorDialog(g_gui.root); d->Show();
+    auto& choice = field<wxChoice>(*d, "terrain-preset");
+    check(choice.FindString("i59-range") != wxNOT_FOUND && choice.FindString("i59-missing-brush") != wxNOT_FOUND, "I59 presets not listed");
+
+    i59Set(*d, "777", 77, 33, "sand", true, 1, 400);
+    const auto saved = i59Values(*d);
+    field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i59-fixture");
+    Answerer answerer;
+    answerer.reply(wxID_NO); click(*d, "terrain-preset-save"); settle();
+    check(!answerer.asked && std::filesystem::exists(presets / "i59-fixture.preset"), "I59 new preset not saved or asked: " + statusText(*d));
+    check(choice.GetStringSelection() == "i59-fixture", "I59 saved preset not selected");
+    const auto file = fileText(presets / "i59-fixture.preset");
+    check(file.find("terrain-x\t") == std::string::npos && file.find("terrain-copy-index") == std::string::npos &&
+        file.find("terrain-seed\t777\n") != std::string::npos, "I59 preset content: " + file);
+
+    i59Set(*d, "123", 120, 5, "grass", false, 0, 555);
+    choice.SetSelection(0); check(choice.SetStringSelection("i59-fixture"), "I59 choose preset"); changed(choice);
+    auto loaded = i59Values(*d);
+    check(loaded.back() == "555", "I59 preset changed the area position");
+    loaded.back() = saved.back();
+    check(loaded == saved, "I59 loaded settings differ from the saved ones: " + statusText(*d));
+    report << "I59_SAVE_LOAD_PASS\n";
+
+    const auto before = i59Values(*d);
+    for (const char* bad : {"i59-missing-brush", "i59-range", "i59-unknown"}) {
+        check(choice.SetStringSelection(bad), "I59 choose refused preset"); changed(choice);
+        check(i59Values(*d) == before, std::string("I59 refused preset changed settings: ") + bad);
+        check(statusText(*d).find("not loaded") != std::string::npos && choice.GetSelection() == 0,
+            std::string("I59 refusal not reported: ") + bad + " " + statusText(*d));
+    }
+    report << "I59_REFUSED_PRESET_KEEPS_SETTINGS_PASS\n";
+
+    field<wxTextCtrl>(*d, "terrain-seed").SetValue("888");
+    answerer.reply(wxID_NO); click(*d, "terrain-preset-save"); settle();
+    check(answerer.asked && fileText(presets / "i59-fixture.preset") == file, "I59 overwrite without asking or after No");
+    answerer.reply(wxID_YES); click(*d, "terrain-preset-save"); settle();
+    check(answerer.asked && fileText(presets / "i59-fixture.preset").find("terrain-seed\t888\n") != std::string::npos, "I59 overwrite after Yes");
+    check(choice.SetStringSelection("i59-fixture"), "I59 choose for delete"); changed(choice);
+    answerer.reply(wxID_NO); click(*d, "terrain-preset-delete"); settle();
+    check(answerer.asked && std::filesystem::exists(presets / "i59-fixture.preset"), "I59 delete without asking or after No");
+    answerer.reply(wxID_YES); click(*d, "terrain-preset-delete"); settle();
+    check(answerer.asked && !std::filesystem::exists(presets / "i59-fixture.preset") && choice.FindString("i59-fixture") == wxNOT_FOUND, "I59 delete after Yes");
+    report << "I59_OVERWRITE_DELETE_ASK_PASS\n";
+
+    const auto seed = valueOf(*d, "terrain-seed");
+    click(*d, "terrain-seed-random"); settle();
+    const auto random = valueOf(*d, "terrain-seed");
+    uint64_t parsed = 0;
+    const auto [end, error] = std::from_chars(random.data(), random.data() + random.size(), parsed);
+    check(random != seed && error == std::errc() && end == random.data() + random.size(), "I59 random seed: " + random);
+    check(field<wxListCtrl>(*d, "terrain-candidates").GetItemCount() == 0 && !field<wxButton>(*d, "terrain-place").IsEnabled(),
+        "I59 random seed started generation");
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I59 presets modified map or Undo");
+    d->Destroy(); g_gui.CloseCurrentEditor();
+    for (const char* bad : {"i59-missing-brush", "i59-range", "i59-unknown"}) std::filesystem::remove(presets / (std::string(bad) + ".preset"));
+    report << "I59_RANDOM_SEED_NO_MUTATION_PASS\n";
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -319,6 +437,7 @@ void run() {
         report << "LEARNING_PROFILE_PREVIEW_I54_PLACE_UNDO_REDO_PASS\n";
         i57CopyIndex(report, dir);
         i58Report(report);
+        i59Presets(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
