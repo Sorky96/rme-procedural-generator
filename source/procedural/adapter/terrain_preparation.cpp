@@ -585,6 +585,7 @@ TerrainPreparationSteps runPreparation(
                         auto resolved = resolveSurfacePlan(floorInput, floorGrid, floorProfile, semanticBytes, stop,
                             input.config.vegetation ? &world->decor[f] : nullptr, clear);
                         if (!resolved) co_return fail(resolved.error());
+                        co_await std::suspend_always{}; // I61: the next resolver or snapshot call starts a new GUI-thread step
                         for (size_t i = 0; i < cellCount; ++i) {
                             const bool groundBlocks = resolved->items[i] && g_item_definitions.get(resolved->items[i]).hasFlag(ItemFlag::Unpassable);
                             blocking[f * cellCount + i] = groundBlocks ? 2 : (!resolved->decor.empty() && resolved->decor[i] &&
@@ -687,6 +688,7 @@ TerrainPreparationSteps runPreparation(
                     levelShapes = brushes->shapes;
                     auto resolved = resolve();
                     if (!resolved) co_return fail(resolved.error());
+                    co_await std::suspend_always{}; // I61: the next resolver or snapshot call starts a new GUI-thread step
 					plan = std::move(*resolved);
 					auto lowerConfig = input.config;
 					++lowerConfig.region.z;
@@ -694,6 +696,7 @@ TerrainPreparationSteps runPreparation(
 					auto lowerSnapshot = captureGenerationSnapshot(map, lowerConfig, {budget.maxCells, semanticBytes},
 						{budget.maxContextCells, remaining}, mask, stop);
 					if (!lowerSnapshot) co_return fail(lowerSnapshot.error());
+                    co_await std::suspend_always{}; // I61: the next resolver or snapshot call starts a new GUI-thread step
 					if (!reserve(lowerSnapshot->estimatedBytes)) co_return fail(PreparationInputError::MemoryLimit);
 					GroundPlan lowerPlan = {lowerConfig, profile, plan.client, input.mapGeneration, input.mapRevision, input.assetRevision,
 						generated->fingerprint(), std::vector<uint16_t>(cellCount, 0)};
@@ -925,6 +928,7 @@ TerrainPreparationSteps runPreparation(
                         if (!upperSnapshot) {
                             co_return fail(upperSnapshot.error());
                         }
+                        co_await std::suspend_always{}; // I61: the next resolver or snapshot call starts a new GUI-thread step
                         if (!reserve(upperSnapshot->estimatedBytes)) {
                             co_return fail(PreparationInputError::MemoryLimit);
                         }
@@ -969,6 +973,7 @@ TerrainPreparationSteps runPreparation(
                         if (!upperPlan) {
                             co_return fail(upperPlan.error());
                         }
+                        co_await std::suspend_always{}; // I61: the next resolver or snapshot call starts a new GUI-thread step
                         upperPlan->profile = profile;
                         upperPlan->plateauFloor.resize(cellCount);
                         if (!withStoreys) upperPlan->walls.clear();
@@ -1000,6 +1005,7 @@ TerrainPreparationSteps runPreparation(
                             cliffProfile.decorCount = 0; cliffProfile.overlay = {}; cliffProfile.overlayTreePpm = {}; cliffProfile.overlayGroundPpm = {}; cliffProfile.interior = {}; cliffProfile.interiorPpm = {}; cliffProfile.wallStacks = {}; cliffProfile.structures = {}; cliffProfile.carpet.clear(); cliffProfile.carpetPpm = 0; cliffProfile.waterTree.clear();
                             auto cliffs = resolveSurfacePlan(cliffInput, cliffGrid, cliffProfile, remaining, stop, nullptr, cliffClear);
                             if (!cliffs) co_return fail(cliffs.error());
+                            co_await std::suspend_always{}; // I61: the next resolver or snapshot call starts a new GUI-thread step
                             for (size_t i = 0; i < cellCount; ++i) if (generated->cells[i] == PlateauKind::Top) {
                                 lowerPlan.items[i] = cliffs->items[i];
                                 if (lowerUnit) lowerPlan.plateauFloor[i] = 2;
@@ -1182,13 +1188,25 @@ TerrainPreparationSteps runPreparation(
                 // wall, and clearing would remove it (iteration 45c).
                 if (rockFaceEntrances) for (size_t i = 0; i + input.config.region.width < cellCount; ++i)
                     if (plan.entrances[i] && plan.entrances[i] != plan.items[i]) clear[i] = clear[i + input.config.region.width] = 1;
+                co_await std::suspend_always{}; // I61: the preview's last step, clearing and the tile scan are separate steps
                 auto cleared = DrawOperations::clearTerrainPreviewBlockers(*previews.front(), clear, stop);
                 if (!cleared) co_return fail(cleared.error());
+                co_await std::suspend_always{};
             }
+            // The tile scan reads the preview buffers (GUI thread, in 8 ms slices); reachability and repair are pure and run
+            // on the worker while this coroutine waits (I61).
+            co_await std::suspend_always{};
+            using SliceClock = std::chrono::steady_clock;
+            constexpr auto slice = std::chrono::milliseconds(8);
+            auto deadline = SliceClock::now() + slice;
             for (;;) {
                 std::vector<uint8_t> repairMask(levels->blockingMask.size());
                 for (size_t f = 0; f < previews.size(); ++f) for (size_t i = 0; i < cellCount; ++i) {
                     if (i % 4096 == 0 && stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                    if (i % 1024 == 0 && SliceClock::now() >= deadline) {
+                        co_await std::suspend_always{};
+                        deadline = SliceClock::now() + slice;
+                    }
                     const Position position(input.config.region.x + int(i % input.config.region.width),
                         input.config.region.y + int(i / input.config.region.width), levels->plan.floors[f].z);
                     const auto* tile = previews[f]->getBuffer().getTile(position);
@@ -1202,7 +1220,20 @@ TerrainPreparationSteps runPreparation(
                     levels->blockingMask[f * cellCount + i] = blocks != 0;
                     repairMask[f * cellCount + i] = blocks;
                 }
-                auto reach = levelReachabilityOf(levels->plan, {}, levels->blockingMask, stop);
+                std::expected<LevelReachabilityReport, ReachabilityError> reach = std::unexpected(ReachabilityError::Cancelled);
+                {
+                    auto work = [&plan = levels->plan, &mask = levels->blockingMask](std::stop_token token) {
+                        return levelReachabilityOf(plan, {}, mask, token);
+                    };
+                    if (background) {
+                        CoreTask<decltype(reach)> task(std::move(work));
+                        while (!task.done()) {
+                            if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                            co_await std::suspend_always{};
+                        }
+                        reach = task.take();
+                    } else reach = work(stop);
+                }
                 if (!reach) co_return fail(reach.error() == ReachabilityError::Cancelled ?
                     PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
                 levels->report = std::move(*reach);
@@ -1213,7 +1244,21 @@ TerrainPreparationSteps runPreparation(
                 levels->repair.unrepaired = !complete;
                 if (complete || levels->repair.repairs == 64) break;
                 co_await std::suspend_always{};
-                auto repaired = repairLevelReach(levels->plan, repairMask, 64 - levels->repair.repairs, stop);
+                decltype(repairLevelReach(levels->plan, repairMask, 0, stop)) repaired = std::unexpected(ReachabilityError::Cancelled);
+                {
+                    auto work = [&plan = levels->plan, &repairMask, limit = 64 - levels->repair.repairs](std::stop_token token) {
+                        return repairLevelReach(plan, repairMask, limit, token);
+                    };
+                    if (background) {
+                        CoreTask<decltype(repaired)> task(std::move(work));
+                        while (!task.done()) {
+                            if (stop.stop_requested()) co_return fail(PreparationInputError::Cancelled);
+                            co_await std::suspend_always{};
+                        }
+                        repaired = task.take();
+                    } else repaired = work(stop);
+                }
+                deadline = SliceClock::now() + slice;
                 if (!repaired) co_return fail(repaired.error() == ReachabilityError::Cancelled ?
                     PreparationInputError::Cancelled : PreparationInputError::AllocationFailed);
                 if (!repaired->repairs) break; // stable: no legal clearance remains
