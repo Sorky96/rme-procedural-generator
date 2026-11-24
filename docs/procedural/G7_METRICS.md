@@ -30,3 +30,21 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32 for both profiles, fingerprint 1729 = `17159159863505677800`.
 
 **Out of scope.** Multi-map profiles and ranking bands from the GUI (later iteration), item and underground similarity, G3 reports in the GUI. Manual visual and keyboard review is reported separately.
+
+## I58 — statistics and warnings (2026-11-24, before implementation)
+
+**Goal.** After Preview, the user sees what the Selected candidate contains and why Place is blocked or risky, in two lists instead of one long status line.
+
+**Scope.**
+1. **Statistics list** (`terrain-statistics`, two columns) for the Selected candidate: area size and cells; Surface terrain shares in per mille of the area (grass, dirt, rock, shore, water, path, building floor, bridge; counted from the final Surface grid, which the preparation does not keep today); places reached per kind; unwalkable floor transitions; walkable cells out of reach on the ground floor and above, with the allowance or "not limited" for a profile without learned shares; repairs, bridges, removed caps and places; similarity per copy-index reference; preparation memory estimate against its budget; preparation time of the candidate.
+2. **Warnings list** (`terrain-warnings`, severity and text). **Blocking**: one entry per hardFail cause (copy similarity per reference over the thresholds, places out of reach per kind, unwalkable transitions, cells out of reach over the allowance, removed caps/places/storeys/dungeons, repair gave up under the rule without learned shares). **Warning**: similarity state Near, cells out of reach above half the allowance, closed pockets, memory estimate above 75% of the budget. No warning: "No warnings".
+3. One core function computes the rows and warnings from plain inputs (reach report, repair report, level plan, copy assessment, tolerance, memory, terrain counts). The hardFail decision itself is unchanged.
+4. The status line keeps one sentence (selected candidate, validated or blocked, see the lists).
+5. Unknown item IDs are not listed: preparation already refuses a plan with an unknown item (`InvalidItem`), so the count would always be 0.
+
+**Criteria.**
+1. **Unit tests:** for synthetic reports covering each hardFail cause under both reach rules, the Blocking list is non-empty exactly when `candidateHardFail` is true, and names each cause once. Terrain shares add up to the area (±rounding of 1‰ per row). "Not limited" for a profile without learned shares. Near and pocket warnings never block.
+2. **Real-client GUI probe:** after Preview both lists are filled; Blocking warnings exist exactly when Place is refused; a candidate blocked by the copy index shows a Blocking similarity warning naming the reference; selecting another candidate refreshes both lists; the lists change neither the map nor the Undo queue. I57 and I56 probe sections still pass.
+3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32 for both profiles, plan fingerprints unchanged (fingerprint 1729 in the core suite).
+
+**Out of scope.** Charts, export of statistics, statistics for the gallery thumbnails, runtime/memory measured by the OS (the memory row is the preparation's own estimate). Manual visual and keyboard review is reported separately.
