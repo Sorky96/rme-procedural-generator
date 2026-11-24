@@ -649,7 +649,13 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
     const auto keepClear = !cave && !upper && plan.config.algorithm == GenerationAlgorithm::Surface
         ? surfaceKeepClear(snapshot, profileNeedsEdgeClearance(plan.profile))
         : std::vector<uint8_t>();
+    // Checking every planned item against the brushes is long on large areas: yield on the same 8 ms slices as below (I61).
+    auto checkDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(8);
     for (size_t i = 0; i < plan.items.size(); ++i) {
+        if (i % 256 == 0 && std::chrono::steady_clock::now() >= checkDeadline) {
+            co_await std::suspend_always{};
+            checkDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(8);
+        }
 		if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 		const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
         if (bool(input.protection[i]) != protectedCell(snapshot.cells[contextIndex(x, y)])
@@ -820,7 +826,12 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		!charge(nodes, sizeof(MapNode)+sizeof(Floor)+2*kSnapshotAllocationOverhead) || !charge(borderScratchBytes) ||
 		!charge(maximumSnapshotItemAllocation()) ||
 		!charge(decorPlacements, maximumSnapshotItemAllocation() + 3*sizeof(std::unique_ptr<Item>))) co_return std::unexpected(PreviewError::Limit);
-	for (const auto& cell : snapshot.cells) {
+	for (size_t index = 0; index < snapshot.cells.size(); ++index) {
+		if (index % 256 == 0 && std::chrono::steady_clock::now() >= checkDeadline) {
+			co_await std::suspend_always{};
+			checkDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(8);
+		}
+		const auto& cell = snapshot.cells[index];
 		if (!cell.original) continue;
 		const auto memory = estimateSnapshotTileMemory(*cell.original, budget.maxBytes-used, stop);
 		if (!memory) co_return std::unexpected(memory.error() == SnapshotMemoryError::Cancelled ? PreviewError::Cancelled : PreviewError::Limit);
@@ -875,7 +886,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			}
 		}
 		// A structure's own grounds take the place of the generated ones before the border pass, so borders run around them.
-		for (size_t i = 0; i < plan.structure.size(); ++i) {
+		for (size_t i = 0; i < plan.structure.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.structure[i]) continue;
 			const auto& cell = plan.profile.structures[size_t(plan.structure[i] - 1) / 256].cells[size_t(plan.structure[i] - 1) % 256];
 			if (!cell.ground) continue;
@@ -890,7 +901,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 				const auto* brush = tile && tile->ground ? tile->ground->getGroundBrush() : nullptr;
 				return brush && brush->hasOptionalBorder();
 			};
-			for (size_t i = 0; i < plan.items.size(); ++i) {
+			for (size_t i = 0; i < plan.items.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 				if (i % 4096 == 0 && stop.stop_requested()) co_return std::unexpected(PreviewError::Cancelled);
 				if (!plan.items[i]) continue;
 				const int x = r.x + int(i % r.width), y = r.y + int(i / r.width);
@@ -929,27 +940,27 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			}
 		}
 		// Vegetation goes on after the borders: the border calculator never sees it.
-		for (size_t i = 0; i < plan.decor.size(); ++i) {
+		for (size_t i = 0; i < plan.decor.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.decor[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.decor[i]));
 		}
 		// Overlays go over the vegetation of their cell.
-		for (size_t i = 0; i < plan.overlays.size(); ++i) {
+		for (size_t i = 0; i < plan.overlays.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.overlays[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.overlays[i]));
 		}
-		for (size_t i = 0; i < plan.fires.size(); ++i) {
+		for (size_t i = 0; i < plan.fires.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.fires[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.fires[i]));
 		}
         for (const auto layer : {std::span(plan.entrances), std::span(plan.exits), std::span(plan.plateauRamps), std::span(plan.stairs)}) {
-            for (size_t i = 0; i < layer.size(); ++i) {
+            for (size_t i = 0; i < layer.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 				if (!layer[i]) continue;
 				auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 				if (!tile || !tile->ground) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -962,7 +973,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
         }
         // Walls follow the vegetation: the pieces are placed with the brush's first item and RME's own wall logic then
 		// picks the right piece (straight, corner) from the neighbouring walls.
-		for (size_t i = 0; i < plan.walls.size(); ++i) {
+		for (size_t i = 0; i < plan.walls.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.walls[i]) continue;
 			const Position position(r.x + int(i % r.width), r.y + int(i / r.width), r.z);
 			// Only a dungeon ring corner has no ground tile yet.
@@ -970,20 +981,20 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			tile->addItem(Item::Create(plan.walls[i]));
 		}
-		for (size_t i = 0; i < plan.walls.size(); ++i) {
+		for (size_t i = 0; i < plan.walls.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.walls[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			WallBrush::doWalls(result.buffer_.get(), tile);
 		}
 		// Wall stacks stand where a wall piece would, as the sample built them, after the pieces around them are aligned.
-		for (size_t i = 0; i < plan.wallStack.size(); ++i) {
+		for (size_t i = 0; i < plan.wallStack.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.wallStack[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
 			for (const uint16_t id : plan.profile.wallStacks[plan.wallStack[i] - 1].items) if (id) tile->addItem(Item::Create(id));
 		}
 		// Structures stand whole as the sample built them, item stack by item stack.
-		for (size_t i = 0; i < plan.structure.size(); ++i) {
+		for (size_t i = 0; i < plan.structure.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 			if (!plan.structure[i]) continue;
 			auto* tile = result.buffer_->getTile(Position(r.x + int(i % r.width), r.y + int(i / r.width), r.z));
 			if (!tile) co_return std::unexpected(PreviewError::InvalidPlan);
@@ -994,7 +1005,7 @@ PreparationSteps<std::expected<TerrainPreview, PreviewError>> DrawOperations::pr
 		// piece that ended up there refuses the preview instead of leaving a closed wall.
 		if (doorType) {
 			DoorBrush doorBrush(*doorType);
-			for (size_t i = 0; i < plan.doors.size(); ++i) {
+			for (size_t i = 0; i < plan.doors.size(); ++i) { if (i % 256 == 0 && Clock::now() >= deadline) { co_await std::suspend_always{}; deadline = Clock::now() + slice; }
 				if (!plan.doors[i]) continue;
 				const Position position(r.x + int(i % r.width), r.y + int(i / r.width), r.z);
 				auto* tile = result.buffer_->getTile(position);
