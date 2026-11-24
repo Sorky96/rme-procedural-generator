@@ -18,3 +18,7 @@ Criteria `6fe44f4`. Core `d9c2e82`, test fix `aadf14a`, GUI and probe `ab02283`.
 **Not verified.** Manual visual and keyboard review of both windows. Indices larger than one area in the GUI (covered only by unit tests). A full-size learning area (512×512) in the probe: Place of 256×256 Natural surface with caves exceeded the probe profile's Undo limit (40 MiB / 400 actions), so the probe uses 128×128.
 
 **Found while testing.** A Place refused by the Undo limit writes its reason to the log, but the status label the probe read still showed the previous message. Not investigated.
+
+## D30 closed (2026-11-24)
+
+A profile without learned out-of-reach shares uses the rule from before `e4c5e80` again: every place and floor transition must be reached, single cells are not counted, and the status no longer prints a cell allowance for it. With the M19 cave case passing, the Surface probe reached two door/wall assertions made stale by `1038883` (without doors the entrance stays an open gap). The tests now expect walls to differ only at the entrances. `g5_run_suite.py --probes`: core 23/23, Commit and Surface probes PASS, `SUITE_PASS`. This completes I57 criterion 4.
