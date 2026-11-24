@@ -128,3 +128,21 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 5. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`, I57 copy probe and I58 report probe pass.
 
 **Out of scope.** Bands for paths and buildings, holdout validation of learned bands, learning underground or similarity references from several samples at once, editing bands in the GUI.
+
+## I63 — protected content report and a protection margin (2026-11-24, before implementation)
+
+**Goal.** The generator already changes empty tiles only, so houses, spawns, zones, waypoints, towns and items with unique or action ids are never touched. The user now sees what was kept and can keep generated terrain at a distance from it. User decision 2026-11-24: report plus margin.
+
+**Scope.**
+1. **Margin:** setting `terrain-protection-margin` 0–8 (Area tab, default 0). Surface cells within this Chebyshev distance of an existing (protected) tile of the generated floor are left unchanged too. Only tiles inside the area are seen (the existing halo of two cells is not extended). 0 gives exactly the current result. The value is part of `GenerationConfig` and of presets.
+2. **Statistics** for the Selected candidate: existing tiles kept on the generated floor; of them house tiles, house exits, spawns, waypoints, towns, tiles with zones, items with a unique or action id; cells kept clear by the margin.
+3. **Warnings (non-blocking):** "Generated terrain touches N house or spawn tile(s)" when a written cell is 4-adjacent to a house or spawn tile; "The margin leaves only N% of the area to generate" when the margin removes more than half of the writable cells. Blocking warnings are unchanged (they stay equal to hardFail).
+4. Map and Undo are unchanged by Preview; Place still writes only cells the preview writes.
+
+**Criteria.**
+1. **Unit tests:** the margin dilation for 0, 1 and 8 on a hand-counted grid, at area edges and with a mask; report rows and both warnings for hand-made inputs; no warning at zero contacts.
+2. **Identity:** margin 0 leaves G5 `--i47` 32/32 logs identical to the I62 run and core fingerprint 1729 unchanged.
+3. **GUI probe with a real client:** a target map with a house tile, a spawn, a waypoint, a zone tile and an item with an action id inside the area. Preview with margin 0 reports each count and keeps those tiles byte-identical after Place; margin 3 leaves every cell within 3 of them unchanged after Place and reports the kept-clear count; one Undo restores the map, Redo reproduces it. A preset saves and restores the margin.
+4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Margins on cave or upper floors (they keep their iteration 49 clearance), user-drawn protection zones, protecting content outside the area.
