@@ -93,3 +93,16 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i62--profiles-from-several-samples-and-l
 5. **Regression: PASS.** `g5_run_suite.py --probes`: SUITE_PASS (core tests, commit and surface probes).
 
 Deviations from the scope text: a metric without a learned band is not scored at all (no N/A penalty), as for any metric absent from a band list. Sources are numbered heaviest first so that the profile does not depend on sample order. Not verified: manual GUI review of the sample list, and samples from two different open maps in one session (the probe reads all three from one map).
+
+## I63 — protected content report and protection margin (2026-11-24)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i63--protected-content-report-and-a-protection-margin-2026-11-24-before-implementation).
+
+1. **Unit tests: PASS.** `test_procedural_terrain_report`: margin 0 is empty, margin 1 matches a hand-counted 5 x 4 grid at the area edges, margin 8 covers everything but the protected cells, values above 8 are clamped, a size mismatch gives nothing; preserved rows; no warning without contacts; contact and "leaves only 37%" warnings are non-blocking.
+2. **Identity: PASS.** Margin 0 leaves every stage unchanged: G5 `--i47` G5_GATE_PASS with all 16 logs identical to the I62 run apart from timings.
+3. **GUI probe: PASS** (`--learn --visible`, client 1098-BlackTek): a 2 x 2 house with its exit, a spawn of radius 2, a waypoint, a zone tile and a ground with an action id. Margin 0 reports 32 kept cells (4 house + 3 single tiles + 25 cells of the spawn area), 4 house tiles, 1 exit, 1 spawn, 25 spawn-area cells, 1 waypoint, 1 zone tile, 1 id item, and Place and Undo leave the fixture tiles unchanged. Margin 3 reports the kept-clear cells; after Place every cell within 3 of the fixture is still empty; one Undo restores, Redo reproduces exactly. A preset saves `terrain-protection-margin 3` and loading it restores the setting.
+4. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS; `LEARNING_DIALOG_PASS`.
+
+Found while probing: the margin first lived only in the generator's own protection copy, and the preview stage, which recomputes the edge clearance, refused the plan as invalid. `surfaceKeepClear` now includes the margin, so every stage sees the same writable cells. The capture's protection still matches the map exactly, as the preview requires. Spawn areas are protected cell by cell (existing rule), so "Existing tiles kept" counts them; spawn centres and spawn-area cells are separate rows.
+
+Not verified: manual GUI review; margins near content just outside the area (only the area is seen, as recorded in the criteria).

@@ -404,7 +404,7 @@ Criteria and evidence: [G6_METRICS.md](procedural/G6_METRICS.md), [G6_GATE_STATU
 - [ ] Data preview and map render, variants, navigation, quality comparison.
 - [~] Reference import/analysis and style profile panel. Learning from the open map (I56) and the copy index built from it in the GUI (I57, 2026-11-23, [G7_GATE_STATUS.md](procedural/G7_GATE_STATUS.md)). Statistics and warnings for the Selected candidate (I58), presets and a random seed (I59), preview zoom, pan and side-by-side comparison (I60), preview steps under 50 ms on the GUI thread at 512x512 (I61), 2026-11-24. Profiles from up to 8 samples of one or several maps and ranking bands learned from them (I62), 2026-11-24.
 - [ ] Background generation, cancellation, progress, preview cache, commit/undo.
-- [ ] Area protection and warning handling.
+- [x] Area protection and warning handling. Existing content is never changed (G1); I63 (2026-11-24, [G7_GATE_STATUS.md](procedural/G7_GATE_STATUS.md)) reports what the area keeps, warns when terrain touches houses or spawns, and adds a 0-8 tile margin around existing content.
 
 **G7:** entire workflow possible from GUI, without terminal and without manual script invocation.
 
