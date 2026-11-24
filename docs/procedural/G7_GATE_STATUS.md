@@ -38,3 +38,17 @@ Criteria `ec4b30a`.
 3. **Regression: PASS.** `g5_run_suite.py --probes`: core 24/24 (new `test_procedural_terrain_report`), Commit and Surface probes, `SUITE_PASS`. The Surface probe read "removed places" from the old status line; it now reads the Repairs row. G5 `--i47`: `G5_GATE_PASS` 32/32 for both profiles, identical repetitions.
 
 **Not verified.** Manual visual and keyboard review, including how the lists fit at small dialog sizes. The candidate-gallery probe (`test_procedural_candidate_dialog`) was not rerun; it reads only the gallery column, which is unchanged.
+
+## I59 — presets and seed randomization (2026-11-24)
+
+Criteria `5f4eb7e`.
+
+**What it does.** Above the generator's sections: a **Preset** choice, **Delete preset**, a preset name field and **Save preset**. Presets are `terrain-preset/1` files in the `presets` subfolder of the local profile folder. A preset holds every section input except the area position and the copy check. Loading applies the values with the events of a user edit, repeating up to three passes because a profile choice resets its brushes. If any value cannot be applied, every input returns to its previous value and the status names the refused value. Overwrite and delete ask first (a wx message dialog named `terrain-confirm`). **Random** next to the seed fills a new 64-bit seed from `std::random_device` and generates nothing.
+
+**Criteria results.**
+
+1. **Unit tests: PASS** (`TERRAIN_PRESET_PASS`). Round trip, sorted output, CRLF, empty preset and empty value. Refusals: wrong schema, empty file, missing final newline, line without a tab, duplicate, unsorted, bad names, tab and control characters, 1025-byte value (1024 accepted), 129 entries. Save refuses path and device names, does not overwrite without the flag, overwrites with it, refuses while the folder lock is held. Listing, delete once, delete refuses paths, a truncated file is refused.
+2. **Real-client probe: PASS** (`--learn --visible`, `LEARNING_DIALOG_PASS`). Seed, width, path length, grass brush, vegetation and style were saved, changed and loaded back exactly while the area position stayed. The file holds no area position or copy-index entry. Presets with a missing brush, an out-of-range width and an unknown setting were refused with every checked setting unchanged. Overwrite and delete asked; No kept the file, Yes replaced or deleted it. Random seed gave a different valid 64-bit seed and started nothing. Map and Undo unchanged. The probe answers the question with `wxModalDialogHook`; a `CallAfter` or a `wxTimer` posted before the click was not run while the question was open.
+3. **Regression: PASS.** `g5_run_suite.py --probes`: core 25/25 (new `test_procedural_terrain_preset`), Commit and Surface probes, `SUITE_PASS`. G5 `--i47`: `G5_GATE_PASS`.
+
+**Not verified.** Manual visual and keyboard review of the new rows. Every input of the dialog after load (the probe checks six settings on four tabs plus the area position). A preset saved under one client and loaded under another with different brushes beyond the missing-brush refusal.

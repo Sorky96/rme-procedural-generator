@@ -402,7 +402,7 @@ Criteria and evidence: [G6_METRICS.md](procedural/G6_METRICS.md), [G6_GATE_STATU
 
 - [ ] `Generate Area` dialog with described tabs and parameters.
 - [ ] Data preview and map render, variants, navigation, quality comparison.
-- [~] Reference import/analysis and style profile panel. Learning from the open map (I56) and the copy index built from it in the GUI (I57, 2026-11-23, [G7_GATE_STATUS.md](procedural/G7_GATE_STATUS.md)). Multi-map profiles and ranking bands remain terminal-only. Statistics and warnings for the Selected candidate (I58, 2026-11-24).
+- [~] Reference import/analysis and style profile panel. Learning from the open map (I56) and the copy index built from it in the GUI (I57, 2026-11-23, [G7_GATE_STATUS.md](procedural/G7_GATE_STATUS.md)). Multi-map profiles and ranking bands remain terminal-only. Statistics and warnings for the Selected candidate (I58), presets and a random seed (I59), 2026-11-24.
 - [ ] Background generation, cancellation, progress, preview cache, commit/undo.
 - [ ] Area protection and warning handling.
 
