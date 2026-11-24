@@ -22,6 +22,8 @@
 #include <wx/notebook.h>
 #include <wx/modalhook.h>
 #include <charconv>
+#include <cstdio>
+#include <wx/panel.h>
 #include <wx/module.h>
 #include <algorithm>
 #include <chrono>
@@ -337,6 +339,84 @@ void i59Presets(std::ofstream& report, const std::filesystem::path& dir) {
     for (const char* bad : {"i59-missing-brush", "i59-range", "i59-unknown"}) std::filesystem::remove(presets / (std::string(bad) + ".preset"));
     report << "I59_RANDOM_SEED_NO_MUTATION_PASS\n";
 }
+// I60: the preview's view label, as {zoom, x0, x1, y0, y1}.
+struct View { unsigned zoom = 0, x0 = 0, x1 = 0, y0 = 0, y1 = 0; };
+View viewOf(wxWindow& d) {
+    const auto text = field<wxStaticText>(d, "terrain-preview-view").GetLabel().utf8_string();
+    View v;
+    check(std::sscanf(text.c_str(), "Zoom %ux; cells %u-%u, %u-%u", &v.zoom, &v.x0, &v.x1, &v.y0, &v.y1) == 5, "I60 view label: " + text);
+    return v;
+}
+void wheel(wxWindow& panel, int x, int y, int rotation) {
+    wxMouseEvent e(wxEVT_MOUSEWHEEL);
+    e.SetEventObject(&panel); e.SetPosition(wxPoint(x, y));
+    e.m_wheelRotation = rotation; e.m_wheelDelta = 120; e.m_linesPerAction = 3;
+    panel.GetEventHandler()->ProcessEvent(e);
+}
+void key(wxWindow& panel, int code) {
+    wxKeyEvent e(wxEVT_CHAR);
+    e.SetEventObject(&panel); e.m_keyCode = code;
+    panel.GetEventHandler()->ProcessEvent(e);
+}
+// I60: wheel, keys and fit change the view; comparing keeps the Selected candidate, its statistics and Place;
+// another candidate of the same size keeps the view; map and Undo stay unchanged.
+void i60Navigation(std::ofstream& report) {
+    check(g_gui.NewMap(), "I60 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4243");
+    field<wxSpinCtrl>(*d, "terrain-candidate-count").SetValue(2);
+    d->Show();
+    click(*d, "terrain-preview"); until([&] { return field<wxButton>(*d, "terrain-preview").IsEnabled(); });
+    auto& list = field<wxListCtrl>(*d, "terrain-candidates");
+    check(list.GetItemCount() == 2, "I60 gallery of two: " + statusText(*d));
+    auto& panel = field<wxPanel>(*d, "terrain-preview-image");
+    auto view = viewOf(*d);
+    check(view.zoom == 1 && view.x0 == 0 && view.x1 == 127 && view.y0 == 0 && view.y1 == 127, "I60 initial view is not the whole area");
+
+    const wxSize size = panel.GetClientSize();
+    wheel(panel, size.GetWidth() / 4, size.GetHeight() / 4, 120);
+    view = viewOf(*d);
+    const auto text = field<wxStaticText>(*d, "terrain-preview-view").GetLabel().utf8_string();
+    unsigned hx = 0, hy = 0;
+    const auto under = text.find("Under the cursor: ");
+    check(under != std::string::npos && std::sscanf(text.c_str() + under, "Under the cursor: %u,%u", &hx, &hy) == 2, "I60 cursor cell: " + text);
+    check(view.zoom == 2 && (view.x1 - view.x0) * (view.y1 - view.y0) < 127u * 127u && view.x0 <= hx - 100 && hx - 100 <= view.x1 && view.y0 <= hy - 100 && hy - 100 <= view.y1,
+        "I60 wheel zoom does not show the cell under the cursor: " + text);
+    key(panel, '+');
+    const auto zoomed = viewOf(*d);
+    check(zoomed.zoom == 4 && (zoomed.x1 - zoomed.x0) * (zoomed.y1 - zoomed.y0) < (view.x1 - view.x0) * (view.y1 - view.y0), "I60 + did not zoom in");
+    key(panel, WXK_LEFT); key(panel, WXK_LEFT);
+    const auto left = viewOf(*d);
+    key(panel, WXK_RIGHT); key(panel, WXK_RIGHT); key(panel, WXK_RIGHT);
+    const auto right = viewOf(*d);
+    check(right.x0 > left.x0 && right.zoom == 4 && right.y0 == left.y0, "I60 arrows did not pan");
+    key(panel, '0');
+    view = viewOf(*d);
+    check(view.zoom == 1 && view.x0 == 0 && view.x1 == 127 && view.y1 == 127, "I60 0 did not fit");
+    key(panel, '+');
+    report << "I60_ZOOM_PAN_FIT_PASS\n";
+
+    const auto statistics = rows(*d, "terrain-statistics");
+    const bool placeable = field<wxButton>(*d, "terrain-place").IsEnabled();
+    const auto selectedText = statusText(*d).substr(0, 12);
+    auto& compare = field<wxChoice>(*d, "terrain-compare");
+    check(compare.IsEnabled() && compare.GetCount() == 2, "I60 compare offers the other candidate");
+    compare.SetSelection(1); changed(compare);
+    const auto label = field<wxStaticText>(*d, "terrain-preview-view").GetLabel().utf8_string();
+    const long other = list.GetItemText(0, 0).Contains("Selected") ? 1 : 0;
+    check(label.find(std::format("with #{} (right)", other)) != std::string::npos, "I60 comparison not reported: " + label);
+    check(viewOf(*d).zoom == 2, "I60 comparison changed the zoom");
+    check(rows(*d, "terrain-statistics") == statistics && field<wxButton>(*d, "terrain-place").IsEnabled() == placeable &&
+        statusText(*d).substr(0, 12) == selectedText, "I60 comparison changed the selection, statistics or Place");
+    report << "I60_COMPARE_KEEPS_SELECTION_PASS\n";
+
+    list.SetItemState(other, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+    const std::string expected = "Selected #" + std::to_string(other) + ";";
+    until([&] { return statusText(*d).starts_with(expected) && field<wxButton>(*d, "terrain-preview").IsEnabled(); });
+    check(viewOf(*d).zoom == 2, "I60 another candidate of the same size reset the view");
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I60 navigation modified map or Undo");
+    d->Destroy(); g_gui.CloseCurrentEditor();
+    report << "I60_VIEW_KEPT_NO_MUTATION_PASS\n";
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -438,6 +518,7 @@ void run() {
         i57CopyIndex(report, dir);
         i58Report(report);
         i59Presets(report, dir);
+        i60Navigation(report);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }

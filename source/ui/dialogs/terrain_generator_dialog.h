@@ -11,6 +11,7 @@
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/core/candidate_series.h"
 #include "procedural/core/terrain_preset.h"
+#include "procedural/core/preview_viewport.h"
 
 #include <array>
 #include <chrono>
@@ -82,6 +83,7 @@ private:
         wxBitmap thumbnail;
         rme::procedural::CopyAssessment copyAssessment;
         uint64_t elapsedMs = 0; // preparation of the last attempt
+        wxBitmap surface;       // I60: Surface minimap for comparison, reduced when the series keeps too much
     };
     std::vector<Candidate> candidates_;
     std::optional<Request> series_request_;
@@ -123,6 +125,25 @@ private:
     [[nodiscard]] rme::procedural::TerrainPreset CollectPreset() const;
     // Applies every value or none: on a refusal the previous settings return and the reason is given.
     [[nodiscard]] std::optional<std::string> ApplyPreset(const rme::procedural::TerrainPreset& preset);
+    // I60: zoom and pan of the preview (one shared view), and a second candidate shown beside the Selected one.
+    rme::procedural::PreviewViewport view_;
+    rme::procedural::PreviewArea view_area_;
+    std::optional<wxPoint> drag_from_;
+    std::optional<rme::procedural::PreviewCell> hovered_cell_;
+    wxStaticText* view_label_ = nullptr;
+    wxChoice* compare_choice_ = nullptr; // "None", then the other candidates
+    std::vector<uint32_t> compare_entries_; // candidate index of choice entry i + 1
+    bool compare_reduced_ = false;
+    [[nodiscard]] rme::procedural::PreviewArea PreviewAreaSize() const;
+    [[nodiscard]] std::optional<uint32_t> ComparedCandidate() const;
+    // Pane i of the panel (0 alone; 0 left and 1 right when comparing) and its rectangle.
+    [[nodiscard]] std::vector<wxRect> PreviewPanes() const;
+    [[nodiscard]] std::optional<size_t> PaneAt(wxPoint point) const;
+    void SyncView(); // keeps the view for an area of the same size, otherwise fits
+    void UpdateViewLabel();
+    void RefreshCompareChoice();
+    void OnPreviewMouse(wxMouseEvent& event);
+    void OnPreviewKey(wxKeyEvent& event);
 	void OnCancel(wxCommandEvent& event);
 	void SchedulePreviewTick();
 	void OnValidate(wxCommandEvent& event);

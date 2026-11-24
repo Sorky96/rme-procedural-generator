@@ -859,11 +859,18 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	auto* caption = label("Minimap preview");
 	caption->SetFont(Theme::GetFont(9, true));
 	preview_panel_ = newd wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(Theme::Grid(80), Theme::Grid(80)), wxFULL_REPAINT_ON_RESIZE);
-	preview_panel_->SetCanFocus(false);
 	preview_panel_->SetName("terrain-preview-image");
+	preview_panel_->SetToolTip("Wheel or + and - zoom, drag or arrows pan, double click or 0 shows the whole area.");
 	preview_panel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
 	preview_panel_->SetMinSize(wxSize(Theme::Grid(60), Theme::Grid(60)));
 	preview_panel_->Bind(wxEVT_PAINT, &TerrainGeneratorDialog::OnPaintPreview, this);
+	for (const auto type : {wxEVT_MOUSEWHEEL, wxEVT_LEFT_DOWN, wxEVT_LEFT_UP, wxEVT_MOTION, wxEVT_LEFT_DCLICK, wxEVT_LEAVE_WINDOW})
+		preview_panel_->Bind(type, &TerrainGeneratorDialog::OnPreviewMouse, this);
+	preview_panel_->Bind(wxEVT_MOUSE_CAPTURE_LOST, [this](wxMouseCaptureLostEvent&) { drag_from_.reset(); });
+	preview_panel_->Bind(wxEVT_CHAR, &TerrainGeneratorDialog::OnPreviewKey, this);
+	for (const auto type : {wxEVT_SET_FOCUS, wxEVT_KILL_FOCUS})
+		preview_panel_->Bind(type, [this](wxFocusEvent& event) { preview_panel_->Refresh(); event.Skip(); });
+	preview_panel_->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { SyncView(); event.Skip(); });
 
 	auto* right = newd wxBoxSizer(wxVERTICAL);
 	right->Add(caption, 0, wxBOTTOM, gap);
@@ -885,6 +892,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_floor_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
 		if (!prepared_) return;
 		if (!BuildPreviewBitmap()) { ReleasePreview(); SetStatus(memoryMessage, true); }
+		UpdateViewLabel();
 		preview_panel_->Refresh();
 	});
 	right->Add(preview_floor_label_, 0, wxBOTTOM, gap);
@@ -892,6 +900,21 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_floor_label_->Hide();
 	preview_floor_choice_->Hide();
 	right->Add(preview_panel_, 1, wxEXPAND);
+	view_label_ = newd wxStaticText(this, wxID_ANY, wxEmptyString);
+	view_label_->SetName("terrain-preview-view");
+	view_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
+	right->Add(view_label_, 0, wxEXPAND | wxTOP, gap);
+	{
+		auto* compareRow = newd wxBoxSizer(wxHORIZONTAL);
+		compareRow->Add(label("Co&mpare with:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+		compare_choice_ = newd wxChoice(this, wxID_ANY);
+		compare_choice_->SetName("terrain-compare");
+		compare_choice_->Append("None");
+		compare_choice_->SetSelection(0);
+		compare_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) { UpdateViewLabel(); preview_panel_->Refresh(); });
+		compareRow->Add(compare_choice_, 1, wxEXPAND);
+		right->Add(compareRow, 0, wxEXPAND | wxTOP, gap);
+	}
     right->Add(label("Candidates: arrows select; Selected and Recommended are labelled."), 0, wxTOP, gap);
     candidate_list_ = newd wxListCtrl(this, wxID_ANY, wxDefaultPosition,
         wxSize(-1, Theme::Grid(28)), wxLC_REPORT | wxLC_SINGLE_SEL);
@@ -1374,6 +1397,8 @@ void TerrainGeneratorDialog::ReleasePreview() {
     candidates_.clear();
     selected_candidate_.reset(); recommended_candidate_.reset();
     candidate_list_->DeleteAllItems(); candidate_images_->RemoveAll();
+    compare_entries_.clear(); compare_reduced_ = false;
+    if (compare_choice_) { compare_choice_->Clear(); compare_choice_->Append("None"); compare_choice_->SetSelection(0); compare_choice_->Disable(); }
     candidate_progress_->SetValue(0);
     statistics_list_->DeleteAllItems(); warnings_list_->DeleteAllItems();
 	preview_steps_.reset();
@@ -1382,6 +1407,7 @@ void TerrainGeneratorDialog::ReleasePreview() {
 	prepared_.reset();
 	selection_.reset();
 	preview_bitmap_ = wxNullBitmap;
+	UpdateViewLabel();
 	preview_floor_choice_->SetSelection(0);
 	preview_floor_choice_->Hide();
 	preview_floor_label_->Hide();
@@ -1950,6 +1976,7 @@ void TerrainGeneratorDialog::SelectCandidate(uint32_t index) {
     prepared_.reset();
     selected_candidate_ = index;
     preview_bitmap_ = candidates_[index].thumbnail;
+    RefreshCompareChoice();
     preview_panel_->Refresh();
     UpdateCandidateLabels();
     preview_attempt_ = candidates_[index].attempts;
@@ -2038,6 +2065,19 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
         const int thumb = std::min(128, Theme::Grid(12));
         row.thumbnail = wxBitmap(preview_bitmap_.ConvertToImage().Scale(thumb, thumb, wxIMAGE_QUALITY_NORMAL));
+        {
+            // The series keeps at most 64 MiB of comparison images (4 bytes per pixel); larger ones are reduced.
+            constexpr double keptBytes = 64.0 * 1024 * 1024;
+            const double share = keptBytes / std::max<uint32_t>(candidate_count_, 1);
+            const double bytes = 4.0 * preview_bitmap_.GetWidth() * preview_bitmap_.GetHeight();
+            if (bytes <= share) row.surface = preview_bitmap_;
+            else {
+                const double factor = std::sqrt(share / bytes);
+                row.surface = wxBitmap(preview_bitmap_.ConvertToImage().Scale(std::max(1, int(preview_bitmap_.GetWidth() * factor)),
+                    std::max(1, int(preview_bitmap_.GetHeight() * factor)), wxIMAGE_QUALITY_NORMAL));
+                compare_reduced_ = true;
+            }
+        }
         const auto index = long(candidates_.size());
         const int image = candidate_images_->Add(row.thumbnail);
         candidate_list_->InsertItem(index, wxstr(std::format("#{}", index)), image);
@@ -2056,6 +2096,8 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         std::array<CandidateScore, maxCandidateCount> scores;
         for (size_t i = 0; i < candidates_.size(); ++i) scores[i] = candidates_[i].score;
         recommended_candidate_ = recommendedCandidate(std::span(scores).first(candidates_.size()), !ranking_bands_.empty());
+        selected_candidate_ = recommended_candidate_.value_or(0);
+        RefreshCompareChoice();
         const uint32_t initial = recommended_candidate_.value_or(0);
         updating_candidates_ = true;
         candidate_list_->SetItemState(long(initial), wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
@@ -2317,6 +2359,7 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
 		}
 	}
 	preview_bitmap_ = wxBitmap(image);
+	UpdateViewLabel();
 	return preview_bitmap_.IsOk();
 }
 
@@ -2406,6 +2449,138 @@ void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
 	EndModal(wxID_OK);
 }
 
+rme::procedural::PreviewArea TerrainGeneratorDialog::PreviewAreaSize() const {
+    if (prepared_) {
+        const auto& region = prepared_->snapshot.input.config.region;
+        return {region.width, region.height};
+    }
+    if (series_request_) return {series_request_->config.region.width, series_request_->config.region.height};
+    if (preview_bitmap_.IsOk()) return {uint32_t(preview_bitmap_.GetWidth()), uint32_t(preview_bitmap_.GetHeight())};
+    return {};
+}
+
+std::optional<uint32_t> TerrainGeneratorDialog::ComparedCandidate() const {
+    const int entry = compare_choice_->GetSelection();
+    // The comparison shows Surface images, so it is off while a lower or upper floor is shown.
+    if (entry <= 0 || size_t(entry) > compare_entries_.size() || preview_floor_choice_->GetSelection() > 0) return std::nullopt;
+    const uint32_t index = compare_entries_[size_t(entry) - 1];
+    if (index >= candidates_.size() || !candidates_[index].surface.IsOk()) return std::nullopt;
+    return index;
+}
+
+std::vector<wxRect> TerrainGeneratorDialog::PreviewPanes() const {
+    const wxSize size = preview_panel_->GetClientSize();
+    const int inset = Theme::Grid(1);
+    const wxRect all(inset, inset, std::max(1, size.GetWidth() - 2 * inset), std::max(1, size.GetHeight() - 2 * inset));
+    if (!ComparedCandidate()) return {all};
+    const int gap = Theme::Grid(2);
+    const int half = std::max(1, (all.GetWidth() - gap) / 2);
+    return {wxRect(all.GetX(), all.GetY(), half, all.GetHeight()), wxRect(all.GetX() + half + gap, all.GetY(), half, all.GetHeight())};
+}
+
+std::optional<size_t> TerrainGeneratorDialog::PaneAt(wxPoint point) const {
+    const auto panes = PreviewPanes();
+    for (size_t i = 0; i < panes.size(); ++i) if (panes[i].Contains(point)) return i;
+    return std::nullopt;
+}
+
+void TerrainGeneratorDialog::SyncView() {
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    if (area.width != view_area_.width || area.height != view_area_.height) { view_ = rme::procedural::previewFit(area); view_area_ = area; }
+    view_ = rme::procedural::previewClamp(view_, area, pane);
+}
+
+void TerrainGeneratorDialog::UpdateViewLabel() {
+    if (!view_label_ || !compare_choice_) return;
+    SyncView();
+    if (!preview_bitmap_.IsOk()) { view_label_->SetLabel(wxEmptyString); return; }
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    const auto rect = rme::procedural::previewVisibleCells(view_, area, pane);
+    int x0 = 0, y0 = 0;
+    if (series_request_) { x0 = series_request_->config.region.x; y0 = series_request_->config.region.y; }
+    std::string text = std::format("Zoom {}x; cells {}-{}, {}-{} of {} x {} (map {},{} to {},{}).", 1u << view_.level,
+        rect.x0, rect.x1 - 1, rect.y0, rect.y1 - 1, area.width, area.height, x0 + int(rect.x0), y0 + int(rect.y0),
+        x0 + int(rect.x1) - 1, y0 + int(rect.y1) - 1);
+    if (hovered_cell_) text += std::format(" Under the cursor: {},{}.", x0 + int(hovered_cell_->x), y0 + int(hovered_cell_->y));
+    if (const auto compared = ComparedCandidate())
+        text += std::format(" Comparing #{} (left, Selected) with #{} (right){}.", selected_candidate_.value_or(0), *compared,
+            compare_reduced_ ? "; images reduced to fit 64 MiB" : "");
+    view_label_->SetLabel(wxstr(text));
+}
+
+void TerrainGeneratorDialog::RefreshCompareChoice() {
+    std::optional<uint32_t> kept;
+    if (const int entry = compare_choice_->GetSelection(); entry > 0 && size_t(entry) <= compare_entries_.size()) kept = compare_entries_[size_t(entry) - 1];
+    compare_entries_.clear();
+    compare_choice_->Clear();
+    compare_choice_->Append("None");
+    int select = 0;
+    if (!collecting_)
+        for (uint32_t i = 0; i < candidates_.size(); ++i) {
+            if (selected_candidate_ == i) continue;
+            compare_entries_.push_back(i);
+            compare_choice_->Append(wxstr(std::format("#{}", i)));
+            if (kept == i) select = int(compare_entries_.size());
+        }
+    compare_choice_->SetSelection(select);
+    compare_choice_->Enable(!compare_entries_.empty());
+    UpdateViewLabel();
+}
+
+void TerrainGeneratorDialog::OnPreviewMouse(wxMouseEvent& event) {
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const auto paneIndex = PaneAt(event.GetPosition());
+    const wxRect paneRect = panes[paneIndex.value_or(0)];
+    const rme::procedural::PreviewPane pane {double(paneRect.GetWidth()), double(paneRect.GetHeight())};
+    const double x = event.GetX() - paneRect.GetX(), y = event.GetY() - paneRect.GetY();
+    const auto type = event.GetEventType();
+    if (type == wxEVT_LEFT_DOWN) {
+        preview_panel_->SetFocus();
+        drag_from_ = event.GetPosition();
+        if (!preview_panel_->HasCapture()) preview_panel_->CaptureMouse();
+    } else if (type == wxEVT_LEFT_UP) {
+        drag_from_.reset();
+        if (preview_panel_->HasCapture()) preview_panel_->ReleaseMouse();
+    } else if (type == wxEVT_MOTION && drag_from_ && event.LeftIsDown()) {
+        const wxPoint delta = event.GetPosition() - *drag_from_;
+        drag_from_ = event.GetPosition();
+        view_ = rme::procedural::previewPan(view_, area, pane, delta.x, delta.y);
+    } else if (type == wxEVT_MOUSEWHEEL && paneIndex && event.GetWheelRotation()) {
+        view_ = rme::procedural::previewZoomAt(view_, area, pane, x, y, event.GetWheelRotation() > 0 ? 1 : -1);
+    } else if (type == wxEVT_LEFT_DCLICK) {
+        view_ = rme::procedural::previewFit(area);
+    }
+    hovered_cell_ = type == wxEVT_LEAVE_WINDOW || !paneIndex ? std::nullopt : rme::procedural::previewCellAt(view_, area, pane, x, y);
+    UpdateViewLabel();
+    preview_panel_->Refresh();
+}
+
+void TerrainGeneratorDialog::OnPreviewKey(wxKeyEvent& event) {
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    const double stepX = pane.width / 10, stepY = pane.height / 10;
+    switch (event.GetKeyCode()) {
+        case '+': case '=': case WXK_ADD: case WXK_NUMPAD_ADD:
+            view_ = rme::procedural::previewZoomAt(view_, area, pane, pane.width / 2, pane.height / 2, 1); break;
+        case '-': case WXK_SUBTRACT: case WXK_NUMPAD_SUBTRACT:
+            view_ = rme::procedural::previewZoomAt(view_, area, pane, pane.width / 2, pane.height / 2, -1); break;
+        case '0': case WXK_NUMPAD0: view_ = rme::procedural::previewFit(area); break;
+        case WXK_LEFT: view_ = rme::procedural::previewPan(view_, area, pane, stepX, 0); break;
+        case WXK_RIGHT: view_ = rme::procedural::previewPan(view_, area, pane, -stepX, 0); break;
+        case WXK_UP: view_ = rme::procedural::previewPan(view_, area, pane, 0, stepY); break;
+        case WXK_DOWN: view_ = rme::procedural::previewPan(view_, area, pane, 0, -stepY); break;
+        default: event.Skip(); return;
+    }
+    UpdateViewLabel();
+    preview_panel_->Refresh();
+}
+
 void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {
 	wxPaintDC dc(preview_panel_);
 	const wxSize size = preview_panel_->GetClientSize();
@@ -2422,19 +2597,41 @@ void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {
 		return;
 	}
 
-	// One map tile per image pixel, scaled to fit inside the border.
-	const int inset = Theme::Grid(1);
-	const double availableWidth = std::max(1, size.GetWidth() - 2 * inset);
-	const double availableHeight = std::max(1, size.GetHeight() - 2 * inset);
-	const double scale = std::min(availableWidth / preview_bitmap_.GetWidth(), availableHeight / preview_bitmap_.GetHeight());
-	const double drawnWidth = preview_bitmap_.GetWidth() * scale;
-	const double drawnHeight = preview_bitmap_.GetHeight() * scale;
-	const double left = (size.GetWidth() - drawnWidth) / 2.0;
-	const double top = (size.GetHeight() - drawnHeight) / 2.0;
-	// Keep destination margins in window pixels, including when one source pixel is enlarged.
-	wxMemoryDC source;
-	source.SelectObjectAsSource(preview_bitmap_);
-	dc.StretchBlit(wxCoord(std::lround(left)), wxCoord(std::lround(top)),
-		wxCoord(std::lround(drawnWidth)), wxCoord(std::lround(drawnHeight)), &source,
-		0, 0, preview_bitmap_.GetWidth(), preview_bitmap_.GetHeight(), wxCOPY, false);
+	SyncView();
+	const auto area = PreviewAreaSize();
+	const auto panes = PreviewPanes();
+	const auto compared = ComparedCandidate();
+	// One map tile per area cell; a smaller image (thumbnail while loading, reduced comparison) is stretched over it.
+	const auto draw = [&](const wxBitmap& bitmap, const wxRect& rect) {
+		const rme::procedural::PreviewPane pane {double(rect.GetWidth()), double(rect.GetHeight())};
+		const auto cells = rme::procedural::previewVisibleCells(view_, area, pane);
+		const double scale = rme::procedural::previewScale(view_, area, pane);
+		const double originX = rect.GetX() + rme::procedural::previewOriginX(view_, area, pane);
+		const double originY = rect.GetY() + rme::procedural::previewOriginY(view_, area, pane);
+		const double sx = double(bitmap.GetWidth()) / area.width, sy = double(bitmap.GetHeight()) / area.height;
+		const auto destX = std::lround(originX + cells.x0 * scale), destY = std::lround(originY + cells.y0 * scale);
+		const auto destW = std::lround(originX + cells.x1 * scale) - destX, destH = std::lround(originY + cells.y1 * scale) - destY;
+		const auto srcX = int(std::floor(cells.x0 * sx)), srcY = int(std::floor(cells.y0 * sy));
+		const int srcW = std::max(1, int(std::ceil(cells.x1 * sx)) - srcX), srcH = std::max(1, int(std::ceil(cells.y1 * sy)) - srcY);
+		wxDCClipper clip(dc, rect);
+		wxMemoryDC source;
+		source.SelectObjectAsSource(bitmap);
+		dc.StretchBlit(wxCoord(destX), wxCoord(destY), wxCoord(std::max<long>(1, destW)), wxCoord(std::max<long>(1, destH)), &source,
+			srcX, srcY, srcW, srcH, wxCOPY, false);
+	};
+	draw(preview_bitmap_, panes[0]);
+	if (compared) {
+		draw(candidates_[*compared].surface, panes[1]);
+		dc.SetFont(Theme::GetFont(9, true));
+		dc.SetTextForeground(Theme::Get(Theme::Role::Text));
+		dc.SetTextBackground(Theme::Get(Theme::Role::Background));
+		dc.SetBackgroundMode(wxBRUSHSTYLE_SOLID);
+		dc.DrawText(wxstr(std::format("#{} Selected", selected_candidate_.value_or(0))), panes[0].GetX() + Theme::Grid(1), panes[0].GetY() + Theme::Grid(1));
+		dc.DrawText(wxstr(std::format("#{}", *compared)), panes[1].GetX() + Theme::Grid(1), panes[1].GetY() + Theme::Grid(1));
+	}
+	if (preview_panel_->HasFocus()) {
+		dc.SetPen(wxPen(Theme::Get(Theme::Role::Accent), 2));
+		dc.SetBrush(*wxTRANSPARENT_BRUSH);
+		dc.DrawRectangle(wxPoint(1, 1), size - wxSize(2, 2));
+	}
 }
