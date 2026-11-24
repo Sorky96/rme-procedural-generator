@@ -65,3 +65,20 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Sharing presets between clients beyond copying the file, built-in presets shipped with the editor, preset versions or history.
+
+## I60 — comparison and preview navigation (2026-11-24, before implementation)
+
+**Goal.** The user can look closely at a candidate (zoom and pan the minimap preview) and see two candidates side by side with the same view.
+
+**Scope.**
+1. **Viewport (core, pure):** zoom levels 1× (whole area fits), 2×, 4×, 8×, 16×, 32× relative to the fit, capped where one cell would exceed 64 screen pixels. Zooming keeps the cell under the cursor (or the pane centre for keys) at the same screen position. Pan moves by screen pixels. The centre is clamped so the view never leaves the area. The visible cell rectangle and the cell under a point are computed from the same state.
+2. **Preview panel:** mouse wheel zooms at the cursor, left drag pans, double click fits. The panel takes keyboard focus: `+`/`-` zoom at the centre, arrows pan by a tenth of the pane, `0` fits. A label `terrain-preview-view` gives zoom, visible cells and the cell under the cursor in map coordinates. Changing the preview floor, candidate or series keeps the view if the area size is the same and fits otherwise.
+3. **Comparison:** a **Compare with** choice (`terrain-compare`: None, then the other candidates of the series). With a candidate chosen and the Surface floor shown, the panel shows the Selected candidate on the left and the compared one on the right, each labelled, with one shared viewport. Each candidate's Surface minimap image is kept when the gallery is built; above 64 MiB for the whole series the kept images are reduced to fit, and the label says so. The comparison never changes the selection, the statistics or Place.
+4. Navigation and comparison never change the map, Undo or the series.
+
+**Criteria.**
+1. **Unit tests:** fit scale; zoom keeps the anchor cell within one screen pixel for every level and anchors at corners, centre and edges; zoom levels capped at 64 px per cell; zoom out to 1× returns to the fit; pan clamps at all four edges; visible rectangle and cell under a point agree; areas of 1×1, 1×2000 and 2000×2000 cells; panes of 1×1 pixel.
+2. **Real-client GUI probe:** after a two-candidate preview: wheel at a point zooms and the view label reports the zoomed rectangle containing that cell; keys `+`, arrows and `0` change the label as expected and `0` returns to the full area; choosing **Compare with** the other candidate keeps the Selected candidate, statistics and Place state and the label names both candidates; switching floor or candidate keeps a same-size view; map and Undo unchanged.
+3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, G5 `--i47` 32/32, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Sprite (asset) rendering of the preview, comparison of the lower floors, synchronized statistics of the compared candidate, more than two candidates at once. Manual visual and keyboard review is reported separately; the probe cannot check what is drawn.
