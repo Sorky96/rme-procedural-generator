@@ -84,6 +84,7 @@ struct PreparedTerrain {
     CopyAssessment copyAssessment;
     // Cells per SurfaceKind of the final Surface grid (statistics only); all zero for other algorithms.
     std::array<uint64_t, surfaceKindCount> surfaceCells {};
+    PreservedContent preserved; // I63: existing content of the area, margin and contacts (Surface only)
 };
 
 // Captures, generates, resolves and builds the DrawOperations preview for one region in a single

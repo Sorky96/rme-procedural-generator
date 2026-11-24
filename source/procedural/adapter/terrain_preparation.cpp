@@ -416,6 +416,7 @@ TerrainPreparationSteps runPreparation(
         std::optional<CandidateMetrics> candidateMetrics;
         CopyAssessment copyAssessment;
         std::array<uint64_t, surfaceKindCount> surfaceCells {};
+        PreservedContent preserved;
 		auto& remaining = limits.remaining;
 		const auto semanticBytes = limits.semanticBytes;
 		const auto planBytes = limits.planBytes;
@@ -461,6 +462,15 @@ TerrainPreparationSteps runPreparation(
 				const auto keepClear = surfaceKeepClear(*snapshot, profileNeedsEdgeClearance(profile));
 				std::vector<uint8_t> protection = input.protection;
 				for (size_t i = 0; i < protection.size(); ++i) protection[i] |= keepClear[i];
+				// I63: the margin around existing tiles; counted on the cells the generator could otherwise write.
+				preserved = preservedContentOf(*snapshot);
+				preserved.margin = input.config.protectionMargin;
+				const auto margin = protectionMarginCells(input.protection, input.config.region.width, input.config.region.height,
+					input.config.protectionMargin);
+				for (size_t i = 0; i < margin.size(); ++i) {
+					if (margin[i] && input.mask[i] && !protection[i]) ++preserved.marginCells;
+					protection[i] |= margin[i];
+				}
 				const SurfaceBudget surfaceBudget{budget.maxCells, semanticBytes, semanticBytes};
 				SurfaceResult generated = std::unexpected(SurfaceError::Cancelled);
 				if (background) {
@@ -1099,6 +1109,7 @@ TerrainPreparationSteps runPreparation(
                 const uint64_t levelCells = cellCount * (1 + (cave ? 1 : 0) + std::max(levelCaps.size(), levelStoreys.empty() ? size_t(0) : size_t(1)));
                 if (!reserve(levelCells * 96 + 65536)) co_return fail(PreparationInputError::MemoryLimit);
                 for (const auto kind : grid->cells) ++surfaceCells[size_t(kind)];
+                preserved.contacts = preservedContacts(*snapshot, grid->cells);
                 bool rockBlocks = false;
                 for (size_t i = 0; i < cellCount; ++i) if (grid->cells[i] == SurfaceKind::Rock && plan.items[i]) {
                     // The final plan already substitutes mountain below caps.
@@ -1296,7 +1307,7 @@ TerrainPreparationSteps runPreparation(
 		const PreparationMemory memory {
 			infrastructureBytes, snapshotBytes, semanticBytes, planBytes, previewBytes, budget.maxBytes - remaining
 		};
-        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics), copyAssessment, surfaceCells};
+        co_return PreparedTerrain {std::move(*snapshot), std::move(plan), std::move(*preview), memory, std::move(cave), std::move(plateau), std::move(levels), std::move(candidateMetrics), copyAssessment, surfaceCells, preserved};
     } catch (const std::bad_alloc&) {
 		co_return fail(PreparationInputError::AllocationFailed);
 	} catch (const std::system_error&) {

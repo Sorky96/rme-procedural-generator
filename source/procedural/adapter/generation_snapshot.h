@@ -2,6 +2,8 @@
 #pragma once
 
 #include "procedural/adapter/generation_input.h"
+#include "procedural/core/surface.h"
+#include "procedural/core/terrain_report.h"
 #include "map/tile.h"
 #include <memory>
 
@@ -53,6 +55,10 @@ std::expected<GenerationSnapshot, SnapshotError> captureGenerationSnapshot(
 [[nodiscard]] std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool outerBorderBrushes = false);
 
 [[nodiscard]] bool emptyTerrainContent(const Tile* tile) noexcept;
+// I63: counts of the existing content of the area's cells (not the halo); margin fields and contacts stay zero.
+[[nodiscard]] rme::procedural::PreservedContent preservedContentOf(const GenerationSnapshot& snapshot);
+// I63: house or spawn tiles of the snapshot (halo included) beside a written cell of `cells` (the area, row-major).
+[[nodiscard]] uint64_t preservedContacts(const GenerationSnapshot& snapshot, std::span<const rme::procedural::SurfaceKind> cells);
 
 // Re-checks owned tile values and location metadata as well as revision stamps.
 [[nodiscard]] bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noexcept;
