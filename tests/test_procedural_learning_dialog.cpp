@@ -10,6 +10,13 @@
 #include "ui/dialogs/terrain_generator_dialog.h"
 #include "ui/dialogs/style_learning_dialog.h"
 #include "ui/gui.h"
+#include "brushes/ground/ground_brush.h"
+#include "brushes/ground/terrain_placement.h"
+#include "brushes/managers/brush_manager.h"
+#include "game/creature.h"
+#include "game/house.h"
+#include "game/spawn.h"
+#include "game/waypoints.h"
 #include "ui/main_frame.h"
 #include <wx/button.h>
 #include <wx/checkbox.h>
@@ -493,6 +500,112 @@ void i62Samples(std::ofstream& report, const std::filesystem::path& dir) {
     } else report << "I62_PLACE_SKIPPED selected candidate blocked\n";
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
+// I63: a house, a spawn, a waypoint, a zone tile and an item with an action id inside the area. Margin 0 reports them and
+// keeps them; margin 3 also keeps every cell within 3 of them empty; one Undo restores, Redo reproduces; a preset keeps it.
+std::string tileImage(Map& map, const Position& at) {
+    const Tile* tile = map.getTile(at);
+    if (!tile) return "-";
+    std::string text = std::format("g{} h{} s{} z{}", tile->ground ? tile->ground->getID() : 0, tile->house_id, tile->spawn ? 1 : 0, tile->getZoneIds().size());
+    if (tile->ground) text += std::format(" a{}", tile->ground->getActionID());
+    for (const auto& item : tile->items) text += std::format(" i{}", item->getID());
+    return text;
+}
+void i63Protection(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I63 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto& map = target.map;
+    check(map.convert({MAP_OTBM_5, map.getVersion().client}), "I63 OTBM 5 map");
+    const auto grass = g_brushes.getBrush("grass")->as<GroundBrush>()->getPlacementItemId();
+    std::vector<Position> fixture;
+    for (int dy = 0; dy < 2; ++dy) for (int dx = 0; dx < 2; ++dx) fixture.emplace_back(140 + dx, 140 + dy, 7);
+    const Position spawnAt(190, 180, 7), waypointAt(160, 200, 7), zoneAt(200, 130, 7), actionAt(130, 205, 7);
+    fixture.insert(fixture.end(), {spawnAt, waypointAt, zoneAt, actionAt});
+    for (const auto& at : fixture) TerrainPlacement::placeBrushItem(*map.getOrCreateTile(at), grass);
+    auto house = std::make_unique<House>(map);
+    house->setID(1); house->name = "I63 House"; house->setExit(Position(140, 140, 7));
+    auto* houseRef = house.get();
+    check(map.houses.addHouse(std::move(house)), "I63 house");
+    for (size_t i = 0; i < 4; ++i) map.getTile(fixture[i])->setHouse(houseRef);
+    const auto zone = map.addZone("I63 Zone"); check(zone != 0, "I63 zone");
+    map.getTile(zoneAt)->addZone(zone);
+    map.getTile(actionAt)->ground->setActionID(31063);
+    auto* spawnTile = map.getTile(spawnAt);
+    spawnTile->spawn = std::make_unique<Spawn>(2); spawnTile->spawn->addKind(Spawn::MONSTERS);
+    spawnTile->creature = std::make_unique<Creature>("Rat");
+    check(map.addSpawn(spawnTile), "I63 spawn");
+    map.waypoints.addWaypoint(std::make_unique<Waypoint>("I63 Waypoint", waypointAt));
+    map.rebuildZoneIndex();
+    std::vector<std::string> before;
+    for (const auto& at : fixture) before.push_back(tileImage(map, at));
+    const auto fixtureKept = [&](const char* where) {
+        for (size_t i = 0; i < fixture.size(); ++i) check(tileImage(map, fixture[i]) == before[i], std::string("I63 fixture tile changed ") + where);
+    };
+
+    auto* d = naturalGenerator("4243");
+    d->Show();
+    // After Place and Undo the first Preview may only report the changed map; one more starts the series.
+    const auto runPreview = [&] {
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            click(*d, "terrain-preview"); until([&] { return field<wxButton>(*d, "terrain-preview").IsEnabled(); });
+            if (statusText(*d).find("data changed") == std::string::npos) return;
+        }
+    };
+    runPreview();
+    const auto stats = rows(*d, "terrain-statistics");
+    const auto value = [&](const std::vector<std::pair<std::string, std::string>>& list, std::string_view name) {
+        const auto found = std::ranges::find(list, name, &std::pair<std::string, std::string>::first);
+        return found == list.end() ? std::string() : found->second;
+    };
+    // The spawn's radius 2 protects its 25 cells: 4 house + 3 single + 25 spawn-area cells.
+    check(value(stats, "Existing tiles kept") == "32" && value(stats, "House tiles kept") == "4" && value(stats, "House exits kept") == "1" &&
+        value(stats, "Spawns kept") == "1" && value(stats, "Cells of spawn areas kept") == "25" && value(stats, "Waypoints kept") == "1" && value(stats, "Tiles with zones kept") == "1" &&
+        value(stats, "Items with unique or action id kept") == "1" && value(stats, "Kept clear by the margin").empty(),
+        "I63 preserved counts: " + value(stats, "Existing tiles kept") + "/" + value(stats, "House tiles kept") + "/" + value(stats, "Spawns kept"));
+    check(hasRow(rows(*d, "terrain-warnings"), "Warning", "touches") || hasRow(rows(*d, "terrain-warnings"), "No warnings") ||
+        !rows(*d, "terrain-warnings").empty(), "I63 warnings list");
+    check(map.getTileCount() == fixture.size() && target.actionQueue->getSize() == 0, "I63 preview modified map");
+    report << "I63_REPORT_MARGIN0_PASS\n";
+    if (field<wxButton>(*d, "terrain-place").IsEnabled()) {
+        place(*d); fixtureKept("by Place with margin 0");
+        check(target.actionQueue->undo() && map.getTileCount() == fixture.size(), "I63 Undo margin 0");
+        fixtureKept("by Undo");
+    }
+
+    auto& margin = field<wxSpinCtrl>(*d, "terrain-protection-margin");
+    margin.SetValue(3); changed(margin, wxEVT_SPINCTRL);
+    runPreview();
+    const auto marginStats = rows(*d, "terrain-statistics");
+    check(value(marginStats, "Kept clear by the margin").find("(3 tiles") != std::string::npos, "I63 margin row: " + [&] {
+        std::string all = std::format("spin {} status {} rows:", margin.GetValue(), statusText(*d));
+        for (const auto& [k, v] : marginStats) all += " " + k + "=" + v + ";";
+        return all; }());
+    check(field<wxButton>(*d, "terrain-place").IsEnabled(), "I63 margin 3 candidate blocked: " + statusText(*d));
+    const auto undoBefore = target.actionQueue->getCurrentIndex(); // an earlier Undo leaves a redo entry that Place replaces
+    place(*d); fixtureKept("by Place with margin 3");
+    for (const auto& at : fixture)
+        for (int dy = -3; dy <= 3; ++dy) for (int dx = -3; dx <= 3; ++dx) {
+            const Position cell(at.x + dx, at.y + dy, 7);
+            if (std::ranges::find(fixture, cell) != fixture.end()) continue;
+            check(tileImage(map, cell) == "-", std::format("I63 margin cell {},{} written", cell.x, cell.y));
+        }
+    const auto placed = contents(map);
+    check(target.actionQueue->getCurrentIndex() == undoBefore + 1 && target.actionQueue->getSize() == undoBefore + 1, "I63 margin Place one Undo");
+    check(target.actionQueue->undo() && map.getTileCount() == fixture.size(), "I63 margin Undo");
+    fixtureKept("by margin Undo");
+    check(target.actionQueue->redo() && contents(map) == placed, "I63 margin Redo exact payload");
+    report << "I63_MARGIN_KEEPS_CLEAR_UNDO_REDO_PASS\n";
+
+    const auto presets = dir / "presets";
+    std::filesystem::remove(presets / "i63-margin.preset");
+    field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i63-margin");
+    click(*d, "terrain-preset-save"); settle();
+    check(fileText(presets / "i63-margin.preset").find("terrain-protection-margin\t3\n") != std::string::npos, "I63 preset lacks the margin");
+    margin.SetValue(0); changed(margin, wxEVT_SPINCTRL);
+    auto& choice = field<wxChoice>(*d, "terrain-preset");
+    check(choice.SetStringSelection("i63-margin"), "I63 preset listed"); changed(choice); settle();
+    check(margin.GetValue() == 3, "I63 preset did not restore the margin");
+    d->Destroy(); map.clearChanges(); g_gui.CloseCurrentEditor();
+    report << "I63_PRESET_MARGIN_PASS\n";
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -597,6 +710,7 @@ void run() {
         i59Presets(report, dir);
         i60Navigation(report);
         i62Samples(report, dir);
+        i63Protection(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
