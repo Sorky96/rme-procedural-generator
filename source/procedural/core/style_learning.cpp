@@ -812,6 +812,25 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
     sample.carpet = chooseCarpet(map, mapping, carpetItems);
     sample.rockOutlinePermille = measureRockOutline(map, mapping);
     std::tie(sample.unreachedRockPermille, sample.unreachedWalkPermille) = measureUnreached(map, mapping);
+    // The natural classes as a surface grid for the ranking metrics; water is lake, everything else is preserved.
+    {
+        const auto& floor = map.floors().front();
+        SurfaceGrid grid;
+        grid.region = {b.x0, b.y0, b.z, uint32_t(b.width), uint32_t(b.height)};
+        grid.cells.assign(floor.ground.size(), SurfaceKind::Preserve);
+        std::vector<SurfaceKind> kinds(map.groundKeys().size(), SurfaceKind::Preserve);
+        for (size_t k = 0; k < kinds.size(); ++k) {
+            const auto entry = std::ranges::find(mapping, map.groundKeys()[k], &KeyMapEntry::key);
+            if (entry == mapping.end()) continue;
+            constexpr SurfaceKind natural[] {SurfaceKind::Grass, SurfaceKind::Dirt, SurfaceKind::Rock, SurfaceKind::Shore, SurfaceKind::Lake};
+            if (size_t(entry->kind) < naturalKindCount) kinds[k] = natural[size_t(entry->kind)];
+        }
+        for (size_t i = 0; i < floor.ground.size(); ++i)
+            if ((floor.traits[i] & bit(Trait::Present)) && floor.ground[i] < kinds.size()) grid.cells[i] = kinds[floor.ground[i]];
+        auto metrics = candidateMetricsOf(grid, stop);
+        if (!metrics) return std::unexpected(metrics.error() == CandidateScoreError::Cancelled ? "Analysis cancelled." : "Measuring the sample failed.");
+        sample.metrics = *metrics;
+    }
     return sample;
 } catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
@@ -976,9 +995,216 @@ std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample&
     profile.rockOutlinePermille = sample.rockOutlinePermille;
     profile.unreachedRockPermille = sample.unreachedRockPermille;
     profile.unreachedWalkPermille = sample.unreachedWalkPermille;
+    // Several samples are named by their order only, weighted by their tiles (largest remainder to 1000).
+    if (sample.sampleWeights.size() > 1) {
+        const uint64_t total = std::accumulate(sample.sampleWeights.begin(), sample.sampleWeights.end(), uint64_t {0});
+        std::vector<std::pair<uint64_t, size_t>> remainders;
+        uint32_t given = 0;
+        profile.sources.clear();
+        for (size_t i = 0; i < sample.sampleWeights.size(); ++i) {
+            const uint64_t scaled = sample.sampleWeights[i] * 1000;
+            profile.sources.push_back({std::format("sample-{}", i + 1), uint32_t(scaled / total)});
+            given += uint32_t(scaled / total);
+            remainders.push_back({scaled % total, i});
+        }
+        std::ranges::stable_sort(remainders, std::greater {}, &std::pair<uint64_t, size_t>::first);
+        for (size_t i = 0; given < 1000; ++i, ++given) ++profile.sources[remainders[i].second].weightPermille;
+    }
+    for (size_t m = 0; m < candidateRankingMetricCount; ++m)
+        if (sample.metrics[m]) if (const auto band = learnedCandidateBand(m, *sample.metrics[m])) profile.bands.push_back(*band);
     if (!validateProfile(profile)) return std::unexpected("The learned profile is invalid.");
     return profile;
 }
+
+namespace {
+// Weight-rounded mean of one value over the samples.
+template <typename Get>
+uint64_t weightedMean(std::span<const LearningSample> samples, uint64_t total, Get get) {
+    uint64_t sum = 0;
+    for (const auto& s : samples) sum += uint64_t(get(s)) * s.present;
+    return total ? uint64_t((sum + total / 2) / total) : 0;
+}
+// The name of the heaviest sample that has one (ties by the smaller name).
+template <typename Get>
+std::string heaviestName(std::span<const LearningSample> samples, Get get) {
+    const std::string* best = nullptr;
+    uint64_t weight = 0;
+    for (const auto& s : samples) {
+        const std::string& name = get(s);
+        if (name.empty()) continue;
+        if (!best || s.present > weight || (s.present == weight && name < *best)) { best = &name; weight = s.present; }
+    }
+    return best ? *best : std::string();
+}
+// Entries combined by key with weighted rates, ordered by rate descending then key, cut to `limit`.
+template <typename Key>
+struct Combined { Key key; uint64_t rate = 0; size_t sample = 0; size_t index = 0; };
+// `tieBreak(a, ia, b, ib)` says whether entry ia of sample a stands for the key instead of entry ib of an equally heavy b.
+template <typename Key, typename Each, typename TieBreak = bool (*)(const LearningSample&, size_t, const LearningSample&, size_t)>
+std::vector<Combined<Key>> combine(std::span<const LearningSample> samples, uint64_t total, size_t limit, Each each,
+    TieBreak tieBreak = [](const LearningSample&, size_t, const LearningSample&, size_t) { return false; }) {
+    std::map<Key, std::pair<uint64_t, std::pair<size_t, size_t>>> sums; // key -> weighted sum, heaviest (sample, index)
+    for (size_t i = 0; i < samples.size(); ++i)
+        each(samples[i], [&](const Key& key, uint64_t rate, size_t index) {
+            auto [entry, added] = sums.try_emplace(key);
+            entry->second.first += (uint64_t)rate * samples[i].present;
+            const auto [held, heldIndex] = entry->second.second;
+            if (added || samples[i].present > samples[held].present ||
+                (samples[i].present == samples[held].present && tieBreak(samples[i], index, samples[held], heldIndex)))
+                entry->second.second = {i, index};
+        });
+    std::vector<Combined<Key>> out;
+    for (const auto& [key, value] : sums) {
+        const uint64_t rate = total ? uint64_t((value.first + total / 2) / total) : 0;
+        if (rate) out.push_back({key, rate, value.second.first, value.second.second});
+    }
+    std::ranges::stable_sort(out, std::greater {}, &Combined<Key>::rate); // equal rates stay in key order
+    if (out.size() > limit) out.resize(limit);
+    return out;
+}
+template <size_t Count>
+std::array<StyleMix, Count> combineMix(std::span<const LearningSample> samples, uint64_t total, const std::string& primary,
+    std::array<StyleMix, Count> LearningSample::* field, std::vector<Combined<std::string>>* chosen = nullptr) {
+    auto all = combine<std::string>(samples, total, SIZE_MAX, [&](const LearningSample& s, auto add) {
+        for (size_t m = 0; m < Count; ++m) if (!(s.*field)[m].brush.empty()) add((s.*field)[m].brush, (s.*field)[m].permille, m);
+    }, [](const LearningSample& a, size_t ia, const LearningSample& b, size_t ib) {
+        if constexpr (Count == maxGrassMix)
+            return std::tie(a.grassMixDecor[ia].keepPermille, a.grassMixDecor[ia].brushes) < std::tie(b.grassMixDecor[ib].keepPermille, b.grassMixDecor[ib].brushes);
+        else return false;
+    });
+    // A mix keeps at least 5% of its kind, as when read from one sample, and never repeats the palette's brush.
+    std::erase_if(all, [&](const auto& c) { return c.key == primary || c.rate < 50; });
+    if (all.size() > Count) all.resize(Count);
+    std::array<StyleMix, Count> out {};
+    for (size_t m = 0; m < all.size(); ++m) out[m] = {all[m].key, uint32_t(std::min<uint64_t>(1000, all[m].rate))};
+    if (chosen) *chosen = std::move(all);
+    return out;
+}
+} // namespace
+
+std::expected<LearningSample, std::string> mergeLearningSamples(std::span<const LearningSample> samples) try {
+    if (samples.empty() || samples.size() > maxLearningSamples)
+        return std::unexpected(std::format("Use 1 to {} samples.", maxLearningSamples));
+    if (samples.size() == 1) return samples.front();
+    uint64_t total = 0;
+    for (const auto& s : samples) {
+        if (!s.present) return std::unexpected("A sample has no tiles.");
+        total += s.present;
+    }
+    LearningSample out;
+    for (const auto& s : samples) {
+        out.sampleWeights.push_back(s.present);
+        for (size_t a = 0; a < styleKindCount; ++a) {
+            out.stats.kindTiles[a] += s.stats.kindTiles[a];
+            for (size_t b = 0; b < styleKindCount; ++b) out.stats.pairs[a][b] += s.stats.pairs[a][b];
+        }
+        out.present += s.present; out.recognized += s.recognized; out.seaTiles += s.seaTiles;
+        for (size_t c = 0; c < out.decor.cell.size(); ++c) {
+            out.decor.cell[c].tiles += s.decor.cell[c].tiles; out.decor.cell[c].trees += s.decor.cell[c].trees;
+            out.decor.cell[c].bushes += s.decor.cell[c].bushes; out.decor.cell[c].stones += s.decor.cell[c].stones;
+        }
+    }
+    const auto mean = [&](auto get) { return uint32_t(weightedMean(samples, total, get)); };
+    for (size_t k = 0; k < naturalKindCount; ++k)
+        out.palette[k] = heaviestName(samples, [k](const LearningSample& s) -> const std::string& { return s.palette[k]; });
+    for (size_t k = 0; k < out.decorPalette.size(); ++k)
+        out.decorPalette[k] = heaviestName(samples, [k](const LearningSample& s) -> const std::string& { return s.decorPalette[k]; });
+    std::vector<Combined<std::string>> grassChosen;
+    out.grassMix = combineMix(samples, total, out.palette[size_t(StyleKind::Grass)], &LearningSample::grassMix, &grassChosen);
+    for (size_t m = 0; m < grassChosen.size(); ++m) out.grassMixDecor[m] = samples[grassChosen[m].sample].grassMixDecor[grassChosen[m].index];
+    out.treeMix = combineMix(samples, total, out.decorPalette[0], &LearningSample::treeMix);
+    out.bushMix = combineMix(samples, total, out.decorPalette[1], &LearningSample::bushMix);
+    out.clumpPermille = mean([](const LearningSample& s) { return s.clumpPermille; });
+    out.shoreTree = heaviestName(samples, [](const LearningSample& s) -> const std::string& { return s.shoreTree; });
+    out.shoreTreePermille = out.shoreTree.empty() ? 0 : std::max<uint32_t>(1, mean([](const LearningSample& s) { return s.shoreTreePermille; }));
+    const auto overlays = [&](std::array<StyleOverlay, maxOverlays> LearningSample::* field, bool onTree) {
+        std::array<StyleOverlay, maxOverlays> result {};
+        // Ranked by both rates together; each rate is its own weighted mean.
+        const auto all = combine<std::string>(samples, total, maxOverlays, [&](const LearningSample& s, auto add) {
+            for (size_t i = 0; i < maxOverlays; ++i)
+                if (const auto& o = (s.*field)[i]; !o.name.empty()) add(o.name, uint64_t(o.onTreePpm) + o.onGroundPpm, i);
+        });
+        for (size_t i = 0; i < all.size(); ++i) {
+            const auto rate = [&](bool tree) {
+                return uint32_t(weightedMean(samples, total, [&](const LearningSample& s) {
+                    const auto found = std::ranges::find(s.*field, all[i].key, &StyleOverlay::name);
+                    return found == (s.*field).end() ? 0u : (tree ? found->onTreePpm : found->onGroundPpm);
+                }));
+            };
+            result[i] = {all[i].key, onTree ? rate(true) : 0, rate(false)};
+            if (!result[i].onTreePpm && !result[i].onGroundPpm) result[i].onGroundPpm = 1;
+        }
+        return result;
+    };
+    out.overlays = overlays(&LearningSample::overlays, true);
+    out.interiors = overlays(&LearningSample::interiors, false);
+    out.buildings.density = mean([](const LearningSample& s) { return s.buildings.density; });
+    if (out.buildings.density) {
+        out.buildings.ruinPercent = mean([](const LearningSample& s) { return s.buildings.ruinPercent; });
+        out.buildings.floorPercent = std::max<uint32_t>(1, mean([](const LearningSample& s) { return s.buildings.floorPercent; }));
+        out.buildings.compoundPercent = mean([](const LearningSample& s) { return s.buildings.compoundPercent; });
+        out.buildings.floor = heaviestName(samples, [](const LearningSample& s) -> const std::string& { return s.buildings.floor; });
+        out.buildings.wall = heaviestName(samples, [](const LearningSample& s) -> const std::string& { return s.buildings.wall; });
+        out.carpet.name = heaviestName(samples, [](const LearningSample& s) -> const std::string& { return s.carpet.name; });
+        if (!out.carpet.name.empty())
+            out.carpet.onGroundPpm = std::max<uint32_t>(1, mean([&](const LearningSample& s) { return s.carpet.name == out.carpet.name ? s.carpet.onGroundPpm : 0u; }));
+        const auto stacks = combine<std::pair<uint32_t, std::vector<uint16_t>>>(samples, total, maxWallStacks, [](const LearningSample& s, auto add) {
+            for (size_t i = 0; i < s.wallStacks.size(); ++i) add(std::pair(s.wallStacks[i].sides, s.wallStacks[i].items), s.wallStacks[i].ppm, i);
+        });
+        for (const auto& c : stacks) out.wallStacks.push_back({c.key.first, uint32_t(c.rate), c.key.second});
+    } else {
+        std::ranges::fill(out.interiors, StyleOverlay {});
+    }
+    // Structures are keyed by their whole content (box, cells, water); the heaviest rates are kept.
+    const auto structureKey = [](const StyleStructure& s) {
+        std::vector<uint32_t> key {s.width, s.height};
+        for (const auto& cell : s.cells) {
+            key.insert(key.end(), {cell.dx, cell.dy, cell.ground, uint32_t(cell.items.size())});
+            key.insert(key.end(), cell.items.begin(), cell.items.end());
+        }
+        key.insert(key.end(), s.water.begin(), s.water.end());
+        return key;
+    };
+    const auto structures = combine<std::vector<uint32_t>>(samples, total, maxStructures, [&](const LearningSample& s, auto add) {
+        for (size_t k = 0; k < s.structures.size(); ++k) add(structureKey(s.structures[k]), s.structures[k].ppm, k);
+    });
+    for (const auto& c : structures) {
+        auto structure = samples[c.sample].structures[c.index];
+        structure.ppm = uint32_t(std::max<uint64_t>(1, c.rate));
+        out.structures.push_back(std::move(structure));
+    }
+    out.rockOutlinePermille = mean([](const LearningSample& s) { return s.rockOutlinePermille; });
+    out.unreachedRockPermille = mean([](const LearningSample& s) { return s.unreachedRockPermille; });
+    out.unreachedWalkPermille = mean([](const LearningSample& s) { return s.unreachedWalkPermille; });
+    for (size_t k = 0; k < out.shoreDistance.size(); ++k) out.shoreDistance[k] = mean([k](const LearningSample& s) { return s.shoreDistance[k]; });
+    const auto largest = std::ranges::max_element(samples, {}, [](const LearningSample& s) { return uint64_t(s.width) * s.height; });
+    out.width = largest->width; out.height = largest->height;
+    out.mixEdgePermille = out.grassMix[0].brush.empty() ? 0 : mean([](const LearningSample& s) { return s.mixEdgePermille; });
+    out.rockEdgePermille = mean([](const LearningSample& s) { return s.rockEdgePermille; });
+    out.dirtEdgePermille = mean([](const LearningSample& s) { return s.dirtEdgePermille; });
+    for (size_t m = 0; m < out.metrics.size(); ++m) {
+        int64_t sum = 0;
+        uint64_t weight = 0;
+        for (const auto& s : samples) if (s.metrics[m]) { sum += *s.metrics[m] * int64_t(s.present); weight += s.present; }
+        if (weight) out.metrics[m] = sum >= 0 ? (sum + int64_t(weight / 2)) / int64_t(weight) : -((-sum + int64_t(weight / 2)) / int64_t(weight));
+    }
+    // Heaviest first: the profile's sample-1..N do not depend on the order the samples were given in.
+    std::ranges::sort(out.sampleWeights, std::greater {});
+    return out;
+} catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
+
+std::expected<std::vector<KeyMapEntry>, std::string> mergeLearningMappings(std::span<const std::vector<KeyMapEntry>> mappings) try {
+    std::vector<KeyMapEntry> out;
+    for (const auto& mapping : mappings)
+        for (const auto& entry : mapping) {
+            const auto found = std::ranges::find(out, entry.key, &KeyMapEntry::key);
+            if (found == out.end()) out.push_back(entry);
+            else if (found->kind != entry.kind)
+                return std::unexpected(std::format("Ground \"{}\" is {} in one sample and {} in another.", entry.key, styleKindName(found->kind), styleKindName(entry.kind)));
+        }
+    std::ranges::sort(out, {}, &KeyMapEntry::key);
+    return out;
+} catch (const std::bad_alloc&) { return std::unexpected("Not enough memory for analysis."); }
 
 bool validLearnedProfileName(std::string_view name) {
     if (name.empty() || name.size() > 64) return false;

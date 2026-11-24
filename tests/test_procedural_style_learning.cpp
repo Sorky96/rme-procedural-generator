@@ -253,7 +253,60 @@ int main(int argc, char** argv) {
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")
         && !rawDecorId("raw:rock:12a") && !rawDecorId("palm"), "RAW vegetation names");
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
-    check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");
+    // I62: the learned bands are the profile's own (none for paths and buildings), never M06/M19's.
+    check(!a->bands.empty() && candidateBandsFor(*a).data() == a->bands.data() &&
+        std::ranges::none_of(a->bands, [](const CandidateBand& band) { return !learnableCandidateMetric(band.metric); }), "user profile ranks by its learned bands");
+    {
+        // I62: several samples. A second map of grass with a rock block and a pond, and a third of dirt.
+        const auto other = [](int variant) {
+            FloorBounds fb{7, 0, 0, 64, 64};
+            auto map = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+            const auto grass = map.internGroundKey("grass").value();
+            const auto rock = map.internGroundKey("mountain").value();
+            const auto water = map.internGroundKey("sea").value();
+            const auto dirt = map.internGroundKey("dirt").value();
+            for (int i = 0; i < 4096; ++i) {
+                const int x = i % 64, y = i / 64;
+                const auto key = variant ? (x < 32 ? dirt : grass) : x >= 8 && x < 24 && y >= 8 && y < 24 ? rock : x >= 40 && x < 52 && y >= 40 && y < 52 ? water : grass;
+                check(bool(map.set(x, y, 7, key, bit(Trait::HasGround))), "merge fixture cell");
+            }
+            return map;
+        };
+        const auto mapB = other(0), mapC = other(1);
+        const auto mappingB = proposeKeyMap(mapB.groundKeys(), defaultKeyRules()), mappingC = proposeKeyMap(mapC.groundKeys(), defaultKeyRules());
+        const auto sB = inspectLearningSample(mapB, mappingB, {}, true), sC = inspectLearningSample(mapC, mappingC, {}, true);
+        check(sB && sC && sB->metrics[0] && sC->metrics[0], "samples measured");
+        if (sB && sC) {
+            const std::vector<std::vector<KeyMapEntry>> mappings {mapping, mappingB, mappingC};
+            const auto merged = mergeLearningMappings(mappings);
+            check(merged && std::ranges::is_sorted(*merged, {}, &KeyMapEntry::key), "mappings merged");
+            auto conflict = mappingB;
+            for (auto& entry : conflict) if (entry.key == "grass") entry.kind = StyleKind::Dirt;
+            const std::vector<std::vector<KeyMapEntry>> conflicting {mapping, conflict};
+            check(!mergeLearningMappings(conflicting), "conflicting classes refused");
+            const auto one = mergeLearningSamples(std::span(&*sample, 1));
+            check(one && one->metrics == sample->metrics && one->stats == sample->stats && one->sampleWeights.empty(), "one sample is itself");
+            const std::vector<LearningSample> abc {*sample, *sB, *sC}, cab {*sC, *sample, *sB};
+            const auto m1 = mergeLearningSamples(abc), m2 = mergeLearningSamples(cab);
+            const auto p1 = m1 ? fitLearningSample(*m1, *merged, "10.98", "otb", "dat") : std::unexpected(std::string("no merge"));
+            const auto p2 = m2 ? fitLearningSample(*m2, *merged, "10.98", "otb", "dat") : std::unexpected(std::string("no merge"));
+            check(p1 && p2 && serializeProfile(*p1) == serializeProfile(*p2), "sample order does not change the profile");
+            check(p1 && p1->sources.size() == 3 && p1->sources[0].alias == "sample-1" &&
+                std::ranges::fold_left(p1->sources, 0u, [](uint32_t sum, const ProfileSource& s) { return sum + s.weightPermille; }) == 1000,
+                "three weighted sources");
+            check(p1 && m1 && m1->stats.kindTiles[size_t(StyleKind::Rock)] == sB->stats.kindTiles[size_t(StyleKind::Rock)] &&
+                m1->present == sample->present + sB->present + sC->present, "counts summed");
+            check(p1 && !p1->bands.empty() && parseProfile(*serializeProfile(*p1)) == *p1, "merged profile with bands round-trips");
+            const std::vector<LearningSample> twice {*sB, *sB};
+            const auto doubled = mergeLearningSamples(twice);
+            const auto pTwice = doubled ? fitLearningSample(*doubled, mappingB, "10.98", "otb", "dat") : std::unexpected(std::string("no merge"));
+            const auto pOnce = fitLearningSample(*sB, mappingB, "10.98", "otb", "dat");
+            check(pTwice && pOnce && pTwice->target == pOnce->target && pTwice->tuning == pOnce->tuning && pTwice->bands == pOnce->bands,
+                "two identical samples fit as one");
+            const std::vector<LearningSample> nine(9, *sB);
+            check(!mergeLearningSamples(nine) && !mergeLearningSamples(std::span<const LearningSample>()), "1 to 8 samples");
+        }
+    }
     check(checkProfile(*a,"wrong","otb","dat",7) == ProfileCompatibility::WrongClient, "client bound");
     check(checkProfile(*a,"10.98","wrong","dat",7) == ProfileCompatibility::WrongAssets, "assets bound");
     for (const char* name : {"", "..", "../x", "a/b", "a\\b", "CON", "com1", "a.profile", "a:", "a "})
