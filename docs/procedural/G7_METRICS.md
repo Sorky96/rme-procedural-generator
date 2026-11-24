@@ -102,3 +102,29 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Moving map, brush or preview-buffer access off the GUI thread (not thread-safe in RME), Place/commit time, the learning dialog's steps. Areas larger than 512x512 are measured if the probe covers them but not required.
+
+## I62 — profiles from several samples and learned ranking bands (2026-11-24, before implementation)
+
+**Goal.** The last terminal-only parts of the workflow move to the GUI: a profile learned from several rectangles (of one or several maps), and ranking bands for a learned profile so the generator recommends a candidate as it does for M06/M19. User decision 2026-11-24: both parts; paths and buildings stay without bands.
+
+**Scope.**
+1. **Samples:** the learning dialog keeps a list of 1–8 read samples (**Add sample** after Read rectangle, **Remove sample**). Samples may come from different maps opened in turn; each must have the same client (OTB/DAT hashes) as the first. Map identity changes no longer discard samples already added, only the one not yet added. Analyze fits one profile from the merged samples.
+2. **Merge rule (core, `mergeLearningSamples`)**, weight = present tiles of a sample:
+   - counts (stats, vegetation contexts, present, recognized, sea tiles) are summed;
+   - rates (permille, ppm, edges, building density/ruin/floor/compound shares, shore distance percentiles, unreached shares, clump, shore trees) are weight-rounded means;
+   - named entries (grass/tree/bush mixes, overlays, interiors, wall stacks by sides and items, structures) are combined by name with weighted rates and the existing count limits; ties break by name, so the result does not depend on sample order;
+   - single names (palette per kind, decor palette, building floor and wall, carpet, shore tree) come from the sample with the largest weight among those that have one, ties by name;
+   - width and height are those of the largest sample.
+   One sample merges to itself.
+3. **Profile:** `sources` lists `sample-1`…`sample-N` with per-mille weights summing to 1000. Optional `band` lines (metric name, reference, lower and upper bound in hundredths) store the learned bands. Profiles without them read and rank as before; M06/M19 keep the frozen g6-bands-v1 bands.
+4. **Bands:** each sample is measured with `candidateMetricsOf` on its natural classes (Grass, Dirt, Rock, Shore; Water as lake; other classes preserved). The reference is the weight-rounded mean over the samples where the metric exists. Rule of 396e057: B = [0.67r; 1.5r]; trans.R*/D* use A50 = [max(0, r-50); r+50] when r < 50; patch.RS uses U20 = [0; r+20] when r < 20. Signed metrics take the band ordered low to high. Path and building metrics (paths.L, paths.W, build.per64k, build.long, build.short, outline.median) get no band: N/A as today.
+5. **Generator:** a learned profile with bands ranks with order A and shows Recommended; the policy text names the learned bands (`learned-bands/A/I54-v1`). Feedback records the same policy.
+
+**Criteria.**
+1. **Unit tests:** merge of one sample is identity; any permutation of 2–8 samples gives a byte-identical profile; two identical samples give the same target and tuning as one; 9 samples refused; a different client refused; weights sum to 1000; band rule cases B, A50, U20, signed and N/A; `band` lines round-trip and bad ones are refused; a profile without bands ranks as before.
+2. **Parity:** the I56 single-sample profile serialized by the new code equals the old one apart from the added `band` lines. G5 `--i47` 32/32 and fingerprint 1729 unchanged (M06/M19 untouched).
+3. **GUI probe with a real client:** learn two rectangles of a synthetic map → profile with two sources → generator shows Recommended for it; one sample only → also bands; removing a sample before Analyze changes the result; map and Undo unchanged by learning; Place → one Undo → Redo.
+4. **Report only, no gate:** learned references on M06/M19 rectangles against the frozen bands (how many of the 20 metrics fall in the frozen band). No claim that learned bands improve ranking quality (I51 and I55 failed).
+5. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`, I57 copy probe and I58 report probe pass.
+
+**Out of scope.** Bands for paths and buildings, holdout validation of learned bands, learning underground or similarity references from several samples at once, editing bands in the GUI.
