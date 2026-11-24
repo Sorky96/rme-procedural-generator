@@ -22,3 +22,19 @@ Criteria `6fe44f4`. Core `d9c2e82`, test fix `aadf14a`, GUI and probe `ab02283`.
 ## D30 closed (2026-11-24)
 
 A profile without learned out-of-reach shares uses the rule from before `e4c5e80` again: every place and floor transition must be reached, single cells are not counted, and the status no longer prints a cell allowance for it. With the M19 cave case passing, the Surface probe reached two door/wall assertions made stale by `1038883` (without doors the entrance stays an open gap). The tests now expect walls to differ only at the entrances. `g5_run_suite.py --probes`: core 23/23, Commit and Surface probes PASS, `SUITE_PASS`. This completes I57 criterion 4.
+
+## I58 — statistics and warnings (2026-11-24)
+
+Criteria `ec4b30a`.
+
+**What it does.** Below the candidate gallery the generator shows two lists for the Selected candidate. **Statistics:** area, Surface terrain shares (counted from the final Surface grid, now kept as `PreparedTerrain::surfaceCells`), places reached per kind, walkable floor transitions, cells out of reach on the ground floor and above with the allowance or "not limited", repairs, similarity per copy-index reference, the preparation's memory estimate against the series budget, and the preparation time of the candidate's last attempt. **Warnings:** Blocking entries, one per hardFail cause, then Warning entries, or "No warnings". The status line is one sentence with the counts. `terrainReportOf` (core) computes both lists. The hardFail decision is unchanged.
+
+**Clarification (2026-11-24, after implementation).** The criteria named a similarity state "Near", which the copy assessment does not have. The warning is given for a reference with coverage of at least 50‰ (half the copy threshold) that is not a copy, and only when the sample was large enough to be judged.
+
+**Criteria results.**
+
+1. **Unit tests: PASS** (`TERRAIN_REPORT_PASS`). 4000 random combinations of every hardFail cause under the rule without learned shares and three tolerances: Blocking warnings non-empty exactly when `candidateHardFail` is true. Each cause named once. Shares add up within rounding, lakes and rivers merged into water. "Not limited" without learned shares. Over, above half, and well within the allowance. Pockets, near references and memory above 75% warn without blocking. A sample too small to judge gives no warning.
+2. **Real-client probe: PASS** (`--learn --visible`, `LEARNING_DIALOG_PASS`). The copy of the learned area has a Blocking warning naming `i57-source` and a similarity row. The placeable other terrain has no Blocking warning, terrain shares and a similarity row. In a two-candidate series, selecting the other candidate refreshed the statistics. In every checked state Blocking warnings existed exactly when Place was disabled. Map and Undo unchanged. All I56 and I57 sections passed. Seed 4242 is now placeable (D30 fixed).
+3. **Regression: PASS.** `g5_run_suite.py --probes`: core 24/24 (new `test_procedural_terrain_report`), Commit and Surface probes, `SUITE_PASS`. The Surface probe read "removed places" from the old status line; it now reads the Repairs row. G5 `--i47`: `G5_GATE_PASS` 32/32 for both profiles, identical repetitions.
+
+**Not verified.** Manual visual and keyboard review, including how the lists fit at small dialog sizes. The candidate-gallery probe (`test_procedural_candidate_dialog`) was not rerun; it reads only the gallery column, which is unchanged.
