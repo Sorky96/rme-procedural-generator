@@ -463,7 +463,12 @@ void doors(uint32_t side, std::ostream& report) {
 	const size_t plannedDoors = size_t(std::ranges::count_if(prepared->plan.doors, [](uint8_t flag) { return flag != 0; }));
 	check(plannedDoors > 0, "No door was planned");
 	check(walled && prepared->plan.fingerprint() != walled->plan.fingerprint(), "Doors did not change the plan fingerprint");
-	check(walled && prepared->plan.walls == walled->plan.walls && prepared->plan.items == walled->plan.items, "Doors changed ground or walls of the plan");
+	// Without doors the entrance is an open gap in the wall; with them the door stands on a wall there. Nothing else differs.
+	bool sameWalls = walled && prepared->plan.walls.size() == walled->plan.walls.size();
+	for (size_t i = 0; sameWalls && i < prepared->plan.walls.size(); ++i)
+		sameWalls = prepared->plan.doors[i] ? prepared->plan.walls[i] != 0 && walled->plan.walls[i] == 0 :
+			prepared->plan.walls[i] == walled->plan.walls[i];
+	check(sameWalls && prepared->plan.items == walled->plan.items, "Doors changed ground or walls of the plan beyond the entrances");
 	auto noWall = profile;
 	noWall.wall.clear();
 	check(!prepareTerrain(editor.map, config, noWall, preparation), "A door was accepted without a wall brush");
@@ -689,15 +694,20 @@ void ruinsAndCamps(uint32_t side, std::ostream& report) {
 	const auto grid = generateSurface({config.region, config.seed, config.surface}, MapExtent {65001, 65001, 16}, surfaceBudget);
 	check(bool(grid) && grid->valid() && !grid->gaps.empty() && !grid->sites.empty(), "The surface has no gaps or sites");
 	if (!grid) return;
-	size_t outline = 0;
-	for (size_t i = 0; i < grid->cells.size(); ++i) {
+	// Every outline cell has a wall except the gaps and, without doors, the entrances.
+	std::vector<uint8_t> open(grid->cells.size(), 0);
+	for (const uint32_t gap : grid->gaps) open[gap] = 1;
+	for (const uint32_t door : grid->doors) open[door] = 1;
+	bool wallsMatch = prepared->plan.walls.size() == grid->cells.size();
+	for (size_t i = 0; wallsMatch && i < grid->cells.size(); ++i) {
 		if (grid->cells[i] != SurfaceKind::Floor) continue;
 		const size_t x = i % side, y = i / side;
-		outline += x == 0 || y == 0 || x + 1 == side || y + 1 == side || grid->cells[i - 1] != SurfaceKind::Floor || grid->cells[i + 1] != SurfaceKind::Floor ||
-			grid->cells[i - side] != SurfaceKind::Floor || grid->cells[i + side] != SurfaceKind::Floor;
+		const bool outline = x == 0 || y == 0 || x + 1 == side || y + 1 == side || grid->cells[i - 1] != SurfaceKind::Floor ||
+			grid->cells[i + 1] != SurfaceKind::Floor || grid->cells[i - side] != SurfaceKind::Floor || grid->cells[i + side] != SurfaceKind::Floor;
+		wallsMatch = (prepared->plan.walls[i] != 0) == (outline && !open[i]);
 	}
+	check(wallsMatch, "Planned walls do not cover the outline cells apart from gaps and entrances");
 	const size_t plannedWalls = size_t(std::ranges::count_if(prepared->plan.walls, [](uint16_t item) { return item != 0; }));
-	check(plannedWalls + grid->gaps.size() == outline, "Planned walls plus gaps do not add up to the outline cells");
 	const auto receipt = DrawOperations::commitTerrainPreview(*prepared, config, profile, commit);
 	check(bool(receipt), "Ruin commit failed, error index " + std::to_string(receipt ? 0 : receipt.error().index()));
 	check(editor.actionQueue->getCurrentIndex() == prior + 1 && editor.actionQueue->getSize() == prior + 1, "Ruin commit is not one history step");
