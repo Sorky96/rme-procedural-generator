@@ -15,6 +15,7 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/gauge.h>
+#include <wx/generic/msgdlgg.h>
 #include <wx/listbox.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
@@ -400,6 +401,22 @@ void StyleLearningDialog::Save() {
     if (!result_ || !ResultCurrent() || !permission_->GetValue()) {
         Invalidate(); Status("Result stale or permission missing. Analyze again."); return;
     }
+    const auto name = name_->GetValue().ToStdString(wxConvUTF8);
+    const auto directory = styleProfileDirectory();
+    std::error_code ec;
+    const bool replace = validLearnedProfileName(name) && std::filesystem::exists(directory / (name + ".profile"), ec);
+    if (ec) { Status("Cannot inspect the local profile folder."); return; }
+    if (replace) {
+        wxGenericMessageDialog dialog(this, wxstr(std::format("Replace the profile \"{}\"?", name)),
+            "Learn from open map", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+        dialog.SetName("learn-confirm");
+        if (dialog.ShowModal() != wxID_YES) { Status("Profile not saved."); return; }
+        // The timer can invalidate the result while the confirmation dialog is open.
+        asset_check_ = {};
+        if (!result_ || !ResultCurrent() || !permission_->GetValue()) {
+            Invalidate(); Status("Result stale or permission missing. Analyze again."); return;
+        }
+    }
     const auto ids = loadedClientAssetIds();
     if (!ids || checkProfile(result_->profile, ids->client, ids->otbSha256, ids->datSha256, 7) != ProfileCompatibility::Compatible) {
         Invalidate(); Status("Client assets changed. Analyze again."); return;
@@ -412,8 +429,7 @@ void StyleLearningDialog::Save() {
         if (!prepared) { Status(prepared.error() + " Nothing saved."); return; }
         protection = std::move(*prepared);
     }
-    const auto name = name_->GetValue().ToStdString(wxConvUTF8);
-    const auto saved = saveLearnedProfile(styleProfileDirectory(), name, result_->profile);
+    const auto saved = saveLearnedProfile(directory, name, result_->profile, replace);
     if (!saved) { Status(saved.error()); return; }
     if (protection) {
         const auto indexName = index_name_->GetValue().ToStdString(wxConvUTF8);
