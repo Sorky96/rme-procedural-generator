@@ -176,6 +176,10 @@ private:
 	[[nodiscard]] std::optional<Request> ReadRequest();
 	[[nodiscard]] Editor* CurrentTarget();
 	[[nodiscard]] bool BuildPreviewBitmap();
+    // The prepared floor the preview floor choice shows, and its tile at a position: the preview buffer where it
+    // changes, otherwise the captured original (nullptr when empty).
+    [[nodiscard]] const rme::procedural::PreparedTerrain& ShownUnit() const;
+    [[nodiscard]] static const Tile* ShownTile(const rme::procedural::PreparedTerrain& unit, const Position& position);
 	void ReleasePreview();
 	void UpdateControlStates();
 	void UpdateClientLabel();

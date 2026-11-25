@@ -2437,7 +2437,7 @@ std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& requ
     return {blocking, report.warnings.size() - blocking};
 }
 
-bool TerrainGeneratorDialog::BuildPreviewBitmap() {
+const PreparedTerrain& TerrainGeneratorDialog::ShownUnit() const {
     const auto* selected = &*prepared_;
     const int floor = preview_floor_choice_->GetSelection();
     if (floor == 1 && prepared_->cave) {
@@ -2448,11 +2448,19 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
             selected = selected->plateau.get();
         }
     }
-    const auto& unit = *selected;
-    const auto& snapshot = unit.snapshot;
-	const auto& region = snapshot.input.config.region;
-	const auto& context = snapshot.context;
-	const BaseMap& buffer = unit.preview.getBuffer();
+    return *selected;
+}
+
+const Tile* TerrainGeneratorDialog::ShownTile(const PreparedTerrain& unit, const Position& position) {
+    if (const Tile* tile = unit.preview.getBuffer().getTile(position)) return tile;
+    const auto& context = unit.snapshot.context;
+    const size_t index = size_t(position.y - context.y) * context.width + size_t(position.x - context.x);
+    return unit.snapshot.cells[index].original.get();
+}
+
+bool TerrainGeneratorDialog::BuildPreviewBitmap() {
+    const auto& unit = ShownUnit();
+	const auto& region = unit.snapshot.input.config.region;
 	const wxColour empty = Theme::Get(Theme::Role::Background);
 
 	wxImage image(int(region.width), int(region.height), false);
@@ -2463,12 +2471,7 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
 	for (uint32_t row = 0; row < region.height; ++row) {
 		for (uint32_t column = 0; column < region.width; ++column) {
 			const Position position(region.x + int(column), region.y + int(row), region.z);
-			// Concrete preview tile where something changes, otherwise the captured original.
-			const Tile* tile = buffer.getTile(position);
-			if (!tile) {
-				const size_t index = size_t(position.y - context.y) * context.width + size_t(position.x - context.x);
-				tile = snapshot.cells[index].original.get();
-			}
+			const Tile* tile = ShownTile(unit, position);
 			uint8_t r = empty.Red(), g = empty.Green(), b = empty.Blue();
 			if (tile) {
 				TileColorCalculator::GetMinimapColor(tile, r, g, b);
