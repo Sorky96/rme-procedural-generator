@@ -770,6 +770,45 @@ void i65Reuse(std::ofstream& report) {
     report << "I65_SEED_CHANGE_GENERATES_PASS\n";
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
+// I66: zoomed in, the pane shows sprites (its pixels differ from minimap colours); at fit level it does not.
+wxImage capture(wxPanel& panel) {
+    panel.Refresh(); panel.Update();
+    const wxSize size = panel.GetClientSize();
+    wxBitmap bitmap(size);
+    wxMemoryDC memory(bitmap);
+    wxClientDC screen(&panel);
+    memory.Blit(0, 0, size.GetWidth(), size.GetHeight(), &screen, 0, 0);
+    memory.SelectObject(wxNullBitmap);
+    return bitmap.ConvertToImage();
+}
+bool samePixels(const wxImage& a, const wxImage& b) {
+    return a.GetSize() == b.GetSize() && std::equal(a.GetData(), a.GetData() + size_t(a.GetWidth()) * a.GetHeight() * 3, b.GetData());
+}
+void i66Sprites(std::ofstream& report) {
+    check(g_gui.NewMap(), "I66 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4247");
+    d->Show(); preview(*d);
+    auto& panel = field<wxPanel>(*d, "terrain-preview-image");
+    auto& sprites = field<wxCheckBox>(*d, "terrain-preview-sprites");
+    check(sprites.GetValue(), "I66 sprites on by default");
+    const auto fitOn = capture(panel);
+    sprites.SetValue(false); changed(sprites, wxEVT_CHECKBOX);
+    check(samePixels(fitOn, capture(panel)), "I66 fit level differs with sprites");
+    for (int i = 0; i < 6; ++i) key(panel, '+');
+    const auto zoomedOff = capture(panel);
+    sprites.SetValue(true); changed(sprites, wxEVT_CHECKBOX);
+    const auto started = std::chrono::steady_clock::now();
+    const auto zoomedOn = capture(panel);
+    const auto took = std::chrono::steady_clock::now() - started;
+    check(!samePixels(zoomedOff, zoomedOn), "I66 zoomed pane shows no sprites");
+    check(field<wxButton>(*d, "terrain-place").IsEnabled() && target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0,
+        "I66 painting changed the preview or the map: " + statusText(*d));
+    report << std::format("I66_SPRITES_PASS paint {} ms, view {}\n", std::chrono::duration_cast<std::chrono::milliseconds>(took).count(),
+        field<wxStaticText>(*d, "terrain-preview-view").GetLabel().utf8_string());
+    place(*d); check(target.actionQueue->getSize() == 1, "I66 Place one Undo");
+    report << "I66_PLACE_PASS\n";
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -877,6 +916,7 @@ void run() {
         i63Protection(report, dir);
         i64Tabs(report, dir);
         i65Reuse(report);
+        i66Sprites(report);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
