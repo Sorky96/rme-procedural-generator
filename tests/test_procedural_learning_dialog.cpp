@@ -691,7 +691,10 @@ void i64Tabs(std::ofstream& report, const std::filesystem::path& dir) {
         "terrain-water-weight",
         "terrain-width"
     };
-    check(keys == i63Keys, std::format("I64 preset keys differ from I63 ({} vs {})", keys.size(), i63Keys.size()));
+    auto expectedKeys = i63Keys; // I68 adds the secondary biome and its share
+    expectedKeys.insert(expectedKeys.end(), {"terrain-secondary-biome", "terrain-secondary-share"});
+    std::ranges::sort(expectedKeys);
+    check(keys == expectedKeys, std::format("I64 preset keys differ from I63 + I68 ({} vs {})", keys.size(), expectedKeys.size()));
     report << "I64_PRESET_KEYS_PASS\n";
 
     auto& biome = field<wxChoice>(*d, "terrain-biome");
@@ -839,10 +842,84 @@ void i67Sliders(std::ofstream& report, const std::filesystem::path& dir) {
     field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i67-keys");
     click(*d, "terrain-preset-save"); settle();
     const auto saved = parsePreset(fileText(presets / "i67-keys.preset"));
-    check(saved && saved->values.size() == 60 && std::ranges::none_of(saved->values, [](const auto& v) { return v.first.ends_with("-slider"); }),
+    check(saved && saved->values.size() == 62 && std::ranges::none_of(saved->values, [](const auto& v) { return v.first.ends_with("-slider"); }),
         "I67 preset keys changed");
     report << "I67_PRESET_KEYS_PASS\n";
     check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I67 map changed");
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
+// I68: every ordered pair of biomes as primary and secondary at 40 %; the secondary grass covers about its share of the
+// grass; share 0 places the same terrain as None; presets hold the two settings and old presets load with None.
+size_t groundCount(Map& map, std::string_view brush) {
+    size_t count = 0;
+    for (auto& loc : map.tiles()) if (const auto* t = loc.get(); t && t->ground) {
+        const auto* ground = t->ground->getGroundBrush();
+        count += ground && ground->getName() == brush;
+    }
+    return count;
+}
+void i68Secondary(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I68 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4249");
+    d->Show();
+    auto& primary = field<wxChoice>(*d, "terrain-biome");
+    auto& secondary = field<wxChoice>(*d, "terrain-secondary-biome");
+    auto& share = field<wxSpinCtrl>(*d, "terrain-secondary-share");
+    check(secondary.GetStringSelection() == "None" && share.GetValue() == 30, "I68 defaults");
+    const auto& biomes = biomePresets();
+    size_t placed = 0, refused = 0;
+    for (const auto& first : biomes) for (const auto& second : biomes) {
+        if (first.name == second.name) continue;
+        check(primary.SetStringSelection(wxstr(first.name)), "I68 primary listed"); changed(primary); settle();
+        check(secondary.SetStringSelection(wxstr(second.name)), "I68 secondary listed"); changed(secondary);
+        share.SetValue(40);
+        click(*d, "terrain-preview"); until([&] { return field<wxButton>(*d, "terrain-preview").IsEnabled(); });
+        const bool ok = field<wxButton>(*d, "terrain-place").IsEnabled();
+        (ok ? placed : refused) += 1;
+        report << std::format("I68_PAIR {} + {}: {}\n", first.name, second.name, ok ? "placeable" : "refused | " + statusText(*d));
+        check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I68 preview modified the map");
+        if (first.name == "Temperate") check(ok, std::format("I68 Temperate + {} refused: {}", second.name, statusText(*d)));
+    }
+    report << std::format("I68_PAIRS_PASS placeable {} refused {}\n", placed, refused);
+
+    // Temperate with Snow regions: snow on about 40 % of the grass.
+    check(primary.SetStringSelection("Temperate"), "I68 Temperate"); changed(primary); settle();
+    check(secondary.SetStringSelection("Snow"), "I68 Snow"); changed(secondary); share.SetValue(40);
+    preview(*d); place(*d);
+    check(target.actionQueue->getSize() == 1, "I68 Place one Undo");
+    const size_t snow = groundCount(target.map, "snow"), grass = groundCount(target.map, "grass");
+    const double ratio = double(snow) / double(std::max<size_t>(1, snow + grass));
+    check(ratio >= 0.30 && ratio <= 0.50, std::format("I68 snow share {:.3f} ({} snow, {} grass)", ratio, snow, grass));
+    report << std::format("I68_SHARE_PASS snow {:.3f} of the grass ({} / {})\n", ratio, snow, snow + grass);
+    check(target.actionQueue->undo() && target.map.getTileCount() == 0, "I68 Undo");
+
+    d->Show(); share.SetValue(0); preview(*d); place(*d);
+    const auto zero = contents(target.map);
+    check(target.actionQueue->undo(), "I68 Undo share 0");
+    d->Show(); check(secondary.SetStringSelection("None"), "I68 None"); changed(secondary); share.SetValue(30); preview(*d); place(*d);
+    check(contents(target.map) == zero, "I68 share 0 differs from None");
+    check(target.actionQueue->undo(), "I68 Undo None");
+    report << "I68_SHARE_ZERO_IS_NONE_PASS\n";
+
+    d->Show();
+    check(secondary.SetStringSelection("Desert"), "I68 Desert"); changed(secondary); share.SetValue(25);
+    const auto presets = dir / "presets";
+    std::filesystem::remove(presets / "i68-mix.preset");
+    field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i68-mix");
+    click(*d, "terrain-preset-save"); settle();
+    auto saved = parsePreset(fileText(presets / "i68-mix.preset"));
+    check(saved && saved->values.at("terrain-secondary-biome") == "Desert" && saved->values.at("terrain-secondary-share") == "25", "I68 preset saved");
+    saved->values.erase("terrain-secondary-biome"); saved->values.erase("terrain-secondary-share");
+    std::filesystem::remove(presets / "i68-old.preset");
+    check(saveTerrainPreset(presets, "i68-old", *saved, false).has_value(), "I68 old preset written");
+    // A save through the dialog reloads its preset list, which then lists the file written above.
+    std::filesystem::remove(presets / "i68-refresh.preset");
+    field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i68-refresh");
+    click(*d, "terrain-preset-save"); settle();
+    auto& choice = field<wxChoice>(*d, "terrain-preset");
+    check(choice.SetStringSelection("i68-old"), "I68 old preset listed"); changed(choice); settle();
+    check(secondary.GetStringSelection() == "None" && share.GetValue() == 30, "I68 old preset did not load with None: " + statusText(*d));
+    report << "I68_PRESETS_PASS\n";
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
 void run() {
@@ -954,6 +1031,7 @@ void run() {
         i65Reuse(report);
         i66Sprites(report);
         i67Sliders(report, dir);
+        i68Secondary(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
