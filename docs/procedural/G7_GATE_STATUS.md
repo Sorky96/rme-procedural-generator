@@ -106,3 +106,16 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i63--protected-content-report-and-a-prot
 Found while probing: the margin first lived only in the generator's own protection copy, and the preview stage, which recomputes the edge clearance, refused the plan as invalid. `surfaceKeepClear` now includes the margin, so every stage sees the same writable cells. The capture's protection still matches the map exactly, as the preview requires. Spawn areas are protected cell by cell (existing rule), so "Existing tiles kept" counts them; spawn centres and spawn-area cells are separate rows.
 
 Not verified: manual GUI review; margins near content just outside the area (only the area is seen, as recorded in the criteria).
+
+## I64 — tabs per section 6 and a primary biome (2026-11-25)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i64--tabs-per-section-6-and-a-primary-biome-2026-11-25-before-implementation).
+
+1. **Unit test: PASS.** `test_procedural_terrain_preset`: five unique biomes, each sets exactly the 12 terrain and vegetation keys, weights 0-1000 with a non-zero sum, and serializes as a valid preset.
+2. **GUI probe: PASS** (`--learn --visible`, client 1098-BlackTek). The notebook has Area, Terrain, Biomes, Structures, Decoration, Reference Style, Advanced, Validation in that order. A preset saved with the new layout has exactly the 60 keys of the I63 layout. Snow sets weights 3/2/1, vegetation on and its brushes. Each of the five biomes previews without changing map or Undo and can be placed; the first is placed with one Undo step and undone. Loading a preset resets the biome to "Keep current settings". I56-I63 sections still pass (`LEARNING_DIALOG_PASS`).
+3. **Identity: PASS.** G5 `--i47` G5_GATE_PASS, all 16 logs identical to the I63 run apart from timings.
+4. **Regression: PASS.** `g5_run_suite.py --probes`: core 26/26, commit and surface probes, SUITE_PASS.
+
+Found while probing: Snow first used `ice` for the shore. Each brush passed the resolver's checks alone, but the border between snow and ice uses items client 1098 lacks, so every Snow series was refused. Snow now uses sand for the shore. The biome skips a brush the resolver would refuse (`checkGroundBrush`, `checkDecorBrush`, now shared with the resolver, which is unchanged in behaviour); it cannot see a pair of brushes whose border is unusable, so a biome can still be refused in another client, with the usual status text.
+
+Deviations: the Structures tab holds paths, buildings and levels with headings and scrolls. Not verified: manual review of the layout and of the scrolling Structures tab; biomes in clients other than 1098; whether the biomes look like their names (no visual review). `test_universal_rotator` fails to link on this branch already at `fac7ad9` (unrelated, not investigated).

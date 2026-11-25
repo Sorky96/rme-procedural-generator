@@ -400,7 +400,7 @@ Criteria and evidence: [G6_METRICS.md](procedural/G6_METRICS.md), [G6_GATE_STATU
 
 ### PHASE 7 - Full GUI and workflow
 
-- [ ] `Generate Area` dialog with described tabs and parameters.
+- [~] `Generate Area` dialog with described tabs and parameters. I64 (2026-11-25, [G7_GATE_STATUS.md](procedural/G7_GATE_STATUS.md)): the eight tabs of section 6 and a primary biome (five biomes as partial presets). Mixed biomes and sliders in place of number fields are open.
 - [ ] Data preview and map render, variants, navigation, quality comparison.
 - [~] Reference import/analysis and style profile panel. Learning from the open map (I56) and the copy index built from it in the GUI (I57, 2026-11-23, [G7_GATE_STATUS.md](procedural/G7_GATE_STATUS.md)). Statistics and warnings for the Selected candidate (I58), presets and a random seed (I59), preview zoom, pan and side-by-side comparison (I60), preview steps under 50 ms on the GUI thread at 512x512 (I61), 2026-11-24. Profiles from up to 8 samples of one or several maps and ranking bands learned from them (I62), 2026-11-24.
 - [ ] Background generation, cancellation, progress, preview cache, commit/undo.
