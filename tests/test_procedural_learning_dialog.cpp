@@ -23,6 +23,7 @@
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/combobox.h>
+#include <wx/slider.h>
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
@@ -809,6 +810,41 @@ void i66Sprites(std::ofstream& report) {
     report << "I66_PLACE_PASS\n";
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
+// I67: each share field has a slider that edits it, follows it and shares its enabled state; presets keep 60 keys.
+void i67Sliders(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I67 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4248");
+    d->Show(); preview(*d);
+    bool released = false;
+    for (const char* name : {"terrain-building-density", "terrain-ruin-percent", "terrain-upper-floor-percent", "terrain-dungeon-percent", "terrain-plateau-percent"}) {
+        auto& spin = field<wxSpinCtrl>(*d, name);
+        auto& slider = field<wxSlider>(*d, (std::string(name) + "-slider").c_str());
+        const int before = spin.GetValue(), moved = before == 37 ? 38 : 37;
+        slider.SetValue(moved);
+        wxCommandEvent event(wxEVT_SLIDER, slider.GetId()); event.SetEventObject(&slider); event.SetInt(moved);
+        slider.ProcessWindowEvent(event); settle();
+        check(spin.GetValue() == moved, std::format("I67 {} slider did not set the field", name));
+        if (!released) {
+            check(!field<wxButton>(*d, "terrain-place").IsEnabled() && field<wxListCtrl>(*d, "terrain-candidates").GetItemCount() == 0,
+                std::format("I67 {} slider kept the preview", name));
+            released = true;
+        }
+        spin.SetValue(before); d->UpdateWindowUI(wxUPDATE_UI_RECURSE);
+        check(slider.GetValue() == before, std::format("I67 {} slider does not follow the field", name));
+        check(slider.IsEnabled() == spin.IsEnabled(), std::format("I67 {} slider enabled state differs", name));
+    }
+    report << "I67_SLIDERS_PASS\n";
+    const auto presets = dir / "presets";
+    std::filesystem::remove(presets / "i67-keys.preset");
+    field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i67-keys");
+    click(*d, "terrain-preset-save"); settle();
+    const auto saved = parsePreset(fileText(presets / "i67-keys.preset"));
+    check(saved && saved->values.size() == 60 && std::ranges::none_of(saved->values, [](const auto& v) { return v.first.ends_with("-slider"); }),
+        "I67 preset keys changed");
+    report << "I67_PRESET_KEYS_PASS\n";
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I67 map changed");
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -917,6 +953,7 @@ void run() {
         i64Tabs(report, dir);
         i65Reuse(report);
         i66Sprites(report);
+        i67Sliders(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
