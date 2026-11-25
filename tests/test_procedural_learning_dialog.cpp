@@ -930,6 +930,31 @@ void i68Secondary(std::ofstream& report, const std::filesystem::path& dir) {
     report << "I68_PRESETS_PASS\n";
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
+// I69: the Reference Style tab lists what the chosen profile was learned from.
+void i69Details(std::ofstream& report) {
+    check(g_gui.NewMap(), "I69 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4250");
+    d->Show();
+    auto details = [&] { return rows(*d, "terrain-profile-details"); };
+    check(details().size() == 1 && hasRow(details(), "Profile", "Built-in"), "I69 built-in details");
+    auto& choice = field<wxChoice>(*d, "terrain-profile");
+    check(choice.SetStringSelection("i62-two"), "I69 i62-two offered"); changed(choice); settle();
+    const auto list = details();
+    double weights = 0; size_t references = 0;
+    for (const auto& [item, value] : list) if (item.starts_with("Reference ")) {
+        ++references;
+        const auto at = value.find("weight ");
+        check(at != std::string::npos, "I69 reference without weight: " + value);
+        weights += std::stod(value.substr(at + 7));
+    }
+    check(hasRow(list, "Profile", "i62-two") && hasRow(list, "References", "2") && references == 2 && std::abs(weights - 100.0) < 0.2,
+        std::format("I69 references {} weights {:.1f}", references, weights));
+    check(hasRow(list, "Client", "matches the loaded client") && hasRow(list, "Ranking bands", "learned from the samples") &&
+        hasRow(list, "Ground shares", "grass"), "I69 details incomplete");
+    report << std::format("I69_DETAILS_PASS {} rows, weights {:.1f} %\n", list.size(), weights);
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I69 map changed");
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -1040,6 +1065,7 @@ void run() {
         i66Sprites(report);
         i67Sliders(report, dir);
         i68Secondary(report, dir);
+        i69Details(report);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
