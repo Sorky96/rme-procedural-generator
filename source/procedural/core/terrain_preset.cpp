@@ -172,7 +172,7 @@ const std::vector<BiomePreset>& biomePresets() {
     };
     static const std::vector<BiomePreset> biomes {
         biome("Temperate", 3, 2, 1, "grass", "dirt", "clear water", "rocky ground", "sand", "trees", "bushes", "small rocks"),
-        biome("Snow", 3, 2, 1, "snow", "icy earth", "clear water", "snowy mountain", "ice", "snowy trees", "snowy dead trees", "small snowy rocks"),
+        biome("Snow", 3, 2, 1, "snow", "icy earth", "clear water", "snowy mountain", "sand", "snowy trees", "snowy dead trees", "small snowy rocks"),
         biome("Desert", 4, 2, 0, "sand", "dry earth", "clear water", "sandstone", "sand", "palm trees", "dead bushes", "small rocks"),
         biome("Jungle", 4, 2, 1, "jungle grass", "jungle dirt", "clear water", "rocky ground", "sand", "palm trees", "tall jungle grass", "mossy rocks"),
         biome("Swamp", 2, 2, 3, "grass", "earth", "swamp", "rocky ground", "walkable swamp", "dead trees", "swamp plants", "mossy rocks"),
