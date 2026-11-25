@@ -262,7 +262,7 @@ void i59Set(wxWindow& d, const char* seed, int width, int path, const char* gras
     auto& styles = field<wxChoice>(d, "terrain-style"); styles.SetSelection(style); changed(styles);
     field<wxSpinCtrl>(d, "terrain-x").SetValue(x);
 }
-// Answers "terrain-confirm" questions while it lives, before they are shown (wxModalDialogHook); other dialogs open normally.
+// Answers "terrain-confirm" and "learn-confirm" questions while it lives, before they are shown (wxModalDialogHook); other dialogs open normally.
 class Answerer final : public wxModalDialogHook {
 public:
     Answerer() { Register(); }
@@ -271,7 +271,7 @@ public:
     bool asked = false;
 protected:
     int Enter(wxDialog* dialog) override {
-        if (dialog->GetName() != "terrain-confirm") return wxID_NONE;
+        if (dialog->GetName() != "terrain-confirm" && dialog->GetName() != "learn-confirm") return wxID_NONE;
         asked = true;
         return id_;
     }
@@ -955,6 +955,51 @@ void i69Details(std::ofstream& report) {
     check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I69 map changed");
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
+// I69: a re-learned profile saved under an existing name asks; No keeps the file, Yes replaces it and the generator
+// lists it once with the new references.
+void i69Replace(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I69 source map"); auto& source = *g_gui.GetCurrentEditor();
+    auto* fixture = naturalGenerator("1729"); fixture->Show(); preview(*fixture); place(*fixture); fixture->Destroy();
+    const auto sourceHash = contents(source.map), undoSize = source.actionQueue->getSize();
+    const auto before = fileText(dir / "i62-two.profile");
+    check(!before.empty(), "I69 i62-two missing");
+    auto* generator = new TerrainGeneratorDialog(g_gui.root); generator->Show();
+    Answerer answer;
+    std::exception_ptr learningError;
+    wxTheApp->CallAfter([&] {
+        auto* d = dynamic_cast<StyleLearningDialog*>(wxWindow::FindWindowByName("style-learning-dialog"));
+        try {
+            check(d != nullptr, "I69 learning entry");
+            field<wxCheckBox>(*d, "learn-permission").SetValue(true);
+            field<wxSpinCtrl>(*d, "learn-x").SetValue(100); field<wxSpinCtrl>(*d, "learn-y").SetValue(100); field<wxSpinCtrl>(*d, "learn-z").SetValue(7);
+            field<wxSpinCtrl>(*d, "learn-width").SetValue(64); field<wxSpinCtrl>(*d, "learn-height").SetValue(64);
+            click(*d, "learn-read"); until([&] { return field<wxButton>(*d, "learn-analyze").IsEnabled(); });
+            click(*d, "learn-analyze");
+            until([&] { return field<wxButton>(*d, "learn-save").IsEnabled() || field<wxButton>(*d, "learn-analyze").IsEnabled(); });
+            check(field<wxButton>(*d, "learn-save").IsEnabled(), "I69 fit failed: " + field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString());
+            field<wxCheckBox>(*d, "learn-protect").SetValue(false);
+            field<wxTextCtrl>(*d, "learn-name").SetValue("i62-two");
+            answer.reply(wxID_NO); click(*d, "learn-save");
+            check(answer.asked && fileText(dir / "i62-two.profile") == before, "I69 No changed the profile or did not ask");
+            check(field<wxStaticText>(*d, "learn-status").GetLabel().ToStdString().find("not saved") != std::string::npos, "I69 No status");
+            answer.reply(wxID_YES); click(*d, "learn-save");
+            check(answer.asked, "I69 Yes not asked");
+        } catch (...) { learningError = std::current_exception(); if (d) d->EndModal(wxID_CANCEL); }
+    });
+    click(*generator, "terrain-learn");
+    if (learningError) std::rethrow_exception(learningError);
+    const auto after = parseProfile(fileText(dir / "i62-two.profile"));
+    check(after && after->sources.size() == 1 && fileText(dir / "i62-two.profile") != before, "I69 Yes did not replace the profile");
+    auto& choice = field<wxChoice>(*generator, "terrain-profile");
+    int listed = 0;
+    for (unsigned i = 0; i < choice.GetCount(); ++i) listed += choice.GetString(i) == "i62-two";
+    check(listed == 1 && choice.SetStringSelection("i62-two"), "I69 replaced profile listed " + std::to_string(listed) + " times");
+    changed(choice); settle();
+    check(hasRow(rows(*generator, "terrain-profile-details"), "References", "1"), "I69 details not updated");
+    check(contents(source.map) == sourceHash && source.actionQueue->getSize() == undoSize, "I69 learning modified map or Undo");
+    report << "I69_REPLACE_PASS\n";
+    generator->Destroy(); source.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -1066,6 +1111,7 @@ void run() {
         i67Sliders(report, dir);
         i68Secondary(report, dir);
         i69Details(report);
+        i69Replace(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
