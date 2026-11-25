@@ -866,6 +866,13 @@ void i68Secondary(std::ofstream& report, const std::filesystem::path& dir) {
     auto& secondary = field<wxChoice>(*d, "terrain-secondary-biome");
     auto& share = field<wxSpinCtrl>(*d, "terrain-secondary-share");
     check(secondary.GetStringSelection() == "None" && share.GetValue() == 30, "I68 defaults");
+    check(!share.IsEnabled(), "I68 share enabled without a secondary biome");
+    {
+        auto& style = field<wxChoice>(*d, "terrain-style"); style.SetSelection(0); changed(style);
+        check(!secondary.IsEnabled(), "I68 secondary biome enabled outside Natural surface");
+        style.SetSelection(1); changed(style);
+        check(secondary.IsEnabled(), "I68 secondary biome disabled in Natural surface");
+    }
     const auto& biomes = biomePresets();
     size_t placed = 0, refused = 0;
     for (const auto& first : biomes) for (const auto& second : biomes) {
@@ -876,6 +883,7 @@ void i68Secondary(std::ofstream& report, const std::filesystem::path& dir) {
         click(*d, "terrain-preview"); until([&] { return field<wxButton>(*d, "terrain-preview").IsEnabled(); });
         const bool ok = field<wxButton>(*d, "terrain-place").IsEnabled();
         (ok ? placed : refused) += 1;
+        check(ok || !statusText(*d).empty(), std::format("I68 {} + {} refused without a reason", first.name, second.name));
         report << std::format("I68_PAIR {} + {}: {}\n", first.name, second.name, ok ? "placeable" : "refused | " + statusText(*d));
         check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I68 preview modified the map");
         if (first.name == "Temperate") check(ok, std::format("I68 Temperate + {} refused: {}", second.name, statusText(*d)));
