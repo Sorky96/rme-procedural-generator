@@ -16,7 +16,9 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 #include <wx/arrstr.h>
@@ -95,6 +97,17 @@ private:
     // A copy: a learned profile's bands live in profiles_, which a reload replaces.
     std::vector<rme::procedural::CandidateBand> ranking_bands_;
     bool ranking_learned_ = false; // the bands are the profile's own learned ones (I62), not g6-bands-v1
+    // I65: the copy index file the series read (path, size, write time); empty when it read none.
+    struct CopyIndexStamp {
+        std::wstring path;
+        uintmax_t size = 0;
+        std::filesystem::file_time_type written;
+        bool operator==(const CopyIndexStamp&) const = default;
+    };
+    std::optional<CopyIndexStamp> series_copy_index_;
+    [[nodiscard]] std::optional<CopyIndexStamp> CurrentCopyIndex() const;
+    [[nodiscard]] std::pair<std::vector<rme::procedural::CandidateBand>, bool> ChosenBands() const;
+    [[nodiscard]] bool SeriesReusable();
     wxSpinCtrl* candidate_count_spin_ = nullptr;
     wxTextCtrl* copy_index_text_ = nullptr;
     // I57: "None", the local copy indices (usable or with the reason they are not), "Other file...".

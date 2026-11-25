@@ -1855,8 +1855,42 @@ Editor* TerrainGeneratorDialog::CurrentTarget() {
 	return editor;
 }
 
+std::optional<TerrainGeneratorDialog::CopyIndexStamp> TerrainGeneratorDialog::CurrentCopyIndex() const {
+    if (!NaturalSurface() || copy_index_text_->GetValue().empty()) return std::nullopt;
+    CopyIndexStamp stamp {copy_index_text_->GetValue().ToStdWstring()};
+    std::error_code error;
+    stamp.size = std::filesystem::file_size(stamp.path, error);
+    if (!error) stamp.written = std::filesystem::last_write_time(stamp.path, error);
+    if (error) stamp.size = 0;
+    return stamp;
+}
+
+std::pair<std::vector<CandidateBand>, bool> TerrainGeneratorDialog::ChosenBands() const {
+    const auto picked = profile_choice_->GetSelection();
+    if (!NaturalSurface() || picked <= 0 || size_t(picked) > profiles_.size()) return {};
+    const auto& profile = profiles_[size_t(picked) - 1].profile;
+    const auto bands = candidateBandsFor(profile);
+    return {std::vector<CandidateBand>(bands.begin(), bands.end()), !profile.bands.empty()};
+}
+
+// I65: a finished series is kept when nothing that decides its candidates has changed since it was generated.
+bool TerrainGeneratorDialog::SeriesReusable() {
+    if (!series_request_ || collecting_ || SelectionMode() || selection_ || candidates_.size() != candidate_count_ || !SeriesCurrent())
+        return false;
+    const auto count = NaturalSurface() ? uint32_t(candidate_count_spin_->GetValue()) : 1;
+    const auto request = ReadRequest();
+    return request && count == candidate_count_ && request->config == series_request_->config && request->profile == series_request_->profile &&
+        ChosenBands() == std::pair(ranking_bands_, ranking_learned_) && CurrentCopyIndex() == series_copy_index_;
+}
+
 void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 	if (preview_steps_) return;
+    if (SeriesReusable()) {
+        SetStatus(wxstr(std::format("Settings, map and client unchanged: the series of {} candidate(s) is kept, nothing was generated. "
+            "Change a setting or the seed for a new series.", candidates_.size())), false);
+        UpdateControlStates();
+        return;
+    }
 	// At most one retained result or job.
 	ReleasePreview();
 	UpdateControlStates();
@@ -1890,14 +1924,8 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
         series_revision_ = editor->map.getChangeTracker().getGeneration();
         series_assets_ = g_version.GetAssetRevision();
         candidate_count_ = NaturalSurface() ? uint32_t(candidate_count_spin_->GetValue()) : 1;
-        ranking_bands_.clear(); ranking_learned_ = false;
-        const auto picked = profile_choice_->GetSelection();
-        if (NaturalSurface() && picked > 0 && size_t(picked) <= profiles_.size()) {
-            const auto& profile = profiles_[size_t(picked) - 1].profile;
-            const auto bands = candidateBandsFor(profile);
-            ranking_bands_.assign(bands.begin(), bands.end());
-            ranking_learned_ = !profile.bands.empty();
-        }
+        std::tie(ranking_bands_, ranking_learned_) = ChosenBands();
+        series_copy_index_ = CurrentCopyIndex();
         const uint64_t imageBytes = uint64_t(request->config.region.width) * request->config.region.height * 7 + bitmapOverheadBytes;
         const auto available = candidateWorkingBudget(preparationBudget.maxBytes, candidate_count_,
             selection_ ? selection_->estimatedBytes : 0, imageBytes);
