@@ -5,6 +5,7 @@
 #include "procedural/core/style_history.h"
 #include "procedural/core/candidate_series.h"
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <iostream>
 
@@ -317,19 +318,49 @@ int main(int argc, char** argv) {
     const auto unique = dir / "profile-store";
     std::filesystem::create_directories(unique);
     // Test directory belongs to this test, supplied explicitly under scratchpad by CTest.
-    std::error_code ec; std::filesystem::remove(unique / "forest.profile", ec);
+    const auto forest = unique / "forest.profile";
+    const auto newForest = unique / "new-forest.profile";
+    std::error_code ec;
+    std::filesystem::remove(forest, ec);
+    std::filesystem::remove(newForest, ec);
+    const auto readProfile = [](const std::filesystem::path& path) {
+        std::ifstream in(path, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    };
+    auto replacement = *a;
+    replacement.sources.front().alias = "learned-forest";
+    const auto replacementText = serializeProfile(replacement);
+    check(replacementText && replacementText != serializeProfile(*a), "different replacement text");
     check(bool(saveLearnedProfile(unique, "forest", *a)), "atomic publish");
-    check(!saveLearnedProfile(unique, "forest", *b), "no overwrite");
-    check(!saveLearnedProfile(unique, "../escape", *a), "no path escape");
-    std::ifstream in(unique / "forest.profile", std::ios::binary);
-    const std::string text((std::istreambuf_iterator<char>(in)), {});
-    check(text == *serializeProfile(*a), "conflict preserves previous bytes");
+    const auto text = readProfile(forest);
+    check(text == *serializeProfile(*a), "initial profile bytes");
+    check(!saveLearnedProfile(unique, "forest", replacement, false), "no overwrite without replace");
+    check(readProfile(forest) == text, "conflict preserves previous bytes");
+    check(bool(saveLearnedProfile(unique, "forest", replacement, true)), "replace existing profile");
+    check(readProfile(forest) == replacementText, "replacement writes new bytes");
+    check(bool(saveLearnedProfile(unique, "new-forest", replacement, true)), "replace creates missing profile");
+    check(readProfile(newForest) == replacementText, "new profile has expected bytes");
+    check(!saveLearnedProfile(unique, "../escape", *a, false), "no path escape");
     const auto offer = offerProfiles(std::vector<NamedProfileText>{{"forest", text}}, "10.98", "otb", "dat");
     check(offer.offered.size() == 1, "normal generator offer");
+    const auto full = dir / "full-profile-store";
+    std::filesystem::create_directories(full);
+    const auto overflow = full / "overflow.profile";
+    std::filesystem::remove(overflow, ec);
+    for (int i = 0; i < 64; ++i) {
+        const auto path = full / ("profile-" + std::to_string(i) + ".profile");
+        check(std::filesystem::copy_file(newForest, path, std::filesystem::copy_options::overwrite_existing, ec),
+            "seed profile at capacity");
+    }
+    check(bool(saveLearnedProfile(full, "profile-0", *a, true)), "replace at capacity");
+    check(readProfile(full / "profile-0.profile") == text, "replacement at capacity writes new bytes");
+    check(!saveLearnedProfile(full, "overflow", *a, false), "new profile refused at capacity");
+    check(!saveLearnedProfile(full, "overflow", *a, true), "replace cannot create a 65th profile");
+    check(!std::filesystem::exists(overflow), "no extra profile created");
     const auto blocker = dir / "file-not-folder"; { std::ofstream out(blocker); out << "block"; }
-    check(!saveLearnedProfile(blocker, "forest", *a), "write failure visible");
+    check(!saveLearnedProfile(blocker, "forest", *a, false), "write failure visible");
     std::filesystem::create_directory(unique / ".learning-save.lock", ec);
-    check(!saveLearnedProfile(unique, "locked", *a), "concurrent save conflict");
+    check(!saveLearnedProfile(unique, "locked", *a, true), "concurrent save conflict");
     std::filesystem::remove(unique / ".learning-save.lock", ec);
     auto history = StyleHistoryStore::open(dir / "history.json");
     check(bool(history), "I54 store opens");

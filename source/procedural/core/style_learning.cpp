@@ -1219,7 +1219,7 @@ bool validLearnedProfileName(std::string_view name) {
 }
 
 std::expected<void, std::string> saveLearnedProfile(const std::filesystem::path& directory,
-    std::string_view name, const StyleProfile& profile) {
+    std::string_view name, const StyleProfile& profile, bool replace) {
     if (!validLearnedProfileName(name)) return std::unexpected("Use 1-64 letters, digits, '-' or '_'; no paths or device names.");
     const auto text = serializeProfile(profile);
     if (!text) return std::unexpected("Invalid profile; nothing saved.");
@@ -1236,7 +1236,8 @@ std::expected<void, std::string> saveLearnedProfile(const std::filesystem::path&
         if (it->path().extension() == ".profile" && it->is_regular_file(ec)) ++profiles;
     }
     if (ec) return std::unexpected("Cannot inspect the profile directory.");
-    if (profiles >= 64) return std::unexpected("The generator reads up to 64 profile files. Archive unused profiles before saving another.");
+    if (profiles >= 64 && (!replace || !std::filesystem::is_regular_file(path, ec)))
+        return std::unexpected("The generator reads up to 64 profile files. Archive unused profiles before saving another.");
     const auto temporary = lock / "pending";
 #ifdef _WIN32
     struct File {
@@ -1251,13 +1252,14 @@ std::expected<void, std::string> saveLearnedProfile(const std::filesystem::path&
         written = WriteFile(file.handle, text->data(), static_cast<DWORD>(text->size()), &bytes, nullptr)
             && bytes == text->size() && FlushFileBuffers(file.handle);
     }
-    // Without REPLACE_EXISTING: destination races are refused as well as existing files.
-    if (!written || !MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_WRITE_THROUGH))
+    const DWORD flags = replace ? MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH : MOVEFILE_WRITE_THROUGH;
+    if (!written || !MoveFileExW(temporary.c_str(), path.c_str(), flags))
         return std::unexpected("Profile not saved (write error or name already exists). Choose another name.");
 #else
     { std::ofstream out(temporary, std::ios::binary); out << *text; out.flush();
       if (!out) return std::unexpected("Cannot write profile."); }
-    std::filesystem::create_hard_link(temporary, path, ec);
+    if (replace) std::filesystem::rename(temporary, path, ec);
+    else std::filesystem::create_hard_link(temporary, path, ec);
     if (ec) return std::unexpected("Cannot publish profile; name may already exist.");
 #endif
     return {};

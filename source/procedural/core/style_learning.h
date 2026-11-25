@@ -89,5 +89,5 @@ std::expected<std::vector<KeyMapEntry>, std::string> mergeLearningMappings(std::
 // ASCII portable filename stem; no paths, reserved device names or implicit overwrites.
 bool validLearnedProfileName(std::string_view name);
 std::expected<void, std::string> saveLearnedProfile(const std::filesystem::path& directory,
-    std::string_view name, const StyleProfile& profile);
+    std::string_view name, const StyleProfile& profile, bool replace = false);
 } // namespace rme::procedural
