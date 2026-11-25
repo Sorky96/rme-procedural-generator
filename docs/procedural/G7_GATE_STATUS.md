@@ -152,3 +152,15 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i67--sliders-for-the-share-fields-2026-1
 3. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS.
 
 Not verified: the look of the rows with sliders at other DPI settings. Mixed biomes remain open.
+
+## I68 — a secondary biome in regions (2026-11-25)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i68--a-secondary-biome-in-regions-of-the-area-2026-11-25-before-implementation). Commits aa51127 (criteria), 6c228fc, 8567d4f, review fixes b0b0287, c530517.
+
+1. **GUI probe: PASS** (client 1098, `LEARNING_DIALOG_PASS`). All 20 ordered pairs of different biomes at 40 % place (`I68_PAIRS_PASS placeable 20 refused 0`). Temperate with Snow: snow ground on 40.0 % of the grass-brush tiles (4037 of 10091) after Place, one Undo; map and Undo unchanged by every Preview. Share 0 places exactly the same tiles and items as None (`I68_SHARE_ZERO_IS_NONE_PASS`). This compares the placed map, not the candidate fingerprint the criterion names.
+2. **Presets: PASS.** 62 keys (I64 probe updated to the I63 keys plus the two new ones); a preset without them loads with None and 30 (`I68_PRESETS_PASS`).
+3. **Identity: PASS.** G5 `--i47` G5_GATE_PASS, 16/16 logs identical to I67 apart from timings.
+4. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS (a first run failed while building two probes, the build log shows only a missing `vswhere.exe` message; the rerun passed unchanged).
+5. **Review (Codex, medium): done.** No significant bug. Fixed: the secondary biome was accepted but ignored outside Natural surface (now disabled there; share disabled without a biome); refused pairs must give a reason. Answered, not changed: the same biome as secondary can change grass variants (the mix uses its own random stream), so the scope note "changes nothing visible" is wrong; the probe does not cover learned-slot conflicts, vegetation off or the patch step of 48.
+
+Not verified: how the regions look to a person; other clients; style profiles with learned grass mixes (the refusal path is untested).
