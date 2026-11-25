@@ -949,6 +949,7 @@ void i69Details(std::ofstream& report) {
     }
     check(hasRow(list, "Profile", "i62-two") && hasRow(list, "References", "2") && references == 2 && std::abs(weights - 100.0) < 0.2,
         std::format("I69 references {} weights {:.1f}", references, weights));
+    check(hasRow(list, "Reference 1", "sample-1, weight") && hasRow(list, "Reference 2", "sample-2, weight"), "I69 reference aliases");
     check(hasRow(list, "Client", "matches the loaded client") && hasRow(list, "Ranking bands", "learned from the samples") &&
         hasRow(list, "Ground shares", "grass"), "I69 details incomplete");
     report << std::format("I69_DETAILS_PASS {} rows, weights {:.1f} %\n", list.size(), weights);
