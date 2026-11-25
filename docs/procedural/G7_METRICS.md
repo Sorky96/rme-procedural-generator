@@ -179,3 +179,20 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS (existing dialog probes that press Preview twice keep passing), `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Caching prepared candidates for switching between gallery rows (it would exceed the single-candidate working budget); caching across dialog sessions or on disk.
+
+## I66 — sprite preview when zoomed in (2026-11-25, before implementation)
+
+**Goal.** Part of the item "Data preview and map render, variants, navigation, quality comparison". Variants (I52), navigation (I60) and comparison (I60) exist; the preview shows minimap colours only. Zoomed in, it now shows the client's sprites, so the user sees the actual grounds, borders and vegetation before Place.
+
+**Scope.**
+1. `terrain-preview-sprites` check box ("Sprites when zoomed in", on by default, not a preset key). When on and the Selected candidate's preview is shown at 16 or more screen pixels per cell, every visible cell draws its ground and items, bottom to top, from the loaded client's sprites: first frame, the pattern of the cell's position, the part of the sprite on its own tile (no draw offset, no overflow onto neighbours, no creatures, no lights). Below 16 pixels per cell, while a candidate loads, and on the compared pane the minimap colours stay.
+2. The cell shows the preview buffer where it changes and the captured original elsewhere, like the minimap image; the floor choice applies.
+3. Scaled sprite images are cached per client id and pattern for the current cell size, dropped when the size changes, the preview is released or the client assets change. Painting never changes the map, Undo or the candidate.
+
+**Criteria.**
+1. **GUI probe with a real client:** after Preview, zooming to the highest level gives a painted pane whose pixels differ from the same view with sprites off (captured from the panel); at fit level the two captures are identical. Map and Undo are unchanged; Place still gives one Undo.
+2. **Timing (report only):** the longest sprite paint of the probe at the highest level, from a log line.
+3. **Identity:** generation code is untouched, so G5 `--i47` logs are identical to the I65 run apart from timings.
+4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Exact map-drawer rendering (offsets, multi-tile overflow, animation, light, creatures); sprites on the compared pane; an OpenGL preview canvas.
