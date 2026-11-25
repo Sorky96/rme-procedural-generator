@@ -1296,11 +1296,14 @@ void TerrainGeneratorDialog::ShowProfileDetails() {
 		for (size_t k = 0; k < kinds.size(); ++k)
 			shares += std::format("{}{} {:.1f} %", k ? ", " : "", kinds[k], profile.target->sharesPpm[k] / 10000.0);
 		row("Ground shares", shares);
+	} else {
+		row("Ground shares", "not stored in this profile");
 	}
 	row("Ranking bands", profile.bands.empty() ? "none learned (reviewed g6-bands-v1 or first admissible)" :
 		std::format("{} learned from the samples", profile.bands.size()));
 	const auto used = [](const auto& mixes) { return std::ranges::count_if(mixes, [](const auto& mix) { return !mix.brush.empty(); }); };
 	row("Learned mixes", std::format("{} grass, {} tree, {} bush", used(profile.grassMix), used(profile.treeMix), used(profile.bushMix)));
+	profile_details_->SetColumnWidth(1, wxLIST_AUTOSIZE);
 }
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
