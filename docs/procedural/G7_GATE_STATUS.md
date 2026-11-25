@@ -142,3 +142,13 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i66--sprite-preview-when-zoomed-in-2026-
 4. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS.
 
 Not verified: whether the sprites look right to a person (the probe only checks that they differ from minimap colours); paint time with many visible cells at 16 px per cell; other clients. Known simplifications: no draw offsets, multi-tile overflow, animation or creatures.
+
+## I67 — sliders for the share fields (2026-11-25)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i67--sliders-for-the-share-fields-2026-11-25-before-implementation). Commits 12619ae (criteria), 4646e72, bce25fa.
+
+1. **GUI probe: PASS** (client 1098, `LEARNING_DIALOG_PASS`). For all five share fields the slider set the field, the first move released the preview, the slider followed a field set directly, and both had the same enabled state (`I67_SLIDERS_PASS`). A saved preset has 60 keys and no slider key (`I67_PRESET_KEYS_PASS`).
+2. **Identity: PASS.** G5 `--i47` G5_GATE_PASS, 16/16 logs identical to I66 apart from timings.
+3. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS.
+
+Not verified: the look of the rows with sliders at other DPI settings. Mixed biomes remain open.
