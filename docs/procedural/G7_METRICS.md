@@ -146,3 +146,20 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Margins on cave or upper floors (they keep their iteration 49 clearance), user-drawn protection zones, protecting content outside the area.
+
+## I64 — tabs per section 6 and a primary biome (2026-11-25, before implementation)
+
+**Goal.** The generator dialog uses the tabs listed in section 6 of the plan. User decision 2026-11-25: rearrange the tabs and add a simple Biomes tab.
+
+**Scope.**
+1. **Tabs, in this order:** Area (area, X/Y/Z, size, seed), Terrain (weights, terrain style, ground brushes, smooth beaches), Biomes, Structures (paths, buildings, camps, caves, dungeons, mountains; scrolls), Decoration (vegetation and its brushes), Reference Style (style profile, learning, copy check), Advanced (candidate count, copy index file), Validation (reachability repair, bridge brush, seed retries, protection margin). Each existing input keeps its name and behaviour and appears exactly once.
+2. **Primary biome:** `terrain-biome` choice with "Keep current settings" and five biomes (temperate, snow, desert, jungle, swamp). Choosing one sets the terrain weights, the five ground brushes, vegetation on and the three vegetation brushes. A brush the loaded client does not offer is left unchanged and named in the status. The fields stay editable. The choice is an action, not a stored setting: presets do not save it, and loading a preset sets it back to "Keep current settings". The table of biomes lives in core and is unit-tested.
+3. Generation, presets and their keys are otherwise unchanged.
+
+**Criteria.**
+1. **Unit test:** every biome sets only known preset keys, weights in range and at least one non-zero weight; names are unique.
+2. **GUI probe with a real client:** the notebook has exactly the 8 titles in order; a saved preset has the same key set as one saved before I64 (the 60 keys the I63 source gives, listed in the probe); choosing the snow biome sets the weights and the brushes the client offers; a preset load resets the biome choice; Preview with a biome leaves map and Undo unchanged, Place gives one Undo.
+3. **Identity:** generation code is untouched, so G5 `--i47` logs are identical to the I63 run apart from timings.
+4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Mixed biomes (several biomes in one area); biome-aware generation; learned biomes from profiles. They become debt at the G7 close.
