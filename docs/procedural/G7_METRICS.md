@@ -196,3 +196,19 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Exact map-drawer rendering (offsets, multi-tile overflow, animation, light, creatures); sprites on the compared pane; an OpenGL preview canvas.
+
+## I67 — sliders for the share fields (2026-11-25, before implementation)
+
+**Goal.** The open part of the item "`Generate Area` dialog with described tabs and parameters": sliders in place of number fields. The number fields stay (exact values, keyboard, presets and probes use them); each 0–100 share field gets a slider beside it.
+
+**Scope.**
+1. A slider (0–100) next to each of `terrain-building-density`, `terrain-ruin-percent`, `terrain-upper-floor-percent`, `terrain-dungeon-percent` and `terrain-plateau-percent`, named `<field>-slider`. Moving it sets the field and acts like editing the field (the preview is released, dependent controls update). The slider follows the field whatever changed it (typing, a preset, a profile) and is enabled exactly when the field is.
+2. Sliders are not preset keys: presets keep the 60 keys of I63/I64.
+3. The terrain weights (0–1000, ratios) and counts keep number fields only.
+
+**Criteria.**
+1. **GUI probe with a real client:** each of the five sliders exists; moving it sets its field to the same value and releases an existing preview; setting the field (as a preset load does) moves the slider; slider and field have the same enabled state; a saved preset has the I64 key set.
+2. **Identity:** generation code is untouched, so G5 `--i47` logs are identical to the I66 run apart from timings.
+3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Mixed biomes (several biomes in one area): they need biome-aware generation and become debt at the G7 close.
