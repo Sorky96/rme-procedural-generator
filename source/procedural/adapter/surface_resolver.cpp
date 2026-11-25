@@ -157,6 +157,43 @@ std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundPr
     return result;
 }
 
+std::expected<std::pair<const GroundBrush*, uint64_t>, ResolveError> checkGroundBrush(std::string_view name, std::stop_token stop) {
+	const auto* brush = g_brushes.getBrush(std::string(name));
+	const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
+	if (!ground || ground->getTotalChance() <= 0 || ground->getBorderItems().empty()) {
+		return std::unexpected(ResolveError::InvalidProfile);
+	}
+	int previous = 0;
+	for (const auto& variant : ground->getBorderItems()) {
+		if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+		if (variant.chance < previous || variant.chance > ground->getTotalChance()) {
+			return std::unexpected(ResolveError::InvalidProfile);
+		}
+		previous = variant.chance;
+		const auto definition = g_item_definitions.get(variant.id);
+		if (!variant.id || !definition || !definition.clientId() || definition.isMetaItem()) {
+			return std::unexpected(ResolveError::InvalidItem);
+		}
+		const auto baseId = definition.attribute(ItemAttributeKey::BorderBaseGroundId);
+		const auto base = definition.isGroundTile() ? definition :
+			(baseId > 0 && baseId <= UINT16_MAX ? g_item_definitions.get(uint16_t(baseId)) : ItemDefinitionView{});
+		if (!base || !base.isGroundTile() || !base.clientId() || base.isMetaItem() ||
+			base.editorData().brush != ground) return std::unexpected(ResolveError::InvalidItem);
+	}
+	if (previous != ground->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
+	return std::pair{ground, uint64_t(previous)};
+}
+
+std::expected<DecorSource, ResolveError> checkDecorBrush(std::string_view name, std::stop_token stop) {
+	const DecorSource source = findDecorSource(name, maxDecorChance);
+	if (!source) return std::unexpected(ResolveError::InvalidProfile);
+	for (uint64_t roll = 1; roll <= (source.raw ? 1 : source.total); ++roll) {
+		if (roll % 1024 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
+		if (!decorItemPlaceable(source.item(roll))) return std::unexpected(ResolveError::InvalidItem);
+	}
+	return source;
+}
+
 bool hasCave(const GroundProfile& profile) noexcept {
 	return !profile.caveEntrance.empty() || !profile.caveExit.empty() || !profile.caveGround.empty() || !profile.caveWall.empty();
 }
@@ -514,33 +551,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 		if (client.size() > maxPlanBytes - payloadBytes || maxPlanBytes - payloadBytes - client.size() < 1) {
 			return std::unexpected(ResolveError::PlanLimit);
 		}
-		// A ground brush and the sum of its placement chances, after checking every item it can place.
-		const auto checkGround = [&](const std::string& name) -> std::expected<std::pair<const GroundBrush*, uint64_t>, ResolveError> {
-			const auto* brush = g_brushes.getBrush(name);
-			const auto* ground = brush ? brush->as<GroundBrush>() : nullptr;
-			if (!ground || ground->getTotalChance() <= 0 || ground->getBorderItems().empty()) {
-				return std::unexpected(ResolveError::InvalidProfile);
-			}
-			int previous = 0;
-			for (const auto& variant : ground->getBorderItems()) {
-				if (stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-				if (variant.chance < previous || variant.chance > ground->getTotalChance()) {
-					return std::unexpected(ResolveError::InvalidProfile);
-				}
-				previous = variant.chance;
-				const auto definition = g_item_definitions.get(variant.id);
-				if (!variant.id || !definition || !definition.clientId() || definition.isMetaItem()) {
-					return std::unexpected(ResolveError::InvalidItem);
-				}
-				const auto baseId = definition.attribute(ItemAttributeKey::BorderBaseGroundId);
-				const auto base = definition.isGroundTile() ? definition :
-					(baseId > 0 && baseId <= UINT16_MAX ? g_item_definitions.get(uint16_t(baseId)) : ItemDefinitionView{});
-				if (!base || !base.isGroundTile() || !base.clientId() || base.isMetaItem() ||
-					base.editorData().brush != ground) return std::unexpected(ResolveError::InvalidItem);
-			}
-			if (previous != ground->getTotalChance()) return std::unexpected(ResolveError::InvalidProfile);
-			return std::pair{ground, uint64_t(previous)};
-		};
+		const auto checkGround = [&](const std::string& name) { return checkGroundBrush(name, stop); };
 		std::array<const GroundBrush*, kindCount> brushes {};
 		std::array<uint64_t, kindCount> totals {};
 		for (size_t index = 0; index < kinds; ++index) {
@@ -565,17 +576,7 @@ std::expected<GroundPlan, ResolveError> resolveSurfacePlan(
 			const auto definition = wallItem ? g_item_definitions.get(wallItem) : ItemDefinitionView{};
 			if (!definition || !definition.clientId() || definition.isMetaItem() || definition.isGroundTile()) return std::unexpected(ResolveError::InvalidItem);
 		}
-		// A doodad brush with single-tile items and the sum of their chances, or one RAW item; every reachable
-		// item must be a real, plain, non-ground, non-border item.
-		const auto checkDoodad = [&](const std::string& name) -> std::expected<DecorSource, ResolveError> {
-			const DecorSource source = findDecorSource(name, maxDecorChance);
-			if (!source) return std::unexpected(ResolveError::InvalidProfile);
-			for (uint64_t roll = 1; roll <= (source.raw ? 1 : source.total); ++roll) {
-				if (roll % 1024 == 0 && stop.stop_requested()) return std::unexpected(ResolveError::Cancelled);
-				if (!decorItemPlaceable(source.item(roll))) return std::unexpected(ResolveError::InvalidItem);
-			}
-			return source;
-		};
+		const auto checkDoodad = [&](const std::string& name) { return checkDecorBrush(name, stop); };
 		std::array<DecorSource, decorKindCount> doodads {};
 		for (size_t index = 0; vegetation && index < decorKindCount; ++index) {
 			const auto checked = checkDoodad(profile.decor[index]);
