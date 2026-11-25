@@ -823,6 +823,14 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	profile_choice_->Append("Built-in (manual settings)");
 	profile_choice_->SetSelection(0);
 	form->Add(profile_choice_, 1, wxEXPAND);
+	form->Add(label("Profile references:"), 0, wxALIGN_TOP);
+	profile_details_ = newd wxListCtrl(host, wxID_ANY, wxDefaultPosition, wxSize(-1, Theme::Grid(24)), wxLC_REPORT | wxLC_SINGLE_SEL);
+	profile_details_->SetName("terrain-profile-details");
+	profile_details_->SetBackgroundColour(fieldBackground);
+	profile_details_->SetForegroundColour(fieldText);
+	profile_details_->InsertColumn(0, "Item", wxLIST_FORMAT_LEFT, Theme::Grid(20));
+	profile_details_->InsertColumn(1, "Value", wxLIST_FORMAT_LEFT, Theme::Grid(60));
+	form->Add(profile_details_, 1, wxEXPAND);
 
     form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
     auto* learn = new wxButton(host, wxID_ANY, "Learn from open map...");
@@ -1259,6 +1267,40 @@ void TerrainGeneratorDialog::LoadStyleProfiles() {
 		}
 	}
 	profile_choice_->SetToolTip(hint);
+	ShowProfileDetails();
+}
+
+void TerrainGeneratorDialog::ShowProfileDetails() {
+	profile_details_->DeleteAllItems();
+	const auto row = [this](const std::string& item, const std::string& value) {
+		const long index = profile_details_->InsertItem(profile_details_->GetItemCount(), wxstr(item));
+		profile_details_->SetItem(index, 1, wxstr(value));
+	};
+	const int picked = profile_choice_->GetSelection();
+	if (picked <= 0 || size_t(picked) > profiles_.size()) {
+		row("Profile", "Built-in profile; not learned from a map");
+		return;
+	}
+	const auto& entry = profiles_[size_t(picked) - 1];
+	const auto& profile = entry.profile;
+	row("Profile", entry.name);
+	// Only profiles of the loaded client and its items.otb and Tibia.dat are offered (scanStyleProfiles).
+	row("Client", std::format("{}, items.otb {}, Tibia.dat {}: matches the loaded client",
+		profile.client, profile.otbSha256.substr(0, 8), profile.datSha256.substr(0, 8)));
+	row("References", std::format("{} (map names and positions are never stored)", profile.sources.size()));
+	for (size_t i = 0; i < profile.sources.size(); ++i)
+		row(std::format("Reference {}", i + 1), std::format("{}, weight {:.1f} %", profile.sources[i].alias, profile.sources[i].weightPermille / 10.0));
+	if (profile.target) {
+		static constexpr std::array<std::string_view, rme::procedural::naturalKindCount> kinds {"grass", "dirt", "rock", "shore", "water"};
+		std::string shares;
+		for (size_t k = 0; k < kinds.size(); ++k)
+			shares += std::format("{}{} {:.1f} %", k ? ", " : "", kinds[k], profile.target->sharesPpm[k] / 10000.0);
+		row("Ground shares", shares);
+	}
+	row("Ranking bands", profile.bands.empty() ? "none learned (reviewed g6-bands-v1 or first admissible)" :
+		std::format("{} learned from the samples", profile.bands.size()));
+	const auto used = [](const auto& mixes) { return std::ranges::count_if(mixes, [](const auto& mix) { return !mix.brush.empty(); }); };
+	row("Learned mixes", std::format("{} grass, {} tree, {} bush", used(profile.grassMix), used(profile.treeMix), used(profile.bushMix)));
 }
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
@@ -1278,6 +1320,7 @@ void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 // reported, never guessed. The fields stay editable; the vegetation check box is left as the user set it.
 void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	OnInputChanged(event);
+	ShowProfileDetails();
 	wxComboBox* const groundFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
 	wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
 	static_assert(std::size(groundFields) == rme::procedural::naturalKindCount);

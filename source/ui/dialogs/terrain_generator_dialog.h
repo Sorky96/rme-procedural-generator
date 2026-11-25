@@ -231,6 +231,9 @@ private:
 	wxChoice* style_choice_ = nullptr;
 	wxChoice* profile_choice_ = nullptr;
 	std::vector<rme::procedural::OfferedProfile> profiles_; // entry i is choice i + 1
+	// I69: what the chosen profile was learned from (sources and weights) and what it learned.
+	wxListCtrl* profile_details_ = nullptr;
+	void ShowProfileDetails();
 	std::array<wxString, rme::procedural::naturalKindCount> default_brushes_; // grass, dirt, rock, shore, water
 	std::array<wxString, 3> default_decor_brushes_;                            // tree, bush, stone
 	wxComboBox* rock_brush_choice_ = nullptr;
