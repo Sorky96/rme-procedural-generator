@@ -1522,6 +1522,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     preview_floor_choice_->SetSelection(prior == wxNOT_FOUND ? 0 : prior);
     plateau_percent_spin_->Enable(natural);
     mountain_passes_spin_->Enable(natural);
+    secondary_biome_choice_->Enable(natural); // grass mixes exist only in Natural surface (I68)
+    secondary_share_spin_->Enable(natural && secondary_biome_choice_->GetSelection() > 0);
     plateau_levels_spin_->Enable(natural && plateau_percent_spin_->GetValue() > 0);
     for (auto* c : {plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
         c->Enable(natural && plateau_percent_spin_->GetValue() > 0);
