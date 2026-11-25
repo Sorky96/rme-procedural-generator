@@ -734,6 +734,42 @@ void i64Tabs(std::ofstream& report, const std::filesystem::path& dir) {
     report << "I64_PRESET_RESETS_BIOME_PASS\n";
     d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
 }
+// I65: Preview with nothing changed keeps the finished series; Place and Undo still work; a map change (Undo) or a
+// changed seed generates again.
+std::vector<std::string> gallery(wxWindow& d) {
+    auto& list = field<wxListCtrl>(d, "terrain-candidates");
+    std::vector<std::string> out;
+    for (long i = 0; i < list.GetItemCount(); ++i) out.push_back((list.GetItemText(i, 0) + "|" + list.GetItemText(i, 1)).ToStdString());
+    return out;
+}
+void i65Reuse(std::ofstream& report) {
+    check(g_gui.NewMap(), "I65 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4245");
+    field<wxSpinCtrl>(*d, "terrain-candidate-count").SetValue(2);
+    d->Show();
+    preview(*d);
+    const auto first = gallery(*d);
+    check(first.size() == 2 && statusText(*d).find("is kept") == std::string::npos, "I65 first series");
+    const auto started = std::chrono::steady_clock::now();
+    click(*d, "terrain-preview");
+    const auto took = std::chrono::steady_clock::now() - started;
+    check(statusText(*d).starts_with("Settings, map and client unchanged") && gallery(*d) == first &&
+        field<wxButton>(*d, "terrain-preview").IsEnabled() && field<wxButton>(*d, "terrain-place").IsEnabled(), "I65 series kept: " + statusText(*d));
+    check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == 0, "I65 reuse modified the map");
+    report << std::format("I65_REUSE_PASS {} ms\n", std::chrono::duration_cast<std::chrono::milliseconds>(took).count());
+
+    place(*d); check(target.actionQueue->getSize() == 1, "I65 Place one Undo");
+    check(target.actionQueue->undo() && target.map.getTileCount() == 0, "I65 Undo");
+    d->Show(); preview(*d);
+    check(statusText(*d).find("is kept") == std::string::npos && gallery(*d) == first, "I65 after Undo not generated: " + statusText(*d));
+    report << "I65_MAP_CHANGE_GENERATES_PASS\n";
+
+    field<wxTextCtrl>(*d, "terrain-seed").SetValue("4246");
+    preview(*d);
+    check(statusText(*d).find("is kept") == std::string::npos && gallery(*d) != first, "I65 seed change not generated: " + statusText(*d));
+    report << "I65_SEED_CHANGE_GENERATES_PASS\n";
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -840,6 +876,7 @@ void run() {
         i62Samples(report, dir);
         i63Protection(report, dir);
         i64Tabs(report, dir);
+        i65Reuse(report);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
