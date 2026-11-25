@@ -18,6 +18,7 @@
 #include "game/spawn.h"
 #include "game/waypoints.h"
 #include "ui/main_frame.h"
+#include "procedural/core/terrain_preset.h"
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
@@ -606,6 +607,133 @@ void i63Protection(std::ofstream& report, const std::filesystem::path& dir) {
     d->Destroy(); map.clearChanges(); g_gui.CloseCurrentEditor();
     report << "I63_PRESET_MARGIN_PASS\n";
 }
+// I64: the tabs of section 6, the preset keys of the I63 layout, a biome that fills the terrain fields, a preset load that
+// resets the biome, and Preview/Place with a biome.
+void i64Tabs(std::ofstream& report, const std::filesystem::path& dir) {
+    check(g_gui.NewMap(), "I64 map"); auto& target = *g_gui.GetCurrentEditor();
+    auto* d = naturalGenerator("4244");
+    d->Show();
+    auto& tabs = field<wxNotebook>(*d, "terrain-sections");
+    std::vector<std::string> titles;
+    for (size_t i = 0; i < tabs.GetPageCount(); ++i) titles.push_back(tabs.GetPageText(i).ToStdString());
+    check(titles == std::vector<std::string> {"Area", "Terrain", "Biomes", "Structures", "Decoration", "Reference Style", "Advanced", "Validation"},
+        "I64 tab titles");
+    report << "I64_TABS_PASS\n";
+
+    const auto presets = dir / "presets";
+    std::filesystem::remove(presets / "i64-keys.preset");
+    field<wxTextCtrl>(*d, "terrain-preset-name").SetValue("i64-keys");
+    click(*d, "terrain-preset-save"); settle();
+    const auto saved = parsePreset(fileText(presets / "i64-keys.preset"));
+    check(saved.has_value(), "I64 preset saved");
+    std::vector<std::string> keys;
+    for (const auto& [key, value] : saved->values) keys.push_back(key);
+    const std::vector<std::string> i63Keys {
+        "terrain-bridge-brush",
+        "terrain-building-density",
+        "terrain-building-dungeons",
+        "terrain-building-stairs",
+        "terrain-building-storeys",
+        "terrain-bush-brush",
+        "terrain-camp-count",
+        "terrain-campfire-brush",
+        "terrain-candidate-count",
+        "terrain-cave-door-brush",
+        "terrain-cave-door-corridors",
+        "terrain-cave-entrance-brush",
+        "terrain-cave-entrance-style",
+        "terrain-cave-entrances",
+        "terrain-cave-exit-brush",
+        "terrain-cave-far-exits",
+        "terrain-cave-ground-brush",
+        "terrain-cave-wall-brush",
+        "terrain-dirt-brush",
+        "terrain-dirt-weight",
+        "terrain-door-type",
+        "terrain-doors",
+        "terrain-dungeon-descent",
+        "terrain-dungeon-floor",
+        "terrain-dungeon-percent",
+        "terrain-dungeon-stairs",
+        "terrain-dungeon-wall",
+        "terrain-floor-brush",
+        "terrain-ford-length",
+        "terrain-grass-brush",
+        "terrain-grass-weight",
+        "terrain-height",
+        "terrain-mountain-passes",
+        "terrain-path-brush",
+        "terrain-path-length",
+        "terrain-plateau-cliff",
+        "terrain-plateau-ground",
+        "terrain-plateau-levels",
+        "terrain-plateau-percent",
+        "terrain-plateau-ramp",
+        "terrain-profile",
+        "terrain-protection-margin",
+        "terrain-repair",
+        "terrain-retry-seeds",
+        "terrain-rock-brush",
+        "terrain-rock-passes",
+        "terrain-ruin-percent",
+        "terrain-seed",
+        "terrain-shore-brush",
+        "terrain-smooth-beaches",
+        "terrain-stone-brush",
+        "terrain-style",
+        "terrain-tree-brush",
+        "terrain-upper-floor-percent",
+        "terrain-vegetation",
+        "terrain-wall-brush",
+        "terrain-walls",
+        "terrain-water-brush",
+        "terrain-water-weight",
+        "terrain-width"
+    };
+    check(keys == i63Keys, std::format("I64 preset keys differ from I63 ({} vs {})", keys.size(), i63Keys.size()));
+    report << "I64_PRESET_KEYS_PASS\n";
+
+    auto& biome = field<wxChoice>(*d, "terrain-biome");
+    check(biome.SetStringSelection("Snow"), "I64 Snow listed"); changed(biome); settle();
+    const auto status = statusText(*d);
+    check(status.find("Biome Snow applied") != std::string::npos, "I64 biome status: " + status);
+    check(field<wxSpinCtrl>(*d, "terrain-grass-weight").GetValue() == 3 && field<wxSpinCtrl>(*d, "terrain-dirt-weight").GetValue() == 2 &&
+        field<wxSpinCtrl>(*d, "terrain-water-weight").GetValue() == 1 && field<wxCheckBox>(*d, "terrain-vegetation").GetValue(), "I64 biome weights");
+    const auto& snow = std::ranges::find(biomePresets(), std::string_view("Snow"), &BiomePreset::name)->values.values;
+    for (const auto& [key, value] : snow) {
+        if (!key.ends_with("-brush")) continue;
+        const auto shown = field<wxComboBox>(*d, key.c_str()).GetValue().ToStdString();
+        check(shown == value || status.find(value) != std::string::npos, std::format("I64 {} is {} and not reported", key, shown));
+    }
+    check(field<wxComboBox>(*d, "terrain-grass-brush").GetValue() == "snow", "I64 snow ground set");
+    report << "I64_BIOME_APPLIES_PASS " << status << "\n";
+
+    // Every biome can be placed in this client and Preview leaves the map alone; the first one is placed with one Undo.
+    bool placed = false; size_t refused = 0;
+    for (const auto& entry : biomePresets()) {
+        check(biome.SetStringSelection(wxString::FromUTF8(entry.name.data(), entry.name.size())), "I64 biome listed"); changed(biome); settle();
+        const auto applied = statusText(*d);
+        const auto queued = target.actionQueue->getSize();
+        click(*d, "terrain-preview"); until([&] { return field<wxButton>(*d, "terrain-preview").IsEnabled(); });
+        check(target.map.getTileCount() == 0 && target.actionQueue->getSize() == queued, "I64 preview modified map");
+        const bool placeable = field<wxButton>(*d, "terrain-place").IsEnabled();
+        report << "I64_BIOME " << entry.name << (placeable ? " placeable" : " refused: " + statusText(*d)) << " | " << applied << "\n";
+        refused += placeable ? 0 : 1;
+        if (placeable && !placed) {
+            place(*d); check(target.actionQueue->getSize() == queued + 1, "I64 Place one Undo");
+            check(target.actionQueue->undo() && target.map.getTileCount() == 0, "I64 Undo");
+            placed = true;
+        }
+    }
+    check(placed && refused == 0, std::format("I64 {} biome(s) refused in this client", refused));
+    report << "I64_BIOME_PLACE_PASS\n";
+
+    auto& choice = field<wxChoice>(*d, "terrain-preset");
+    check(choice.SetStringSelection("i64-keys"), "I64 preset listed"); changed(choice); settle();
+    check(biome.GetSelection() == 0 && field<wxComboBox>(*d, "terrain-grass-brush").GetValue() == "grass", "I64 preset load resets the biome");
+    report << "I64_PRESET_RESETS_BIOME_PASS\n";
+    d->Destroy(); target.map.clearChanges(); g_gui.CloseCurrentEditor();
+}
 void run() {
     std::ofstream report("resolver-probe.log"); report << std::unitbuf;
     try {
@@ -711,6 +839,7 @@ void run() {
         i60Navigation(report);
         i62Samples(report, dir);
         i63Protection(report, dir);
+        i64Tabs(report, dir);
         report << "LEARNING_DIALOG_PASS\n";
         report.close(); wxTheApp->CallAfter([] { g_gui.root->Close(); });
     } catch (const std::exception& e) { report << "FAILED\t" << e.what() << '\n'; report.close(); std::_Exit(9); }
