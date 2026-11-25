@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <unordered_map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -180,6 +181,15 @@ private:
     // changes, otherwise the captured original (nullptr when empty).
     [[nodiscard]] const rme::procedural::PreparedTerrain& ShownUnit() const;
     [[nodiscard]] static const Tile* ShownTile(const rme::procedural::PreparedTerrain& unit, const Position& position);
+    // I66: sprites of the visible cells over the minimap image once a cell is at least this many screen pixels.
+    static constexpr double spritePixelsPerCell = 16.0;
+    wxCheckBox* preview_sprites_check_ = nullptr;
+    // Scaled first-frame sprite part per client id and position pattern, for one cell size and asset revision.
+    std::unordered_map<uint64_t, wxBitmap> sprite_cache_;
+    int sprite_cache_cell_ = 0;
+    uint64_t sprite_cache_assets_ = 0;
+    void DrawSprites(wxDC& dc, const wxRect& pane);
+    [[nodiscard]] const wxBitmap* SpriteImage(const Item& item, const Position& position, int cell);
 	void ReleasePreview();
 	void UpdateControlStates();
 	void UpdateClientLabel();
