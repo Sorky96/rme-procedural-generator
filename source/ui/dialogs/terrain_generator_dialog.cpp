@@ -58,6 +58,7 @@
 #include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
+#include <wx/slider.h>
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
@@ -342,6 +343,29 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		control->SetForegroundColour(fieldText);
 		return control;
 	};
+	// I67: a share field with a slider beside it. The slider acts as an edit of the field and follows the field
+	// whatever changes it; it is enabled exactly when the field is.
+	const auto withSlider = [&](wxSpinCtrl* field) {
+		auto* row = newd wxBoxSizer(wxHORIZONTAL);
+		auto* slider = newd wxSlider(host, wxID_ANY, field->GetValue(), field->GetMin(), field->GetMax());
+		slider->SetName(field->GetName() + "-slider");
+		if (const auto* tip = field->GetToolTip()) slider->SetToolTip(tip->GetTip());
+		slider->Bind(wxEVT_SLIDER, [field, slider](wxCommandEvent&) {
+			if (field->GetValue() == slider->GetValue()) return;
+			field->SetValue(slider->GetValue());
+			wxSpinEvent edited(wxEVT_SPINCTRL, field->GetId());
+			edited.SetEventObject(field);
+			edited.SetPosition(slider->GetValue());
+			field->ProcessWindowEvent(edited);
+		});
+		slider->Bind(wxEVT_UPDATE_UI, [field, slider](wxUpdateUIEvent& event) {
+			event.Enable(field->IsEnabled());
+			if (slider->GetValue() != field->GetValue()) slider->SetValue(field->GetValue());
+		});
+		row->Add(field, 0, wxALIGN_CENTER_VERTICAL);
+		row->Add(slider, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, Theme::Grid(1));
+		return row;
+	};
 	const auto text = [&](const wxString& name, const wxString& value) {
 		auto* control = newd wxTextCtrl(host, wxID_ANY, value);
 		control->SetName(name);
@@ -574,7 +598,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
 	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
 	building_density_spin_->SetToolTip("Building foundations (floor rectangles, optional walls and doors) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
-	form->Add(building_density_spin_, 1, wxEXPAND);
+	form->Add(withSlider(building_density_spin_), 1, wxEXPAND);
 
 	form->Add(label("Floor brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	floor_brush_choice_ = brushChoice("terrain-floor-brush", "stone floor", false);
@@ -607,7 +631,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Ruins (%):"), 0, wxALIGN_CENTER_VERTICAL);
 	ruin_percent_spin_ = spin("terrain-ruin-percent", 0, 100, 0);
 	ruin_percent_spin_->SetToolTip("Share of the buildings that become ruins: no door and gaps in the wall. 0 = none. Needs buildings.");
-	form->Add(ruin_percent_spin_, 1, wxEXPAND);
+	form->Add(withSlider(ruin_percent_spin_), 1, wxEXPAND);
 
     form->Add(label("Upper floors:"), 0, wxALIGN_CENTER_VERTICAL);
     building_storeys_check_ = newd wxCheckBox(host, wxID_ANY, "Floor z-1 with stairs in some buildings");
@@ -617,7 +641,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(building_storeys_check_, 1, wxEXPAND);
     form->Add(label("Upper floor share (%):"), 0, wxALIGN_CENTER_VERTICAL);
     upper_floor_percent_spin_ = spin("terrain-upper-floor-percent", 0, 100, 30);
-    form->Add(upper_floor_percent_spin_, 1, wxEXPAND);
+    form->Add(withSlider(upper_floor_percent_spin_), 1, wxEXPAND);
     form->Add(label("Stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
     building_stairs_choice_ = brushChoice("terrain-building-stairs", "ramp", 3);
     form->Add(building_stairs_choice_, 1, wxEXPAND);
@@ -713,7 +737,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(building_dungeons_check_, 1, wxEXPAND);
     form->Add(label("Dungeon share (%):"), 0, wxALIGN_CENTER_VERTICAL);
     dungeon_percent_spin_ = spin("terrain-dungeon-percent", 0, 100, 20);
-    form->Add(dungeon_percent_spin_, 1, wxEXPAND);
+    form->Add(withSlider(dungeon_percent_spin_), 1, wxEXPAND);
     form->Add(label("Dungeon floor brush:"), 0, wxALIGN_CENTER_VERTICAL);
     dungeon_floor_choice_ = brushChoice("terrain-dungeon-floor", "dark tiled stone floor", 0);
     form->Add(dungeon_floor_choice_, 1, wxEXPAND);
@@ -738,7 +762,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
         "Whole rock components are selected; components exceeding the remaining limit are skipped. "
         "Each higher cap uses the same percentage of the cap below it."
     );
-    form->Add(plateau_percent_spin_, 1, wxEXPAND);
+    form->Add(withSlider(plateau_percent_spin_), 1, wxEXPAND);
     form->Add(label("Mountain passes:"), 0, wxALIGN_CENTER_VERTICAL);
     mountain_passes_spin_ = spin("terrain-mountain-passes", 0, 8, 0);
     form->Add(mountain_passes_spin_, 1, wxEXPAND);
