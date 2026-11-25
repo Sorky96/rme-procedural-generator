@@ -122,6 +122,8 @@ private:
     wxNotebook* sections_ = nullptr;
     void LoadPresets(const wxString& select = wxEmptyString);
     void OnPresetChosen(wxCommandEvent& event);
+    wxChoice* biome_choice_ = nullptr; // "Keep current settings", then biomePresets()
+    void OnBiomeChosen(wxCommandEvent& event);
     void OnPresetSave(wxCommandEvent& event);
     void OnPresetDelete(wxCommandEvent& event);
     void OnRandomSeed(wxCommandEvent& event);

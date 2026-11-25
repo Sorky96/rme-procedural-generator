@@ -45,6 +45,7 @@
 #include <variant>
 
 #include <wx/button.h>
+#include <wx/scrolwin.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/combobox.h>
@@ -411,8 +412,16 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	sections->SetName("terrain-sections");
 	sections->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
 	wxFlexGridSizer* form = nullptr;
-	const auto section = [&](const wxString& title) {
-		auto* page = newd wxPanel(sections, wxID_ANY);
+	// Tabs of section 6 of the plan (I64). A long tab scrolls instead of growing the dialog.
+	const auto section = [&](const wxString& title, bool scrolls) {
+		wxWindow* page = nullptr;
+		if (scrolls) {
+			auto* scrolled = newd wxScrolledWindow(sections, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
+			scrolled->SetScrollRate(0, Theme::Grid(2));
+			page = scrolled;
+		} else {
+			page = newd wxPanel(sections, wxID_ANY);
+		}
 		page->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
 		host = page;
 		form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
@@ -422,7 +431,13 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		page->SetSizer(box);
 		sections->AddPage(page, title);
 	};
-	section("Area");
+	const auto heading = [&](const wxString& title) {
+		auto* text = label(title);
+		text->SetFont(Theme::GetFont(9, true));
+		form->Add(text, 0, wxALIGN_CENTER_VERTICAL);
+		form->AddSpacer(0);
+	};
+	section("Area", false);
 
 	form->Add(label("&Area:"), 0, wxALIGN_CENTER_VERTICAL);
 	scope_choice_ = newd wxChoice(host, wxID_ANY);
@@ -469,50 +484,8 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		seedRow->Add(random, 0);
 		form->Add(seedRow, 1, wxEXPAND);
 	}
-    form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
-    retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
-    retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
-    form->Add(retry_spin_, 1, wxEXPAND);
-    form->Add(label("Keep a &margin around existing tiles:"), 0, wxALIGN_CENTER_VERTICAL);
-    margin_spin_ = spin("terrain-protection-margin", 0, int(maxProtectionMargin), 0);
-    margin_spin_->SetToolTip(wxstr(std::format("Existing tiles (houses, spawns, zones, items) are never changed. Cells within this many tiles "
-        "(0-{}) of them on the generated floor stay unchanged too; only tiles inside the area count.", maxProtectionMargin)));
-    margin_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
-    margin_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-    form->Add(margin_spin_, 1, wxEXPAND);
-    form->Add(label("Candidates (1-16):"), 0, wxALIGN_CENTER_VERTICAL);
-    candidate_count_spin_ = spin("terrain-candidate-count", 1, int(maxCandidateCount), int(defaultCandidateCount));
-    form->Add(candidate_count_spin_, 1, wxEXPAND);
-    candidate_count_spin_->SetToolTip(wxstr(std::format(
-        "Joint series preparation budget: {}. Includes gallery, selection and one working preview; N is never reduced automatically.",
-        formatMiB(preparationBudget.maxBytes))));
-    candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
-    candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-    form->Add(label("Cop&y check:"), 0, wxALIGN_CENTER_VERTICAL);
-    copy_index_choice_ = new wxChoice(host, wxID_ANY);
-    copy_index_choice_->SetName("terrain-copy-index-choice");
-    copy_index_choice_->SetToolTip("Refuse to place terrain that copies an area saved in a local copy index (Learn from open map can add areas). "
-        "Indices of another client or in an old format are listed but cannot be chosen.");
-    copy_index_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnCopyIndexChosen, this);
-    form->Add(copy_index_choice_, 1, wxEXPAND);
-    form->Add(label("Copy index file:"), 0, wxALIGN_CENTER_VERTICAL);
-    copy_index_text_ = text("terrain-copy-index", "");
-    copy_index_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-    copy_index_text_->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
-        // Typing a path shows "None", the matching listed index, or "Other file...".
-        const auto value = copy_index_text_->GetValue();
-        int selected = value.empty() ? 0 : int(copy_index_choice_->GetCount()) - 1;
-        for (size_t i = 0; !value.empty() && i < copy_index_files_.size(); ++i)
-            if (std::filesystem::path(value.ToStdWstring()) == copy_index_files_[i].path) selected = int(i) + 1;
-        if (copy_index_choice_->GetCount() > 0) copy_index_choice_->SetSelection(selected);
-        event.Skip();
-    });
-    copy_index_text_->SetToolTip("Explicit local I53 index path. Empty: similarity is not evaluated. Invalid or incompatible: entire series refused. Five G4 natural ground classes only; items and underground excluded.");
-    form->Add(copy_index_text_, 1, wxEXPAND);
-    retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
-    retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
 
-	section("Terrain");
+	section("Terrain", false);
 	form->Add(label("&Grass weight:"), 0, wxALIGN_CENTER_VERTICAL);
 	grass_weight_spin_ = spin("terrain-grass-weight", 0, 1000, 3);
 	form->Add(grass_weight_spin_, 1, wxEXPAND);
@@ -544,29 +517,6 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	style_choice_->Append("Natural surface (lakes, rivers, rock)");
 	style_choice_->SetSelection(0);
 	form->Add(style_choice_, 1, wxEXPAND);
-
-	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
-	profile_choice_ = newd wxChoice(host, wxID_ANY);
-	profile_choice_->SetName("terrain-profile");
-	profile_choice_->Append("Built-in (manual settings)");
-	profile_choice_->SetSelection(0);
-	LoadStyleProfiles();
-	LoadCopyIndices();
-	form->Add(profile_choice_, 1, wxEXPAND);
-
-    form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
-    auto* learn = new wxButton(host, wxID_ANY, "Learn from open map...");
-    learn->SetName("terrain-learn");
-    learn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        ReleasePreview(); UpdateControlStates();
-        StyleLearningDialog dialog(this);
-        if (dialog.ShowModal() == wxID_OK) {
-            LoadStyleProfiles(); LoadCopyIndices(); RefreshHistoryChoices();
-            SetStatus("Profile saved locally. Choose it in Style profile to generate a preview.", false);
-        }
-    });
-    form->Add(learn, 1, wxEXPAND);
-
 	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_brush_choice_ = brushChoice("terrain-rock-brush", "rocky ground", false);
 	form->Add(rock_brush_choice_, 1, wxEXPAND);
@@ -586,7 +536,20 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	smooth_beaches_check_->SetToolTip("Removes single sand cells, notches and checkerboard corners along the beaches of lakes.");
 	form->Add(smooth_beaches_check_, 1, wxEXPAND);
 
-	section("Paths");
+	section("Biomes", false);
+	form->Add(label("Primary &biome:"), 0, wxALIGN_CENTER_VERTICAL);
+	biome_choice_ = newd wxChoice(host, wxID_ANY);
+	biome_choice_->SetName("terrain-biome");
+	biome_choice_->Append("Keep current settings");
+	for (const auto& biome : rme::procedural::biomePresets()) biome_choice_->Append(wxstr(biome.name));
+	biome_choice_->SetSelection(0);
+	biome_choice_->SetToolTip("Sets the terrain weights, ground brushes and vegetation brushes of the Terrain and Decoration tabs. "
+		"You can still change them afterwards. Brushes the loaded client does not offer are left unchanged.");
+	biome_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnBiomeChosen, this);
+	form->Add(biome_choice_, 1, wxEXPAND);
+
+	section("Structures", true);
+	heading("Paths");
 	form->Add(label("Pat&h length:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_length_spin_ = spin("terrain-path-length", 0, 400, 0);
 	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
@@ -596,21 +559,6 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	ford_length_spin_ = spin("terrain-ford-length", 0, 256, 0);
 	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a sand crossing up to this many water tiles wide. 0 = no fords. Uses the shore brush.");
 	form->Add(ford_length_spin_, 1, wxEXPAND);
-
-	form->Add(label("&Repair:"), 0, wxALIGN_CENTER_VERTICAL);
-	repair_check_ = newd wxCheckBox(host, wxID_ANY, "Repair unreachable places");
-	repair_check_->SetName("terrain-repair");
-	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
-	repair_check_->SetValue(true);
-	repair_check_->SetToolTip("Repairs access across all floors, including blockers found after autobordering. Clears blocking vegetation and borders on open ground, and bridges water up to Ford length. Shares a total limit of 64 repairs.");
-	form->Add(repair_check_, 1, wxEXPAND);
-
-    form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);
-    bridge_brush_choice_ = brushChoice("terrain-bridge-brush", "bridge", 2);
-    if (wall_names_.Index("bridge") == wxNOT_FOUND) { bridge_brush_choice_->Clear(); bridge_brush_choice_->Append(wxEmptyString); bridge_brush_choice_->SetSelection(0); }
-    bridge_brush_choice_->SetToolTip("Walkable bridge ground from a wall brush. Empty uses sand fords. Used by reachability repair.");
-    form->Add(bridge_brush_choice_, 1, wxEXPAND);
-
 	form->Add(label("Rock &passes:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_passes_check_ = newd wxCheckBox(host, wxID_ANY, "Paths may cross bands of rock");
 	rock_passes_check_->SetName("terrain-rock-passes");
@@ -621,8 +569,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
 	form->Add(path_brush_choice_, 1, wxEXPAND);
-
-	section("Buildings");
+	heading("Buildings");
 	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
 	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
 	building_density_spin_->SetToolTip("Building foundations (floor rectangles, optional walls and doors) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
@@ -687,8 +634,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	campfire_brush_choice_->SetToolTip("Doodad brush for the fire in the middle of every camp. Empty when the loaded client has no brush named campfire: pick another doodad brush to get a fire.");
 	if (doodad_names_.Index("campfire") == wxNOT_FOUND) campfire_brush_choice_->Clear();
 	form->Add(campfire_brush_choice_, 1, wxEXPAND);
-
-    section("Levels");
+    heading("Levels");
     form->Add(label("Cave entrances:"), 0, wxALIGN_CENTER_VERTICAL);
 	cave_entrances_spin_ = spin("terrain-cave-entrances", 0, 20, 0);
 	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells in the selected style, each with a cave below (floor z+1) and a ramp back up. Tiles already on floor z+1 are kept: the cave goes around them.");
@@ -808,7 +754,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     plateau_ramp_choice_ = brushChoice("terrain-plateau-ramp", "ramp", 3);
     form->Add(plateau_ramp_choice_, 1, wxEXPAND);
 
-    section("Vegetation");
+	section("Decoration", false);
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
 	vegetation_check_->SetName("terrain-vegetation");
@@ -826,6 +772,89 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Stone brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	stone_brush_choice_ = brushChoice("terrain-stone-brush", "small rocks", true);
 	form->Add(stone_brush_choice_, 1, wxEXPAND);
+
+	section("Reference Style", false);
+	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
+	profile_choice_ = newd wxChoice(host, wxID_ANY);
+	profile_choice_->SetName("terrain-profile");
+	profile_choice_->Append("Built-in (manual settings)");
+	profile_choice_->SetSelection(0);
+	form->Add(profile_choice_, 1, wxEXPAND);
+
+    form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
+    auto* learn = new wxButton(host, wxID_ANY, "Learn from open map...");
+    learn->SetName("terrain-learn");
+    learn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        ReleasePreview(); UpdateControlStates();
+        StyleLearningDialog dialog(this);
+        if (dialog.ShowModal() == wxID_OK) {
+            LoadStyleProfiles(); LoadCopyIndices(); RefreshHistoryChoices();
+            SetStatus("Profile saved locally. Choose it in Style profile to generate a preview.", false);
+        }
+    });
+    form->Add(learn, 1, wxEXPAND);
+    form->Add(label("Cop&y check:"), 0, wxALIGN_CENTER_VERTICAL);
+    copy_index_choice_ = new wxChoice(host, wxID_ANY);
+    copy_index_choice_->SetName("terrain-copy-index-choice");
+    copy_index_choice_->SetToolTip("Refuse to place terrain that copies an area saved in a local copy index (Learn from open map can add areas). "
+        "Indices of another client or in an old format are listed but cannot be chosen.");
+    copy_index_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnCopyIndexChosen, this);
+    form->Add(copy_index_choice_, 1, wxEXPAND);
+
+	section("Advanced", false);
+    form->Add(label("Candidates (1-16):"), 0, wxALIGN_CENTER_VERTICAL);
+    candidate_count_spin_ = spin("terrain-candidate-count", 1, int(maxCandidateCount), int(defaultCandidateCount));
+    form->Add(candidate_count_spin_, 1, wxEXPAND);
+    candidate_count_spin_->SetToolTip(wxstr(std::format(
+        "Joint series preparation budget: {}. Includes gallery, selection and one working preview; N is never reduced automatically.",
+        formatMiB(preparationBudget.maxBytes))));
+    candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(label("Copy index file:"), 0, wxALIGN_CENTER_VERTICAL);
+    copy_index_text_ = text("terrain-copy-index", "");
+    copy_index_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    copy_index_text_->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
+        // Typing a path shows "None", the matching listed index, or "Other file...".
+        const auto value = copy_index_text_->GetValue();
+        int selected = value.empty() ? 0 : int(copy_index_choice_->GetCount()) - 1;
+        for (size_t i = 0; !value.empty() && i < copy_index_files_.size(); ++i)
+            if (std::filesystem::path(value.ToStdWstring()) == copy_index_files_[i].path) selected = int(i) + 1;
+        if (copy_index_choice_->GetCount() > 0) copy_index_choice_->SetSelection(selected);
+        event.Skip();
+    });
+    copy_index_text_->SetToolTip("Explicit local I53 index path. Empty: similarity is not evaluated. Invalid or incompatible: entire series refused. Five G4 natural ground classes only; items and underground excluded.");
+    form->Add(copy_index_text_, 1, wxEXPAND);
+
+	section("Validation", false);
+	form->Add(label("&Repair:"), 0, wxALIGN_CENTER_VERTICAL);
+	repair_check_ = newd wxCheckBox(host, wxID_ANY, "Repair unreachable places");
+	repair_check_->SetName("terrain-repair");
+	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	repair_check_->SetValue(true);
+	repair_check_->SetToolTip("Repairs access across all floors, including blockers found after autobordering. Clears blocking vegetation and borders on open ground, and bridges water up to Ford length. Shares a total limit of 64 repairs.");
+	form->Add(repair_check_, 1, wxEXPAND);
+
+    form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    bridge_brush_choice_ = brushChoice("terrain-bridge-brush", "bridge", 2);
+    if (wall_names_.Index("bridge") == wxNOT_FOUND) { bridge_brush_choice_->Clear(); bridge_brush_choice_->Append(wxEmptyString); bridge_brush_choice_->SetSelection(0); }
+    bridge_brush_choice_->SetToolTip("Walkable bridge ground from a wall brush. Empty uses sand fords. Used by reachability repair.");
+    form->Add(bridge_brush_choice_, 1, wxEXPAND);
+    form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
+    retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
+    retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
+    form->Add(retry_spin_, 1, wxEXPAND);
+    retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(label("Keep a &margin around existing tiles:"), 0, wxALIGN_CENTER_VERTICAL);
+    margin_spin_ = spin("terrain-protection-margin", 0, int(maxProtectionMargin), 0);
+    margin_spin_->SetToolTip(wxstr(std::format("Existing tiles (houses, spawns, zones, items) are never changed. Cells within this many tiles "
+        "(0-{}) of them on the generated floor stay unchanged too; only tiles inside the area count.", maxProtectionMargin)));
+    margin_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    margin_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(margin_spin_, 1, wxEXPAND);
+	// The profile and copy index lists fill fields on several tabs, so they load once every tab exists.
+	LoadStyleProfiles();
+	LoadCopyIndices();
 	host = this;
     auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; Place adds one Undo step for all generated floors.");
     helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
@@ -2139,8 +2168,9 @@ namespace {
 std::filesystem::path presetDirectory() { return rme::procedural::styleProfileDirectory() / "presets"; }
 // Inputs a preset never holds: the area position belongs to the map, the copy check to a local file.
 bool presetExcluded(std::string_view name) {
+    // The biome is an action that fills other settings, not a setting of its own (I64).
     return name == "terrain-scope" || name == "terrain-x" || name == "terrain-y" || name == "terrain-z" ||
-        name == "terrain-copy-index-choice" || name == "terrain-copy-index";
+        name == "terrain-copy-index-choice" || name == "terrain-copy-index" || name == "terrain-biome";
 }
 std::string presetValueOf(const wxWindow& control) {
     if (const auto* spin = dynamic_cast<const wxSpinCtrl*>(&control)) return std::to_string(spin->GetValue());
@@ -2268,7 +2298,42 @@ void TerrainGeneratorDialog::OnPresetChosen(wxCommandEvent&) {
         return;
     }
     preset_name_text_->ChangeValue(name);
+    biome_choice_->SetSelection(0);
     SetStatus(wxstr(std::format("Preset \"{}\" loaded. Press Preview to generate.", name.utf8_string())), false);
+}
+
+void TerrainGeneratorDialog::OnBiomeChosen(wxCommandEvent&) {
+    const int index = biome_choice_->GetSelection();
+    const auto& biomes = rme::procedural::biomePresets();
+    if (index <= 0 || size_t(index) > biomes.size()) return;
+    const auto& biome = biomes[size_t(index) - 1];
+    // Keep only brushes the loaded client can use; the rest stay as they are.
+    rme::procedural::TerrainPreset available;
+    std::vector<std::string> missing;
+    for (const auto& [key, value] : biome.values.values) {
+        const bool brush = key.ends_with("-brush");
+        const bool vegetation = key == "terrain-tree-brush" || key == "terrain-bush-brush" || key == "terrain-stone-brush";
+        // Every item the brush can place must exist in the loaded client, as the resolver demands.
+        const bool usable = !brush || (vegetation ? rme::procedural::checkDecorBrush(value).has_value() :
+            rme::procedural::checkGroundBrush(value).has_value());
+        if (!usable) {
+            missing.push_back(value);
+            continue;
+        }
+        available.values.emplace(key, value);
+    }
+    if (const auto refused = ApplyPreset(available)) {
+        biome_choice_->SetSelection(0);
+        SetStatus(wxstr(std::format("Biome {} not applied; settings unchanged. {}.", biome.name, *refused)), true);
+        return;
+    }
+    std::string text = std::format("Biome {} applied to the Terrain and Decoration tabs. Press Preview to generate.", biome.name);
+    if (!missing.empty()) {
+        text += " Not in the loaded client, left unchanged:";
+        for (size_t i = 0; i < missing.size(); ++i) text += std::format("{} {}", i == 0 ? "" : ",", missing[i]);
+        text += ".";
+    }
+    SetStatus(wxstr(text), false);
 }
 
 void TerrainGeneratorDialog::OnPresetSave(wxCommandEvent&) {
