@@ -212,3 +212,21 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Mixed biomes (several biomes in one area): they need biome-aware generation and become debt at the G7 close.
+
+## I68 — a secondary biome in regions of the area (2026-11-25, before implementation)
+
+**Goal.** The last open part of the item "`Generate Area` dialog": mixed biomes. User decision 2026-11-25: do mixed biomes in G7. The core already places a second ground brush with its own vegetation in noise patches over the Grass cells (`grassMix`, `grassMixDecor`, `assignGrassPatches`, learned in G4). A secondary biome uses that path, so generation code is not changed.
+
+**Scope.**
+1. Biomes tab: `terrain-secondary-biome` ("None" and the five biomes) and `terrain-secondary-share` (0–100 %, default 30, with a slider as in I67). Both are settings and preset keys (presets grow from 60 to 62 keys; older presets load with None).
+2. With a secondary biome, the request gets one more grass mix entry: the biome's grass brush on the given share of the Grass cells, and with vegetation on its tree, bush and stone brushes on those cells (keep 1000). Regions use patch step 48 unless the chosen style profile sets its own step. Learned mixes of the profile come first; the share is refused if it and the learned shares exceed 100 % or no mix slot is free.
+3. A secondary brush the client cannot use is refused with its name in the status (no silent fallback). Choosing the primary biome as secondary is allowed (it only changes nothing visible).
+
+**Criteria.**
+1. **GUI probe with a real client:** for every ordered pair of different biomes (20), primary applied and secondary at 40 %: Preview either places (Place enabled) or is refused with a named reason, and the probe lists which pairs place. At least the pairs with Temperate as primary place. For one placed pair: the preview contains the secondary grass brush's ground items on 30–50 % of the grass-kind cells, map and Undo unchanged by Preview, Place gives one Undo. Share 0 gives the same candidate fingerprint as None.
+2. **Presets:** a saved preset has the 60 I64 keys plus the two new ones; a preset without them loads with None and 30.
+3. **Identity:** with None, G5 `--i47` logs are identical to the I67 run apart from timings.
+4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
+5. **Review:** an independent review of the I68 diff (Codex, medium effort); findings fixed or answered.
+
+**Out of scope.** Biome regions that also change dirt, water, rock and shore; more than two biomes; biome-aware terrain weights; learning biomes from references.
