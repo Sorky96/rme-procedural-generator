@@ -164,3 +164,15 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i68--a-secondary-biome-in-regions-of-the
 5. **Review (Codex, medium): done.** No significant bug. Fixed: the secondary biome was accepted but ignored outside Natural surface (now disabled there; share disabled without a biome); refused pairs must give a reason. Answered, not changed: the same biome as secondary can change grass variants (the mix uses its own random stream), so the scope note "changes nothing visible" is wrong; the probe does not cover learned-slot conflicts, vegetation off or the patch step of 48.
 
 Not verified: how the regions look to a person; other clients; style profiles with learned grass mixes (the refusal path is untested).
+
+## I69 — reference list and profile update (2026-11-25)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i69--reference-list-and-profile-update-in-the-style-panel-2026-11-25-before-implementation). Commits 338fd7c (criteria); part 1 (mine) 71f3278, b2d0a93, f941659; part 2 (Codex, cherry-picked from its worktree) 5aa3f05, 8fc1f08; review fixes 63dc0be, aadc64a.
+
+1. **Unit tests: PASS.** `test_procedural_style_learning` covers replace=false refused with identical bytes, replace=true replacing, replace=true on a missing name, and the 64-file limit (Codex's run and the suite's core 26/26).
+2. **GUI probe: PASS** (client 1098, `LEARNING_DIALOG_PASS`). `I69_DETAILS_PASS 8 rows, weights 100.0 %`: the profile learned from two samples lists sample-1 and sample-2 with weights summing to 100 %, matching assets, learned bands and ground shares; the built-in profile shows one line. `I69_REPLACE_PASS`: saving a re-learned profile as `i62-two` asks; No leaves the file byte-identical; Yes replaces it (one source); the generator lists it once and its details show one reference. Map and Undo unchanged.
+3. **Identity: PASS.** G5 `--i47` G5_GATE_PASS, 16/16 logs identical to I68 apart from timings.
+4. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS, core 26/26. A first run failed while building two probes; most likely because I edited the dialog source during that build (the probe builder refuses sources that change while it builds; the same happened in I68). The rerun with no edits passed.
+5. **Split and review: done.** Codex implemented part 2 in a worktree; I reviewed its diff (no changes needed). Codex reviewed part 1: fixed the clipped value column (now sized to its content) and a missing row for profiles without stored ground shares; the probe now checks the aliases. Not changed: the replace probe reuses the open generator instead of a reopened one.
+
+Not verified: the POSIX replace path; the confirmation dialog by hand; the list layout at other DPI settings.
