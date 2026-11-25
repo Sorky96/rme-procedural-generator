@@ -131,3 +131,14 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i65--preview-cache-preview-reuses-an-unc
 Not verified: selection mode (it always generates by design); a copy index rebuilt within the file system's write-time resolution with the same size would be treated as unchanged.
 
 With I65 the item "Background generation, cancellation, progress, preview cache, commit/undo" is complete: GUI-thread steps with Cancel and a progress gauge (I52, I61), Place as one Undo (G1), and series reuse (I65). Caching prepared candidates for switching gallery rows stays out of scope (memory budget).
+
+## I66 — sprite preview when zoomed in (2026-11-25)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i66--sprite-preview-when-zoomed-in-2026-11-25-before-implementation). Commits ef22f39 (refactor), 84edfec, d022992.
+
+1. **GUI probe: PASS** (client 1098, `LEARNING_DIALOG_PASS`). At fit level the pane is pixel-identical with sprites on and off; at zoom 32x the pixels differ (sprites drawn). Map and Undo unchanged by painting, Place enabled and gives one Undo (`I66_SPRITES_PASS`, `I66_PLACE_PASS`).
+2. **Timing (report only):** one sprite paint at zoom 32x (12 x 4 visible cells, cold cache) took 15 ms on the GUI thread.
+3. **Identity: PASS.** G5 `--i47` G5_GATE_PASS, 16/16 logs identical to I65 apart from timings.
+4. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS.
+
+Not verified: whether the sprites look right to a person (the probe only checks that they differ from minimap colours); paint time with many visible cells at 16 px per cell; other clients. Known simplifications: no draw offsets, multi-tile overflow, animation or creatures.
