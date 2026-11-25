@@ -78,6 +78,8 @@ using namespace rme::procedural;
 
 using namespace rme::ui::terrain_generator;
 constexpr uint32_t mountainMinTopCells = 64;
+// I68: lattice step of the secondary biome regions (assignGrassPatches allows 1..64).
+constexpr uint16_t secondaryBiomePatchStep = 48;
 // Native bitmap conversion allowance on top of the RGB image (32-bit DIB plus headers). Policy estimate.
 constexpr uint64_t bitmapOverheadBytes = 64 * 1024;
 
@@ -572,6 +574,22 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		"You can still change them afterwards. Brushes the loaded client does not offer are left unchanged.");
 	biome_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnBiomeChosen, this);
 	form->Add(biome_choice_, 1, wxEXPAND);
+	form->Add(label("&Secondary biome:"), 0, wxALIGN_CENTER_VERTICAL);
+	secondary_biome_choice_ = newd wxChoice(host, wxID_ANY);
+	secondary_biome_choice_->SetName("terrain-secondary-biome");
+	secondary_biome_choice_->Append("None");
+	for (const auto& biome : rme::procedural::biomePresets()) secondary_biome_choice_->Append(wxstr(biome.name));
+	secondary_biome_choice_->SetSelection(0);
+	secondary_biome_choice_->SetToolTip("Regions of the grass take this biome's grass and, with vegetation on, its trees, bushes and stones. "
+		"Dirt, water, rock and shore stay as set on the Terrain tab.");
+	secondary_biome_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	form->Add(secondary_biome_choice_, 1, wxEXPAND);
+	form->Add(label("Secondary share (%):"), 0, wxALIGN_CENTER_VERTICAL);
+	secondary_share_spin_ = spin("terrain-secondary-share", 0, 100, 30);
+	secondary_share_spin_->SetToolTip("Share of the grass cells in the secondary biome's regions. 0 = none.");
+	secondary_share_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+	secondary_share_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+	form->Add(withSlider(secondary_share_spin_), 1, wxEXPAND);
 
 	section("Structures", true);
 	heading("Paths");
@@ -1745,6 +1763,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 
 	// Learned mixes of the chosen profile; a brush this client cannot place is left out, as for the palette.
+	bool learnedPatchStep = false;
 	if (const int picked = profile_choice_->GetSelection(); natural && picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
 		const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
 		for (size_t i = 0, used = 0; i < profile.grassMix.size() && used < GroundProfile::grassMixCount; ++i) {
@@ -1764,7 +1783,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			}
 			++used;
 		}
-		if (profile.grassPatchStep) request.profile.grassPatchStep = uint16_t(profile.grassPatchStep);
+		if (profile.grassPatchStep) { request.profile.grassPatchStep = uint16_t(profile.grassPatchStep); learnedPatchStep = true; }
 		const auto copyMix = [&](const auto& from, auto& names, auto& permille) {
 			for (size_t i = 0, used = 0; config.vegetation && i < from.size() && used < GroundProfile::treeMixCount; ++i) {
 				if (from[i].brush.empty() || !usableDecor(from[i].brush)) continue;
@@ -1839,6 +1858,49 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			request.profile.overlayTreePpm[used] = overlay.onTreePpm;
 			request.profile.overlayGroundPpm[used++] = overlay.onGroundPpm;
 		}
+	}
+
+	// I68: the secondary biome takes a free grass mix slot after the learned ones; its brushes must all be usable.
+	if (const int secondary = secondary_biome_choice_->GetSelection(); natural && secondary > 0 && secondary_share_spin_->GetValue() > 0) {
+		const auto& biome = rme::procedural::biomePresets().at(size_t(secondary) - 1);
+		const auto value = [&](std::string_view key) {
+			const auto found = biome.values.values.find(key);
+			return found == biome.values.values.end() ? std::string() : found->second;
+		};
+		const auto grass = value("terrain-grass-brush");
+		if (!rme::procedural::checkGroundBrush(grass)) {
+			SetStatus(wxstr(std::format("Secondary biome {}: the loaded client cannot place its ground brush \"{}\". Choose another biome.", biome.name, grass)), true);
+			secondary_biome_choice_->SetFocus();
+			return std::nullopt;
+		}
+		const auto slot = std::ranges::find_if(request.profile.grassMix, [](const std::string& name) { return name.empty(); });
+		uint32_t learned = 0;
+		for (const auto permille : request.profile.grassMixPermille) learned += permille;
+		const uint32_t share = uint32_t(secondary_share_spin_->GetValue()) * 10;
+		if (slot == request.profile.grassMix.end() || learned + share > 1000) {
+			SetStatus(wxstr(std::format("Secondary biome: the chosen style profile already mixes {}% of the grass; lower the secondary share to at most {}%.",
+				learned / 10, slot == request.profile.grassMix.end() ? 0 : (1000 - learned) / 10)), true);
+			secondary_share_spin_->SetFocus();
+			return std::nullopt;
+		}
+		const auto index = size_t(slot - request.profile.grassMix.begin());
+		request.profile.grassMix[index] = grass;
+		request.profile.grassMixPermille[index] = uint16_t(share);
+		if (config.vegetation) {
+			constexpr std::array<std::string_view, GroundProfile::decorationCount> keys {"terrain-tree-brush", "terrain-bush-brush", "terrain-stone-brush"};
+			for (size_t k = 0; k < keys.size(); ++k) {
+				const auto brush = value(keys[k]);
+				if (!rme::procedural::checkDecorBrush(brush)) {
+					SetStatus(wxstr(std::format("Secondary biome {}: the loaded client cannot place its vegetation brush \"{}\". Choose another biome.", biome.name, brush)), true);
+					secondary_biome_choice_->SetFocus();
+					return std::nullopt;
+				}
+				request.profile.grassMixDecor[index][k] = brush;
+				request.profile.grassMixDecorKeep[index][k] = 1000;
+			}
+		}
+		// Biome regions are larger than the learned grass patches, unless the profile set its own patch size.
+		if (!learnedPatchStep) request.profile.grassPatchStep = secondaryBiomePatchStep;
 	}
 
 	if (selection_) {
@@ -2346,7 +2408,12 @@ void TerrainGeneratorDialog::OnPresetChosen(wxCommandEvent&) {
     const int index = preset_choice_->GetSelection();
     if (index <= 0) return;
     const auto name = preset_choice_->GetString(index);
-    const auto preset = rme::procedural::readTerrainPreset(presetDirectory() / (name.utf8_string() + std::string(rme::procedural::terrainPresetExtension)));
+    auto preset = rme::procedural::readTerrainPreset(presetDirectory() / (name.utf8_string() + std::string(rme::procedural::terrainPresetExtension)));
+    // Presets saved before I68 have no secondary biome: they load with none.
+    if (preset) {
+        preset->values.try_emplace("terrain-secondary-biome", "None");
+        preset->values.try_emplace("terrain-secondary-share", "30");
+    }
     if (!preset) {
         preset_choice_->SetSelection(0);
         SetStatus(wxstr(std::format("Preset \"{}\" not loaded: {}.", name.utf8_string(), rme::procedural::presetErrorText(preset.error()))), true);

@@ -137,6 +137,9 @@ private:
     void LoadPresets(const wxString& select = wxEmptyString);
     void OnPresetChosen(wxCommandEvent& event);
     wxChoice* biome_choice_ = nullptr; // "Keep current settings", then biomePresets()
+    // I68: "None", then biomePresets(); its grass and vegetation on a share of the Grass cells, in regions.
+    wxChoice* secondary_biome_choice_ = nullptr;
+    wxSpinCtrl* secondary_share_spin_ = nullptr;
     void OnBiomeChosen(wxCommandEvent& event);
     void OnPresetSave(wxCommandEvent& event);
     void OnPresetDelete(wxCommandEvent& event);
