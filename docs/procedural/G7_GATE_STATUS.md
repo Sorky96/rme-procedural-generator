@@ -119,3 +119,15 @@ Criteria: [G7_METRICS.md](G7_METRICS.md#i64--tabs-per-section-6-and-a-primary-bi
 Found while probing: Snow first used `ice` for the shore. Each brush passed the resolver's checks alone, but the border between snow and ice uses items client 1098 lacks, so every Snow series was refused. Snow now uses sand for the shore. The biome skips a brush the resolver would refuse (`checkGroundBrush`, `checkDecorBrush`, now shared with the resolver, which is unchanged in behaviour); it cannot see a pair of brushes whose border is unusable, so a biome can still be refused in another client, with the usual status text.
 
 Deviations: the Structures tab holds paths, buildings and levels with headings and scrolls. Not verified: manual review of the layout and of the scrolling Structures tab; biomes in clients other than 1098; whether the biomes look like their names (no visual review). `test_universal_rotator` fails to link on this branch already at `fac7ad9` (unrelated, not investigated).
+
+## I65 — preview cache (2026-11-25)
+
+Criteria: [G7_METRICS.md](G7_METRICS.md#i65--preview-cache-preview-reuses-an-unchanged-series-2026-11-25-before-implementation). Commits 757ce65 (criteria), e19682e, d0db993.
+
+1. **GUI probe: PASS** (client 1098, `LEARNING_DIALOG_PASS`). `I65_REUSE_PASS 3 ms`: a second Preview of a finished 2-candidate series kept the rows and seeds, enabled Place and left map and Undo unchanged. `I65_MAP_CHANGE_GENERATES_PASS`: Place gave one Undo; after the Undo, Preview generated again (same deterministic rows). `I65_SEED_CHANGE_GENERATES_PASS`: a new seed generated different rows. Earlier probe sections (I56–I64) pass.
+2. **Identity: PASS.** G5 `--i47` G5_GATE_PASS, 16/16 logs identical to I64 apart from timings.
+3. **Regression: PASS.** `g5_run_suite.py --probes` SUITE_PASS.
+
+Not verified: selection mode (it always generates by design); a copy index rebuilt within the file system's write-time resolution with the same size would be treated as unchanged.
+
+With I65 the item "Background generation, cancellation, progress, preview cache, commit/undo" is complete: GUI-thread steps with Cancel and a progress gauge (I52, I61), Place as one Undo (G1), and series reuse (I65). Caching prepared candidates for switching gallery rows stays out of scope (memory budget).
