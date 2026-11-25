@@ -163,3 +163,19 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`.
 
 **Out of scope.** Mixed biomes (several biomes in one area); biome-aware generation; learned biomes from profiles. They become debt at the G7 close.
+
+## I65 — preview cache: Preview reuses an unchanged series (2026-11-25, before implementation)
+
+**Goal.** The remaining part of the item "Background generation, cancellation, progress, preview cache, commit/undo". Generation already runs in GUI-thread steps with Cancel, a candidate progress gauge and Place as one Undo (I52, I61). Pressing Preview again with nothing changed currently discards a finished gallery and generates the same candidates again. Candidates are deterministic for a request, so the gallery can be kept.
+
+**Scope.**
+1. Preview keeps the finished series, without generating, when all of these equal the series: the request (`GenerationConfig` and `GroundProfile`), the candidate count, the ranking bands, the copy index path and the file's size and write time, the map change generation and the client asset revision. The status says the series was reused.
+2. Anything else (a changed field or seed, a map edit, Place, Undo, a client reload, an unfinished or cancelled series) generates as before. Selection mode always generates (the selection is not compared).
+3. No candidate results are kept beyond the gallery that already exists, so the memory budget is unchanged.
+
+**Criteria.**
+1. **GUI probe with a real client:** Preview, then Preview again: the gallery rows, seeds and selected candidate are unchanged, the status reports reuse, and it finishes without generating a candidate; Place is enabled and gives one Undo. After that Undo (map generation changed) Preview generates. A changed seed generates. Map and Undo are unchanged by a reused Preview.
+2. **Identity:** generation code is untouched, so G5 `--i47` logs are identical to the I64 run apart from timings.
+3. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS (existing dialog probes that press Preview twice keep passing), `LEARNING_DIALOG_PASS`.
+
+**Out of scope.** Caching prepared candidates for switching between gallery rows (it would exceed the single-candidate working budget); caching across dialog sessions or on disk.
