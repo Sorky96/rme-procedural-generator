@@ -230,3 +230,20 @@ Iteration order (user decision 2026-11-23): I57 copy index from the GUI, I58 sta
 5. **Review:** an independent review of the I68 diff (Codex, medium effort); findings fixed or answered.
 
 **Out of scope.** Biome regions that also change dirt, water, rock and shore; more than two biomes; biome-aware terrain weights; learning biomes from references.
+
+## I69 — reference list and profile update in the style panel (2026-11-25, before implementation)
+
+**Goal.** Close the item "Reference import/analysis and style profile panel". Section 6 asks for a style panel with "a profile learned from maps (done, I56/I62), reference list, analysis (done, I56/I62), and profile update". Compared with the plan, two parts are missing: the panel does not show what a chosen profile was learned from, and a learned profile cannot be updated (a save under an existing name is refused). User decision 2026-11-25: do them, part delegated to Codex.
+
+**Scope.**
+1. **Reference list (generator, Reference Style tab):** a read-only list `terrain-profile-details` for the chosen profile: each source (alias and weight %), the number of samples, whether the profile matches the loaded client assets, the five natural ground shares, whether it has learned ranking bands, and the number of learned grass, tree and bush mixes. Empty for the built-in profile ("Built-in profile; not learned from a map"). Updated when the choice or the profile list changes. No map name or position (profiles never store them).
+2. **Profile update (learning dialog):** saving under the name of an existing learned profile asks "Replace the profile "<name>"?" (`learn-confirm`); Yes replaces the file atomically, No saves nothing. A new name works as before. Core: `saveLearnedProfile` gets an explicit replace flag; without it an existing name is still refused; with it the file is replaced in one step (no window where it is missing or partly written), and the 64-file limit counts the replaced file once. Updating means learning again from samples: profiles do not keep their samples, so adding samples to an old profile is not possible.
+
+**Criteria.**
+1. **Unit tests (core):** replace=false on an existing name is refused and leaves the file byte-identical; replace=true replaces it with the new text; replace=true on a missing name creates it; the limit of 64 files allows replacing when 64 exist and refuses a new one.
+2. **GUI probe with a real client:** the details list of a profile learned from two samples names two sources with weights summing to 100 %, reports matching assets and the learned bands; the built-in profile shows its one line. Saving a re-learned profile under an existing name asks; No leaves the file unchanged; Yes replaces it and the generator, reopened, lists it once with the new details. Map and Undo unchanged throughout.
+3. **Identity:** generation code is untouched, so G5 `--i47` logs are identical to the I68 run apart from timings.
+4. **Regression:** canonical build, `g5_run_suite.py --probes` SUITE_PASS, `LEARNING_DIALOG_PASS`, core tests.
+5. **Split and review:** Codex implements part 2 (core flag, unit tests, learning-dialog confirmation); I implement part 1 and the probe, and review Codex's diff; Codex reviews mine.
+
+**Out of scope.** Adding samples to a profile without its samples; renaming or deleting profiles from the GUI; a profile diff view.
