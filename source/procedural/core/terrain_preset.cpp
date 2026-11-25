@@ -150,4 +150,34 @@ bool deleteTerrainPreset(const std::filesystem::path& directory, std::string_vie
     return std::filesystem::remove(directory / (std::string(name) + std::string(terrainPresetExtension)), ec) && !ec;
 }
 
+const std::vector<BiomePreset>& biomePresets() {
+    const auto biome = [](std::string_view name, int grass, int dirt, int water, std::string_view grassBrush, std::string_view dirtBrush,
+                           std::string_view waterBrush, std::string_view rock, std::string_view shore, std::string_view tree,
+                           std::string_view bush, std::string_view stone) {
+        BiomePreset result {name, {}};
+        auto& v = result.values.values;
+        v["terrain-grass-weight"] = std::to_string(grass);
+        v["terrain-dirt-weight"] = std::to_string(dirt);
+        v["terrain-water-weight"] = std::to_string(water);
+        v["terrain-grass-brush"] = grassBrush;
+        v["terrain-dirt-brush"] = dirtBrush;
+        v["terrain-water-brush"] = waterBrush;
+        v["terrain-rock-brush"] = rock;
+        v["terrain-shore-brush"] = shore;
+        v["terrain-vegetation"] = "1";
+        v["terrain-tree-brush"] = tree;
+        v["terrain-bush-brush"] = bush;
+        v["terrain-stone-brush"] = stone;
+        return result;
+    };
+    static const std::vector<BiomePreset> biomes {
+        biome("Temperate", 3, 2, 1, "grass", "dirt", "clear water", "rocky ground", "sand", "trees", "bushes", "small rocks"),
+        biome("Snow", 3, 2, 1, "snow", "icy earth", "clear water", "snowy mountain", "ice", "snowy trees", "snowy dead trees", "small snowy rocks"),
+        biome("Desert", 4, 2, 0, "sand", "dry earth", "clear water", "sandstone", "sand", "palm trees", "dead bushes", "small rocks"),
+        biome("Jungle", 4, 2, 1, "jungle grass", "jungle dirt", "clear water", "rocky ground", "sand", "palm trees", "tall jungle grass", "mossy rocks"),
+        biome("Swamp", 2, 2, 3, "grass", "earth", "swamp", "rocky ground", "walkable swamp", "dead trees", "swamp plants", "mossy rocks"),
+    };
+    return biomes;
+}
+
 } // namespace rme::procedural

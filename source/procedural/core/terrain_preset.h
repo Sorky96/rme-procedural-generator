@@ -43,4 +43,12 @@ enum class PresetSaveError { InvalidName, InvalidPreset, Exists, Busy, WriteFail
 [[nodiscard]] std::vector<std::string> listTerrainPresets(const std::filesystem::path& directory);
 [[nodiscard]] bool deleteTerrainPreset(const std::filesystem::path& directory, std::string_view name);
 
+// I64: a primary biome is a partial preset: terrain weights, the five ground brushes and the vegetation brushes.
+// Brush names follow the bundled brush data; the dialog skips any the loaded client lacks.
+struct BiomePreset {
+    std::string_view name;
+    TerrainPreset values;
+};
+[[nodiscard]] const std::vector<BiomePreset>& biomePresets();
+
 } // namespace rme::procedural

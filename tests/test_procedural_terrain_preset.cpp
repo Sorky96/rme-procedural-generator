@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/terrain_preset.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -90,11 +91,38 @@ void files() {
     std::filesystem::remove_all(dir);
 }
 
+void biomes() {
+    const std::vector<std::string> keys {"terrain-bush-brush", "terrain-dirt-brush", "terrain-dirt-weight", "terrain-grass-brush",
+        "terrain-grass-weight", "terrain-rock-brush", "terrain-shore-brush", "terrain-stone-brush", "terrain-tree-brush",
+        "terrain-vegetation", "terrain-water-brush", "terrain-water-weight"};
+    std::vector<std::string_view> names;
+    for (const auto& biome : biomePresets()) {
+        names.push_back(biome.name);
+        std::vector<std::string> found;
+        for (const auto& [key, value] : biome.values.values) {
+            found.push_back(key);
+            require(validPresetValue(value) && !value.empty(), "biome value");
+        }
+        require(found == keys, "biome sets exactly the terrain and vegetation keys");
+        int total = 0;
+        for (const char* weight : {"terrain-grass-weight", "terrain-dirt-weight", "terrain-water-weight"}) {
+            const int value = std::stoi(biome.values.values.at(weight));
+            require(value >= 0 && value <= 1000, "biome weight in range");
+            total += value;
+        }
+        require(total > 0, "biome has a non-zero weight");
+        require(serializePreset(biome.values).has_value(), "biome is a valid preset");
+    }
+    std::ranges::sort(names);
+    require(names.size() == 5 && std::ranges::adjacent_find(names) == names.end(), "five unique biomes");
+}
+
 } // namespace
 
 int main() try {
     format();
     files();
+    biomes();
     std::cout << "TERRAIN_PRESET_PASS\n";
     return 0;
 } catch (const std::exception& error) {
