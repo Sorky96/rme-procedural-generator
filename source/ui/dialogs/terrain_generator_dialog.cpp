@@ -1223,8 +1223,10 @@ void TerrainGeneratorDialog::OnCopyIndexChosen(wxCommandEvent& event) {
     else if (size_t(choice) <= copy_index_files_.size()) {
         const auto& file = copy_index_files_[size_t(choice) - 1];
         if (!file.problem.empty()) {
+            // Reloading replaces copy_index_files_, so the message is built first.
+            const wxString message = wxstr(std::format("Copy index \"{}\" cannot be used: {}.", file.name, file.problem));
             LoadCopyIndices();
-            SetStatus(wxstr(std::format("Copy index \"{}\" cannot be used: {}.", file.name, file.problem)), true);
+            SetStatus(message, true);
             return;
         }
         copy_index_text_->SetValue(wxString(file.path.wstring()));
