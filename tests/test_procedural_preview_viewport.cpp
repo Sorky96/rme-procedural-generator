@@ -41,6 +41,7 @@ void fit() {
     require(previewMaxLevel(area, pane) == 5, "levels up to 32x");
     require(previewMaxLevel({4, 4}, {400, 400}) == 0, "100 px per cell already: no zoom");
     require(previewMaxLevel({10, 10}, {400, 400}) == 0 && previewMaxLevel({20, 20}, {400, 400}) == 1, "64 px cap");
+    require(previewMaxLevel({512, 512}, {755, 165}) == 7, "large area in a low pane zooms past 16 px per cell");
 }
 
 void zoom() {

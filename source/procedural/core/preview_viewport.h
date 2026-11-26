@@ -7,8 +7,9 @@
 namespace rme::procedural {
 
 // I60: zoom and pan of the generator's minimap preview. One image pixel per map cell; a pane in screen pixels.
-// Level 0 fits the whole area; level L shows it 2^L times larger, up to 32x and never above 64 pixels per cell.
-inline constexpr uint32_t maxPreviewZoomLevel = 5;
+// Level 0 fits the whole area; level L shows it 2^L times larger, up to 4096x and never above 64 pixels per cell,
+// so a large area in a low pane still reaches the sprite threshold.
+inline constexpr uint32_t maxPreviewZoomLevel = 12;
 inline constexpr double maxPreviewPixelsPerCell = 64.0;
 
 struct PreviewArea { uint32_t width = 1, height = 1; };   // cells
