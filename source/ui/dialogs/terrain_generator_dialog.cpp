@@ -957,7 +957,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_panel_->Bind(wxEVT_CHAR, &TerrainGeneratorDialog::OnPreviewKey, this);
 	for (const auto type : {wxEVT_SET_FOCUS, wxEVT_KILL_FOCUS})
 		preview_panel_->Bind(type, [this](wxFocusEvent& event) { preview_panel_->Refresh(); event.Skip(); });
-	preview_panel_->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { SyncView(); event.Skip(); });
+	preview_panel_->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { SyncView(); PrepareSprites(); event.Skip(); });
 
 	auto* right = newd wxBoxSizer(wxVERTICAL);
 	right->Add(caption, 0, wxBOTTOM, gap);
@@ -980,7 +980,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		if (!prepared_) return;
 		if (!BuildPreviewBitmap()) { ReleasePreview(); SetStatus(memoryMessage, true); }
 		UpdateViewLabel();
-		preview_panel_->Refresh();
+		RefreshPreview();
 	});
 	right->Add(preview_floor_label_, 0, wxBOTTOM, gap);
 	right->Add(preview_floor_choice_, 0, wxEXPAND | wxBOTTOM, gap);
@@ -991,7 +991,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_sprites_check_->SetName("terrain-preview-sprites");
 	preview_sprites_check_->SetValue(true);
 	preview_sprites_check_->SetToolTip("From 16 screen pixels per tile, draw the client's sprites (ground and items, first frame) instead of minimap colours.");
-	preview_sprites_check_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { preview_panel_->Refresh(); });
+	preview_sprites_check_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { RefreshPreview(); });
 	right->Add(preview_sprites_check_, 0, wxTOP, gap);
 	view_label_ = newd wxStaticText(this, wxID_ANY, wxEmptyString);
 	view_label_->SetName("terrain-preview-view");
@@ -1004,7 +1004,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		compare_choice_->SetName("terrain-compare");
 		compare_choice_->Append("None");
 		compare_choice_->SetSelection(0);
-		compare_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) { UpdateViewLabel(); preview_panel_->Refresh(); });
+		compare_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) { UpdateViewLabel(); RefreshPreview(); });
 		compareRow->Add(compare_choice_, 1, wxEXPAND);
 		right->Add(compareRow, 0, wxEXPAND | wxTOP, gap);
 	}
@@ -1547,7 +1547,7 @@ void TerrainGeneratorDialog::ReleasePreview() {
 	preview_floor_label_->Hide();
 	validate_button_->Disable();
 	place_button_->Disable();
-	preview_panel_->Refresh();
+	RefreshPreview();
 }
 
 void TerrainGeneratorDialog::UpdateControlStates() {
@@ -2193,7 +2193,7 @@ void TerrainGeneratorDialog::SelectCandidate(uint32_t index) {
     selected_candidate_ = index;
     preview_bitmap_ = candidates_[index].thumbnail;
     RefreshCompareChoice();
-    preview_panel_->Refresh();
+    RefreshPreview();
     UpdateCandidateLabels();
     preview_attempt_ = candidates_[index].attempts;
     preview_first_seed_ = candidates_[index].initialSeed;
@@ -2269,7 +2269,7 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
                 ranking_learned_ ? "A / bands learned from the profile's samples (paths and buildings not ranked); quality not validated." :
                 "A / g6-bands-v1 baseline; quality gate I51 failed.",
                 copyStateName(row.copyAssessment.state), blocking, other)), hardFail);
-            preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
+            RefreshPreview(); preview_timer_.StartOnce(100); return;
         }
         Candidate row;
         row.copyAssessment = result->copyAssessment;
@@ -2829,7 +2829,7 @@ void TerrainGeneratorDialog::OnPreviewMouse(wxMouseEvent& event) {
     }
     hovered_cell_ = type == wxEVT_LEAVE_WINDOW || !paneIndex ? std::nullopt : rme::procedural::previewCellAt(view_, area, pane, x, y);
     UpdateViewLabel();
-    preview_panel_->Refresh();
+    RefreshPreview();
 }
 
 void TerrainGeneratorDialog::OnPreviewKey(wxKeyEvent& event) {
@@ -2850,71 +2850,97 @@ void TerrainGeneratorDialog::OnPreviewKey(wxKeyEvent& event) {
         default: event.Skip(); return;
     }
     UpdateViewLabel();
-    preview_panel_->Refresh();
+    RefreshPreview();
 }
 
-const wxBitmap* TerrainGeneratorDialog::SpriteImage(const Item& item, const Position& position, int cell) {
+uint64_t TerrainGeneratorDialog::SpriteKey(const Item& item, const Position& position) {
+    const GameSprite* sprite = item.getSprite();
+    const int px = sprite && sprite->pattern_x ? position.x % sprite->pattern_x : 0;
+    const int py = sprite && sprite->pattern_y ? position.y % sprite->pattern_y : 0;
+    const int pz = sprite && sprite->pattern_z ? position.z % sprite->pattern_z : 0;
+    return (uint64_t(item.getClientID()) << 24) | (uint64_t(px) << 16) | (uint64_t(py) << 8) | uint64_t(pz);
+}
+
+void TerrainGeneratorDialog::PrepareSprite(const Item& item, const Position& position, int cell) {
+    auto [entry, added] = sprite_cache_.try_emplace(SpriteKey(item, position));
+    if (!added) return;
     GameSprite* sprite = item.getSprite();
-    if (!sprite || sprite->spriteList.empty()) return nullptr;
+    if (!sprite || sprite->spriteList.empty()) return;
     const int px = sprite->pattern_x ? position.x % sprite->pattern_x : 0;
     const int py = sprite->pattern_y ? position.y % sprite->pattern_y : 0;
     const int pz = sprite->pattern_z ? position.z % sprite->pattern_z : 0;
-    const uint64_t key = (uint64_t(item.getClientID()) << 24) | (uint64_t(px) << 16) | (uint64_t(py) << 8) | uint64_t(pz);
-    auto [entry, added] = sprite_cache_.try_emplace(key);
-    if (added) {
-        // The part of the sprite on the item's own tile (width and height index 0), layer 0, first frame.
-        const size_t index = sprite->getIndex(0, 0, 0, px, py, pz, 0);
-        NormalImage* part = index < sprite->spriteList.size() ? sprite->spriteList[index] : nullptr;
-        const auto rgba = part ? part->getRGBAData() : nullptr;
-        const auto dimensions = part ? part->getDimensions() : ImageDimensions {};
-        if (rgba && dimensions.width > 0 && dimensions.height > 0) {
-            wxImage image(dimensions.width, dimensions.height, false);
-            image.InitAlpha();
-            unsigned char* colour = image.GetData();
-            unsigned char* alpha = image.GetAlpha();
-            for (size_t i = 0; i < size_t(dimensions.width) * dimensions.height; ++i) {
-                colour[i * 3] = rgba[i * 4]; colour[i * 3 + 1] = rgba[i * 4 + 1]; colour[i * 3 + 2] = rgba[i * 4 + 2];
-                alpha[i] = rgba[i * 4 + 3];
-            }
-            image.Rescale(cell, cell, cell < dimensions.width ? wxIMAGE_QUALITY_BOX_AVERAGE : wxIMAGE_QUALITY_NEAREST);
-            entry->second = wxBitmap(image);
-        }
+    // The part of the sprite on the item's own tile (width and height index 0), layer 0, first frame.
+    const size_t index = sprite->getIndex(0, 0, 0, px, py, pz, 0);
+    NormalImage* part = index < sprite->spriteList.size() ? sprite->spriteList[index] : nullptr;
+    const auto rgba = part ? part->getRGBAData() : nullptr;
+    const auto dimensions = part ? part->getDimensions() : ImageDimensions {};
+    if (!rgba || dimensions.width <= 0 || dimensions.height <= 0) return;
+    wxImage image(dimensions.width, dimensions.height, false);
+    image.InitAlpha();
+    unsigned char* colour = image.GetData();
+    unsigned char* alpha = image.GetAlpha();
+    for (size_t i = 0; i < size_t(dimensions.width) * dimensions.height; ++i) {
+        colour[i * 3] = rgba[i * 4]; colour[i * 3 + 1] = rgba[i * 4 + 1]; colour[i * 3 + 2] = rgba[i * 4 + 2];
+        alpha[i] = rgba[i * 4 + 3];
     }
-    return entry->second.IsOk() ? &entry->second : nullptr;
+    image.Rescale(cell, cell, cell < dimensions.width ? wxIMAGE_QUALITY_BOX_AVERAGE : wxIMAGE_QUALITY_NEAREST);
+    entry->second = wxBitmap(image);
 }
 
-// I66: the Selected candidate's visible cells drawn with the client's sprites, ground first, then items bottom to top.
-void TerrainGeneratorDialog::DrawSprites(wxDC& dc, const wxRect& rect) {
+template <typename Visit>
+void TerrainGeneratorDialog::ForVisibleSprites(const wxRect& rect, Visit&& visit) const {
     const auto area = PreviewAreaSize();
     const rme::procedural::PreviewPane pane {double(rect.GetWidth()), double(rect.GetHeight())};
     const double scale = rme::procedural::previewScale(view_, area, pane);
     if (scale < spritePixelsPerCell) return;
     const int cell = int(std::lround(scale));
-    if (cell != sprite_cache_cell_ || g_version.GetAssetRevision() != sprite_cache_assets_) {
-        sprite_cache_.clear();
-        sprite_cache_cell_ = cell;
-        sprite_cache_assets_ = g_version.GetAssetRevision();
-    }
     const auto& unit = ShownUnit();
     const auto& region = unit.snapshot.input.config.region;
     const auto cells = rme::procedural::previewVisibleCells(view_, area, pane);
     const double originX = rect.GetX() + rme::procedural::previewOriginX(view_, area, pane);
     const double originY = rect.GetY() + rme::procedural::previewOriginY(view_, area, pane);
-    wxDCClipper clip(dc, rect);
     for (uint32_t y = cells.y0; y < cells.y1; ++y) {
         for (uint32_t x = cells.x0; x < cells.x1; ++x) {
             const Position position(region.x + int(x), region.y + int(y), region.z);
             const Tile* tile = ShownTile(unit, position);
             if (!tile) continue;
             const wxPoint at(int(std::lround(originX + x * scale)), int(std::lround(originY + y * scale)));
-            if (tile->ground) {
-                if (const auto* image = SpriteImage(*tile->ground, position, cell)) dc.DrawBitmap(*image, at, true);
-            }
-            for (const auto& item : tile->items) {
-                if (const auto* image = SpriteImage(*item, position, cell)) dc.DrawBitmap(*image, at, true);
-            }
+            if (tile->ground) visit(*tile->ground, position, at, cell);
+            for (const auto& item : tile->items) visit(*item, position, at, cell);
         }
     }
+}
+
+void TerrainGeneratorDialog::PrepareSprites() {
+    if (!prepared_ || preview_steps_ || !preview_bitmap_.IsOk() || !preview_sprites_check_->GetValue()) return;
+    SyncView();
+    const auto panes = PreviewPanes();
+    if (panes.empty()) return;
+    const auto area = PreviewAreaSize();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    const int cell = int(std::lround(rme::procedural::previewScale(view_, area, pane)));
+    if (cell != sprite_cache_cell_ || g_version.GetAssetRevision() != sprite_cache_assets_) {
+        sprite_cache_.clear();
+        sprite_cache_cell_ = cell;
+        sprite_cache_assets_ = g_version.GetAssetRevision();
+    }
+    ForVisibleSprites(panes[0], [this](const Item& item, const Position& position, wxPoint, int size) { PrepareSprite(item, position, size); });
+}
+
+void TerrainGeneratorDialog::RefreshPreview() {
+    PrepareSprites();
+    preview_panel_->Refresh();
+}
+
+// I66: the Selected candidate's visible cells drawn with the client's sprites, ground first, then items bottom to top.
+// Only bitmaps PrepareSprites built are drawn; a missing one is skipped rather than built while painting.
+void TerrainGeneratorDialog::DrawSprites(wxDC& dc, const wxRect& rect) const {
+    wxDCClipper clip(dc, rect);
+    ForVisibleSprites(rect, [&](const Item& item, const Position& position, wxPoint at, int cell) {
+        if (cell != sprite_cache_cell_) return;
+        const auto found = sprite_cache_.find(SpriteKey(item, position));
+        if (found != sprite_cache_.end() && found->second.IsOk()) dc.DrawBitmap(found->second, at, true);
+    });
 }
 
 void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {

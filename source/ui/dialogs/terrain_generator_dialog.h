@@ -191,8 +191,14 @@ private:
     std::unordered_map<uint64_t, wxBitmap> sprite_cache_;
     int sprite_cache_cell_ = 0;
     uint64_t sprite_cache_assets_ = 0;
-    void DrawSprites(wxDC& dc, const wxRect& pane);
-    [[nodiscard]] const wxBitmap* SpriteImage(const Item& item, const Position& position, int cell);
+    // Calls visit(item, position, top-left, cell) for the visible items, ground first, when cells reach the sprite size.
+    template <typename Visit> void ForVisibleSprites(const wxRect& pane, Visit&& visit) const;
+    // Builds the bitmaps the next paint needs; painting only looks them up.
+    void PrepareSprites();
+    void RefreshPreview(); // PrepareSprites, then repaint the preview
+    void DrawSprites(wxDC& dc, const wxRect& pane) const;
+    [[nodiscard]] static uint64_t SpriteKey(const Item& item, const Position& position);
+    void PrepareSprite(const Item& item, const Position& position, int cell);
 	void ReleasePreview();
 	void UpdateControlStates();
 	void UpdateClientLabel();
