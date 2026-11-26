@@ -2,6 +2,7 @@
 #include "procedural/core/style_learning.h"
 #include "procedural/core/doodad_class.h"
 #include "procedural/core/grass_patches.h"
+#include <utility>
 #include <algorithm>
 #include <fstream>
 #include <format>
@@ -1177,7 +1178,8 @@ std::expected<LearningSample, std::string> mergeLearningSamples(std::span<const 
     out.unreachedRockPermille = mean([](const LearningSample& s) { return s.unreachedRockPermille; });
     out.unreachedWalkPermille = mean([](const LearningSample& s) { return s.unreachedWalkPermille; });
     for (size_t k = 0; k < out.shoreDistance.size(); ++k) out.shoreDistance[k] = mean([k](const LearningSample& s) { return s.shoreDistance[k]; });
-    const auto largest = std::ranges::max_element(samples, {}, [](const LearningSample& s) { return uint64_t(s.width) * s.height; });
+    // Equal areas are ordered by width, so the sample order never picks the dimensions.
+    const auto largest = std::ranges::max_element(samples, {}, [](const LearningSample& s) { return std::pair(uint64_t(s.width) * s.height, s.width); });
     out.width = largest->width; out.height = largest->height;
     out.mixEdgePermille = out.grassMix[0].brush.empty() ? 0 : mean([](const LearningSample& s) { return s.mixEdgePermille; });
     out.rockEdgePermille = mean([](const LearningSample& s) { return s.rockEdgePermille; });

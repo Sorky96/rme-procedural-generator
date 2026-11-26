@@ -297,6 +297,13 @@ int main(int argc, char** argv) {
                 "three weighted sources");
             check(p1 && m1 && m1->stats.kindTiles[size_t(StyleKind::Rock)] == sB->stats.kindTiles[size_t(StyleKind::Rock)] &&
                 m1->present == sample->present + sB->present + sC->present, "counts summed");
+            {
+                LearningSample wide = *sample, square = *sample;
+                wide.width = 256; wide.height = 64; square.width = 128; square.height = 128;
+                const std::vector<LearningSample> ws {wide, square}, sw {square, wide};
+                const auto a = mergeLearningSamples(ws), b = mergeLearningSamples(sw);
+                check(a && b && a->width == b->width && a->height == b->height && a->width == 256, "equal areas: the same dimensions in any order");
+            }
             check(p1 && !p1->bands.empty() && parseProfile(*serializeProfile(*p1)) == *p1, "merged profile with bands round-trips");
             const std::vector<LearningSample> twice {*sB, *sB};
             const auto doubled = mergeLearningSamples(twice);
