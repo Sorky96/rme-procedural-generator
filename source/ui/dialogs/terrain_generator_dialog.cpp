@@ -25,6 +25,7 @@
 #include "procedural/adapter/surface_resolver.h"
 #include "procedural/adapter/terrain_commit.h"
 #include "procedural/adapter/terrain_target.h"
+#include "rendering/core/game_sprite.h"
 #include "rendering/drawers/tiles/tile_color_calculator.h"
 #include "ui/gui.h"
 #include "ui/theme.h"
@@ -32,6 +33,9 @@
 
 #include <algorithm>
 #include <charconv>
+#include <filesystem>
+#include <random>
+#include <wx/generic/msgdlgg.h>
 #include <cmath>
 #include <wx/dcmemory.h>
 #include <format>
@@ -42,6 +46,7 @@
 #include <variant>
 
 #include <wx/button.h>
+#include <wx/scrolwin.h>
 #include <wx/checkbox.h>
 #include <wx/choice.h>
 #include <wx/combobox.h>
@@ -53,6 +58,7 @@
 #include <wx/notebook.h>
 #include <wx/panel.h>
 #include <wx/sizer.h>
+#include <wx/slider.h>
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
@@ -72,6 +78,8 @@ using namespace rme::procedural;
 
 using namespace rme::ui::terrain_generator;
 constexpr uint32_t mountainMinTopCells = 64;
+// I68: lattice step of the secondary biome regions (assignGrassPatches allows 1..64).
+constexpr uint16_t secondaryBiomePatchStep = 48;
 // Native bitmap conversion allowance on top of the RGB image (32-bit DIB plus headers). Policy estimate.
 constexpr uint64_t bitmapOverheadBytes = 64 * 1024;
 
@@ -337,6 +345,29 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		control->SetForegroundColour(fieldText);
 		return control;
 	};
+	// I67: a share field with a slider beside it. The slider acts as an edit of the field and follows the field
+	// whatever changes it; it is enabled exactly when the field is.
+	const auto withSlider = [&](wxSpinCtrl* field) {
+		auto* row = newd wxBoxSizer(wxHORIZONTAL);
+		auto* slider = newd wxSlider(host, wxID_ANY, field->GetValue(), field->GetMin(), field->GetMax());
+		slider->SetName(field->GetName() + "-slider");
+		if (const auto* tip = field->GetToolTip()) slider->SetToolTip(tip->GetTip());
+		slider->Bind(wxEVT_SLIDER, [field, slider](wxCommandEvent&) {
+			if (field->GetValue() == slider->GetValue()) return;
+			field->SetValue(slider->GetValue());
+			wxSpinEvent edited(wxEVT_SPINCTRL, field->GetId());
+			edited.SetEventObject(field);
+			edited.SetPosition(slider->GetValue());
+			field->ProcessWindowEvent(edited);
+		});
+		slider->Bind(wxEVT_UPDATE_UI, [field, slider](wxUpdateUIEvent& event) {
+			event.Enable(field->IsEnabled());
+			if (slider->GetValue() != field->GetValue()) slider->SetValue(field->GetValue());
+		});
+		row->Add(field, 0, wxALIGN_CENTER_VERTICAL);
+		row->Add(slider, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, Theme::Grid(1));
+		return row;
+	};
 	const auto text = [&](const wxString& name, const wxString& value) {
 		auto* control = newd wxTextCtrl(host, wxID_ANY, value);
 		control->SetName(name);
@@ -404,11 +435,20 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 	// Inputs, in tab order.
 	auto* sections = newd wxNotebook(this, wxID_ANY);
+	sections_ = sections;
 	sections->SetName("terrain-sections");
 	sections->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
 	wxFlexGridSizer* form = nullptr;
-	const auto section = [&](const wxString& title) {
-		auto* page = newd wxPanel(sections, wxID_ANY);
+	// Tabs of section 6 of the plan (I64). A long tab scrolls instead of growing the dialog.
+	const auto section = [&](const wxString& title, bool scrolls) {
+		wxWindow* page = nullptr;
+		if (scrolls) {
+			auto* scrolled = newd wxScrolledWindow(sections, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
+			scrolled->SetScrollRate(0, Theme::Grid(2));
+			page = scrolled;
+		} else {
+			page = newd wxPanel(sections, wxID_ANY);
+		}
 		page->SetBackgroundColour(Theme::Get(Theme::Role::Surface));
 		host = page;
 		form = newd wxFlexGridSizer(2, gap, Theme::Grid(3));
@@ -418,7 +458,13 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		page->SetSizer(box);
 		sections->AddPage(page, title);
 	};
-	section("Area");
+	const auto heading = [&](const wxString& title) {
+		auto* text = label(title);
+		text->SetFont(Theme::GetFont(9, true));
+		form->Add(text, 0, wxALIGN_CENTER_VERTICAL);
+		form->AddSpacer(0);
+	};
+	section("Area", false);
 
 	form->Add(label("&Area:"), 0, wxALIGN_CENTER_VERTICAL);
 	scope_choice_ = newd wxChoice(host, wxID_ANY);
@@ -455,28 +501,18 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 
 	form->Add(label("&Seed:"), 0, wxALIGN_CENTER_VERTICAL);
 	seed_text_ = text("terrain-seed", "1729");
-	form->Add(seed_text_, 1, wxEXPAND);
-    form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
-    retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
-    retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
-    form->Add(retry_spin_, 1, wxEXPAND);
-    form->Add(label("Candidates (1-16):"), 0, wxALIGN_CENTER_VERTICAL);
-    candidate_count_spin_ = spin("terrain-candidate-count", 1, int(maxCandidateCount), int(defaultCandidateCount));
-    form->Add(candidate_count_spin_, 1, wxEXPAND);
-    candidate_count_spin_->SetToolTip(wxstr(std::format(
-        "Joint series preparation budget: {}. Includes gallery, selection and one working preview; N is never reduced automatically.",
-        formatMiB(preparationBudget.maxBytes))));
-    candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
-    candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-    form->Add(label("Local similarity index (optional):"), 0, wxALIGN_CENTER_VERTICAL);
-    copy_index_text_ = text("terrain-copy-index", "");
-    copy_index_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
-    copy_index_text_->SetToolTip("Explicit local I53 index path. Empty: similarity is not evaluated. Invalid or incompatible: entire series refused. Five G4 natural ground classes only; items and underground excluded.");
-    form->Add(copy_index_text_, 1, wxEXPAND);
-    retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
-    retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+	{
+		auto* seedRow = newd wxBoxSizer(wxHORIZONTAL);
+		seedRow->Add(seed_text_, 1, wxEXPAND | wxRIGHT, gap);
+		auto* random = newd wxButton(host, wxID_ANY, "&Random");
+		random->SetName("terrain-seed-random");
+		random->SetToolTip("Fill in a new random seed. Nothing is generated until you press Preview.");
+		random->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnRandomSeed, this);
+		seedRow->Add(random, 0);
+		form->Add(seedRow, 1, wxEXPAND);
+	}
 
-	section("Terrain");
+	section("Terrain", false);
 	form->Add(label("&Grass weight:"), 0, wxALIGN_CENTER_VERTICAL);
 	grass_weight_spin_ = spin("terrain-grass-weight", 0, 1000, 3);
 	form->Add(grass_weight_spin_, 1, wxEXPAND);
@@ -508,28 +544,6 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	style_choice_->Append("Natural surface (lakes, rivers, rock)");
 	style_choice_->SetSelection(0);
 	form->Add(style_choice_, 1, wxEXPAND);
-
-	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
-	profile_choice_ = newd wxChoice(host, wxID_ANY);
-	profile_choice_->SetName("terrain-profile");
-	profile_choice_->Append("Built-in (manual settings)");
-	profile_choice_->SetSelection(0);
-	LoadStyleProfiles();
-	form->Add(profile_choice_, 1, wxEXPAND);
-
-    form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
-    auto* learn = new wxButton(host, wxID_ANY, "Learn from open map...");
-    learn->SetName("terrain-learn");
-    learn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        ReleasePreview(); UpdateControlStates();
-        StyleLearningDialog dialog(this);
-        if (dialog.ShowModal() == wxID_OK) {
-            LoadStyleProfiles(); RefreshHistoryChoices();
-            SetStatus("Profile saved locally. Choose it in Style profile to generate a preview.", false);
-        }
-    });
-    form->Add(learn, 1, wxEXPAND);
-
 	form->Add(label("Roc&k brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_brush_choice_ = brushChoice("terrain-rock-brush", "rocky ground", false);
 	form->Add(rock_brush_choice_, 1, wxEXPAND);
@@ -549,7 +563,36 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	smooth_beaches_check_->SetToolTip("Removes single sand cells, notches and checkerboard corners along the beaches of lakes.");
 	form->Add(smooth_beaches_check_, 1, wxEXPAND);
 
-	section("Paths");
+	section("Biomes", false);
+	form->Add(label("Primary &biome:"), 0, wxALIGN_CENTER_VERTICAL);
+	biome_choice_ = newd wxChoice(host, wxID_ANY);
+	biome_choice_->SetName("terrain-biome");
+	biome_choice_->Append("Keep current settings");
+	for (const auto& biome : rme::procedural::biomePresets()) biome_choice_->Append(wxstr(biome.name));
+	biome_choice_->SetSelection(0);
+	biome_choice_->SetToolTip("Sets the terrain weights, ground brushes and vegetation brushes of the Terrain and Decoration tabs. "
+		"You can still change them afterwards. Brushes the loaded client does not offer are left unchanged.");
+	biome_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnBiomeChosen, this);
+	form->Add(biome_choice_, 1, wxEXPAND);
+	form->Add(label("&Secondary biome:"), 0, wxALIGN_CENTER_VERTICAL);
+	secondary_biome_choice_ = newd wxChoice(host, wxID_ANY);
+	secondary_biome_choice_->SetName("terrain-secondary-biome");
+	secondary_biome_choice_->Append("None");
+	for (const auto& biome : rme::procedural::biomePresets()) secondary_biome_choice_->Append(wxstr(biome.name));
+	secondary_biome_choice_->SetSelection(0);
+	secondary_biome_choice_->SetToolTip("Regions of the grass take this biome's grass and, with vegetation on, its trees, bushes and stones. "
+		"Dirt, water, rock and shore stay as set on the Terrain tab.");
+	secondary_biome_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnInputChanged, this);
+	form->Add(secondary_biome_choice_, 1, wxEXPAND);
+	form->Add(label("Secondary share (%):"), 0, wxALIGN_CENTER_VERTICAL);
+	secondary_share_spin_ = spin("terrain-secondary-share", 0, 100, 30);
+	secondary_share_spin_->SetToolTip("Share of the grass cells in the secondary biome's regions. 0 = none.");
+	secondary_share_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+	secondary_share_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+	form->Add(withSlider(secondary_share_spin_), 1, wxEXPAND);
+
+	section("Structures", true);
+	heading("Paths");
 	form->Add(label("Pat&h length:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_length_spin_ = spin("terrain-path-length", 0, 400, 0);
 	path_length_spin_->SetToolTip("Winding paths over grass and dirt; skeleton cells per 65536 map cells. 0 = no paths. About 80 is similar to the reference maps.");
@@ -559,21 +602,6 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	ford_length_spin_ = spin("terrain-ford-length", 0, 256, 0);
 	ford_length_spin_->SetToolTip("Joins land cut off by a river or lake with a sand crossing up to this many water tiles wide. 0 = no fords. Uses the shore brush.");
 	form->Add(ford_length_spin_, 1, wxEXPAND);
-
-	form->Add(label("&Repair:"), 0, wxALIGN_CENTER_VERTICAL);
-	repair_check_ = newd wxCheckBox(host, wxID_ANY, "Repair unreachable places");
-	repair_check_->SetName("terrain-repair");
-	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
-	repair_check_->SetValue(true);
-	repair_check_->SetToolTip("Repairs access across all floors, including blockers found after autobordering. Clears blocking vegetation and borders on open ground, and bridges water up to Ford length. Shares a total limit of 64 repairs.");
-	form->Add(repair_check_, 1, wxEXPAND);
-
-    form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);
-    bridge_brush_choice_ = brushChoice("terrain-bridge-brush", "bridge", 2);
-    if (wall_names_.Index("bridge") == wxNOT_FOUND) { bridge_brush_choice_->Clear(); bridge_brush_choice_->Append(wxEmptyString); bridge_brush_choice_->SetSelection(0); }
-    bridge_brush_choice_->SetToolTip("Walkable bridge ground from a wall brush. Empty uses sand fords. Used by reachability repair.");
-    form->Add(bridge_brush_choice_, 1, wxEXPAND);
-
 	form->Add(label("Rock &passes:"), 0, wxALIGN_CENTER_VERTICAL);
 	rock_passes_check_ = newd wxCheckBox(host, wxID_ANY, "Paths may cross bands of rock");
 	rock_passes_check_->SetName("terrain-rock-passes");
@@ -584,12 +612,11 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Path brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	path_brush_choice_ = brushChoice("terrain-path-brush", "cobblestone", false);
 	form->Add(path_brush_choice_, 1, wxEXPAND);
-
-	section("Buildings");
+	heading("Buildings");
 	form->Add(label("&Buildings:"), 0, wxALIGN_CENTER_VERTICAL);
 	building_density_spin_ = spin("terrain-building-density", 0, 100, 0);
 	building_density_spin_->SetToolTip("Building foundations (floor rectangles, optional walls and doors) per 65536 map cells. 0 = none. About 30 is similar to the reference maps.");
-	form->Add(building_density_spin_, 1, wxEXPAND);
+	form->Add(withSlider(building_density_spin_), 1, wxEXPAND);
 
 	form->Add(label("Floor brus&h:"), 0, wxALIGN_CENTER_VERTICAL);
 	floor_brush_choice_ = brushChoice("terrain-floor-brush", "stone floor", false);
@@ -622,7 +649,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Ruins (%):"), 0, wxALIGN_CENTER_VERTICAL);
 	ruin_percent_spin_ = spin("terrain-ruin-percent", 0, 100, 0);
 	ruin_percent_spin_->SetToolTip("Share of the buildings that become ruins: no door and gaps in the wall. 0 = none. Needs buildings.");
-	form->Add(ruin_percent_spin_, 1, wxEXPAND);
+	form->Add(withSlider(ruin_percent_spin_), 1, wxEXPAND);
 
     form->Add(label("Upper floors:"), 0, wxALIGN_CENTER_VERTICAL);
     building_storeys_check_ = newd wxCheckBox(host, wxID_ANY, "Floor z-1 with stairs in some buildings");
@@ -632,7 +659,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(building_storeys_check_, 1, wxEXPAND);
     form->Add(label("Upper floor share (%):"), 0, wxALIGN_CENTER_VERTICAL);
     upper_floor_percent_spin_ = spin("terrain-upper-floor-percent", 0, 100, 30);
-    form->Add(upper_floor_percent_spin_, 1, wxEXPAND);
+    form->Add(withSlider(upper_floor_percent_spin_), 1, wxEXPAND);
     form->Add(label("Stairs brush:"), 0, wxALIGN_CENTER_VERTICAL);
     building_stairs_choice_ = brushChoice("terrain-building-stairs", "ramp", 3);
     form->Add(building_stairs_choice_, 1, wxEXPAND);
@@ -650,8 +677,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	campfire_brush_choice_->SetToolTip("Doodad brush for the fire in the middle of every camp. Empty when the loaded client has no brush named campfire: pick another doodad brush to get a fire.");
 	if (doodad_names_.Index("campfire") == wxNOT_FOUND) campfire_brush_choice_->Clear();
 	form->Add(campfire_brush_choice_, 1, wxEXPAND);
-
-    section("Levels");
+    heading("Levels");
     form->Add(label("Cave entrances:"), 0, wxALIGN_CENTER_VERTICAL);
 	cave_entrances_spin_ = spin("terrain-cave-entrances", 0, 20, 0);
 	cave_entrances_spin_->SetToolTip("Z entrances per 65536 cells in the selected style, each with a cave below (floor z+1) and a ramp back up. Tiles already on floor z+1 are kept: the cave goes around them.");
@@ -729,7 +755,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     form->Add(building_dungeons_check_, 1, wxEXPAND);
     form->Add(label("Dungeon share (%):"), 0, wxALIGN_CENTER_VERTICAL);
     dungeon_percent_spin_ = spin("terrain-dungeon-percent", 0, 100, 20);
-    form->Add(dungeon_percent_spin_, 1, wxEXPAND);
+    form->Add(withSlider(dungeon_percent_spin_), 1, wxEXPAND);
     form->Add(label("Dungeon floor brush:"), 0, wxALIGN_CENTER_VERTICAL);
     dungeon_floor_choice_ = brushChoice("terrain-dungeon-floor", "dark tiled stone floor", 0);
     form->Add(dungeon_floor_choice_, 1, wxEXPAND);
@@ -754,7 +780,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
         "Whole rock components are selected; components exceeding the remaining limit are skipped. "
         "Each higher cap uses the same percentage of the cap below it."
     );
-    form->Add(plateau_percent_spin_, 1, wxEXPAND);
+    form->Add(withSlider(plateau_percent_spin_), 1, wxEXPAND);
     form->Add(label("Mountain passes:"), 0, wxALIGN_CENTER_VERTICAL);
     mountain_passes_spin_ = spin("terrain-mountain-passes", 0, 8, 0);
     form->Add(mountain_passes_spin_, 1, wxEXPAND);
@@ -771,7 +797,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     plateau_ramp_choice_ = brushChoice("terrain-plateau-ramp", "ramp", 3);
     form->Add(plateau_ramp_choice_, 1, wxEXPAND);
 
-    section("Vegetation");
+	section("Decoration", false);
 	form->Add(label("Vegetation:"), 0, wxALIGN_CENTER_VERTICAL);
 	vegetation_check_ = newd wxCheckBox(host, wxID_ANY, "Add trees, bushes and stones");
 	vegetation_check_->SetName("terrain-vegetation");
@@ -789,6 +815,97 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	form->Add(label("Stone brush:"), 0, wxALIGN_CENTER_VERTICAL);
 	stone_brush_choice_ = brushChoice("terrain-stone-brush", "small rocks", true);
 	form->Add(stone_brush_choice_, 1, wxEXPAND);
+
+	section("Reference Style", false);
+	form->Add(label("Style &profile:"), 0, wxALIGN_CENTER_VERTICAL);
+	profile_choice_ = newd wxChoice(host, wxID_ANY);
+	profile_choice_->SetName("terrain-profile");
+	profile_choice_->Append("Built-in (manual settings)");
+	profile_choice_->SetSelection(0);
+	form->Add(profile_choice_, 1, wxEXPAND);
+	form->Add(label("Profile references:"), 0, wxALIGN_TOP);
+	profile_details_ = newd wxListCtrl(host, wxID_ANY, wxDefaultPosition, wxSize(-1, Theme::Grid(24)), wxLC_REPORT | wxLC_SINGLE_SEL);
+	profile_details_->SetName("terrain-profile-details");
+	profile_details_->SetBackgroundColour(fieldBackground);
+	profile_details_->SetForegroundColour(fieldText);
+	profile_details_->InsertColumn(0, "Item", wxLIST_FORMAT_LEFT, Theme::Grid(20));
+	profile_details_->InsertColumn(1, "Value", wxLIST_FORMAT_LEFT, Theme::Grid(60));
+	form->Add(profile_details_, 1, wxEXPAND);
+
+    form->Add(label("Local style learning:"), 0, wxALIGN_CENTER_VERTICAL);
+    auto* learn = new wxButton(host, wxID_ANY, "Learn from open map...");
+    learn->SetName("terrain-learn");
+    learn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        ReleasePreview(); UpdateControlStates();
+        StyleLearningDialog dialog(this);
+        if (dialog.ShowModal() == wxID_OK) {
+            LoadStyleProfiles(); LoadCopyIndices(); RefreshHistoryChoices();
+            SetStatus("Profile saved locally. Choose it in Style profile to generate a preview.", false);
+        }
+    });
+    form->Add(learn, 1, wxEXPAND);
+    form->Add(label("Cop&y check:"), 0, wxALIGN_CENTER_VERTICAL);
+    copy_index_choice_ = new wxChoice(host, wxID_ANY);
+    copy_index_choice_->SetName("terrain-copy-index-choice");
+    copy_index_choice_->SetToolTip("Refuse to place terrain that copies an area saved in a local copy index (Learn from open map can add areas). "
+        "Indices of another client or in an old format are listed but cannot be chosen.");
+    copy_index_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnCopyIndexChosen, this);
+    form->Add(copy_index_choice_, 1, wxEXPAND);
+
+	section("Advanced", false);
+    form->Add(label("Candidates (1-16):"), 0, wxALIGN_CENTER_VERTICAL);
+    candidate_count_spin_ = spin("terrain-candidate-count", 1, int(maxCandidateCount), int(defaultCandidateCount));
+    form->Add(candidate_count_spin_, 1, wxEXPAND);
+    candidate_count_spin_->SetToolTip(wxstr(std::format(
+        "Joint series preparation budget: {}. Includes gallery, selection and one working preview; N is never reduced automatically.",
+        formatMiB(preparationBudget.maxBytes))));
+    candidate_count_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    candidate_count_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(label("Copy index file:"), 0, wxALIGN_CENTER_VERTICAL);
+    copy_index_text_ = text("terrain-copy-index", "");
+    copy_index_text_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    copy_index_text_->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
+        // Typing a path shows "None", the matching listed index, or "Other file...".
+        const auto value = copy_index_text_->GetValue();
+        int selected = value.empty() ? 0 : int(copy_index_choice_->GetCount()) - 1;
+        for (size_t i = 0; !value.empty() && i < copy_index_files_.size(); ++i)
+            if (std::filesystem::path(value.ToStdWstring()) == copy_index_files_[i].path) selected = int(i) + 1;
+        if (copy_index_choice_->GetCount() > 0) copy_index_choice_->SetSelection(selected);
+        event.Skip();
+    });
+    copy_index_text_->SetToolTip("Explicit local I53 index path. Empty: similarity is not evaluated. Invalid or incompatible: entire series refused. Five G4 natural ground classes only; items and underground excluded.");
+    form->Add(copy_index_text_, 1, wxEXPAND);
+
+	section("Validation", false);
+	form->Add(label("&Repair:"), 0, wxALIGN_CENTER_VERTICAL);
+	repair_check_ = newd wxCheckBox(host, wxID_ANY, "Repair unreachable places");
+	repair_check_->SetName("terrain-repair");
+	repair_check_->SetForegroundColour(Theme::Get(Theme::Role::Text));
+	repair_check_->SetValue(true);
+	repair_check_->SetToolTip("Repairs access across all floors, including blockers found after autobordering. Clears blocking vegetation and borders on open ground, and bridges water up to Ford length. Shares a total limit of 64 repairs.");
+	form->Add(repair_check_, 1, wxEXPAND);
+
+    form->Add(label("Bridge brush:"), 0, wxALIGN_CENTER_VERTICAL);
+    bridge_brush_choice_ = brushChoice("terrain-bridge-brush", "bridge", 2);
+    if (wall_names_.Index("bridge") == wxNOT_FOUND) { bridge_brush_choice_->Clear(); bridge_brush_choice_->Append(wxEmptyString); bridge_brush_choice_->SetSelection(0); }
+    bridge_brush_choice_->SetToolTip("Walkable bridge ground from a wall brush. Empty uses sand fords. Used by reachability repair.");
+    form->Add(bridge_brush_choice_, 1, wxEXPAND);
+    form->Add(label("Retry seeds until all places are reachable:"), 0, wxALIGN_CENTER_VERTICAL);
+    retry_spin_ = spin("terrain-retry-seeds", 0, 16, 0);
+    retry_spin_->SetToolTip("Maximum attempts including the initial seed. 0 disables retries. If none succeeds, the initial seed is shown.");
+    form->Add(retry_spin_, 1, wxEXPAND);
+    retry_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    retry_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(label("Keep a &margin around existing tiles:"), 0, wxALIGN_CENTER_VERTICAL);
+    margin_spin_ = spin("terrain-protection-margin", 0, int(maxProtectionMargin), 0);
+    margin_spin_->SetToolTip(wxstr(std::format("Existing tiles (houses, spawns, zones, items) are never changed. Cells within this many tiles "
+        "(0-{}) of them on the generated floor stay unchanged too; only tiles inside the area count.", maxProtectionMargin)));
+    margin_spin_->Bind(wxEVT_SPINCTRL, &TerrainGeneratorDialog::OnInputChanged, this);
+    margin_spin_->Bind(wxEVT_TEXT, &TerrainGeneratorDialog::OnInputChanged, this);
+    form->Add(margin_spin_, 1, wxEXPAND);
+	// The profile and copy index lists fill fields on several tabs, so they load once every tab exists.
+	LoadStyleProfiles();
+	LoadCopyIndices();
 	host = this;
     auto* helper = label("Only empty tiles are changed. Preview leaves your map unchanged; Place adds one Undo step for all generated floors.");
     helper->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
@@ -797,7 +914,28 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	client_label_ = label(wxEmptyString);
 	client_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
 
+	auto* presetRow = newd wxBoxSizer(wxHORIZONTAL);
+	presetRow->Add(label("Pre&set:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+	preset_choice_ = newd wxChoice(this, wxID_ANY);
+	preset_choice_->SetName("terrain-preset");
+	preset_choice_->Bind(wxEVT_CHOICE, &TerrainGeneratorDialog::OnPresetChosen, this);
+	presetRow->Add(preset_choice_, 1, wxEXPAND | wxRIGHT, gap);
+	auto* presetDelete = newd wxButton(this, wxID_ANY, "Delete preset");
+	presetDelete->SetName("terrain-preset-delete");
+	presetDelete->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPresetDelete, this);
+	presetRow->Add(presetDelete, 0);
+	auto* presetSaveRow = newd wxBoxSizer(wxHORIZONTAL);
+	presetSaveRow->Add(label("Preset name:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+	preset_name_text_ = text("terrain-preset-name", wxEmptyString);
+	presetSaveRow->Add(preset_name_text_, 1, wxEXPAND | wxRIGHT, gap);
+	auto* presetSave = newd wxButton(this, wxID_ANY, "Save preset");
+	presetSave->SetName("terrain-preset-save");
+	presetSave->Bind(wxEVT_BUTTON, &TerrainGeneratorDialog::OnPresetSave, this);
+	presetSaveRow->Add(presetSave, 0);
+
 	auto* left = newd wxBoxSizer(wxVERTICAL);
+	left->Add(presetRow, 0, wxEXPAND | wxBOTTOM, gap);
+	left->Add(presetSaveRow, 0, wxEXPAND | wxBOTTOM, gap);
 	left->Add(sections, 1, wxEXPAND);
 	left->AddSpacer(Theme::Grid(3));
 	left->Add(helper, 0, wxEXPAND);
@@ -808,11 +946,18 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	auto* caption = label("Minimap preview");
 	caption->SetFont(Theme::GetFont(9, true));
 	preview_panel_ = newd wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(Theme::Grid(80), Theme::Grid(80)), wxFULL_REPAINT_ON_RESIZE);
-	preview_panel_->SetCanFocus(false);
 	preview_panel_->SetName("terrain-preview-image");
+	preview_panel_->SetToolTip("Wheel or + and - zoom, drag or arrows pan, double click or 0 shows the whole area.");
 	preview_panel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
 	preview_panel_->SetMinSize(wxSize(Theme::Grid(60), Theme::Grid(60)));
 	preview_panel_->Bind(wxEVT_PAINT, &TerrainGeneratorDialog::OnPaintPreview, this);
+	for (const auto type : {wxEVT_MOUSEWHEEL, wxEVT_LEFT_DOWN, wxEVT_LEFT_UP, wxEVT_MOTION, wxEVT_LEFT_DCLICK, wxEVT_LEAVE_WINDOW})
+		preview_panel_->Bind(type, &TerrainGeneratorDialog::OnPreviewMouse, this);
+	preview_panel_->Bind(wxEVT_MOUSE_CAPTURE_LOST, [this](wxMouseCaptureLostEvent&) { drag_from_.reset(); });
+	preview_panel_->Bind(wxEVT_CHAR, &TerrainGeneratorDialog::OnPreviewKey, this);
+	for (const auto type : {wxEVT_SET_FOCUS, wxEVT_KILL_FOCUS})
+		preview_panel_->Bind(type, [this](wxFocusEvent& event) { preview_panel_->Refresh(); event.Skip(); });
+	preview_panel_->Bind(wxEVT_SIZE, [this](wxSizeEvent& event) { SyncView(); PrepareSprites(); event.Skip(); });
 
 	auto* right = newd wxBoxSizer(wxVERTICAL);
 	right->Add(caption, 0, wxBOTTOM, gap);
@@ -834,13 +979,35 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 	preview_floor_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
 		if (!prepared_) return;
 		if (!BuildPreviewBitmap()) { ReleasePreview(); SetStatus(memoryMessage, true); }
-		preview_panel_->Refresh();
+		UpdateViewLabel();
+		RefreshPreview();
 	});
 	right->Add(preview_floor_label_, 0, wxBOTTOM, gap);
 	right->Add(preview_floor_choice_, 0, wxEXPAND | wxBOTTOM, gap);
 	preview_floor_label_->Hide();
 	preview_floor_choice_->Hide();
 	right->Add(preview_panel_, 1, wxEXPAND);
+	preview_sprites_check_ = newd wxCheckBox(this, wxID_ANY, "Sp&rites when zoomed in");
+	preview_sprites_check_->SetName("terrain-preview-sprites");
+	preview_sprites_check_->SetValue(true);
+	preview_sprites_check_->SetToolTip("From 16 screen pixels per tile, draw the client's sprites (ground and items, first frame) instead of minimap colours.");
+	preview_sprites_check_->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent&) { RefreshPreview(); });
+	right->Add(preview_sprites_check_, 0, wxTOP, gap);
+	view_label_ = newd wxStaticText(this, wxID_ANY, wxEmptyString);
+	view_label_->SetName("terrain-preview-view");
+	view_label_->SetForegroundColour(Theme::Get(Theme::Role::TextSubtle));
+	right->Add(view_label_, 0, wxEXPAND | wxTOP, gap);
+	{
+		auto* compareRow = newd wxBoxSizer(wxHORIZONTAL);
+		compareRow->Add(label("Co&mpare with:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+		compare_choice_ = newd wxChoice(this, wxID_ANY);
+		compare_choice_->SetName("terrain-compare");
+		compare_choice_->Append("None");
+		compare_choice_->SetSelection(0);
+		compare_choice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) { UpdateViewLabel(); RefreshPreview(); });
+		compareRow->Add(compare_choice_, 1, wxEXPAND);
+		right->Add(compareRow, 0, wxEXPAND | wxTOP, gap);
+	}
     right->Add(label("Candidates: arrows select; Selected and Recommended are labelled."), 0, wxTOP, gap);
     candidate_list_ = newd wxListCtrl(this, wxID_ANY, wxDefaultPosition,
         wxSize(-1, Theme::Grid(28)), wxLC_REPORT | wxLC_SINGLE_SEL);
@@ -859,6 +1026,27 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
     candidate_progress_ = newd wxGauge(this, wxID_ANY, int(maxCandidateCount));
     candidate_progress_->SetName("terrain-candidate-progress");
     right->Add(candidate_progress_, 0, wxEXPAND | wxTOP, gap);
+    const auto reportList = [&](const char* name, const char* first, const char* second, int firstWidth, int secondWidth) {
+        auto* list = newd wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(-1, Theme::Grid(30)), wxLC_REPORT | wxLC_SINGLE_SEL);
+        list->SetName(name);
+        list->SetBackgroundColour(Theme::Get(Theme::Role::Background));
+        list->SetForegroundColour(Theme::Get(Theme::Role::Text));
+        list->InsertColumn(0, first, wxLIST_FORMAT_LEFT, Theme::Grid(firstWidth));
+        list->InsertColumn(1, second, wxLIST_FORMAT_LEFT, Theme::Grid(secondWidth));
+        return list;
+    };
+    auto* reports = newd wxBoxSizer(wxHORIZONTAL);
+    auto* statisticsColumn = newd wxBoxSizer(wxVERTICAL);
+    statisticsColumn->Add(label("Statistics of the Selected candidate:"), 0, wxBOTTOM, gap);
+    statistics_list_ = reportList("terrain-statistics", "Statistic", "Value", 36, 40);
+    statisticsColumn->Add(statistics_list_, 1, wxEXPAND);
+    auto* warningsColumn = newd wxBoxSizer(wxVERTICAL);
+    warningsColumn->Add(label("Warnings:"), 0, wxBOTTOM, gap);
+    warnings_list_ = reportList("terrain-warnings", "Severity", "Warning", 14, 80);
+    warningsColumn->Add(warnings_list_, 1, wxEXPAND);
+    reports->Add(statisticsColumn, 1, wxEXPAND | wxRIGHT, gap);
+    reports->Add(warningsColumn, 1, wxEXPAND);
+    right->Add(reports, 0, wxEXPAND | wxTOP, gap);
     right->Add(label("Feedback for Selected candidate (independent of Place):"), 0, wxTOP, gap);
     right->Add(label("Optional note (maximum 1024 UTF-8 bytes):"), 0, wxTOP, gap);
     feedback_note_ = newd wxTextCtrl(this, wxID_ANY);
@@ -940,6 +1128,7 @@ TerrainGeneratorDialog::TerrainGeneratorDialog(wxWindow* parent) :
 		for (size_t kind = 0; kind < rme::procedural::naturalKindCount; ++kind) default_brushes_[kind] = fields[kind]->GetValue();		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
 		for (size_t kind = 0; kind < std::size(decorFields); ++kind) default_decor_brushes_[kind] = decorFields[kind]->GetValue();
 	}
+	LoadPresets();
 	CentreOnParent();
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
         ReleasePreview(); // Stop and join owned workers before the window or map can disappear.
@@ -1010,6 +1199,43 @@ bool TerrainGeneratorDialog::NaturalSurface() const {
 
 // Offers the style profiles that were learned for exactly the loaded client and its assets. Read-only: the
 // folder is never created and a profile that does not match is not listed, only counted in the tooltip.
+void TerrainGeneratorDialog::LoadCopyIndices() {
+    const auto current = copy_index_text_->GetValue();
+    copy_index_choice_->Clear();
+    copy_index_files_.clear();
+    copy_index_choice_->Append("None");
+    if (const auto ids = loadedClientAssetIds())
+        copy_index_files_ = listCopyIndices(styleProfileDirectory(), ids->client, ids->otbSha256, ids->datSha256);
+    int selected = current.empty() ? 0 : -1;
+    for (size_t i = 0; i < copy_index_files_.size(); ++i) {
+        const auto& file = copy_index_files_[i];
+        copy_index_choice_->Append(wxstr(file.problem.empty()
+            ? std::format("{} ({} area{})", file.name, file.references, file.references == 1 ? "" : "s")
+            : std::format("{} - cannot be used: {}", file.name, file.problem)));
+        if (!current.empty() && std::filesystem::path(current.ToStdWstring()) == file.path) selected = int(i) + 1;
+    }
+    copy_index_choice_->Append("Other file...");
+    copy_index_choice_->SetSelection(selected >= 0 ? selected : int(copy_index_choice_->GetCount()) - 1);
+}
+void TerrainGeneratorDialog::OnCopyIndexChosen(wxCommandEvent& event) {
+    const int choice = copy_index_choice_->GetSelection();
+    if (choice == 0) copy_index_text_->SetValue(wxEmptyString);
+    else if (size_t(choice) <= copy_index_files_.size()) {
+        const auto& file = copy_index_files_[size_t(choice) - 1];
+        if (!file.problem.empty()) {
+            // Reloading replaces copy_index_files_, so the message is built first.
+            const wxString message = wxstr(std::format("Copy index \"{}\" cannot be used: {}.", file.name, file.problem));
+            LoadCopyIndices();
+            SetStatus(message, true);
+            return;
+        }
+        copy_index_text_->SetValue(wxString(file.path.wstring()));
+    } else {
+        copy_index_text_->SetFocus();
+        SetStatus("Type the path of a copy index file below.", false);
+    }
+    event.Skip();
+}
 void TerrainGeneratorDialog::LoadStyleProfiles() {
 	namespace rp = rme::procedural;
 	const auto folder = rp::styleProfileDirectory();
@@ -1043,6 +1269,43 @@ void TerrainGeneratorDialog::LoadStyleProfiles() {
 		}
 	}
 	profile_choice_->SetToolTip(hint);
+	ShowProfileDetails();
+}
+
+void TerrainGeneratorDialog::ShowProfileDetails() {
+	profile_details_->DeleteAllItems();
+	const auto row = [this](const std::string& item, const std::string& value) {
+		const long index = profile_details_->InsertItem(profile_details_->GetItemCount(), wxstr(item));
+		profile_details_->SetItem(index, 1, wxstr(value));
+	};
+	const int picked = profile_choice_->GetSelection();
+	if (picked <= 0 || size_t(picked) > profiles_.size()) {
+		row("Profile", "Built-in profile; not learned from a map");
+		return;
+	}
+	const auto& entry = profiles_[size_t(picked) - 1];
+	const auto& profile = entry.profile;
+	row("Profile", entry.name);
+	// Only profiles of the loaded client and its items.otb and Tibia.dat are offered (scanStyleProfiles).
+	row("Client", std::format("{}, items.otb {}, Tibia.dat {}: matches the loaded client",
+		profile.client, profile.otbSha256.substr(0, 8), profile.datSha256.substr(0, 8)));
+	row("References", std::format("{} (map names and positions are never stored)", profile.sources.size()));
+	for (size_t i = 0; i < profile.sources.size(); ++i)
+		row(std::format("Reference {}", i + 1), std::format("{}, weight {:.1f} %", profile.sources[i].alias, profile.sources[i].weightPermille / 10.0));
+	if (profile.target) {
+		static constexpr std::array<std::string_view, rme::procedural::naturalKindCount> kinds {"grass", "dirt", "rock", "shore", "water"};
+		std::string shares;
+		for (size_t k = 0; k < kinds.size(); ++k)
+			shares += std::format("{}{} {:.1f} %", k ? ", " : "", kinds[k], profile.target->sharesPpm[k] / 10000.0);
+		row("Ground shares", shares);
+	} else {
+		row("Ground shares", "not stored in this profile");
+	}
+	row("Ranking bands", profile.bands.empty() ? "none learned (reviewed g6-bands-v1 or first admissible)" :
+		std::format("{} learned from the samples", profile.bands.size()));
+	const auto used = [](const auto& mixes) { return std::ranges::count_if(mixes, [](const auto& mix) { return !mix.brush.empty(); }); };
+	row("Learned mixes", std::format("{} grass, {} tree, {} bush", used(profile.grassMix), used(profile.treeMix), used(profile.bushMix)));
+	profile_details_->SetColumnWidth(1, wxLIST_AUTOSIZE);
 }
 
 void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
@@ -1062,6 +1325,7 @@ void TerrainGeneratorDialog::OnInputChanged(wxCommandEvent& event) {
 // reported, never guessed. The fields stay editable; the vegetation check box is left as the user set it.
 void TerrainGeneratorDialog::OnProfileChosen(wxCommandEvent& event) {
 	OnInputChanged(event);
+	ShowProfileDetails();
 	wxComboBox* const groundFields[] = { grass_brush_choice_, dirt_brush_choice_, rock_brush_choice_, shore_brush_choice_, water_brush_choice_ };
 	wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
 	static_assert(std::size(groundFields) == rme::procedural::naturalKindCount);
@@ -1245,7 +1509,7 @@ void TerrainGeneratorDialog::OnFeedback(FeedbackAction action) try {
     f.adjustment = styleAdjustment(effective.surface);
     f.base=p ? (p->baseId.empty() ? styleIdentity(p->profile) : p->baseId) : "";
     f.version=p ? p->versionId : "";
-    f.policy=ranking_bands_.empty() ? "unranked/I54-v1" : "g6-bands-v1/A/I54-v1";
+    f.policy=ranking_bands_.empty() ? "unranked/I54-v1" : ranking_learned_ ? "learned-bands/A/I54-v1" : "g6-bands-v1/A/I54-v1";
     const auto& c=candidates_[*selected_candidate_];
     f.candidate=*selected_candidate_; f.userSeed=series_request_->config.seed;
     f.initialSeed=c.initialSeed; f.actualSeed=c.seed; f.fingerprints=c.fingerprints; f.hardFail=c.score.hardFail;
@@ -1266,19 +1530,24 @@ void TerrainGeneratorDialog::ReleasePreview() {
     candidates_.clear();
     selected_candidate_.reset(); recommended_candidate_.reset();
     candidate_list_->DeleteAllItems(); candidate_images_->RemoveAll();
+    compare_entries_.clear(); compare_reduced_ = false;
+    if (compare_choice_) { compare_choice_->Clear(); compare_choice_->Append("None"); compare_choice_->SetSelection(0); compare_choice_->Disable(); }
     candidate_progress_->SetValue(0);
+    statistics_list_->DeleteAllItems(); warnings_list_->DeleteAllItems();
 	preview_steps_.reset();
 	copy_index_.reset();
 	pending_request_.reset();
 	prepared_.reset();
 	selection_.reset();
 	preview_bitmap_ = wxNullBitmap;
+	sprite_cache_.clear();
+	UpdateViewLabel();
 	preview_floor_choice_->SetSelection(0);
 	preview_floor_choice_->Hide();
 	preview_floor_label_->Hide();
 	validate_button_->Disable();
 	place_button_->Disable();
-	preview_panel_->Refresh();
+	RefreshPreview();
 }
 
 void TerrainGeneratorDialog::UpdateControlStates() {
@@ -1301,6 +1570,8 @@ void TerrainGeneratorDialog::UpdateControlStates() {
     preview_floor_choice_->SetSelection(prior == wxNOT_FOUND ? 0 : prior);
     plateau_percent_spin_->Enable(natural);
     mountain_passes_spin_->Enable(natural);
+    secondary_biome_choice_->Enable(natural); // grass mixes exist only in Natural surface (I68)
+    secondary_share_spin_->Enable(natural && secondary_biome_choice_->GetSelection() > 0);
     plateau_levels_spin_->Enable(natural && plateau_percent_spin_->GetValue() > 0);
     for (auto* c : {plateau_ground_choice_, plateau_cliff_choice_, plateau_ramp_choice_}) {
         c->Enable(natural && plateau_percent_spin_->GetValue() > 0);
@@ -1322,6 +1593,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	repair_check_->Enable(natural);
     bridge_brush_choice_->Enable(natural && repair_check_->GetValue());
     retry_spin_->Enable(natural);
+    margin_spin_->Enable(natural);
 	path_brush_choice_->Enable(natural && (path_length_spin_->GetValue() > 0 || building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
 	floor_brush_choice_->Enable(natural && (building_density_spin_->GetValue() > 0 || camp_count_spin_->GetValue() > 0 || cave_entrances_spin_->GetValue() > 0));
     const bool caves = natural && cave_entrances_spin_->GetValue() > 0;
@@ -1380,6 +1652,7 @@ void TerrainGeneratorDialog::UpdateControlStates() {
 	place_button_->Enable(CandidateAllowed());
     candidate_count_spin_->Enable(natural);
     copy_index_text_->Enable(natural);
+    copy_index_choice_->Enable(natural);
     const bool feedback = natural && style_history_ && !collecting_ && !preview_steps_ && prepared_ && selected_candidate_ && *selected_candidate_ < candidates_.size();
     reject_button_->Enable(feedback);
     approve_button_->Enable(feedback && CandidateAllowed());
@@ -1525,6 +1798,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 
 	config.vegetation = natural && vegetation_check_->GetValue();
+	config.protectionMargin = natural ? uint32_t(margin_spin_->GetValue()) : 0;
 	if (config.vegetation) {
 		wxComboBox* const decorFields[] = { tree_brush_choice_, bush_brush_choice_, stone_brush_choice_ };
 		request.profile.decorCount = GroundProfile::decorationCount;
@@ -1539,6 +1813,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 	}
 
 	// Learned mixes of the chosen profile; a brush this client cannot place is left out, as for the palette.
+	bool learnedPatchStep = false;
 	if (const int picked = profile_choice_->GetSelection(); natural && picked > 0 && static_cast<size_t>(picked) <= profiles_.size()) {
 		const auto& profile = profiles_[static_cast<size_t>(picked) - 1].profile;
 		for (size_t i = 0, used = 0; i < profile.grassMix.size() && used < GroundProfile::grassMixCount; ++i) {
@@ -1558,7 +1833,7 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 			}
 			++used;
 		}
-		if (profile.grassPatchStep) request.profile.grassPatchStep = uint16_t(profile.grassPatchStep);
+		if (profile.grassPatchStep) { request.profile.grassPatchStep = uint16_t(profile.grassPatchStep); learnedPatchStep = true; }
 		const auto copyMix = [&](const auto& from, auto& names, auto& permille) {
 			for (size_t i = 0, used = 0; config.vegetation && i < from.size() && used < GroundProfile::treeMixCount; ++i) {
 				if (from[i].brush.empty() || !usableDecor(from[i].brush)) continue;
@@ -1635,6 +1910,49 @@ std::optional<TerrainGeneratorDialog::Request> TerrainGeneratorDialog::ReadReque
 		}
 	}
 
+	// I68: the secondary biome takes a free grass mix slot after the learned ones; its brushes must all be usable.
+	if (const int secondary = secondary_biome_choice_->GetSelection(); natural && secondary > 0 && secondary_share_spin_->GetValue() > 0) {
+		const auto& biome = rme::procedural::biomePresets().at(size_t(secondary) - 1);
+		const auto value = [&](std::string_view key) {
+			const auto found = biome.values.values.find(key);
+			return found == biome.values.values.end() ? std::string() : found->second;
+		};
+		const auto grass = value("terrain-grass-brush");
+		if (!rme::procedural::checkGroundBrush(grass)) {
+			SetStatus(wxstr(std::format("Secondary biome {}: the loaded client cannot place its ground brush \"{}\". Choose another biome.", biome.name, grass)), true);
+			secondary_biome_choice_->SetFocus();
+			return std::nullopt;
+		}
+		const auto slot = std::ranges::find_if(request.profile.grassMix, [](const std::string& name) { return name.empty(); });
+		uint32_t learned = 0;
+		for (const auto permille : request.profile.grassMixPermille) learned += permille;
+		const uint32_t share = uint32_t(secondary_share_spin_->GetValue()) * 10;
+		if (slot == request.profile.grassMix.end() || learned + share > 1000) {
+			SetStatus(wxstr(std::format("Secondary biome: the chosen style profile already mixes {}% of the grass; lower the secondary share to at most {}%.",
+				learned / 10, slot == request.profile.grassMix.end() ? 0 : (1000 - learned) / 10)), true);
+			secondary_share_spin_->SetFocus();
+			return std::nullopt;
+		}
+		const auto index = size_t(slot - request.profile.grassMix.begin());
+		request.profile.grassMix[index] = grass;
+		request.profile.grassMixPermille[index] = uint16_t(share);
+		if (config.vegetation) {
+			constexpr std::array<std::string_view, GroundProfile::decorationCount> keys {"terrain-tree-brush", "terrain-bush-brush", "terrain-stone-brush"};
+			for (size_t k = 0; k < keys.size(); ++k) {
+				const auto brush = value(keys[k]);
+				if (!rme::procedural::checkDecorBrush(brush)) {
+					SetStatus(wxstr(std::format("Secondary biome {}: the loaded client cannot place its vegetation brush \"{}\". Choose another biome.", biome.name, brush)), true);
+					secondary_biome_choice_->SetFocus();
+					return std::nullopt;
+				}
+				request.profile.grassMixDecor[index][k] = brush;
+				request.profile.grassMixDecorKeep[index][k] = 1000;
+			}
+		}
+		// Biome regions are larger than the learned grass patches, unless the profile set its own patch size.
+		if (!learnedPatchStep) request.profile.grassPatchStep = secondaryBiomePatchStep;
+	}
+
 	if (selection_) {
 		config.region = selection_->region;
 	} else {
@@ -1681,8 +1999,42 @@ Editor* TerrainGeneratorDialog::CurrentTarget() {
 	return editor;
 }
 
+std::optional<TerrainGeneratorDialog::CopyIndexStamp> TerrainGeneratorDialog::CurrentCopyIndex() const {
+    if (!NaturalSurface() || copy_index_text_->GetValue().empty()) return std::nullopt;
+    CopyIndexStamp stamp {copy_index_text_->GetValue().ToStdWstring()};
+    std::error_code error;
+    stamp.size = std::filesystem::file_size(stamp.path, error);
+    if (!error) stamp.written = std::filesystem::last_write_time(stamp.path, error);
+    if (error) stamp.size = 0;
+    return stamp;
+}
+
+std::pair<std::vector<CandidateBand>, bool> TerrainGeneratorDialog::ChosenBands() const {
+    const auto picked = profile_choice_->GetSelection();
+    if (!NaturalSurface() || picked <= 0 || size_t(picked) > profiles_.size()) return {};
+    const auto& profile = profiles_[size_t(picked) - 1].profile;
+    const auto bands = candidateBandsFor(profile);
+    return {std::vector<CandidateBand>(bands.begin(), bands.end()), !profile.bands.empty()};
+}
+
+// I65: a finished series is kept when nothing that decides its candidates has changed since it was generated.
+bool TerrainGeneratorDialog::SeriesReusable() {
+    if (!series_request_ || collecting_ || SelectionMode() || selection_ || candidates_.size() != candidate_count_ || !SeriesCurrent())
+        return false;
+    const auto count = NaturalSurface() ? uint32_t(candidate_count_spin_->GetValue()) : 1;
+    const auto request = ReadRequest();
+    return request && count == candidate_count_ && request->config == series_request_->config && request->profile == series_request_->profile &&
+        ChosenBands() == std::pair(ranking_bands_, ranking_learned_) && CurrentCopyIndex() == series_copy_index_;
+}
+
 void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
 	if (preview_steps_) return;
+    if (SeriesReusable()) {
+        SetStatus(wxstr(std::format("Settings, map and client unchanged: the series of {} candidate(s) is kept, nothing was generated. "
+            "Change a setting or the seed for a new series.", candidates_.size())), false);
+        UpdateControlStates();
+        return;
+    }
 	// At most one retained result or job.
 	ReleasePreview();
 	UpdateControlStates();
@@ -1716,10 +2068,8 @@ void TerrainGeneratorDialog::OnPreview(wxCommandEvent&) {
         series_revision_ = editor->map.getChangeTracker().getGeneration();
         series_assets_ = g_version.GetAssetRevision();
         candidate_count_ = NaturalSurface() ? uint32_t(candidate_count_spin_->GetValue()) : 1;
-        ranking_bands_ = {};
-        const auto picked = profile_choice_->GetSelection();
-        if (NaturalSurface() && picked > 0 && size_t(picked) <= profiles_.size())
-            ranking_bands_ = candidateBandsFor(profiles_[size_t(picked) - 1].profile);
+        std::tie(ranking_bands_, ranking_learned_) = ChosenBands();
+        series_copy_index_ = CurrentCopyIndex();
         const uint64_t imageBytes = uint64_t(request->config.region.width) * request->config.region.height * 7 + bitmapOverheadBytes;
         const auto available = candidateWorkingBudget(preparationBudget.maxBytes, candidate_count_,
             selection_ ? selection_->estimatedBytes : 0, imageBytes);
@@ -1814,6 +2164,9 @@ bool TerrainGeneratorDialog::StartCandidate(uint64_t seed) {
         ReleasePreview(); SetStatus(message + " Entire series refused; N was not reduced.", true); UpdateControlStates(); return false;
     }
     preview_steps_.emplace(std::move(*steps));
+    candidate_started_ = std::chrono::steady_clock::now();
+    preview_step_count_ = 0;
+    preview_longest_step_ = {};
     SetStatus(wxstr(std::format("{} candidate {}/{}; seed {}, initial {}, attempt {}. Cancel stops the whole series.",
         collecting_ ? "Generating" : "Loading", collecting_ ? candidates_.size() + 1 : *selected_candidate_ + 1,
         candidate_count_, seed, preview_first_seed_, preview_attempt_)), false);
@@ -1839,7 +2192,8 @@ void TerrainGeneratorDialog::SelectCandidate(uint32_t index) {
     prepared_.reset();
     selected_candidate_ = index;
     preview_bitmap_ = candidates_[index].thumbnail;
-    preview_panel_->Refresh();
+    RefreshCompareChoice();
+    RefreshPreview();
     UpdateCandidateLabels();
     preview_attempt_ = candidates_[index].attempts;
     preview_first_seed_ = candidates_[index].initialSeed;
@@ -1859,7 +2213,10 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
     }
     if (!preview_steps_) { preview_timer_.StartOnce(100); return; }
     try {
+        const auto stepStarted = std::chrono::steady_clock::now();
         auto outcome = preview_steps_->advance();
+        ++preview_step_count_;
+        preview_longest_step_ = std::max(preview_longest_step_, std::chrono::steady_clock::now() - stepStarted);
         if (!outcome) { SchedulePreviewTick(); return; }
         preview_steps_.reset();
         auto request = std::move(pending_request_);
@@ -1886,75 +2243,42 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         if (!target) {
             ReleasePreview(); UpdateControlStates(); SetStatus(describe(target.error()), true); return;
         }
-        const bool hardFail = result->copyAssessment.hardFail() ||
-            (result->levels && candidateHardFail(true, result->levels->plan, result->levels->report, result->levels->repair,
-                {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}));
+        // A profile without learned out-of-reach shares keeps the rule from before they were learned: every place and
+        // floor transition reached, single cells not counted.
+        const bool learnedReach = request->profile.unreachedCapPermille || request->profile.unreachedWalkPermille;
+        const bool hardFail = result->copyAssessment.hardFail() || (result->levels && (learnedReach ?
+            candidateHardFail(true, result->levels->plan, result->levels->report, result->levels->repair,
+                {request->profile.unreachedCapPermille, request->profile.unreachedWalkPermille}) :
+            candidateHardFail(true, result->levels->report, result->levels->repair)));
         const auto fingerprints = candidateFingerprints(*result);
         if (!collecting_) {
             const auto& row = candidates_[*selected_candidate_];
             if (hardFail != row.score.hardFail || fingerprints != row.fingerprints || result->copyAssessment != row.copyAssessment) {
                 ReleasePreview(); UpdateControlStates(); SetStatus("Candidate rebuild differs from the validated gallery. Generate a new series.", true); return;
             }
+            spdlog::info("Terrain generator: Selected #{} rebuilt in {} GUI-thread steps, longest {} ms.", *selected_candidate_, preview_step_count_,
+                std::chrono::duration_cast<std::chrono::milliseconds>(preview_longest_step_).count());
             prepared_ = std::move(*result);
             if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
             UpdateControlStates();
-            auto message = std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {}",
+            const auto [blocking, other] = ShowReport(*request, row);
+            SetStatus(wxstr(std::format("Selected #{}; seed {}, initial {}, {} attempt(s). {}. {} Similarity: {}. {} blocking and {} other warning(s); see Warnings.",
                 *selected_candidate_, row.seed, row.initialSeed, row.attempts,
                 hardFail ? "hardFail; Place blocked" : "Validated; Place writes this preview as one Undo",
-                ranking_bands_.empty() ? "No ranking policy; default is first admissible." : "A / g6-bands-v1 baseline; quality gate I51 failed.");
-            message += std::format(" Similarity: {}. Windows {}/{} after/before filter; M06 shared {} ({} per mille), M19 shared {} ({} per mille).",
-                copyStateName(row.copyAssessment.state), row.copyAssessment.after, row.copyAssessment.before,
-                row.copyAssessment.shared[0], row.copyAssessment.permille[0], row.copyAssessment.shared[1], row.copyAssessment.permille[1]);
-            if (prepared_->levels) {
-                const auto& levels = *prepared_->levels;
-                uint64_t reached = 0, total = 0;
-                for (const auto& category : levels.report.categories) { reached += category.reached; total += category.total; }
-                message += std::format(" Reachable: {}/{} places. Repairs: {}, bridges: {}, removed caps: {}, removed places: {}.",
-                    reached, total, levels.repair.repairs, levels.repair.bridges, levels.repair.removedCaps, levels.repair.removedPois);
-                // Where the hardFail comes from: the first places that cannot be walked to, and closed-off pockets.
-                static constexpr const char* poiNames[] {"door", "site", "cave entrance", "cave exit", "cap", "cave cell", "storey", "dungeon"};
-                static_assert(std::size(poiNames) == rme::procedural::levelPoiKindCount);
-                for (size_t k = 0; k < std::min<size_t>(levels.report.firstUnreachable.size(), 5); ++k) {
-                    const auto& place = levels.report.firstUnreachable[k];
-                    message += std::format("{} {} at {},{},{}", k ? "," : " Unreachable:", poiNames[size_t(place.kind)], place.x, place.y, place.z);
-                }
-                if (!levels.report.firstUnreachable.empty()) message += ".";
-                // Per kind of place, how many are out of reach; and the floor transitions one cannot walk.
-                bool listed = false;
-                for (size_t k = 0; k < levels.report.categories.size(); ++k) {
-                    const auto& category = levels.report.categories[k];
-                    if (category.reached == category.total) continue;
-                    message += std::format("{} {} {}/{}", listed ? "," : " Out of reach:", poiNames[k], category.total - category.reached, category.total);
-                    listed = true;
-                }
-                if (listed) message += ".";
-                if (levels.report.walkableEdges != levels.report.edges)
-                    message += std::format(" Unwalkable floor transitions: {}/{}.", levels.report.edges - levels.report.walkableEdges, levels.report.edges);
-                if (levels.repair.unrepaired) message += " Repair gave up.";
-                // Walkable cells out of reach on the ground floor (with the caves) and above it, against what the
-                // reference allows (candidateHardFail).
-                const size_t cells = size_t(levels.plan.region.width) * levels.plan.region.height;
-                if (cells && levels.report.walkable.size() == cells * levels.plan.floors.size() &&
-                    levels.report.reached.size() == levels.report.walkable.size()) {
-                    std::array<uint64_t, 2> walkable {}, out {};
-                    for (size_t i = 0; i < levels.report.walkable.size(); ++i) {
-                        const size_t upper = levels.plan.floors[i / cells].z < levels.plan.region.z;
-                        walkable[upper] += levels.report.walkable[i] != 0;
-                        out[upper] += levels.report.walkable[i] && !levels.report.reached[i];
-                    }
-                    message += std::format(" Cells out of reach: ground {}/{} (allowed {} per mille), above {}/{} (allowed {} per mille).",
-                        out[0], walkable[0], request->profile.unreachedWalkPermille, out[1], walkable[1],
-                        request->profile.unreachedCapPermille);
-                }
-                if (!levels.report.pockets.empty()) message += std::format(" Closed pockets: {}.", levels.report.pockets.size());
-            }
-            SetStatus(wxstr(message), hardFail);
-            preview_panel_->Refresh(); preview_timer_.StartOnce(100); return;
+                ranking_bands_.empty() ? "No ranking policy; default is first admissible." :
+                ranking_learned_ ? "A / bands learned from the profile's samples (paths and buildings not ranked); quality not validated." :
+                "A / g6-bands-v1 baseline; quality gate I51 failed.",
+                copyStateName(row.copyAssessment.state), blocking, other)), hardFail);
+            RefreshPreview(); preview_timer_.StartOnce(100); return;
         }
         Candidate row;
         row.copyAssessment = result->copyAssessment;
         row.initialSeed = preview_first_seed_; row.seed = request->config.seed; row.attempts = preview_attempt_;
         row.fingerprints = fingerprints;
+        row.elapsedMs = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - candidate_started_).count());
+        row.longestStepMs = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(preview_longest_step_).count());
+        spdlog::info("Terrain generator: candidate #{} prepared in {} GUI-thread steps, longest {} ms, total {} ms.", candidates_.size(),
+            preview_step_count_, row.longestStepMs, row.elapsedMs);
         row.score = {hardFail, 0, 0, uint32_t(candidates_.size())};
         if (!ranking_bands_.empty()) {
             if (!result->candidateMetrics) { ReleasePreview(); UpdateControlStates(); SetStatus("Candidate measurement missing. Entire series refused.", true); return; }
@@ -1967,6 +2291,19 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         if (!BuildPreviewBitmap()) { ReleasePreview(); UpdateControlStates(); SetStatus(memoryMessage, true); return; }
         const int thumb = std::min(128, Theme::Grid(12));
         row.thumbnail = wxBitmap(preview_bitmap_.ConvertToImage().Scale(thumb, thumb, wxIMAGE_QUALITY_NORMAL));
+        {
+            // The series keeps at most 64 MiB of comparison images (4 bytes per pixel); larger ones are reduced.
+            constexpr double keptBytes = 64.0 * 1024 * 1024;
+            const double share = keptBytes / std::max<uint32_t>(candidate_count_, 1);
+            const double bytes = 4.0 * preview_bitmap_.GetWidth() * preview_bitmap_.GetHeight();
+            if (bytes <= share) row.surface = preview_bitmap_;
+            else {
+                const double factor = std::sqrt(share / bytes);
+                row.surface = wxBitmap(preview_bitmap_.ConvertToImage().Scale(std::max(1, int(preview_bitmap_.GetWidth() * factor)),
+                    std::max(1, int(preview_bitmap_.GetHeight() * factor)), wxIMAGE_QUALITY_NORMAL));
+                compare_reduced_ = true;
+            }
+        }
         const auto index = long(candidates_.size());
         const int image = candidate_images_->Add(row.thumbnail);
         candidate_list_->InsertItem(index, wxstr(std::format("#{}", index)), image);
@@ -1985,6 +2322,8 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
         std::array<CandidateScore, maxCandidateCount> scores;
         for (size_t i = 0; i < candidates_.size(); ++i) scores[i] = candidates_[i].score;
         recommended_candidate_ = recommendedCandidate(std::span(scores).first(candidates_.size()), !ranking_bands_.empty());
+        selected_candidate_ = recommended_candidate_.value_or(0);
+        RefreshCompareChoice();
         const uint32_t initial = recommended_candidate_.value_or(0);
         updating_candidates_ = true;
         candidate_list_->SetItemState(long(initial), wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
@@ -1997,7 +2336,257 @@ void TerrainGeneratorDialog::OnPreviewTick(wxTimerEvent&) {
     }
 }
 
-bool TerrainGeneratorDialog::BuildPreviewBitmap() {
+namespace {
+std::filesystem::path presetDirectory() { return rme::procedural::styleProfileDirectory() / "presets"; }
+// Inputs a preset never holds: the area position belongs to the map, the copy check to a local file.
+bool presetExcluded(std::string_view name) {
+    // The biome is an action that fills other settings, not a setting of its own (I64).
+    return name == "terrain-scope" || name == "terrain-x" || name == "terrain-y" || name == "terrain-z" ||
+        name == "terrain-copy-index-choice" || name == "terrain-copy-index" || name == "terrain-biome";
+}
+std::string presetValueOf(const wxWindow& control) {
+    if (const auto* spin = dynamic_cast<const wxSpinCtrl*>(&control)) return std::to_string(spin->GetValue());
+    if (const auto* check = dynamic_cast<const wxCheckBox*>(&control)) return check->GetValue() ? "1" : "0";
+    // wxMSW derives wxComboBox from wxChoice: test the combo box first.
+    if (const auto* combo = dynamic_cast<const wxComboBox*>(&control)) return combo->GetValue().utf8_string();
+    if (const auto* choice = dynamic_cast<const wxChoice*>(&control)) return choice->GetStringSelection().utf8_string();
+    if (const auto* field = dynamic_cast<const wxTextCtrl*>(&control)) return field->GetValue().utf8_string();
+    return {};
+}
+// Sets one input as the user would, with the event its handlers listen to; a refusal names the reason.
+std::optional<std::string> applyPresetValue(wxWindow& control, const std::string& value) {
+    const auto send = [&](wxCommandEvent&& event) { event.SetEventObject(&control); control.GetEventHandler()->ProcessEvent(event); };
+    const auto name = control.GetName().utf8_string();
+    if (auto* spin = dynamic_cast<wxSpinCtrl*>(&control)) {
+        int number = 0;
+        const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), number);
+        if (error != std::errc() || end != value.data() + value.size() || number < spin->GetMin() || number > spin->GetMax())
+            return std::format("{} = \"{}\" is not a number from {} to {}", name, value, spin->GetMin(), spin->GetMax());
+        spin->SetValue(number);
+        wxSpinEvent event(wxEVT_SPINCTRL, spin->GetId()); event.SetPosition(number); send(std::move(event));
+    } else if (auto* check = dynamic_cast<wxCheckBox*>(&control)) {
+        if (value != "0" && value != "1") return std::format("{} = \"{}\" is not 0 or 1", name, value);
+        check->SetValue(value == "1");
+        wxCommandEvent event(wxEVT_CHECKBOX, check->GetId()); event.SetInt(value == "1"); send(std::move(event));
+    } else if (auto* combo = dynamic_cast<wxComboBox*>(&control)) { // before wxChoice, its base on wxMSW
+        if (!value.empty() && !g_brushes.getBrush(value)) return std::format("{}: brush \"{}\" is not available in the loaded client", name, value);
+        combo->Clear();
+        if (!value.empty()) { combo->Append(wxString::FromUTF8(value)); combo->SetSelection(0); }
+        wxCommandEvent event(wxEVT_COMBOBOX, combo->GetId()); event.SetInt(value.empty() ? -1 : 0); event.SetString(combo->GetValue()); send(std::move(event));
+    } else if (auto* choice = dynamic_cast<wxChoice*>(&control)) {
+        const int index = choice->FindString(wxString::FromUTF8(value), true);
+        if (index == wxNOT_FOUND) return std::format("{} has no entry \"{}\"", name, value);
+        choice->SetSelection(index);
+        wxCommandEvent event(wxEVT_CHOICE, choice->GetId()); event.SetInt(index); event.SetString(choice->GetString(index)); send(std::move(event));
+    } else if (auto* field = dynamic_cast<wxTextCtrl*>(&control)) {
+        field->SetValue(wxString::FromUTF8(value)); // sends wxEVT_TEXT
+    } else {
+        return std::format("{} cannot be set", name);
+    }
+    return std::nullopt;
+}
+} // namespace
+
+std::vector<wxWindow*> TerrainGeneratorDialog::PresetControls() const {
+    std::vector<wxWindow*> controls;
+    const auto visit = [&](const auto& self, const wxWindow& parent) -> void {
+        for (wxWindow* child : parent.GetChildren()) {
+            const auto name = child->GetName().utf8_string();
+            const bool input = dynamic_cast<wxSpinCtrl*>(child) || dynamic_cast<wxCheckBox*>(child) || dynamic_cast<wxChoice*>(child) ||
+                dynamic_cast<wxComboBox*>(child) || dynamic_cast<wxTextCtrl*>(child);
+            if (input && rme::procedural::validPresetKey(name) && !presetExcluded(name)) controls.push_back(child);
+            else if (!input) self(self, *child);
+        }
+    };
+    visit(visit, *sections_);
+    return controls;
+}
+
+rme::procedural::TerrainPreset TerrainGeneratorDialog::CollectPreset() const {
+    rme::procedural::TerrainPreset preset;
+    for (const wxWindow* control : PresetControls()) preset.values[control->GetName().utf8_string()] = presetValueOf(*control);
+    return preset;
+}
+
+std::optional<std::string> TerrainGeneratorDialog::ApplyPreset(const rme::procedural::TerrainPreset& preset) {
+    const auto controls = PresetControls();
+    for (const auto& [key, value] : preset.values) {
+        if (std::ranges::none_of(controls, [&](const wxWindow* control) { return control->GetName().utf8_string() == key; }))
+            return std::format("{} is not a setting of this generator", key);
+    }
+    const auto previous = CollectPreset();
+    // A choice can reset later inputs (a profile sets its brushes), so repeat until every value holds.
+    const auto settle = [&](const rme::procedural::TerrainPreset& target) -> std::optional<std::string> {
+        for (int pass = 0; pass < 3; ++pass) {
+            bool changed = false;
+            for (wxWindow* control : controls) {
+                const auto found = target.values.find(control->GetName().utf8_string());
+                if (found == target.values.end() || presetValueOf(*control) == found->second) continue;
+                if (auto refused = applyPresetValue(*control, found->second)) return refused;
+                changed = true;
+            }
+            if (!changed) return std::nullopt;
+        }
+        for (const wxWindow* control : controls) {
+            const auto found = target.values.find(control->GetName().utf8_string());
+            if (found != target.values.end() && presetValueOf(*control) != found->second)
+                return std::format("{} does not keep \"{}\"", found->first, found->second);
+        }
+        return std::nullopt;
+    };
+    auto refused = settle(preset);
+    if (refused) static_cast<void>(settle(previous));
+    return refused;
+}
+
+void TerrainGeneratorDialog::LoadPresets(const wxString& select) {
+    preset_choice_->Clear();
+    preset_choice_->Append("(none)");
+    for (const auto& name : rme::procedural::listTerrainPresets(presetDirectory())) preset_choice_->Append(wxstr(name));
+    const int index = select.empty() ? wxNOT_FOUND : preset_choice_->FindString(select, true);
+    preset_choice_->SetSelection(index == wxNOT_FOUND ? 0 : index);
+}
+
+bool TerrainGeneratorDialog::Confirm(const wxString& question) {
+    // A wx dialog rather than the native message box, so it follows the dialog's keyboard handling and can be tested.
+    wxGenericMessageDialog dialog(this, question, "Terrain generator", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+    dialog.SetName("terrain-confirm");
+    return dialog.ShowModal() == wxID_YES;
+}
+
+void TerrainGeneratorDialog::OnPresetChosen(wxCommandEvent&) {
+    const int index = preset_choice_->GetSelection();
+    if (index <= 0) return;
+    const auto name = preset_choice_->GetString(index);
+    auto preset = rme::procedural::readTerrainPreset(presetDirectory() / (name.utf8_string() + std::string(rme::procedural::terrainPresetExtension)));
+    // Presets saved before I68 have no secondary biome: they load with none.
+    if (preset) {
+        preset->values.try_emplace("terrain-secondary-biome", "None");
+        preset->values.try_emplace("terrain-secondary-share", "30");
+    }
+    if (!preset) {
+        preset_choice_->SetSelection(0);
+        SetStatus(wxstr(std::format("Preset \"{}\" not loaded: {}.", name.utf8_string(), rme::procedural::presetErrorText(preset.error()))), true);
+        return;
+    }
+    if (const auto refused = ApplyPreset(*preset)) {
+        preset_choice_->SetSelection(0);
+        SetStatus(wxstr(std::format("Preset \"{}\" not loaded; settings unchanged. {}.", name.utf8_string(), *refused)), true);
+        return;
+    }
+    preset_name_text_->ChangeValue(name);
+    biome_choice_->SetSelection(0);
+    SetStatus(wxstr(std::format("Preset \"{}\" loaded. Press Preview to generate.", name.utf8_string())), false);
+}
+
+void TerrainGeneratorDialog::OnBiomeChosen(wxCommandEvent&) {
+    const int index = biome_choice_->GetSelection();
+    const auto& biomes = rme::procedural::biomePresets();
+    if (index <= 0 || size_t(index) > biomes.size()) return;
+    const auto& biome = biomes[size_t(index) - 1];
+    // Keep only brushes the loaded client can use; the rest stay as they are.
+    rme::procedural::TerrainPreset available;
+    std::vector<std::string> missing;
+    for (const auto& [key, value] : biome.values.values) {
+        const bool brush = key.ends_with("-brush");
+        const bool vegetation = key == "terrain-tree-brush" || key == "terrain-bush-brush" || key == "terrain-stone-brush";
+        // Every item the brush can place must exist in the loaded client, as the resolver demands.
+        const bool usable = !brush || (vegetation ? rme::procedural::checkDecorBrush(value).has_value() :
+            rme::procedural::checkGroundBrush(value).has_value());
+        if (!usable) {
+            missing.push_back(value);
+            continue;
+        }
+        available.values.emplace(key, value);
+    }
+    if (const auto refused = ApplyPreset(available)) {
+        biome_choice_->SetSelection(0);
+        SetStatus(wxstr(std::format("Biome {} not applied; settings unchanged. {}.", biome.name, *refused)), true);
+        return;
+    }
+    std::string text = std::format("Biome {} applied to the Terrain and Decoration tabs. Press Preview to generate.", biome.name);
+    if (!missing.empty()) {
+        text += " Not in the loaded client, left unchanged:";
+        for (size_t i = 0; i < missing.size(); ++i) text += std::format("{} {}", i == 0 ? "" : ",", missing[i]);
+        text += ".";
+    }
+    SetStatus(wxstr(text), false);
+}
+
+void TerrainGeneratorDialog::OnPresetSave(wxCommandEvent&) {
+    const auto name = preset_name_text_->GetValue().utf8_string();
+    const auto preset = CollectPreset();
+    auto saved = rme::procedural::saveTerrainPreset(presetDirectory(), name, preset, false);
+    if (!saved && saved.error() == rme::procedural::PresetSaveError::Exists) {
+        if (!Confirm(wxstr(std::format("Replace the preset \"{}\"?", name)))) { SetStatus("Preset not saved.", false); return; }
+        saved = rme::procedural::saveTerrainPreset(presetDirectory(), name, preset, true);
+    }
+    if (!saved) { SetStatus(wxstr(rme::procedural::presetSaveErrorText(saved.error())), true); return; }
+    LoadPresets(wxstr(name));
+    SetStatus(wxstr(std::format("Preset \"{}\" saved with {} settings.", name, preset.values.size())), false);
+}
+
+void TerrainGeneratorDialog::OnPresetDelete(wxCommandEvent&) {
+    const int index = preset_choice_->GetSelection();
+    if (index <= 0) { SetStatus("Choose a preset to delete.", true); return; }
+    const auto name = preset_choice_->GetString(index).utf8_string();
+    if (!Confirm(wxstr(std::format("Delete the preset \"{}\"?", name)))) return;
+    if (!rme::procedural::deleteTerrainPreset(presetDirectory(), name)) { SetStatus("Cannot delete the preset.", true); return; }
+    LoadPresets();
+    SetStatus(wxstr(std::format("Preset \"{}\" deleted.", name)), false);
+}
+
+void TerrainGeneratorDialog::OnRandomSeed(wxCommandEvent&) {
+    std::random_device device;
+    const uint64_t seed = (uint64_t(device()) << 32) | device();
+    seed_text_->SetValue(wxstr(std::to_string(seed))); // the edit releases the preview like any other input
+}
+
+std::pair<size_t, size_t> TerrainGeneratorDialog::ShowReport(const Request& request, const Candidate& row) {
+    TerrainReportInput input;
+    const auto& region = prepared_->snapshot.input.config.region;
+    input.width = region.width; input.height = region.height;
+    input.surfaceCells = prepared_->surfaceCells;
+    input.preserved = prepared_->preserved;
+    if (prepared_->levels) {
+        input.plan = &prepared_->levels->plan;
+        input.reach = &prepared_->levels->report;
+        input.repair = &prepared_->levels->repair;
+    }
+    // The same rule as the hardFail decision in OnPreviewTick.
+    if (request.profile.unreachedCapPermille || request.profile.unreachedWalkPermille)
+        input.tolerance = ReachTolerance {request.profile.unreachedCapPermille, request.profile.unreachedWalkPermille};
+    std::vector<std::string> aliases;
+    if (copy_index_) {
+        input.copy = &prepared_->copyAssessment;
+        for (const auto& reference : copy_index_->references) aliases.push_back(reference.alias);
+        input.aliases = aliases;
+    }
+    input.memoryBytes = prepared_->memory.totalBytes;
+    input.memoryBudget = working_bytes_;
+    input.elapsedMs = row.elapsedMs;
+    input.longestStepMs = row.longestStepMs;
+    const auto report = terrainReportOf(input);
+    statistics_list_->Freeze(); warnings_list_->Freeze();
+    statistics_list_->DeleteAllItems(); warnings_list_->DeleteAllItems();
+    for (const auto& [name, value] : report.rows) {
+        const long item = statistics_list_->InsertItem(statistics_list_->GetItemCount(), wxstr(name));
+        statistics_list_->SetItem(item, 1, wxstr(value));
+    }
+    // Blocking first, in the order the report gives them.
+    for (const bool blocking : {true, false})
+        for (const auto& warning : report.warnings) {
+            if (warning.blocking != blocking) continue;
+            const long item = warnings_list_->InsertItem(warnings_list_->GetItemCount(), blocking ? "Blocking" : "Warning");
+            warnings_list_->SetItem(item, 1, wxstr(warning.text));
+        }
+    if (report.warnings.empty()) warnings_list_->SetItem(warnings_list_->InsertItem(0, "None"), 1, "No warnings");
+    statistics_list_->Thaw(); warnings_list_->Thaw();
+    const auto blocking = size_t(std::ranges::count_if(report.warnings, [](const TerrainWarning& w) { return w.blocking; }));
+    return {blocking, report.warnings.size() - blocking};
+}
+
+const PreparedTerrain& TerrainGeneratorDialog::ShownUnit() const {
     const auto* selected = &*prepared_;
     const int floor = preview_floor_choice_->GetSelection();
     if (floor == 1 && prepared_->cave) {
@@ -2008,11 +2597,19 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
             selected = selected->plateau.get();
         }
     }
-    const auto& unit = *selected;
-    const auto& snapshot = unit.snapshot;
-	const auto& region = snapshot.input.config.region;
-	const auto& context = snapshot.context;
-	const BaseMap& buffer = unit.preview.getBuffer();
+    return *selected;
+}
+
+const Tile* TerrainGeneratorDialog::ShownTile(const PreparedTerrain& unit, const Position& position) {
+    if (const Tile* tile = unit.preview.getBuffer().getTile(position)) return tile;
+    const auto& context = unit.snapshot.context;
+    const size_t index = size_t(position.y - context.y) * context.width + size_t(position.x - context.x);
+    return unit.snapshot.cells[index].original.get();
+}
+
+bool TerrainGeneratorDialog::BuildPreviewBitmap() {
+    const auto& unit = ShownUnit();
+	const auto& region = unit.snapshot.input.config.region;
 	const wxColour empty = Theme::Get(Theme::Role::Background);
 
 	wxImage image(int(region.width), int(region.height), false);
@@ -2023,12 +2620,7 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
 	for (uint32_t row = 0; row < region.height; ++row) {
 		for (uint32_t column = 0; column < region.width; ++column) {
 			const Position position(region.x + int(column), region.y + int(row), region.z);
-			// Concrete preview tile where something changes, otherwise the captured original.
-			const Tile* tile = buffer.getTile(position);
-			if (!tile) {
-				const size_t index = size_t(position.y - context.y) * context.width + size_t(position.x - context.x);
-				tile = snapshot.cells[index].original.get();
-			}
+			const Tile* tile = ShownTile(unit, position);
 			uint8_t r = empty.Red(), g = empty.Green(), b = empty.Blue();
 			if (tile) {
 				TileColorCalculator::GetMinimapColor(tile, r, g, b);
@@ -2039,6 +2631,7 @@ bool TerrainGeneratorDialog::BuildPreviewBitmap() {
 		}
 	}
 	preview_bitmap_ = wxBitmap(image);
+	UpdateViewLabel();
 	return preview_bitmap_.IsOk();
 }
 
@@ -2128,6 +2721,228 @@ void TerrainGeneratorDialog::OnPlace(wxCommandEvent&) {
 	EndModal(wxID_OK);
 }
 
+rme::procedural::PreviewArea TerrainGeneratorDialog::PreviewAreaSize() const {
+    if (prepared_) {
+        const auto& region = prepared_->snapshot.input.config.region;
+        return {region.width, region.height};
+    }
+    if (series_request_) return {series_request_->config.region.width, series_request_->config.region.height};
+    if (preview_bitmap_.IsOk()) return {uint32_t(preview_bitmap_.GetWidth()), uint32_t(preview_bitmap_.GetHeight())};
+    return {};
+}
+
+std::optional<uint32_t> TerrainGeneratorDialog::ComparedCandidate() const {
+    const int entry = compare_choice_->GetSelection();
+    // The comparison shows Surface images, so it is off while a lower or upper floor is shown.
+    if (entry <= 0 || size_t(entry) > compare_entries_.size() || preview_floor_choice_->GetSelection() > 0) return std::nullopt;
+    const uint32_t index = compare_entries_[size_t(entry) - 1];
+    if (index >= candidates_.size() || !candidates_[index].surface.IsOk()) return std::nullopt;
+    return index;
+}
+
+std::vector<wxRect> TerrainGeneratorDialog::PreviewPanes() const {
+    const wxSize size = preview_panel_->GetClientSize();
+    const int inset = Theme::Grid(1);
+    const wxRect all(inset, inset, std::max(1, size.GetWidth() - 2 * inset), std::max(1, size.GetHeight() - 2 * inset));
+    if (!ComparedCandidate()) return {all};
+    const int gap = Theme::Grid(2);
+    const int half = std::max(1, (all.GetWidth() - gap) / 2);
+    return {wxRect(all.GetX(), all.GetY(), half, all.GetHeight()), wxRect(all.GetX() + half + gap, all.GetY(), half, all.GetHeight())};
+}
+
+std::optional<size_t> TerrainGeneratorDialog::PaneAt(wxPoint point) const {
+    const auto panes = PreviewPanes();
+    for (size_t i = 0; i < panes.size(); ++i) if (panes[i].Contains(point)) return i;
+    return std::nullopt;
+}
+
+void TerrainGeneratorDialog::SyncView() {
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    if (area.width != view_area_.width || area.height != view_area_.height) { view_ = rme::procedural::previewFit(area); view_area_ = area; }
+    view_ = rme::procedural::previewClamp(view_, area, pane);
+}
+
+void TerrainGeneratorDialog::UpdateViewLabel() {
+    if (!view_label_ || !compare_choice_) return;
+    SyncView();
+    if (!preview_bitmap_.IsOk()) { view_label_->SetLabel(wxEmptyString); return; }
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    const auto rect = rme::procedural::previewVisibleCells(view_, area, pane);
+    int x0 = 0, y0 = 0;
+    if (series_request_) { x0 = series_request_->config.region.x; y0 = series_request_->config.region.y; }
+    std::string text = std::format("Zoom {}x; cells {}-{}, {}-{} of {} x {} (map {},{} to {},{}).", 1u << view_.level,
+        rect.x0, rect.x1 - 1, rect.y0, rect.y1 - 1, area.width, area.height, x0 + int(rect.x0), y0 + int(rect.y0),
+        x0 + int(rect.x1) - 1, y0 + int(rect.y1) - 1);
+    if (hovered_cell_) text += std::format(" Under the cursor: {},{}.", x0 + int(hovered_cell_->x), y0 + int(hovered_cell_->y));
+    if (const auto compared = ComparedCandidate())
+        text += std::format(" Comparing #{} (left, Selected) with #{} (right){}.", selected_candidate_.value_or(0), *compared,
+            compare_reduced_ ? "; images reduced to fit 64 MiB" : "");
+    view_label_->SetLabel(wxstr(text));
+}
+
+void TerrainGeneratorDialog::RefreshCompareChoice() {
+    std::optional<uint32_t> kept;
+    if (const int entry = compare_choice_->GetSelection(); entry > 0 && size_t(entry) <= compare_entries_.size()) kept = compare_entries_[size_t(entry) - 1];
+    compare_entries_.clear();
+    compare_choice_->Clear();
+    compare_choice_->Append("None");
+    int select = 0;
+    if (!collecting_)
+        for (uint32_t i = 0; i < candidates_.size(); ++i) {
+            if (selected_candidate_ == i) continue;
+            compare_entries_.push_back(i);
+            compare_choice_->Append(wxstr(std::format("#{}", i)));
+            if (kept == i) select = int(compare_entries_.size());
+        }
+    compare_choice_->SetSelection(select);
+    compare_choice_->Enable(!compare_entries_.empty());
+    UpdateViewLabel();
+}
+
+void TerrainGeneratorDialog::OnPreviewMouse(wxMouseEvent& event) {
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const auto paneIndex = PaneAt(event.GetPosition());
+    const wxRect paneRect = panes[paneIndex.value_or(0)];
+    const rme::procedural::PreviewPane pane {double(paneRect.GetWidth()), double(paneRect.GetHeight())};
+    const double x = event.GetX() - paneRect.GetX(), y = event.GetY() - paneRect.GetY();
+    const auto type = event.GetEventType();
+    if (type == wxEVT_LEFT_DOWN) {
+        preview_panel_->SetFocus();
+        drag_from_ = event.GetPosition();
+        if (!preview_panel_->HasCapture()) preview_panel_->CaptureMouse();
+    } else if (type == wxEVT_LEFT_UP) {
+        drag_from_.reset();
+        if (preview_panel_->HasCapture()) preview_panel_->ReleaseMouse();
+    } else if (type == wxEVT_MOTION && drag_from_ && event.LeftIsDown()) {
+        const wxPoint delta = event.GetPosition() - *drag_from_;
+        drag_from_ = event.GetPosition();
+        view_ = rme::procedural::previewPan(view_, area, pane, delta.x, delta.y);
+    } else if (type == wxEVT_MOUSEWHEEL && paneIndex && event.GetWheelRotation()) {
+        view_ = rme::procedural::previewZoomAt(view_, area, pane, x, y, event.GetWheelRotation() > 0 ? 1 : -1);
+    } else if (type == wxEVT_LEFT_DCLICK) {
+        view_ = rme::procedural::previewFit(area);
+    }
+    hovered_cell_ = type == wxEVT_LEAVE_WINDOW || !paneIndex ? std::nullopt : rme::procedural::previewCellAt(view_, area, pane, x, y);
+    UpdateViewLabel();
+    RefreshPreview();
+}
+
+void TerrainGeneratorDialog::OnPreviewKey(wxKeyEvent& event) {
+    const auto area = PreviewAreaSize();
+    const auto panes = PreviewPanes();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    const double stepX = pane.width / 10, stepY = pane.height / 10;
+    switch (event.GetKeyCode()) {
+        case '+': case '=': case WXK_ADD: case WXK_NUMPAD_ADD:
+            view_ = rme::procedural::previewZoomAt(view_, area, pane, pane.width / 2, pane.height / 2, 1); break;
+        case '-': case WXK_SUBTRACT: case WXK_NUMPAD_SUBTRACT:
+            view_ = rme::procedural::previewZoomAt(view_, area, pane, pane.width / 2, pane.height / 2, -1); break;
+        case '0': case WXK_NUMPAD0: view_ = rme::procedural::previewFit(area); break;
+        case WXK_LEFT: view_ = rme::procedural::previewPan(view_, area, pane, stepX, 0); break;
+        case WXK_RIGHT: view_ = rme::procedural::previewPan(view_, area, pane, -stepX, 0); break;
+        case WXK_UP: view_ = rme::procedural::previewPan(view_, area, pane, 0, stepY); break;
+        case WXK_DOWN: view_ = rme::procedural::previewPan(view_, area, pane, 0, -stepY); break;
+        default: event.Skip(); return;
+    }
+    UpdateViewLabel();
+    RefreshPreview();
+}
+
+uint64_t TerrainGeneratorDialog::SpriteKey(const Item& item, const Position& position) {
+    const GameSprite* sprite = item.getSprite();
+    const int px = sprite && sprite->pattern_x ? position.x % sprite->pattern_x : 0;
+    const int py = sprite && sprite->pattern_y ? position.y % sprite->pattern_y : 0;
+    const int pz = sprite && sprite->pattern_z ? position.z % sprite->pattern_z : 0;
+    return (uint64_t(item.getClientID()) << 24) | (uint64_t(px) << 16) | (uint64_t(py) << 8) | uint64_t(pz);
+}
+
+void TerrainGeneratorDialog::PrepareSprite(const Item& item, const Position& position, int cell) {
+    auto [entry, added] = sprite_cache_.try_emplace(SpriteKey(item, position));
+    if (!added) return;
+    GameSprite* sprite = item.getSprite();
+    if (!sprite || sprite->spriteList.empty()) return;
+    const int px = sprite->pattern_x ? position.x % sprite->pattern_x : 0;
+    const int py = sprite->pattern_y ? position.y % sprite->pattern_y : 0;
+    const int pz = sprite->pattern_z ? position.z % sprite->pattern_z : 0;
+    // The part of the sprite on the item's own tile (width and height index 0), layer 0, first frame.
+    const size_t index = sprite->getIndex(0, 0, 0, px, py, pz, 0);
+    NormalImage* part = index < sprite->spriteList.size() ? sprite->spriteList[index] : nullptr;
+    const auto rgba = part ? part->getRGBAData() : nullptr;
+    const auto dimensions = part ? part->getDimensions() : ImageDimensions {};
+    if (!rgba || dimensions.width <= 0 || dimensions.height <= 0) return;
+    wxImage image(dimensions.width, dimensions.height, false);
+    image.InitAlpha();
+    unsigned char* colour = image.GetData();
+    unsigned char* alpha = image.GetAlpha();
+    for (size_t i = 0; i < size_t(dimensions.width) * dimensions.height; ++i) {
+        colour[i * 3] = rgba[i * 4]; colour[i * 3 + 1] = rgba[i * 4 + 1]; colour[i * 3 + 2] = rgba[i * 4 + 2];
+        alpha[i] = rgba[i * 4 + 3];
+    }
+    image.Rescale(cell, cell, cell < dimensions.width ? wxIMAGE_QUALITY_BOX_AVERAGE : wxIMAGE_QUALITY_NEAREST);
+    entry->second = wxBitmap(image);
+}
+
+template <typename Visit>
+void TerrainGeneratorDialog::ForVisibleSprites(const wxRect& rect, Visit&& visit) const {
+    const auto area = PreviewAreaSize();
+    const rme::procedural::PreviewPane pane {double(rect.GetWidth()), double(rect.GetHeight())};
+    const double scale = rme::procedural::previewScale(view_, area, pane);
+    if (scale < spritePixelsPerCell) return;
+    const int cell = int(std::lround(scale));
+    const auto& unit = ShownUnit();
+    const auto& region = unit.snapshot.input.config.region;
+    const auto cells = rme::procedural::previewVisibleCells(view_, area, pane);
+    const double originX = rect.GetX() + rme::procedural::previewOriginX(view_, area, pane);
+    const double originY = rect.GetY() + rme::procedural::previewOriginY(view_, area, pane);
+    for (uint32_t y = cells.y0; y < cells.y1; ++y) {
+        for (uint32_t x = cells.x0; x < cells.x1; ++x) {
+            const Position position(region.x + int(x), region.y + int(y), region.z);
+            const Tile* tile = ShownTile(unit, position);
+            if (!tile) continue;
+            const wxPoint at(int(std::lround(originX + x * scale)), int(std::lround(originY + y * scale)));
+            if (tile->ground) visit(*tile->ground, position, at, cell);
+            for (const auto& item : tile->items) visit(*item, position, at, cell);
+        }
+    }
+}
+
+void TerrainGeneratorDialog::PrepareSprites() {
+    if (!prepared_ || preview_steps_ || !preview_bitmap_.IsOk() || !preview_sprites_check_->GetValue()) return;
+    SyncView();
+    const auto panes = PreviewPanes();
+    if (panes.empty()) return;
+    const auto area = PreviewAreaSize();
+    const rme::procedural::PreviewPane pane {double(panes[0].GetWidth()), double(panes[0].GetHeight())};
+    const int cell = int(std::lround(rme::procedural::previewScale(view_, area, pane)));
+    if (cell != sprite_cache_cell_ || g_version.GetAssetRevision() != sprite_cache_assets_) {
+        sprite_cache_.clear();
+        sprite_cache_cell_ = cell;
+        sprite_cache_assets_ = g_version.GetAssetRevision();
+    }
+    ForVisibleSprites(panes[0], [this](const Item& item, const Position& position, wxPoint, int size) { PrepareSprite(item, position, size); });
+}
+
+void TerrainGeneratorDialog::RefreshPreview() {
+    PrepareSprites();
+    preview_panel_->Refresh();
+}
+
+// I66: the Selected candidate's visible cells drawn with the client's sprites, ground first, then items bottom to top.
+// Only bitmaps PrepareSprites built are drawn; a missing one is skipped rather than built while painting.
+void TerrainGeneratorDialog::DrawSprites(wxDC& dc, const wxRect& rect) const {
+    wxDCClipper clip(dc, rect);
+    ForVisibleSprites(rect, [&](const Item& item, const Position& position, wxPoint at, int cell) {
+        if (cell != sprite_cache_cell_) return;
+        const auto found = sprite_cache_.find(SpriteKey(item, position));
+        if (found != sprite_cache_.end() && found->second.IsOk()) dc.DrawBitmap(found->second, at, true);
+    });
+}
+
 void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {
 	wxPaintDC dc(preview_panel_);
 	const wxSize size = preview_panel_->GetClientSize();
@@ -2144,19 +2959,42 @@ void TerrainGeneratorDialog::OnPaintPreview(wxPaintEvent&) {
 		return;
 	}
 
-	// One map tile per image pixel, scaled to fit inside the border.
-	const int inset = Theme::Grid(1);
-	const double availableWidth = std::max(1, size.GetWidth() - 2 * inset);
-	const double availableHeight = std::max(1, size.GetHeight() - 2 * inset);
-	const double scale = std::min(availableWidth / preview_bitmap_.GetWidth(), availableHeight / preview_bitmap_.GetHeight());
-	const double drawnWidth = preview_bitmap_.GetWidth() * scale;
-	const double drawnHeight = preview_bitmap_.GetHeight() * scale;
-	const double left = (size.GetWidth() - drawnWidth) / 2.0;
-	const double top = (size.GetHeight() - drawnHeight) / 2.0;
-	// Keep destination margins in window pixels, including when one source pixel is enlarged.
-	wxMemoryDC source;
-	source.SelectObjectAsSource(preview_bitmap_);
-	dc.StretchBlit(wxCoord(std::lround(left)), wxCoord(std::lround(top)),
-		wxCoord(std::lround(drawnWidth)), wxCoord(std::lround(drawnHeight)), &source,
-		0, 0, preview_bitmap_.GetWidth(), preview_bitmap_.GetHeight(), wxCOPY, false);
+	SyncView();
+	const auto area = PreviewAreaSize();
+	const auto panes = PreviewPanes();
+	const auto compared = ComparedCandidate();
+	// One map tile per area cell; a smaller image (thumbnail while loading, reduced comparison) is stretched over it.
+	const auto draw = [&](const wxBitmap& bitmap, const wxRect& rect) {
+		const rme::procedural::PreviewPane pane {double(rect.GetWidth()), double(rect.GetHeight())};
+		const auto cells = rme::procedural::previewVisibleCells(view_, area, pane);
+		const double scale = rme::procedural::previewScale(view_, area, pane);
+		const double originX = rect.GetX() + rme::procedural::previewOriginX(view_, area, pane);
+		const double originY = rect.GetY() + rme::procedural::previewOriginY(view_, area, pane);
+		const double sx = double(bitmap.GetWidth()) / area.width, sy = double(bitmap.GetHeight()) / area.height;
+		const auto destX = std::lround(originX + cells.x0 * scale), destY = std::lround(originY + cells.y0 * scale);
+		const auto destW = std::lround(originX + cells.x1 * scale) - destX, destH = std::lround(originY + cells.y1 * scale) - destY;
+		const auto srcX = int(std::floor(cells.x0 * sx)), srcY = int(std::floor(cells.y0 * sy));
+		const int srcW = std::max(1, int(std::ceil(cells.x1 * sx)) - srcX), srcH = std::max(1, int(std::ceil(cells.y1 * sy)) - srcY);
+		wxDCClipper clip(dc, rect);
+		wxMemoryDC source;
+		source.SelectObjectAsSource(bitmap);
+		dc.StretchBlit(wxCoord(destX), wxCoord(destY), wxCoord(std::max<long>(1, destW)), wxCoord(std::max<long>(1, destH)), &source,
+			srcX, srcY, srcW, srcH, wxCOPY, false);
+	};
+	draw(preview_bitmap_, panes[0]);
+	if (prepared_ && !preview_steps_ && preview_sprites_check_->GetValue()) DrawSprites(dc, panes[0]);
+	if (compared) {
+		draw(candidates_[*compared].surface, panes[1]);
+		dc.SetFont(Theme::GetFont(9, true));
+		dc.SetTextForeground(Theme::Get(Theme::Role::Text));
+		dc.SetTextBackground(Theme::Get(Theme::Role::Background));
+		dc.SetBackgroundMode(wxBRUSHSTYLE_SOLID);
+		dc.DrawText(wxstr(std::format("#{} Selected", selected_candidate_.value_or(0))), panes[0].GetX() + Theme::Grid(1), panes[0].GetY() + Theme::Grid(1));
+		dc.DrawText(wxstr(std::format("#{}", *compared)), panes[1].GetX() + Theme::Grid(1), panes[1].GetY() + Theme::Grid(1));
+	}
+	if (preview_panel_->HasFocus()) {
+		dc.SetPen(wxPen(Theme::Get(Theme::Role::Accent), 2));
+		dc.SetBrush(*wxTRANSPARENT_BRUSH);
+		dc.DrawRectangle(wxPoint(1, 1), size - wxSize(2, 2));
+	}
 }

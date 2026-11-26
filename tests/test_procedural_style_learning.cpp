@@ -5,6 +5,7 @@
 #include "procedural/core/style_history.h"
 #include "procedural/core/candidate_series.h"
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <iostream>
 
@@ -243,16 +244,77 @@ int main(int argc, char** argv) {
         check(learned && learned->rockOutlinePermille == 750, "mountain outline share");
         // No stairs by the mountain: its top cannot be climbed; all the grass is one walkable area.
         check(learned && learned->unreachedRockPermille == 1000 && learned->unreachedWalkPermille == 0, "mountain out of reach");
-        StyleProfile profile;
+        auto profile = *a; // a valid fitted profile: serializing an invalid one returns an error
         profile.unreachedRockPermille = 1000;
         profile.unreachedWalkPermille = 12;
-        check(parseProfile(*serializeProfile(profile)) == profile, "unreached round-trip");
+        const auto text = serializeProfile(profile);
+        check(text && parseProfile(*text) == profile, "unreached round-trip");
     }
     check(rawDecorId(rawDecorName(2700, DecorKind::Tree)) == 2700 && classifyDoodadBrush(rawDecorName(1, DecorKind::Stone)) == DecorKind::Stone
         && !rawDecorId("raw:tree:0") && !rawDecorId("raw:tree:070") && !rawDecorId("raw:bush:65536") && !rawDecorId("raw:2700")
         && !rawDecorId("raw:rock:12a") && !rawDecorId("palm"), "RAW vegetation names");
     check(a->sources == std::vector<ProfileSource>{{"user-local-surface",1000}}, "generic user provenance");
-    check(candidateBandsFor(*a).empty(), "user profile has no M06/M19 bands");
+    // I62: the learned bands are the profile's own (none for paths and buildings), never M06/M19's.
+    check(!a->bands.empty() && candidateBandsFor(*a).data() == a->bands.data() &&
+        std::ranges::none_of(a->bands, [](const CandidateBand& band) { return !learnableCandidateMetric(band.metric); }), "user profile ranks by its learned bands");
+    {
+        // I62: several samples. A second map of grass with a rock block and a pond, and a third of dirt.
+        const auto other = [](int variant) {
+            FloorBounds fb{7, 0, 0, 64, 64};
+            auto map = SemanticMap::create(std::span(&fb, 1), {4096}).value();
+            const auto grass = map.internGroundKey("grass").value();
+            const auto rock = map.internGroundKey("mountain").value();
+            const auto water = map.internGroundKey("sea").value();
+            const auto dirt = map.internGroundKey("dirt").value();
+            for (int i = 0; i < 4096; ++i) {
+                const int x = i % 64, y = i / 64;
+                const auto key = variant ? (x < 32 ? dirt : grass) : x >= 8 && x < 24 && y >= 8 && y < 24 ? rock : x >= 40 && x < 52 && y >= 40 && y < 52 ? water : grass;
+                check(bool(map.set(x, y, 7, key, bit(Trait::HasGround))), "merge fixture cell");
+            }
+            return map;
+        };
+        const auto mapB = other(0), mapC = other(1);
+        const auto mappingB = proposeKeyMap(mapB.groundKeys(), defaultKeyRules()), mappingC = proposeKeyMap(mapC.groundKeys(), defaultKeyRules());
+        const auto sB = inspectLearningSample(mapB, mappingB, {}, true), sC = inspectLearningSample(mapC, mappingC, {}, true);
+        check(sB && sC && sB->metrics[0] && sC->metrics[0], "samples measured");
+        if (sB && sC) {
+            const std::vector<std::vector<KeyMapEntry>> mappings {mapping, mappingB, mappingC};
+            const auto merged = mergeLearningMappings(mappings);
+            check(merged && std::ranges::is_sorted(*merged, {}, &KeyMapEntry::key), "mappings merged");
+            auto conflict = mappingB;
+            for (auto& entry : conflict) if (entry.key == "grass") entry.kind = StyleKind::Dirt;
+            const std::vector<std::vector<KeyMapEntry>> conflicting {mapping, conflict};
+            check(!mergeLearningMappings(conflicting), "conflicting classes refused");
+            const auto one = mergeLearningSamples(std::span(&*sample, 1));
+            check(one && one->metrics == sample->metrics && one->stats == sample->stats && one->sampleWeights.empty(), "one sample is itself");
+            const std::vector<LearningSample> abc {*sample, *sB, *sC}, cab {*sC, *sample, *sB};
+            const auto m1 = mergeLearningSamples(abc), m2 = mergeLearningSamples(cab);
+            const auto p1 = m1 ? fitLearningSample(*m1, *merged, "10.98", "otb", "dat") : std::unexpected(std::string("no merge"));
+            const auto p2 = m2 ? fitLearningSample(*m2, *merged, "10.98", "otb", "dat") : std::unexpected(std::string("no merge"));
+            check(p1 && p2 && serializeProfile(*p1) == serializeProfile(*p2), "sample order does not change the profile");
+            check(p1 && p1->sources.size() == 3 && p1->sources[0].alias == "sample-1" &&
+                std::ranges::fold_left(p1->sources, 0u, [](uint32_t sum, const ProfileSource& s) { return sum + s.weightPermille; }) == 1000,
+                "three weighted sources");
+            check(p1 && m1 && m1->stats.kindTiles[size_t(StyleKind::Rock)] == sB->stats.kindTiles[size_t(StyleKind::Rock)] &&
+                m1->present == sample->present + sB->present + sC->present, "counts summed");
+            {
+                LearningSample wide = *sample, square = *sample;
+                wide.width = 256; wide.height = 64; square.width = 128; square.height = 128;
+                const std::vector<LearningSample> ws {wide, square}, sw {square, wide};
+                const auto a = mergeLearningSamples(ws), b = mergeLearningSamples(sw);
+                check(a && b && a->width == b->width && a->height == b->height && a->width == 256, "equal areas: the same dimensions in any order");
+            }
+            check(p1 && !p1->bands.empty() && parseProfile(*serializeProfile(*p1)) == *p1, "merged profile with bands round-trips");
+            const std::vector<LearningSample> twice {*sB, *sB};
+            const auto doubled = mergeLearningSamples(twice);
+            const auto pTwice = doubled ? fitLearningSample(*doubled, mappingB, "10.98", "otb", "dat") : std::unexpected(std::string("no merge"));
+            const auto pOnce = fitLearningSample(*sB, mappingB, "10.98", "otb", "dat");
+            check(pTwice && pOnce && pTwice->target == pOnce->target && pTwice->tuning == pOnce->tuning && pTwice->bands == pOnce->bands,
+                "two identical samples fit as one");
+            const std::vector<LearningSample> nine(9, *sB);
+            check(!mergeLearningSamples(nine) && !mergeLearningSamples(std::span<const LearningSample>()), "1 to 8 samples");
+        }
+    }
     check(checkProfile(*a,"wrong","otb","dat",7) == ProfileCompatibility::WrongClient, "client bound");
     check(checkProfile(*a,"10.98","wrong","dat",7) == ProfileCompatibility::WrongAssets, "assets bound");
     for (const char* name : {"", "..", "../x", "a/b", "a\\b", "CON", "com1", "a.profile", "a:", "a "})
@@ -263,19 +325,49 @@ int main(int argc, char** argv) {
     const auto unique = dir / "profile-store";
     std::filesystem::create_directories(unique);
     // Test directory belongs to this test, supplied explicitly under scratchpad by CTest.
-    std::error_code ec; std::filesystem::remove(unique / "forest.profile", ec);
+    const auto forest = unique / "forest.profile";
+    const auto newForest = unique / "new-forest.profile";
+    std::error_code ec;
+    std::filesystem::remove(forest, ec);
+    std::filesystem::remove(newForest, ec);
+    const auto readProfile = [](const std::filesystem::path& path) {
+        std::ifstream in(path, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    };
+    auto replacement = *a;
+    replacement.sources.front().alias = "learned-forest";
+    const auto replacementText = serializeProfile(replacement);
+    check(replacementText && replacementText != serializeProfile(*a), "different replacement text");
     check(bool(saveLearnedProfile(unique, "forest", *a)), "atomic publish");
-    check(!saveLearnedProfile(unique, "forest", *b), "no overwrite");
-    check(!saveLearnedProfile(unique, "../escape", *a), "no path escape");
-    std::ifstream in(unique / "forest.profile", std::ios::binary);
-    const std::string text((std::istreambuf_iterator<char>(in)), {});
-    check(text == *serializeProfile(*a), "conflict preserves previous bytes");
+    const auto text = readProfile(forest);
+    check(text == *serializeProfile(*a), "initial profile bytes");
+    check(!saveLearnedProfile(unique, "forest", replacement, false), "no overwrite without replace");
+    check(readProfile(forest) == text, "conflict preserves previous bytes");
+    check(bool(saveLearnedProfile(unique, "forest", replacement, true)), "replace existing profile");
+    check(readProfile(forest) == replacementText, "replacement writes new bytes");
+    check(bool(saveLearnedProfile(unique, "new-forest", replacement, true)), "replace creates missing profile");
+    check(readProfile(newForest) == replacementText, "new profile has expected bytes");
+    check(!saveLearnedProfile(unique, "../escape", *a, false), "no path escape");
     const auto offer = offerProfiles(std::vector<NamedProfileText>{{"forest", text}}, "10.98", "otb", "dat");
     check(offer.offered.size() == 1, "normal generator offer");
+    const auto full = dir / "full-profile-store";
+    std::filesystem::create_directories(full);
+    const auto overflow = full / "overflow.profile";
+    std::filesystem::remove(overflow, ec);
+    for (int i = 0; i < 64; ++i) {
+        const auto path = full / ("profile-" + std::to_string(i) + ".profile");
+        check(std::filesystem::copy_file(newForest, path, std::filesystem::copy_options::overwrite_existing, ec),
+            "seed profile at capacity");
+    }
+    check(bool(saveLearnedProfile(full, "profile-0", *a, true)), "replace at capacity");
+    check(readProfile(full / "profile-0.profile") == text, "replacement at capacity writes new bytes");
+    check(!saveLearnedProfile(full, "overflow", *a, false), "new profile refused at capacity");
+    check(!saveLearnedProfile(full, "overflow", *a, true), "replace cannot create a 65th profile");
+    check(!std::filesystem::exists(overflow), "no extra profile created");
     const auto blocker = dir / "file-not-folder"; { std::ofstream out(blocker); out << "block"; }
-    check(!saveLearnedProfile(blocker, "forest", *a), "write failure visible");
+    check(!saveLearnedProfile(blocker, "forest", *a, false), "write failure visible");
     std::filesystem::create_directory(unique / ".learning-save.lock", ec);
-    check(!saveLearnedProfile(unique, "locked", *a), "concurrent save conflict");
+    check(!saveLearnedProfile(unique, "locked", *a, true), "concurrent save conflict");
     std::filesystem::remove(unique / ".learning-save.lock", ec);
     auto history = StyleHistoryStore::open(dir / "history.json");
     check(bool(history), "I54 store opens");

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "procedural/core/candidate_score.h"
 #include "procedural/core/style_profile.h"
 
 #include <iostream>
@@ -83,6 +84,18 @@ void testSerialization() {
     check(back && *back == p, "round trip is lossless, including the empty key and a key with a comma");
     check(back && serializeProfile(*back).value() == *text, "serialization is stable");
     check(text->starts_with("g4-profile/6\n"), "schema line first");
+
+	// I62: learned ranking bands round-trip; a bound that is not the rule's, a duplicate or an unknown metric is refused.
+	StyleProfile banded = p;
+	banded.bands = {*learnedCandidateBand(0, 384), *learnedCandidateBand(12, 33)};
+	const auto bandText = serializeProfile(banded);
+	check(bandText && bandText->find("band\tchannels.L\t384\t25728\t57600\n") != std::string::npos, "band line written");
+	const auto bandBack = bandText ? parseProfile(*bandText) : std::unexpected(ProfileError::BadFormat);
+	check(bandBack && *bandBack == banded, "bands round-trip");
+	check(!parseProfile(*text + "band\tchannels.L\t384\t1\t57600\n"), "band bound off the rule refused");
+	check(!parseProfile(*text + "band\tpaths.L\t70\t4690\t10500\n"), "band of a path metric refused");
+	check(!parseProfile(*text + "band\tnothing\t1\t67\t150\n"), "band of an unknown metric refused");
+	check(!parseProfile(*bandText + "band\tchannels.L\t384\t25728\t57600\n"), "duplicate band refused");
 
 	check(parseProfile("g4-profile/7\n").error() == ProfileError::UnsupportedSchema, "other schema version refused");
 	check(parseProfile("nonsense\n").error() == ProfileError::BadFormat, "no schema line refused");

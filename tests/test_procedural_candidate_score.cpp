@@ -154,6 +154,28 @@ void seedAndFingerprint() {
     std::stop_source stop; stop.request_stop();
     require(candidateMetricsOf(*zero, stop.get_token()).error() == CandidateScoreError::Cancelled, "cancel measurement");
 }
+// I62: the rule of 396e057 applied to the frozen references gives the frozen g6-bands-v1 bounds (the two tables in
+// candidate_series.cpp, here as metric, m06 reference and bounds; m19 R/D below 50 and RS below 20 likewise).
+void learnedBands() {
+    struct Row { size_t metric; int64_t reference, lower, upper; };
+    constexpr Row frozen[] {
+        {0, 384, 25728, 57600}, {4, 394, 26398, 59100}, {11, 36, 2412, 5400}, {12, 33, 0, 8300}, {13, 938, 62846, 140700},
+        {15, 4, 0, 5400}, {16, 951, 63717, 142650}, {18, 12, 0, 6200}, {19, 88, 5896, 13200}, {11, 15, 0, 3500},
+        {12, 99, 6633, 14850}, {17, 32, 0, 8200}, {14, 24, 0, 7400}};
+    for (const auto& row : frozen) {
+        const auto band = learnedCandidateBand(row.metric, row.reference);
+        require(band && band->lowerHundredths == row.lower && band->upperHundredths == row.upper, "learned band reproduces frozen bound");
+    }
+    for (size_t metric = 20; metric <= 25; ++metric) require(!learnedCandidateBand(metric, 10), "no band for paths and buildings");
+    require(!learnedCandidateBand(26, 10) && !learnedCandidateBand(40, 10), "no band outside the ranking metrics");
+    require(!learnedCandidateBand(0, -5), "negative reference of an unsigned metric refused");
+    const auto negative = learnedCandidateBand(4, -200);
+    require(negative && negative->lowerHundredths == -30000 && negative->upperHundredths == -13400, "signed band ordered low to high");
+    const auto zero = learnedCandidateBand(0, 0);
+    require(zero && zero->lowerHundredths == 0 && zero->upperHundredths == 0, "zero reference gives the zero band");
+    const auto a50 = learnedCandidateBand(12, 50);
+    require(a50 && a50->lowerHundredths == 3350 && a50->upperHundredths == 7500, "A50 only below 50");
+}
 } // namespace
 int main() try {
     // Hand-counted disagreement: A chooses two bands despite distance 10000;
@@ -164,7 +186,7 @@ int main() try {
     require(betterCandidateI51b({false, 2, 10, 9}, {false, 1, 10, 0}), "I51b bands break equal distance");
     require(betterCandidateI51b({false, 2, 10, 0}, {false, 2, 10, 9}), "I51b index breaks full score tie");
     require(!betterCandidateI51b(a, a), "I51b identical score is not better");
-    handCounted(); refusals(); bindingDistances(); hardConditions(); seedAndFingerprint();
+    handCounted(); refusals(); bindingDistances(); hardConditions(); seedAndFingerprint(); learnedBands();
     std::cout << "CANDIDATE_SCORE_PASS\n";
     return 0;
 } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

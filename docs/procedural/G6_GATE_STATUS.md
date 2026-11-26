@@ -1,5 +1,13 @@
 # G6 — gate status
 
+**G6 CLOSED WITH DEBT, 2026-11-23 (user decision).** See D28 and D29 in [TECH_DEBT.md](TECH_DEBT.md).
+
+## I55 — blind test result (2026-11-23)
+
+The I55 tools were frozen before `i53-index/2` (D10) and rejected the new index, so `g6_i55.py` was changed to accept its similarity line with unchanged thresholds (`836d731`). The earlier matrix was invalid because the generator and tools had changed. A new matrix was generated from the current build with a rebuilt M06/M19 index. Two runs gave `I55_MATRIX_REPEATABILITY_PASS`. The package was built from it, and the key stayed closed until all 20 ratings were submitted.
+
+**I55_BLIND_FAIL:** L3 won 9 of 20 pairs, against a threshold of 13. In m06, L3 won 5 of 10 pairs with 2 ties. In m19, L3 won 4 of 10 pairs with 1 tie. All three ties were identical pairs. In the 17 differing pairs, L3 won 9 and L2 won 8. Three notes report an unnaturally straight passage through rock, twice on the L2 side and once on the L3 side (D29). L2 was candidate 0 in every pair. The matrix, key, ratings and result are in local scratchpad only. The quantitative new-family comparison was not run because no eligible families were supplied. The intake tool still expects `i53-index/1`.
+
 ## D4 — Preview memory measurement
 
 Criteria `04b03de`, integration commits `9786851` and `ebe0f9d`.

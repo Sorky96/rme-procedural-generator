@@ -29,8 +29,8 @@ struct ReferenceImportLimits {
 	uint64_t maxProcessBytes = 0;
 	// Pre-load estimate factor (minLoadBytesPerFileByte, a lower bound). Raising it refuses sooner.
 	uint64_t loadBytesPerFileByte = minLoadBytesPerFileByte;
-	// Polled between stages, while the map loads (about every 5 ms) and every few thousand tiles
-	// afterwards. A request during loading aborts the load at the next tile.
+	// Polled between hash chunks and stages, while the map loads (about every 5 ms),
+	// and every few thousand tiles afterwards.
 	std::stop_token stop;
 };
 
@@ -98,8 +98,9 @@ enum class ReferenceImportError : uint8_t {
 [[nodiscard]] std::expected<ReferenceHeader, ReferenceImportError> readReferenceHeader(
 	const std::filesystem::path& file, const ReferenceImportLimits& limits);
 
-// Streams the file once; used before and after import to prove the input is unchanged.
-[[nodiscard]] std::expected<std::string, ReferenceImportError> hashReferenceFile(const std::filesystem::path& file);
+// Streams the file once, with cancellation checks between reads.
+[[nodiscard]] std::expected<std::string, ReferenceImportError> hashReferenceFile(
+	const std::filesystem::path& file, std::stop_token stop = {});
 
 // Loads the map in memory (companion XML next to it are read, never written),
 // then summarises it. Main thread only: the loader reports progress through g_gui.

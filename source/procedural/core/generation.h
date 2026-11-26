@@ -114,6 +114,9 @@ struct GenerationConfig {
 	DecorTuning decor;
 	// Surface only: adds single-tile trees, bushes and stones from doodad brushes.
 	bool vegetation = false;
+	// Surface: cells within this Chebyshev distance of a protected (existing) cell of the area stay unchanged too
+	// (I63); 0..maxProtectionMargin, 0 = none.
+	uint32_t protectionMargin = 0;
 	bool operator==(const GenerationConfig&) const = default;
 };
 
@@ -160,5 +163,11 @@ std::expected<SemanticGrid, GenerationError> generateTerrain(
 	const GenerationConfig& config, MapExtent extent, CoreBudget budget,
 	std::span<const uint8_t> mask = {}, std::span<const uint8_t> protection = {},
 	std::stop_token stop = {});
+
+inline constexpr uint32_t maxProtectionMargin = 8;
+// Cells within `margin` (Chebyshev, clamped to maxProtectionMargin) of a set cell of `protection`, which is row-major
+// width x height, that are not set themselves. Empty when margin is 0 or nothing is protected. Throws std::bad_alloc.
+[[nodiscard]] std::vector<uint8_t> protectionMarginCells(std::span<const uint8_t> protection, uint32_t width, uint32_t height,
+	uint32_t margin);
 
 } // namespace rme::procedural

@@ -121,10 +121,9 @@ int main(int argc, char** argv) try {
     if (i51b) std::cout << "experiment\tI51b\n";
     if (copyIndex) {
         std::cout << std::format("similarity\t{}\t{}\t{}\twindow=16\tmodulo=4\tminpresent=50\tshared>=16\tcontainment>=100\n",
-            copyIndexSchema, copyProjection, copyFingerprintKind);
+            copyIndex->schema, copyProjection, copyFingerprintKind);
         std::cout << "projection\tGrass,Dirt,Rock,Shore,Water\tLake/River=Water\tabsent=Unknown,Preserve,Other,NoGround,Unmapped,Path,Floor,Bridge\titems/underground=excluded\n";
-        for (size_t r = 0; r < 2; ++r) {
-            const auto& ref = copyIndex->references[r];
+        for (const auto& ref : copyIndex->references) {
             std::cout << std::format("reference\t{}\t{}\t{}\t{}\t{}\t{}\n", ref.alias, ref.sourceSha256,
                 ref.semanticSha256, ref.keymapSha256, ref.fingerprint.hashes.size(), ref.fingerprint.hashes.size() - copyIndex->generic.size());
         }
@@ -133,7 +132,10 @@ int main(int argc, char** argv) try {
         band.reference, band.lowerHundredths, band.upperHundredths);
     std::cout << "userSeed\tindex\tseed\tsurfaceFingerprint\thardFail\tinBand\tdistance";
     for (const auto name : candidateMetricNames) std::cout << '\t' << name;
-    if (copyIndex) std::cout << "\tcopyState\tcopyBefore\tcopyAfter\tM06shared\tM06permille\tM19shared\tM19permille";
+    if (copyIndex) {
+        std::cout << "\tcopyState\tcopyBefore\tcopyAfter";
+        for (const auto& ref : copyIndex->references) std::cout << '\t' << ref.alias << "shared\t" << ref.alias << "permille";
+    }
     std::cout << '\n';
     bool scoringFailed = false;
     for (uint64_t userSeed = first;; ++userSeed) {
@@ -198,8 +200,10 @@ int main(int argc, char** argv) try {
                 }
             } else std::cout << "NA\tNA";
             for (const auto& value : *metrics) std::cout << '\t' << (value ? std::to_string(*value) : "NA");
-            if (copyIndex) std::cout << std::format("\t{}\t{}\t{}\t{}\t{}\t{}\t{}", copyStateName(copy.state),
-                copy.before, copy.after, copy.shared[0], copy.permille[0], copy.shared[1], copy.permille[1]);
+            if (copyIndex) {
+                std::cout << std::format("\t{}\t{}\t{}", copyStateName(copy.state), copy.before, copy.after);
+                for (size_t r = 0; r < copy.shared.size(); ++r) std::cout << std::format("\t{}\t{}", copy.shared[r], copy.permille[r]);
+            }
             std::cout << '\n';
         }
         if (!bands.empty() && complete && best) std::cout << std::format("winner\t{}\t{}\t{}\t{}\t{}\n", userSeed, best->index, best->hardFail, best->inBand, best->distance);

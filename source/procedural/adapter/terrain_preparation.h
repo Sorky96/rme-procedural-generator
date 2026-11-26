@@ -9,6 +9,7 @@
 #include "procedural/core/level_repair.h"
 #include "procedural/core/candidate_score.h"
 #include "procedural/core/copy_guard.h"
+#include "procedural/core/terrain_report.h"
 
 #include <cstdint>
 #include <expected>
@@ -81,6 +82,9 @@ struct PreparedTerrain {
 	std::unique_ptr<Levels> levels;
     std::optional<CandidateMetrics> candidateMetrics;
     CopyAssessment copyAssessment;
+    // Cells per SurfaceKind of the final Surface grid (statistics only); all zero for other algorithms.
+    std::array<uint64_t, surfaceKindCount> surfaceCells {};
+    PreservedContent preserved; // I63: existing content of the area, margin and contacts (Surface only)
 };
 
 // Captures, generates, resolves and builds the DrawOperations preview for one region in a single

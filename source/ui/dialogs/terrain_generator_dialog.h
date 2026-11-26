@@ -10,10 +10,17 @@
 #include "procedural/adapter/style_profile_store.h"
 #include "procedural/adapter/terrain_preparation.h"
 #include "procedural/core/candidate_series.h"
+#include "procedural/core/terrain_preset.h"
+#include "procedural/core/preview_viewport.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
+#include <unordered_map>
+#include <string>
+#include <utility>
 #include <vector>
 #include <wx/arrstr.h>
 #include <wx/bitmap.h>
@@ -28,6 +35,7 @@ class wxComboBox;
 class wxPanel;
 class wxListCtrl;
 class wxListEvent;
+class wxNotebook;
 class wxImageList;
 class wxGauge;
 class wxSpinCtrl;
@@ -77,6 +85,9 @@ private:
         std::array<uint64_t, 5> fingerprints {};
         wxBitmap thumbnail;
         rme::procedural::CopyAssessment copyAssessment;
+        uint64_t elapsedMs = 0; // preparation of the last attempt
+        uint64_t longestStepMs = 0; // I61: longest GUI-thread step of that preparation
+        wxBitmap surface;       // I60: Surface minimap for comparison, reduced when the series keeps too much
     };
     std::vector<Candidate> candidates_;
     std::optional<Request> series_request_;
@@ -84,13 +95,80 @@ private:
     uint32_t candidate_count_ = 1;
     uint64_t series_revision_ = 0, series_assets_ = 0, working_bytes_ = 0;
     bool collecting_ = false, updating_candidates_ = false;
-    std::span<const rme::procedural::CandidateBand> ranking_bands_;
+    // A copy: a learned profile's bands live in profiles_, which a reload replaces.
+    std::vector<rme::procedural::CandidateBand> ranking_bands_;
+    bool ranking_learned_ = false; // the bands are the profile's own learned ones (I62), not g6-bands-v1
+    // I65: the copy index file the series read (path, size, write time); empty when it read none.
+    struct CopyIndexStamp {
+        std::wstring path;
+        uintmax_t size = 0;
+        std::filesystem::file_time_type written;
+        bool operator==(const CopyIndexStamp&) const = default;
+    };
+    std::optional<CopyIndexStamp> series_copy_index_;
+    [[nodiscard]] std::optional<CopyIndexStamp> CurrentCopyIndex() const;
+    [[nodiscard]] std::pair<std::vector<rme::procedural::CandidateBand>, bool> ChosenBands() const;
+    [[nodiscard]] bool SeriesReusable();
     wxSpinCtrl* candidate_count_spin_ = nullptr;
     wxTextCtrl* copy_index_text_ = nullptr;
+    // I57: "None", the local copy indices (usable or with the reason they are not), "Other file...".
+    // Choosing an index fills copy_index_text_, which the series reads.
+    wxChoice* copy_index_choice_ = nullptr;
+    std::vector<rme::procedural::CopyIndexFile> copy_index_files_; // entry i is choice i + 1
+    void LoadCopyIndices();
+    void OnCopyIndexChosen(wxCommandEvent& event);
     std::optional<rme::procedural::CopyIndex> copy_index_;
     wxListCtrl* candidate_list_ = nullptr;
     wxImageList* candidate_images_ = nullptr; // owned by list via AssignImageList
     wxGauge* candidate_progress_ = nullptr;
+    // I58: statistics and warnings of the Selected candidate (terrainReportOf).
+    wxListCtrl* statistics_list_ = nullptr;
+    wxListCtrl* warnings_list_ = nullptr;
+    std::chrono::steady_clock::time_point candidate_started_;
+    // I61: GUI-thread steps of the running preparation and the longest one.
+    uint64_t preview_step_count_ = 0;
+    std::chrono::steady_clock::duration preview_longest_step_ {};
+    // Fills both lists; returns the number of {blocking, other} warnings.
+    std::pair<size_t, size_t> ShowReport(const Request& request, const Candidate& row);
+    // I59: named settings in the local profile folder's "presets" subfolder, and a random seed.
+    wxChoice* preset_choice_ = nullptr; // "(none)", then the preset names
+    wxTextCtrl* preset_name_text_ = nullptr;
+    wxNotebook* sections_ = nullptr;
+    void LoadPresets(const wxString& select = wxEmptyString);
+    void OnPresetChosen(wxCommandEvent& event);
+    wxChoice* biome_choice_ = nullptr; // "Keep current settings", then biomePresets()
+    // I68: "None", then biomePresets(); its grass and vegetation on a share of the Grass cells, in regions.
+    wxChoice* secondary_biome_choice_ = nullptr;
+    wxSpinCtrl* secondary_share_spin_ = nullptr;
+    void OnBiomeChosen(wxCommandEvent& event);
+    void OnPresetSave(wxCommandEvent& event);
+    void OnPresetDelete(wxCommandEvent& event);
+    void OnRandomSeed(wxCommandEvent& event);
+    [[nodiscard]] bool Confirm(const wxString& question);
+    // The section inputs a preset holds, in tab order (not the area position or the copy check).
+    [[nodiscard]] std::vector<wxWindow*> PresetControls() const;
+    [[nodiscard]] rme::procedural::TerrainPreset CollectPreset() const;
+    // Applies every value or none: on a refusal the previous settings return and the reason is given.
+    [[nodiscard]] std::optional<std::string> ApplyPreset(const rme::procedural::TerrainPreset& preset);
+    // I60: zoom and pan of the preview (one shared view), and a second candidate shown beside the Selected one.
+    rme::procedural::PreviewViewport view_;
+    rme::procedural::PreviewArea view_area_;
+    std::optional<wxPoint> drag_from_;
+    std::optional<rme::procedural::PreviewCell> hovered_cell_;
+    wxStaticText* view_label_ = nullptr;
+    wxChoice* compare_choice_ = nullptr; // "None", then the other candidates
+    std::vector<uint32_t> compare_entries_; // candidate index of choice entry i + 1
+    bool compare_reduced_ = false;
+    [[nodiscard]] rme::procedural::PreviewArea PreviewAreaSize() const;
+    [[nodiscard]] std::optional<uint32_t> ComparedCandidate() const;
+    // Pane i of the panel (0 alone; 0 left and 1 right when comparing) and its rectangle.
+    [[nodiscard]] std::vector<wxRect> PreviewPanes() const;
+    [[nodiscard]] std::optional<size_t> PaneAt(wxPoint point) const;
+    void SyncView(); // keeps the view for an area of the same size, otherwise fits
+    void UpdateViewLabel();
+    void RefreshCompareChoice();
+    void OnPreviewMouse(wxMouseEvent& event);
+    void OnPreviewKey(wxKeyEvent& event);
 	void OnCancel(wxCommandEvent& event);
 	void SchedulePreviewTick();
 	void OnValidate(wxCommandEvent& event);
@@ -102,6 +180,25 @@ private:
 	[[nodiscard]] std::optional<Request> ReadRequest();
 	[[nodiscard]] Editor* CurrentTarget();
 	[[nodiscard]] bool BuildPreviewBitmap();
+    // The prepared floor the preview floor choice shows, and its tile at a position: the preview buffer where it
+    // changes, otherwise the captured original (nullptr when empty).
+    [[nodiscard]] const rme::procedural::PreparedTerrain& ShownUnit() const;
+    [[nodiscard]] static const Tile* ShownTile(const rme::procedural::PreparedTerrain& unit, const Position& position);
+    // I66: sprites of the visible cells over the minimap image once a cell is at least this many screen pixels.
+    static constexpr double spritePixelsPerCell = 16.0;
+    wxCheckBox* preview_sprites_check_ = nullptr;
+    // Scaled first-frame sprite part per client id and position pattern, for one cell size and asset revision.
+    std::unordered_map<uint64_t, wxBitmap> sprite_cache_;
+    int sprite_cache_cell_ = 0;
+    uint64_t sprite_cache_assets_ = 0;
+    // Calls visit(item, position, top-left, cell) for the visible items, ground first, when cells reach the sprite size.
+    template <typename Visit> void ForVisibleSprites(const wxRect& pane, Visit&& visit) const;
+    // Builds the bitmaps the next paint needs; painting only looks them up.
+    void PrepareSprites();
+    void RefreshPreview(); // PrepareSprites, then repaint the preview
+    void DrawSprites(wxDC& dc, const wxRect& pane) const;
+    [[nodiscard]] static uint64_t SpriteKey(const Item& item, const Position& position);
+    void PrepareSprite(const Item& item, const Position& position, int cell);
 	void ReleasePreview();
 	void UpdateControlStates();
 	void UpdateClientLabel();
@@ -127,6 +224,7 @@ private:
 	wxSpinCtrl* height_spin_ = nullptr;
 	wxTextCtrl* seed_text_ = nullptr;
 	wxSpinCtrl* retry_spin_ = nullptr;
+	wxSpinCtrl* margin_spin_ = nullptr; // I63 protection margin
     uint32_t preview_attempt_ = 0;
     uint64_t preview_first_seed_ = 0;
     bool preview_fallback_ = false;
@@ -139,6 +237,9 @@ private:
 	wxChoice* style_choice_ = nullptr;
 	wxChoice* profile_choice_ = nullptr;
 	std::vector<rme::procedural::OfferedProfile> profiles_; // entry i is choice i + 1
+	// I69: what the chosen profile was learned from (sources and weights) and what it learned.
+	wxListCtrl* profile_details_ = nullptr;
+	void ShowProfileDetails();
 	std::array<wxString, rme::procedural::naturalKindCount> default_brushes_; // grass, dirt, rock, shore, water
 	std::array<wxString, 3> default_decor_brushes_;                            // tree, bush, stone
 	wxComboBox* rock_brush_choice_ = nullptr;

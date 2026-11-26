@@ -3,6 +3,7 @@
 #include "ui/dialogs/style_learning_dialog.h"
 #include "procedural/adapter/open_map_learning.h"
 #include "procedural/core/doodad_class.h"
+#include "procedural/core/reference_header.h"
 #include "procedural/adapter/generation_assets.h"
 #include "procedural/adapter/generation_selection.h"
 #include "app/managers/version_manager.h"
@@ -14,6 +15,8 @@
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/gauge.h>
+#include <wx/generic/msgdlgg.h>
+#include <wx/listbox.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
 #include <wx/stattext.h>
@@ -24,6 +27,11 @@
 #include <ranges>
 
 using namespace rme::procedural;
+namespace {
+bool sameAssets(const ClientAssetIds& a, const ClientAssetIds& b) {
+    return a.client == b.client && a.otbSha256 == b.otbSha256 && a.datSha256 == b.datSha256;
+}
+} // namespace
 StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     : wxDialog(parent, wxID_ANY, "Learn from open map", wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER) {
     SetName("style-learning-dialog");
@@ -71,6 +79,35 @@ StyleLearningDialog::StyleLearningDialog(wxWindow* parent)
     name_ = new wxTextCtrl(this, wxID_ANY); name_->SetName("learn-name");
     nameRow->Add(name_, 1); root->Add(nameRow, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
     root->Add(new wxStaticText(this, wxID_ANY, "Use 1-64 ASCII letters, digits, hyphens or underscores."), 0, wxALL, margin);
+    auto* protectRow = new wxBoxSizer(wxHORIZONTAL);
+    protect_ = new wxCheckBox(this, wxID_ANY, "Also add this area to the cop&y index:");
+    protect_->SetName("learn-protect");
+    protect_->SetToolTip("The generator can then refuse to place terrain that copies this area (also rotated or mirrored). "
+        "The index keeps window hashes of the five natural ground classes only, under the profile name; no map name or position.");
+    protectRow->Add(protect_, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, gap);
+    index_name_ = new wxTextCtrl(this, wxID_ANY, "my-maps"); index_name_->SetName("learn-index-name");
+    index_name_->SetToolTip("Copy index file name in the local profile folder (1-64 letters, digits, '-' or '_'). "
+        "A new index is created when none has this name; an existing one gets this area added (up to 16 areas).");
+    protectRow->Add(index_name_, 1);
+    root->Add(protectRow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, margin);
+    root->Add(new wxStaticText(this, wxID_ANY, std::format("Sa&mples for one profile (up to {}; may come from different maps of the same client):",
+        maxLearningSamples)), 0, wxLEFT | wxRIGHT, margin);
+    auto* sampleRow = new wxBoxSizer(wxHORIZONTAL);
+    samples_ = new wxListBox(this, wxID_ANY, wxDefaultPosition, wxSize(Theme::Grid(70), Theme::Grid(16)));
+    samples_->SetName("learn-samples");
+    samples_->SetToolTip("With samples added, Analyze learns one profile from all of them, weighted by their tiles. "
+        "Without any, it learns from the rectangle just read.");
+    sampleRow->Add(samples_, 1, wxEXPAND | wxRIGHT, gap);
+    auto* sampleButtons = new wxBoxSizer(wxVERTICAL);
+    add_ = new wxButton(this, wxID_ANY, "A&dd sample"); add_->SetName("learn-add-sample");
+    add_->SetToolTip("Keep the rectangle just read, with its reviewed mapping, as one sample of the profile.");
+    add_->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { AddSample(); }); add_->Disable();
+    remove_ = new wxButton(this, wxID_ANY, "Remo&ve sample"); remove_->SetName("learn-remove-sample");
+    remove_->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { RemoveSample(); }); remove_->Disable();
+    samples_->Bind(wxEVT_LISTBOX, [this](wxCommandEvent&) { remove_->Enable(samples_->GetSelection() != wxNOT_FOUND && !worker_.valid()); });
+    sampleButtons->Add(add_, 0, wxEXPAND | wxBOTTOM, gap); sampleButtons->Add(remove_, 0, wxEXPAND);
+    sampleRow->Add(sampleButtons, 0);
+    root->Add(sampleRow, 0, wxEXPAND | wxALL, margin);
     progress_ = new wxGauge(this, wxID_ANY, 100); root->Add(progress_, 0, wxEXPAND | wxLEFT | wxRIGHT, margin);
     status_ = new wxStaticText(this, wxID_ANY, "Read the rectangle to review ground names. Data stays on this computer.");
     status_->SetName("learn-status"); root->Add(status_, 0, wxEXPAND | wxALL, margin);
@@ -143,7 +180,8 @@ void StyleLearningDialog::Invalidate(bool discardSample) {
     }
     if (cancel_) cancel_->Disable();
     if (progress_) progress_->SetValue(0);
-    if (analyze_) analyze_->Enable(captured_ && !worker_.valid());
+    if (analyze_) analyze_->Enable((captured_ || !added_.empty()) && !worker_.valid());
+    if (add_) add_->Enable(captured_ && !worker_.valid() && added_.size() < maxLearningSamples);
     if (read_) read_->Enable(!worker_.valid());
     if (status_) Status("Settings changed. Read again if the rectangle changed, then analyze.");
 }
@@ -187,13 +225,11 @@ void StyleLearningDialog::Read() {
     sample_ = std::move(*sample); counts_ = {}; source_valid_ = true; row_ = 0; reading_ = true;
     read_->Disable(); analyze_->Disable(); cancel_->Enable(); Status("Reading the rectangle...");
 }
-void StyleLearningDialog::Analyze() {
-    asset_check_ = {};
-    if (worker_.valid() || !captured_ || !sample_ || !CurrentSource()) { Invalidate(); Status("Source is stale. Read the rectangle again."); return; }
+std::expected<std::pair<LearningSample, std::vector<KeyMapEntry>>, std::string> StyleLearningDialog::InspectCurrent() {
     const auto mappingText = mapping_->GetValue().ToStdString(wxConvUTF8);
-    if (mappingText.size() > (1u << 20)) { Status("Mapping exceeds the 1 MiB limit."); return; }
+    if (mappingText.size() > (1u << 20)) return std::unexpected("Mapping exceeds the 1 MiB limit.");
     auto mapping = parseKeyMap(mappingText);
-    if (!mapping) { Status("Invalid G4 mapping. Keep the schema, tab separators and exact brush names."); return; }
+    if (!mapping) return std::unexpected("Invalid G4 mapping. Keep the schema, tab separators and exact brush names.");
     std::vector<GroundDoodadItems> doodadItems;
     for (const auto& [where, items] : counts_.doodads) doodadItems.push_back({where.first, where.second, items});
     std::vector<GroundOverlayItems> overlayItems;
@@ -203,19 +239,104 @@ void StyleLearningDialog::Analyze() {
     std::vector<GroundDoodadItems> carpetItems;
     for (const auto& [where, pieces] : counts_.carpets) carpetItems.push_back({where.first, where.second, pieces});
     auto sample = inspectLearningSample(*sample_, *mapping, doodadItems, permission_->GetValue(), {}, overlayItems, wallBrushes, counts_.placed, carpetItems, counts_.grounds);
-    if (!sample) { Status(sample.error()); return; }
+    if (!sample) return std::unexpected(sample.error());
+    return std::pair(std::move(*sample), std::move(*mapping));
+}
+void StyleLearningDialog::AddSample() {
+    asset_check_ = {};
+    if (worker_.valid() || !captured_ || !sample_ || !CurrentSource()) { Invalidate(); Status("Source is stale. Read the rectangle again."); return; }
+    if (added_.size() >= maxLearningSamples) { Status(std::format("A profile takes at most {} samples.", maxLearningSamples)); return; }
+    if (!added_.empty() && !sameAssets(added_.front().ids, *ids_)) { Status("This map uses another client than the samples already added. Not added."); return; }
+    auto inspected = InspectCurrent();
+    if (!inspected) { Status(inspected.error()); return; }
+    std::vector<std::vector<KeyMapEntry>> mappings;
+    for (const auto& a : added_) mappings.push_back(a.mapping);
+    mappings.push_back(inspected->second);
+    if (const auto merged = mergeLearningMappings(mappings); !merged) { Status(merged.error() + " Correct the mapping; not added."); return; }
+    const auto& b = sample_->floors().front().bounds;
+    // The position is shown here only; profiles never store it.
+    samples_->Append(wxstr(std::format("{}, {}, floor {}: {} x {}, {} tiles", b.x0, b.y0, b.z, b.width, b.height, inspected->first.present)));
+    added_.push_back({std::move(inspected->first), std::move(inspected->second), *ids_});
+    ++added_revision_; result_.reset(); save_->Disable();
+    add_->Enable(added_.size() < maxLearningSamples); analyze_->Enable(true);
+    Status(std::format("{} sample(s) added. Read another rectangle (this or another map) and add it, or Analyze to learn from all of them.", added_.size()));
+}
+void StyleLearningDialog::RemoveSample() {
+    const int selected = samples_->GetSelection();
+    if (worker_.valid() || selected == wxNOT_FOUND || size_t(selected) >= added_.size()) return;
+    added_.erase(added_.begin() + selected); samples_->Delete(unsigned(selected));
+    ++added_revision_; result_.reset(); save_->Disable(); remove_->Disable();
+    add_->Enable(captured_ && added_.size() < maxLearningSamples); analyze_->Enable(captured_ || !added_.empty());
+    Status(std::format("Sample removed; {} left.", added_.size()));
+}
+void StyleLearningDialog::Analyze() {
+    asset_check_ = {};
+    if (worker_.valid()) return;
+    if (!added_.empty()) {
+        // Several samples: no copy fingerprint (an index entry is one area), the read rectangle is not needed.
+        const auto ids = loadedClientAssetIds();
+        if (!ids || !sameAssets(*ids, added_.front().ids)) { Status("Load the client the samples were read with, then Analyze."); return; }
+        std::vector<LearningSample> samples;
+        std::vector<std::vector<KeyMapEntry>> mappings;
+        for (const auto& a : added_) { samples.push_back(a.sample); mappings.push_back(a.mapping); }
+        auto mapping = mergeLearningMappings(mappings);
+        if (!mapping) { Status(mapping.error()); return; }
+        result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); add_->Disable(); remove_->Disable(); stop_ = std::stop_source{};
+        analyzed_added_ = true; analyzed_revision_ = added_revision_;
+        const auto token = stop_.get_token();
+        Status(std::format("Fitting one profile from {} samples locally...", samples.size()));
+        try {
+            worker_ = std::async(std::launch::async, [samples = std::move(samples), mapping = std::move(*mapping), ids = *ids, token]() mutable
+                -> std::expected<Learned, std::string> {
+                try {
+                    auto merged = mergeLearningSamples(samples);
+                    if (!merged) return std::unexpected(merged.error());
+                    auto profile = fitLearningSample(*merged, std::move(mapping), ids.client, ids.otbSha256, ids.datSha256, token);
+                    if (!profile) return std::unexpected(profile.error());
+                    return Learned{std::move(*profile), std::nullopt};
+                } catch (const std::exception&) { return std::unexpected("Analysis failed; no profile saved."); }
+            });
+            cancel_->Enable();
+        } catch (const std::exception&) {
+            read_->Enable(); analyze_->Enable(); Status("Cannot start the local analysis worker. No profile saved.");
+        }
+        return;
+    }
+    if (!captured_ || !sample_ || !CurrentSource()) { Invalidate(); Status("Source is stale. Read the rectangle again."); return; }
+    auto inspected = InspectCurrent();
+    if (!inspected) { Status(inspected.error()); return; }
+    auto sample = std::optional(std::move(inspected->first));
+    auto mapping = std::optional(std::move(inspected->second));
+    analyzed_added_ = false;
     Status(std::format("{} recognized, {} skipped, {} present. Fitting G4 surface locally...", sample->recognized, sample->present - sample->recognized, sample->present));
-    result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); stop_ = std::stop_source{};
+    auto raster = sampleClassRaster(*sample_, *mapping);
+    if (!raster) { Status("Not enough memory for the sample's ground classes."); return; }
+    {
+        Sha256 hash;
+        hash.update(std::as_bytes(std::span(raster->data(), raster->size())));
+        raster_sha_ = Sha256::hex(hash.finish());
+    }
+    const auto& bounds = sample_->floors().front().bounds;
+    const auto width = uint32_t(bounds.width), height = uint32_t(bounds.height);
+    result_.reset(); save_->Disable(); read_->Disable(); analyze_->Disable(); add_->Disable(); stop_ = std::stop_source{};
     const auto ids = *ids_; const auto token = stop_.get_token();
     analyzed_mapping_ = mapping_->GetValue().ToStdString(wxConvUTF8);
     try {
-        worker_ = std::async(std::launch::async, [sample = std::move(*sample), mapping = std::move(*mapping), ids, token]() mutable {
-            try { return fitLearningSample(sample, std::move(mapping), ids.client, ids.otbSha256, ids.datSha256, token); }
-            catch (const std::exception&) { return std::expected<StyleProfile, std::string>(std::unexpected("Analysis failed; no profile saved.")); }
+        worker_ = std::async(std::launch::async, [sample = std::move(*sample), mapping = std::move(*mapping), raster = std::move(*raster),
+                                                  width, height, ids, token]() mutable -> std::expected<Learned, std::string> {
+            try {
+                auto profile = fitLearningSample(sample, std::move(mapping), ids.client, ids.otbSha256, ids.datSha256, token);
+                if (!profile) return std::unexpected(profile.error());
+                auto fingerprint = classFingerprint(width, height, raster, token);
+                if (!fingerprint) return std::unexpected(fingerprint.error() == SimilarityError::Cancelled
+                    ? "Analysis stopped." : "Cannot fingerprint the sample's ground classes; no profile saved.");
+                return Learned{std::move(*profile), std::move(*fingerprint)};
+            } catch (const std::exception&) { return std::unexpected("Analysis failed; no profile saved."); }
         });
         cancel_->Enable();
     } catch (const std::exception&) {
-        read_->Enable(); analyze_->Enable(captured_); Status("Cannot start the local analysis worker. No profile saved.");
+        read_->Enable(); analyze_->Enable(captured_); add_->Enable(captured_ && added_.size() < maxLearningSamples);
+        Status("Cannot start the local analysis worker. No profile saved.");
     }
 }
 void StyleLearningDialog::Tick() {
@@ -240,6 +361,7 @@ void StyleLearningDialog::Tick() {
             const auto mapping = serializeKeyMap(proposed);
             if (!mapping) { Invalidate(); Status("Cannot display ground mapping."); return; }
             mapping_->ChangeValue(wxstr(*mapping)); read_->Enable(); analyze_->Enable(); cancel_->Disable();
+            add_->Enable(added_.size() < maxLearningSamples);
             ShowItems();
             const auto counts = summarize(*sample_);
             const uint64_t present = counts.tilesPerFloor[size_t(z_->GetValue())];
@@ -253,31 +375,107 @@ void StyleLearningDialog::Tick() {
     if (worker_.valid()) {
         if (!stop_.stop_requested()) progress_->Pulse();
         if (worker_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
-        auto result = worker_.get(); read_->Enable(); analyze_->Enable(captured_);
+        auto result = worker_.get(); read_->Enable(); analyze_->Enable(captured_ || !added_.empty());
+        add_->Enable(captured_ && added_.size() < maxLearningSamples); remove_->Enable(samples_->GetSelection() != wxNOT_FOUND);
         cancel_->Disable(); progress_->SetValue(0);
-        if (stop_.stop_requested() || !CurrentSource() || analyzed_mapping_ != mapping_->GetValue().ToStdString(wxConvUTF8)) {
+        if (stop_.stop_requested() || !ResultCurrent()) {
             result_.reset(); save_->Disable(); return;
         }
         if (!result) { Status(result.error()); return; }
         result_ = std::move(*result); save_->Enable(); progress_->SetValue(100);
-        const auto& stats = result_->stats;
+        const auto& stats = result_->profile.stats;
         uint64_t present = 0, natural = 0;
         for (size_t i = 0; i < styleKindCount; ++i) { present += stats.kindTiles[i]; if (i < naturalKindCount) natural += stats.kindTiles[i]; }
-        Status(std::format("Fit ready. Used {} of {} present tiles ({} skipped). Enter a name and choose Save profile.", natural, present, present - natural));
+        Status(std::format("Fit ready{}. Used {} of {} present tiles ({} skipped); {} ranking bands. Enter a name and choose Save profile.",
+            analyzed_added_ ? std::format(" from {} samples", added_.size()) : std::string(), natural, present, present - natural,
+            result_->profile.bands.size()));
     }
+}
+bool StyleLearningDialog::ResultCurrent() {
+    // A profile of added samples depends on them, not on the rectangle shown; one read rectangle on its source and mapping.
+    if (analyzed_added_) return analyzed_revision_ == added_revision_ && !added_.empty();
+    return CurrentSource() && analyzed_mapping_ == mapping_->GetValue().ToStdString(wxConvUTF8);
 }
 void StyleLearningDialog::Save() {
     asset_check_ = {};
-    if (!result_ || !CurrentSource() || !permission_->GetValue() || analyzed_mapping_ != mapping_->GetValue().ToStdString(wxConvUTF8)) {
+    if (!result_ || !ResultCurrent() || !permission_->GetValue()) {
         Invalidate(); Status("Result stale or permission missing. Analyze again."); return;
     }
+    const auto name = name_->GetValue().ToStdString(wxConvUTF8);
+    const auto directory = styleProfileDirectory();
+    std::error_code ec;
+    const bool replace = validLearnedProfileName(name) && std::filesystem::exists(directory / (name + ".profile"), ec);
+    if (ec) { Status("Cannot inspect the local profile folder."); return; }
+    if (replace) {
+        wxGenericMessageDialog dialog(this, wxstr(std::format("Replace the profile \"{}\"?", name)),
+            "Learn from open map", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+        dialog.SetName("learn-confirm");
+        if (dialog.ShowModal() != wxID_YES) { Status("Profile not saved."); return; }
+        // The timer can invalidate the result while the confirmation dialog is open.
+        asset_check_ = {};
+        if (!result_ || !ResultCurrent() || !permission_->GetValue()) {
+            Invalidate(); Status("Result stale or permission missing. Analyze again."); return;
+        }
+    }
     const auto ids = loadedClientAssetIds();
-    if (!ids || checkProfile(*result_, ids->client, ids->otbSha256, ids->datSha256, 7) != ProfileCompatibility::Compatible) {
+    if (!ids || checkProfile(result_->profile, ids->client, ids->otbSha256, ids->datSha256, 7) != ProfileCompatibility::Compatible) {
         Invalidate(); Status("Client assets changed. Analyze again."); return;
     }
-    const auto saved = saveLearnedProfile(styleProfileDirectory(), name_->GetValue().ToStdString(wxConvUTF8), *result_);
+    // The index edit is checked before the profile is written, so a refused edit saves nothing.
+    std::optional<Protection> protection;
+    if (protect_->GetValue()) {
+        if (!result_->fingerprint) { Status("A copy index entry is one area: add each area to the index on its own. Nothing saved."); return; }
+        auto prepared = PrepareProtection(*ids);
+        if (!prepared) { Status(prepared.error() + " Nothing saved."); return; }
+        protection = std::move(*prepared);
+    }
+    const auto saved = saveLearnedProfile(directory, name, result_->profile, replace);
     if (!saved) { Status(saved.error()); return; }
-    if (IsModal()) EndModal(wxID_OK); else { save_->Disable(); Status("Profile saved locally. Reopen the generator to choose it."); }
+    if (protection) {
+        const auto indexName = index_name_->GetValue().ToStdString(wxConvUTF8);
+        const auto written = saveCopyIndex(styleProfileDirectory(), indexName, protection->index, protection->previousSha256);
+        if (!written) {
+            save_->Disable();
+            Status(std::format("Profile \"{}\" saved, but the copy index was not updated: {}", name, written.error()));
+            return;
+        }
+    }
+    if (IsModal()) EndModal(wxID_OK);
+    else {
+        save_->Disable();
+        Status(protection ? "Profile and copy index saved locally. Reopen the generator to choose them."
+                          : "Profile saved locally. Reopen the generator to choose it.");
+    }
+}
+std::expected<StyleLearningDialog::Protection, std::string> StyleLearningDialog::PrepareProtection(const ClientAssetIds& ids) const {
+    const auto indexName = index_name_->GetValue().ToStdString(wxConvUTF8);
+    if (!validCopyAlias(indexName)) return std::unexpected("Use 1-64 letters, digits, '-' or '_' for the copy index name.");
+    const auto path = styleProfileDirectory() / (indexName + ".i53");
+    Protection protection;
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) {
+        if (copyIndexNeedsRebuild(path)) return std::unexpected("That copy index has the old format. Choose another index name.");
+        protection.previousSha256 = fileSha256(path);
+        auto existing = readCopyIndex(path, ids.client, ids.otbSha256, ids.datSha256);
+        if (!existing || protection.previousSha256.empty())
+            return std::unexpected("That copy index cannot be read or belongs to another client. Choose another index name.");
+        protection.index = std::move(*existing);
+    } else if (ec) {
+        return std::unexpected("Cannot inspect the local profile folder.");
+    } else {
+        protection.index.client = ids.client; protection.index.otbSha256 = ids.otbSha256; protection.index.datSha256 = ids.datSha256;
+    }
+    const auto sha = [](std::string_view text) {
+        Sha256 hash;
+        hash.update(std::as_bytes(std::span(text.data(), text.size())));
+        return Sha256::hex(hash.finish());
+    };
+    CopyReference reference{name_->GetValue().ToStdString(wxConvUTF8), raster_sha_,
+        sha(serializeFingerprint(*result_->fingerprint)), sha(analyzed_mapping_), *result_->fingerprint};
+    auto added = addCopyReference(std::move(protection.index), std::move(reference));
+    if (!added) return std::unexpected(copyEditErrorText(added.error()));
+    protection.index = std::move(*added);
+    return protection;
 }
 void StyleLearningDialog::ShowItems() {
     std::vector<std::pair<uint16_t, const SampleItem*>> sorted;

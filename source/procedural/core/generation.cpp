@@ -115,4 +115,30 @@ std::expected<SemanticGrid, GenerationError> generateTerrain(
 	}
 }
 
+std::vector<uint8_t> protectionMarginCells(std::span<const uint8_t> protection, uint32_t width, uint32_t height,
+	uint32_t margin) {
+	margin = margin < maxProtectionMargin ? margin : maxProtectionMargin;
+	if (!margin || protection.size() != size_t(width) * height) return {};
+	// Rows first, then columns: a separable square dilation.
+	std::vector<uint8_t> rows(protection.size()), out(protection.size());
+	bool any = false;
+	for (uint32_t y = 0; y < height; ++y) {
+		for (uint32_t x = 0; x < width; ++x) {
+			if (!protection[size_t(y) * width + x]) continue;
+			any = true;
+			const uint32_t x0 = x >= margin ? x - margin : 0, x1 = x + margin < width ? x + margin : width - 1;
+			for (uint32_t xx = x0; xx <= x1; ++xx) rows[size_t(y) * width + xx] = 1;
+		}
+	}
+	if (!any) return {};
+	for (uint32_t y = 0; y < height; ++y)
+		for (uint32_t x = 0; x < width; ++x) {
+			if (!rows[size_t(y) * width + x]) continue;
+			const uint32_t y0 = y >= margin ? y - margin : 0, y1 = y + margin < height ? y + margin : height - 1;
+			for (uint32_t yy = y0; yy <= y1; ++yy) out[size_t(yy) * width + x] = 1;
+		}
+	for (size_t i = 0; i < out.size(); ++i) out[i] = out[i] && !protection[i];
+	return out;
+}
+
 } // namespace rme::procedural

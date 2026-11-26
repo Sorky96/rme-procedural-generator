@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include "procedural/core/candidate_score.h"
 #include "procedural/core/decor_context.h"
 #include "procedural/core/style_fit.h"
 #include <filesystem>
@@ -56,7 +57,13 @@ struct LearningSample {
     uint32_t mixEdgePermille = 0;     // land edge per tile of the grass mix grounds (permille); 0 without mixes
     uint32_t rockEdgePermille = 0;    // land edge per rock tile (permille): low for one range, high for scattered outcrops
     uint32_t dirtEdgePermille = 0;    // land edge per dirt tile (permille): high for small scattered dirt patches
+    // Ranking metrics of the sample's natural classes (candidateMetricsOf; paths and buildings absent): the references of
+    // the learned bands.
+    CandidateMetrics metrics {};
+    // Present tiles of each merged sample, heaviest first; empty for a sample read as one.
+    std::vector<uint64_t> sampleWeights;
 };
+inline constexpr size_t maxLearningSamples = 8;
 // The generator builds its land from the Grass kind. A sample whose land is mostly sand (a desert) has almost no
 // Grass: when the Grass tiles are under a tenth of the Shore tiles, every Shore key becomes Grass, so the sand is
 // the main ground (and, without other shore, rings the water too). Other mappings are left as they are.
@@ -71,8 +78,16 @@ std::expected<LearningSample, std::string> inspectLearningSample(const SemanticM
 std::expected<StyleProfile, std::string> fitLearningSample(const LearningSample& sample,
     std::vector<KeyMapEntry> mapping, std::string client, std::string otb, std::string dat,
     std::stop_token stop = {});
+// One sample from 1..maxLearningSamples read samples (I62), weight = present tiles: counts are summed, rates are
+// weight-rounded means, named entries (mixes, overlays, interiors, wall stacks, structures) are combined by name and
+// cut to their limits, single names come from the heaviest sample that has one, metrics are weight-rounded means over
+// the samples that have them. Ties break by name or content, so the result does not depend on the order of the samples.
+// One sample is returned as it is.
+std::expected<LearningSample, std::string> mergeLearningSamples(std::span<const LearningSample> samples);
+// The union of the samples' key mappings; a key with different classes in two samples is refused.
+std::expected<std::vector<KeyMapEntry>, std::string> mergeLearningMappings(std::span<const std::vector<KeyMapEntry>> mappings);
 // ASCII portable filename stem; no paths, reserved device names or implicit overwrites.
 bool validLearnedProfileName(std::string_view name);
 std::expected<void, std::string> saveLearnedProfile(const std::filesystem::path& directory,
-    std::string_view name, const StyleProfile& profile);
+    std::string_view name, const StyleProfile& profile, bool replace = false);
 } // namespace rme::procedural

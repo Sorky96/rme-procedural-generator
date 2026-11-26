@@ -60,6 +60,7 @@ constexpr std::array m19 {
 };
 }
 std::span<const CandidateBand> candidateBandsFor(const StyleProfile& profile) noexcept {
+    if (!profile.bands.empty()) return profile.bands;
     if (profile.sources.size() != 1 || profile.sources[0].weightPermille != 1000) return {};
     if (profile.sources[0].alias == "M06") return m06;
     if (profile.sources[0].alias == "M19") return m19;

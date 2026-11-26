@@ -5,6 +5,7 @@
 #include "procedural/adapter/snapshot_equal.h"
 
 #include "map/map.h"
+#include "game/item.h"
 #include "app/managers/version_manager.h"
 #include <algorithm>
 #include <limits>
@@ -98,6 +99,55 @@ bool emptyTerrainContent(const Tile* tile) noexcept {
 		!tile->house_id && !tile->mapflags && !tile->extra && !(tile->statflags & ~uint16_t(TILESTATE_BLOCKING)));
 }
 
+PreservedContent preservedContentOf(const GenerationSnapshot& snapshot) {
+	PreservedContent out;
+	const auto& region = snapshot.input.config.region;
+	const auto& context = snapshot.context;
+	for (uint32_t y = 0; y < region.height; ++y) {
+		for (uint32_t x = 0; x < region.width; ++x) {
+			const size_t index = size_t(y) * region.width + x;
+			if (index < snapshot.input.mask.size() && snapshot.input.mask[index] && !snapshot.input.protection[index]) ++out.writable;
+			const auto& cell = snapshot.cells[size_t(region.y + int(y) - context.y) * context.width + size_t(region.x + int(x) - context.x)];
+			const Tile* tile = cell.original.get();
+			// The capture's protection decides what is kept (it also covers spawn areas and other registry cells).
+			if (index >= snapshot.input.protection.size() || !snapshot.input.protection[index]) continue;
+			++out.tiles;
+			out.spawns += tile && tile->spawn;
+			out.spawnCells += cell.spawnCount != 0;
+			out.waypoints += cell.waypointCount != 0;
+			out.towns += cell.townCount != 0;
+			out.houseExits += !cell.houseExits.empty();
+			if (!tile) continue;
+			out.houseTiles += tile->house_id != 0;
+			out.zoneTiles += !tile->getZoneIds().empty();
+			for (const auto& item : tile->items) out.idItems += item && (item->getUniqueID() || item->getActionID());
+			out.idItems += tile->ground && (tile->ground->getUniqueID() || tile->ground->getActionID());
+		}
+	}
+	return out;
+}
+
+uint64_t preservedContacts(const GenerationSnapshot& snapshot, std::span<const SurfaceKind> cells) {
+	const auto& region = snapshot.input.config.region;
+	const auto& context = snapshot.context;
+	if (cells.size() != size_t(region.width) * region.height) return 0;
+	const auto written = [&](int64_t x, int64_t y) {
+		return x >= 0 && y >= 0 && x < int64_t(region.width) && y < int64_t(region.height) &&
+			cells[size_t(y) * region.width + size_t(x)] != SurfaceKind::Preserve;
+	};
+	uint64_t contacts = 0;
+	for (uint32_t cy = 0; cy < context.height; ++cy) {
+		for (uint32_t cx = 0; cx < context.width; ++cx) {
+			const auto& cell = snapshot.cells[size_t(cy) * context.width + cx];
+			const Tile* tile = cell.original.get();
+			if (!cell.spawnCount && !(tile && (tile->house_id || tile->spawn))) continue;
+			const int64_t x = int64_t(context.x) + cx - region.x, y = int64_t(context.y) + cy - region.y;
+			contacts += written(x - 1, y) || written(x + 1, y) || written(x, y - 1) || written(x, y + 1);
+		}
+	}
+	return contacts;
+}
+
 bool snapshotMatchesMap(const Map& map, const GenerationSnapshot& snapshot) noexcept {
 	return snapshotMatchesMapAtRevision(map, snapshot, snapshot.input.mapRevision);
 }
@@ -136,10 +186,12 @@ std::vector<uint8_t> surfaceKeepClear(const GenerationSnapshot& snapshot, bool o
 	const auto& region = input.config.region;
 	const auto& context = snapshot.context;
 	std::vector<uint8_t> result(input.mask.size(), 0);
+	const auto margin = protectionMarginCells(input.protection, region.width, region.height, input.config.protectionMargin);
+	for (size_t i = 0; i < margin.size(); ++i) result[i] = margin[i] && input.mask[i] && !input.protection[i];
 	const auto writableAt = [&](int64_t x, int64_t y) {
 		if (x < 0 || y < 0 || x >= int64_t(region.width) || y >= int64_t(region.height)) return false;
 		const size_t index = size_t(y) * region.width + size_t(x);
-		return input.mask[index] && !input.protection[index];
+		return input.mask[index] && !input.protection[index] && (margin.empty() || !margin[index]);
 	};
 	const auto holdsGround = [&](int64_t x, int64_t y) {
 		const int64_t cx = region.x + x - context.x, cy = region.y + y - context.y;

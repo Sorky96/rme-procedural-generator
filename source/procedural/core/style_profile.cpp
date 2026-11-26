@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "procedural/core/style_profile.h"
 
+#include "procedural/core/candidate_score.h"
 #include "procedural/core/doodad_class.h"
 
 #include <algorithm>
@@ -66,6 +67,11 @@ bool parseU32(std::string_view text, uint32_t& out) {
 	if (!parseUnsigned(text, v) || v > UINT32_MAX) return false;
 	out = static_cast<uint32_t>(v);
 	return true;
+}
+
+bool parseI64(std::string_view text, int64_t& out) {
+	const auto r = std::from_chars(text.data(), text.data() + text.size(), out);
+	return r.ec == std::errc {} && r.ptr == text.data() + text.size();
 }
 
 bool parseInt(std::string_view text, int& out) {
@@ -197,6 +203,9 @@ std::expected<void, ProfileError> validateProfile(const StyleProfile& p) {
 	if (bad(p.carpet.name) || p.carpet.onTreePpm || p.carpet.onGroundPpm > 1000000 || p.carpet.name.empty() != (p.carpet.onGroundPpm == 0) ||
 		(!p.carpet.name.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
 	if (p.wallStacks.size() > maxWallStacks || (!p.wallStacks.empty() && !p.buildings.density)) return std::unexpected(ProfileError::InvalidRange);
+	for (size_t i = 0; i < p.bands.size(); ++i)
+		if ((i && p.bands[i - 1].metric >= p.bands[i].metric) || learnedCandidateBand(p.bands[i].metric, p.bands[i].reference) != p.bands[i])
+			return std::unexpected(ProfileError::InvalidRange);
 	std::array<uint64_t, 16> stackShare {};
 	for (const StyleWallStack& s : p.wallStacks) {
 		if (s.sides > 15 || !s.ppm || s.items.empty() || s.items.size() > maxStackItems || std::ranges::find(s.items, uint16_t(0)) != s.items.end())
@@ -292,6 +301,8 @@ std::expected<std::string, ProfileError> serializeProfile(const StyleProfile& p)
 	if (p.unreachedRockPermille || p.unreachedWalkPermille)
 		out += std::format("unreached\t{}\t{}\n", p.unreachedRockPermille, p.unreachedWalkPermille);
 	for (const auto& o : p.overlays) if (!o.name.empty()) out += std::format("overlay\t{}\t{}\t{}\n", o.onTreePpm, o.onGroundPpm, o.name);
+	for (const auto& b : p.bands)
+		out += std::format("band\t{}\t{}\t{}\t{}\n", candidateMetricNames[b.metric], b.reference, b.lowerHundredths, b.upperHundredths);
 	if (p.target) {
 		out += "target\tshares";
 		for (const uint32_t v : p.target->sharesPpm) out += '\t' + std::to_string(v);
@@ -444,6 +455,12 @@ std::expected<StyleProfile, ProfileError> parseProfile(std::string_view text) {
             if (p.unreachedRockPermille || p.unreachedWalkPermille || !parseU32(f[1], p.unreachedRockPermille) ||
                 !parseU32(f[2], p.unreachedWalkPermille) || (!p.unreachedRockPermille && !p.unreachedWalkPermille))
                 return std::unexpected(ProfileError::BadFormat);
+        } else if (type == "band" && f.size() == 5) {
+            const auto name = std::ranges::find(candidateMetricNames, f[1]);
+            CandidateBand band {size_t(name - candidateMetricNames.begin())};
+            if (name == candidateMetricNames.end() || !parseI64(f[2], band.reference) || !parseI64(f[3], band.lowerHundredths) ||
+                !parseI64(f[4], band.upperHundredths)) return std::unexpected(ProfileError::BadFormat);
+            p.bands.push_back(band);
         } else if (type == "carpet" && f.size() == 3) {
             if (!p.carpet.name.empty() || !parseU32(f[1], p.carpet.onGroundPpm) || f[2].empty()) return std::unexpected(ProfileError::BadFormat);
             p.carpet.name = f[2];

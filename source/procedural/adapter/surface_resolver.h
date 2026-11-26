@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "procedural/adapter/decor_source.h"
 #include "procedural/adapter/generation_input.h"
 #include "procedural/adapter/ground_resolver.h"
 #include "procedural/core/decoration.h"
 #include "procedural/core/surface.h"
 #include "procedural/core/underground.h"
 
+#include <stop_token>
+#include <string_view>
+#include <utility>
+
 class DoodadBrush;
+class GroundBrush;
 class WallBrush;
 
 namespace rme::procedural {
@@ -63,6 +69,12 @@ struct DungeonBrushes {
 };
 std::expected<DungeonBrushes, ResolveError> resolveDungeonBrushes(const GroundProfile& profile);
 
+// A ground brush and the sum of its placement chances, after checking every item it can place in the loaded client.
+// InvalidProfile: no usable ground brush of that name; InvalidItem: it places an item the client lacks. GUI thread.
+[[nodiscard]] std::expected<std::pair<const GroundBrush*, uint64_t>, ResolveError> checkGroundBrush(std::string_view name, std::stop_token stop = {});
+// A doodad brush with single-tile items and the sum of their chances, or one RAW item; every reachable item must be a
+// real, plain, non-ground, non-border item. Same errors as checkGroundBrush. GUI thread.
+[[nodiscard]] std::expected<DecorSource, ResolveError> checkDecorBrush(std::string_view name, std::stop_token stop = {});
 [[nodiscard]] bool hasCave(const GroundProfile& profile) noexcept;
 // Iteration 50: the cave wall may name a wall brush, drawn over cave ground, instead of a ground brush. Returns that
 // brush; null for a ground brush, a wall decoration brush or an unknown name. GUI thread.

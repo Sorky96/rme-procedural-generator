@@ -125,16 +125,20 @@ std::expected<ReferenceHeader, ReferenceImportError> readReferenceHeader(
 	return header;
 }
 
-std::expected<std::string, ReferenceImportError> hashReferenceFile(const std::filesystem::path& file) {
+std::expected<std::string, ReferenceImportError> hashReferenceFile(
+	const std::filesystem::path& file, std::stop_token stop) {
+	if (stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
 	std::ifstream input(file, std::ios::binary);
 	if (!input) return std::unexpected(ReferenceImportError::FileMissing);
 	std::vector<char> chunk(hashChunkBytes);
 	Sha256 hash;
 	while (input) {
+		if (stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
 		input.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
 		const auto got = static_cast<size_t>(input.gcount());
 		if (got > 0) hash.update({reinterpret_cast<const std::byte*>(chunk.data()), got});
 	}
+	if (stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
 	if (!input.eof()) return std::unexpected(ReferenceImportError::FileMissing);
 	return Sha256::hex(hash.finish());
 }
@@ -167,7 +171,7 @@ std::expected<ReferenceImportSummary, ReferenceImportError> loadReference(
 	summary.header = *header;
 	summary.compatibility = checkCompatibility(*header, &*client);
 	summary.clientId = std::string(g_version.GetCurrentVersionIDView());
-	if (auto digest = hashReferenceFile(file)) summary.sha256 = std::move(*digest);
+	if (auto digest = hashReferenceFile(file, limits.stop)) summary.sha256 = std::move(*digest);
 	else return std::unexpected(digest.error());
 	if (limits.stop.stop_requested()) return std::unexpected(ReferenceImportError::Cancelled);
 
